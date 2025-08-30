@@ -19,17 +19,22 @@
 
 package kafka.automq.table.process.convert;
 
+import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.exception.InvalidDataException;
 
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
 
+import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+import io.confluent.kafka.schemaregistry.ParsedSchema;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 
 /**
@@ -48,37 +53,40 @@ public class AvroRegistryConverter extends RegistrySchemaConverter {
     private static final int HEADER_SIZE = SCHEMA_ID_SIZE + 1; // magic byte + schema id
     private static final byte MAGIC_BYTE = 0x0;
 
-    private final Deserializer<Object> deserializer;
+    private final SchemaRegistryClient client;
+    private final Deserializer<Object> valueDeserializer;
 
-    /**
-     * Creates a new Avro converter with schema registry support.
-     *
-     * @param client the schema registry client for schema operations, must not be null
-     * @param registryUrl the schema registry URL, used to configure the deserializer
-     */
     public AvroRegistryConverter(SchemaRegistryClient client, String registryUrl) {
         // Initialize deserializer with the provided client
-        this.deserializer = new KafkaAvroDeserializer(client);
-
+        this.valueDeserializer = new KafkaAvroDeserializer(client);
+        this.client = client;
         // Configure the deserializer immediately upon creation
         Map<String, String> configs = Map.of("schema.registry.url", registryUrl);
         // isKey whether this converter is for a key or a value
         // isKey must be false
-        deserializer.configure(configs, false);
+        valueDeserializer.configure(configs, false);
     }
 
 
-    public AvroRegistryConverter(Deserializer deserializer) {
-        this.deserializer = deserializer;
+    public AvroRegistryConverter(Deserializer deserializer, SchemaRegistryClient client) {
+        this.valueDeserializer = deserializer;
+        this.client = client;
     }
 
     @Override
-    protected GenericRecord performConversion(String topic, Record record) {
-        Object object = deserializer.deserialize(topic, null, record.value());
+    protected RecordData performValueConversion(String topic, Record record) {
+        Object object = valueDeserializer.deserialize(topic, null, record.value());
+        Schema schema;
         if (object instanceof GenericRecord) {
-            return (GenericRecord) object;
+            return new RecordData((GenericRecord) object);
         } else {
-            return null;
+            try {
+                ParsedSchema schemaById = client.getSchemaById(getSchemaId(topic, record));
+                schema = (Schema) schemaById.rawSchema();
+                return new RecordData(schema, object);
+            } catch (RestClientException | IOException e) {
+                throw new ConverterException("Failed to retrieve schema from registry for topic: " + topic, e);
+            }
         }
     }
 

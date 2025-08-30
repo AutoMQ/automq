@@ -21,7 +21,6 @@ package kafka.automq.table.process.convert;
 import kafka.automq.table.deserializer.SchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.CustomKafkaProtobufDeserializer;
 import kafka.automq.table.deserializer.proto.HeaderBasedSchemaResolutionResolver;
-import kafka.automq.table.transformer.ProtoToAvroConverter;
 
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
@@ -31,7 +30,6 @@ import com.google.common.cache.CacheBuilder;
 import com.google.protobuf.Message;
 
 import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.protobuf.ProtoConversions;
 import org.apache.avro.protobuf.ProtobufData;
 
@@ -41,7 +39,7 @@ import java.util.Map;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 
 public class ProtobufRegistryConverter extends RegistrySchemaConverter {
-    private final Deserializer<Message> deserializer;
+    private final Deserializer<Message> valueDeserializer;
     private final SchemaResolutionResolver resolver;
 
     private final Cache<Integer, Schema> avroSchemaCache = CacheBuilder.newBuilder()
@@ -50,7 +48,7 @@ public class ProtobufRegistryConverter extends RegistrySchemaConverter {
         .build();
 
     public ProtobufRegistryConverter(Deserializer deserializer) {
-        this.deserializer = deserializer;
+        this.valueDeserializer = deserializer;
         this.resolver = new HeaderBasedSchemaResolutionResolver();
     }
 
@@ -61,18 +59,18 @@ public class ProtobufRegistryConverter extends RegistrySchemaConverter {
 
     public ProtobufRegistryConverter(SchemaRegistryClient client, String registryUrl, SchemaResolutionResolver resolver) {
         this.resolver = resolver;
-        this.deserializer = new CustomKafkaProtobufDeserializer<>(client, resolver);
+        this.valueDeserializer = new CustomKafkaProtobufDeserializer<>(client, resolver);
         // Configure the deserializer immediately upon creation
         Map<String, String> configs = Map.of("schema.registry.url", registryUrl);
         // isKey whether this converter is for a key or a value
         // isKey must be false
-        deserializer.configure(configs, false);
+        valueDeserializer.configure(configs, false);
     }
 
     @Override
-    protected GenericRecord performConversion(String topic, Record record) {
+    protected RecordData performValueConversion(String topic, Record record) {
         int schemaId = resolver.getSchemaId(topic, record);
-        Message protoMessage = deserializer.deserialize(topic, null, record.value());
+        Message protoMessage = valueDeserializer.deserialize(topic, null, record.value());
         Schema schema = avroSchemaCache.getIfPresent(schemaId);
         if (schema == null) {
             ProtobufData protobufData = ProtobufData.get();
@@ -80,7 +78,7 @@ public class ProtobufRegistryConverter extends RegistrySchemaConverter {
             schema = protobufData.getSchema(protoMessage.getDescriptorForType());
             avroSchemaCache.put(schemaId, schema);
         }
-        return ProtoToAvroConverter.convert(protoMessage, schema);
+        return new RecordData(ProtoToAvroConverter.convert(protoMessage, schema));
     }
 
     @Override

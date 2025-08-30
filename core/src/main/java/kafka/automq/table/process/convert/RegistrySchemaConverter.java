@@ -1,22 +1,3 @@
-/*
- * Copyright 2025, AutoMQ HK Limited.
- *
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package kafka.automq.table.process.convert;
 
 import kafka.automq.table.process.ConversionResult;
@@ -27,24 +8,16 @@ import kafka.automq.table.process.exception.InvalidDataException;
 import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.record.Record;
 
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericContainer;
 import org.apache.avro.generic.GenericRecord;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-/**
- * Abstract base class for schema registry-based converters.
- *
- * <p>This class provides common functionality for converters that rely on
- * external schema registries (such as Confluent Schema Registry) for schema
- * resolution and management. It handles the integration with the schema registry
- * client and provides a framework for format-specific conversion implementations.</p>
- *
- *
- */
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+
 public abstract class RegistrySchemaConverter implements Converter {
 
-    private static final Logger log = LoggerFactory.getLogger(RegistrySchemaConverter.class);
-
+    private static final Schema STRING = Schema.create(Schema.Type.STRING);
 
     @Override
     public final ConversionResult convert(String topic, Record record) throws ConverterException {
@@ -52,11 +25,15 @@ public abstract class RegistrySchemaConverter implements Converter {
             if (record.value() == null) {
                 throw new InvalidDataException("Kafka record value cannot be null");
             }
-            int schemaId = getSchemaId(topic, record);
-            GenericRecord convertedRecord = performConversion(topic, record);
-
-            if (convertedRecord != null) {
-                return new ConversionResult(record, Converter.buildValueRecord(convertedRecord), String.valueOf(schemaId));
+            RecordData value = performValueConversion(topic, record);
+            if (value != null) {
+                int schemaId = getSchemaId(topic, record);
+                String key = buf2string(record.key());
+                GenericRecord genericRecord = Converter.buildConversionRecord(
+                    key, STRING,
+                    value.getValue(), value.getSchema(),
+                    record.timestamp());
+                return new ConversionResult(record, genericRecord, String.valueOf(schemaId));
             } else {
                 throw new ConverterException("Conversion returned null record for topic: " + topic);
             }
@@ -68,9 +45,38 @@ public abstract class RegistrySchemaConverter implements Converter {
         }
     }
 
-    protected abstract GenericRecord performConversion(String topic, Record record);
 
+    public static class RecordData implements GenericContainer {
+        private final Schema schema;
+        private final Object value;
+        public RecordData(Schema schema, Object object) {
+            this.schema = schema;
+            this.value = object;
+        }
+        public RecordData(GenericRecord genericRecord) {
+            this.schema = genericRecord.getSchema();
+            this.value = genericRecord;
+        }
+
+        @Override
+        public Schema getSchema() {
+            return schema;
+        }
+
+        public Object getValue() {
+            return value;
+        }
+    }
+    protected abstract RecordData performValueConversion(String topic, Record record);
 
     protected abstract int getSchemaId(String topic, Record record);
 
+    private static String buf2string(ByteBuffer buf) {
+        if (buf == null) {
+            return "";
+        }
+        byte[] bytes = new byte[buf.remaining()];
+        buf.slice().get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
 }

@@ -36,6 +36,14 @@ public class RawConverter implements Converter {
         if (record.value() == null) {
             throw new InvalidDataException("Kafka record value cannot be null");
         }
-        return new ConversionResult(record, Converter.buildValueRecord(record.value(), SCHEMA), SCHEMA_IDENTITY);
+        byte[] key = null;
+        if (record.hasKey()) {
+            key = new byte[record.keySize()];
+            record.key().get(key);
+        }
+        byte[] value = new byte[record.valueSize()];
+        record.value().get(value);
+
+        return new ConversionResult(record, Converter.buildConversionRecord(key, SCHEMA, value, SCHEMA, record.timestamp()), SCHEMA_IDENTITY);
     }
 }

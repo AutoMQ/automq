@@ -30,6 +30,7 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -43,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 class DebeziumUnwrapTransformTest {
 
     private static final Schema ROW_SCHEMA =
@@ -90,7 +92,7 @@ class DebeziumUnwrapTransformTest {
 
     private DebeziumUnwrapTransform transform;
     private ValueUnwrapTransform valueUnwrapTransform;
-    private KafkaRecordTransform kafkaRecordTransform;
+    private KafkaMetadataTransform kafkaMetadataTransform;
     private TransformContext context;
     private Record kafkaRecord;
 
@@ -102,7 +104,7 @@ class DebeziumUnwrapTransformTest {
         valueUnwrapTransform = new ValueUnwrapTransform();
         valueUnwrapTransform.configure(Collections.emptyMap());
 
-        kafkaRecordTransform = new KafkaRecordTransform();
+        kafkaMetadataTransform = new KafkaMetadataTransform();
 
         context = mock(TransformContext.class);
         kafkaRecord = mock(Record.class);
@@ -179,7 +181,7 @@ class DebeziumUnwrapTransformTest {
         when(kafkaRecord.key()).thenReturn(ByteBuffer.wrap("some-key".getBytes()));
 
         // 2. Wrap with Kafka metadata
-        GenericRecord wrappedRecord = Converter.buildValueRecord(debeziumEvent);
+        GenericRecord wrappedRecord = Converter.buildConversionRecord(null, null, debeziumEvent, debeziumEvent.getSchema(), 0);
         assertNotNull(wrappedRecord.get(Converter.VALUE_FIELD_NAME));
 
         // 3. Unwrap the value

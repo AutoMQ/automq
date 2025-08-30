@@ -166,4 +166,24 @@ public class TableTopicConfigValidator {
         }
     }
 
+    public static class TableTopicTransformTypesValidator implements ConfigDef.Validator {
+        public static final TableTopicTransformTypesValidator INSTANCE = new TableTopicTransformTypesValidator();
+
+        @Override
+        public void ensureValid(String name, Object value) {
+            if (value instanceof List) {
+                List<?> list = (List<?>) value;
+                for (Object o : list) {
+                    try {
+                        org.apache.kafka.server.record.TableTopicTransformType.valueOf(String.valueOf(o).toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException e) {
+                        throw new ConfigException(name, o, "Invalid transform type in " + name);
+                    }
+                }
+            } else {
+                throw new ConfigException(name, value, "Must be a list of strings.");
+            }
+        }
+    }
+
 }

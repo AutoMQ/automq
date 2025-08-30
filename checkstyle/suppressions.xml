@@ -378,5 +378,6 @@
     <suppress id="dontUseSystemExit"
               files="(BenchTool|S3Utils|AutoMQCLI).java"/>
     <suppress checks="ClassDataAbstractionCoupling" files="(StreamControlManagerTest|ControllerStreamManager).java"/>
+    <suppress files="core[\/]src[\/]test[\/]java[\/]kafka[\/]automq[\/]table[\/]process[\/]proto[\/].*\.java$" checks=".*"/>
 
 </suppressions>

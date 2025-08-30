@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package kafka.automq.table.process.convert;
 
 import kafka.automq.table.process.exception.ConverterException;
 

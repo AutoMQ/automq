@@ -19,7 +19,6 @@
 
 package kafka.automq.table.process.transform;
 
-import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.Transform;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
@@ -73,6 +72,14 @@ public class DebeziumUnwrapTransform implements Transform {
     private static final String CDC_FIELD_TS = "ts";
     private static final String CDC_FIELD_OFFSET = "offset";
     private static final String CDC_FIELD_SOURCE = "source";
+
+    private static final Schema CDC_SCHEMA = SchemaBuilder.record(CDC_RECORD_NAME)
+        .fields()
+        .optionalString(CDC_FIELD_OP)
+        .optionalLong(CDC_FIELD_TS)
+        .optionalLong(CDC_FIELD_OFFSET)
+        .optionalString(CDC_FIELD_SOURCE)
+        .endRecord();
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -215,20 +222,11 @@ public class DebeziumUnwrapTransform implements Transform {
     }
 
     private Schema createSchemaWithMetadata(Schema originalSchema) {
-        Schema cdcSchema = SchemaBuilder.record(CDC_RECORD_NAME)
-            .namespace(originalSchema.getNamespace())
-            .fields()
-            .optionalString(CDC_FIELD_OP)
-            .optionalLong(CDC_FIELD_TS)
-            .optionalLong(CDC_FIELD_OFFSET)
-            .optionalString(CDC_FIELD_SOURCE)
-            .endRecord();
-
         List<Schema.Field> enhancedFields = new ArrayList<>();
         for (Schema.Field field : originalSchema.getFields()) {
             enhancedFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
         }
-        enhancedFields.add(new Schema.Field(CDC_RECORD_NAME, cdcSchema, "CDC metadata", null));
+        enhancedFields.add(new Schema.Field(CDC_RECORD_NAME, CDC_SCHEMA, "CDC metadata", null));
 
         String enhancedName = originalSchema.getName() != null ?
             originalSchema.getName() + "_cdc_enriched" : "enriched_record";
@@ -268,24 +266,5 @@ public class DebeziumUnwrapTransform implements Transform {
     @Override
     public String getName() {
         return "DebeziumUnwrap";
-    }
-
-    /**
-     * Unwraps a ValueRecord container to extract the payload.
-     */
-    private GenericRecord unwrapValue(GenericRecord record) throws TransformException {
-        // Check if it's a ValueRecord by schema name and field existence.
-        if (!Converter.RECORD_NAME.equals(record.getSchema().getName()) || record.getSchema().getField(Converter.VALUE_FIELD_NAME) == null) {
-            return null;
-        }
-        // Check if the extracted value is a non-null GenericRecord.
-        Object value = record.get(Converter.VALUE_FIELD_NAME);
-        if (value == null) {
-            return null;
-        }
-        if (!(value instanceof GenericRecord)) {
-            throw new TransformException("ValueRecord's 'value' field is not a GenericRecord, but " + value.getClass().getName());
-        }
-        return (GenericRecord) value;
     }
 }

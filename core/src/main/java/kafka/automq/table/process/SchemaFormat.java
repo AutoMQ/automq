@@ -19,27 +19,25 @@
 
 package kafka.automq.table.process;
 
-import kafka.automq.table.process.exception.RecordProcessorException;
+public enum SchemaFormat {
+    AVRO,
+    JSON,
+    PROTOBUF;
 
-import org.apache.kafka.common.record.Record;
-
-import java.util.Map;
-
-/**
- * Processes Kafka records into standardized Avro format.
- * Handles format conversion, transformations, and error processing.
- */
-public interface RecordProcessor {
-
-    /**
-     * Processes a Kafka record into Avro format.
-     *
-     * @param partition topic partition
-     * @param record    the Kafka record to process
-     * @return ProcessingResult containing the converted record or error information
-     */
-    ProcessingResult process(int partition, Record record);
-
-
-    void configure(Map<String, ?> configs) throws RecordProcessorException;
+    public static SchemaFormat fromString(String format) {
+        switch (format) {
+            case "AVRO": {
+                return AVRO;
+            }
+            case "JSON": {
+                return JSON;
+            }
+            case "PROTOBUF": {
+                return PROTOBUF;
+            }
+            default: {
+                throw new IllegalArgumentException("Unsupported schema format: " + format);
+            }
+        }
+    }
 }

@@ -22,8 +22,8 @@ package kafka.automq.table.process.convert;
 import kafka.automq.table.deserializer.proto.LatestSchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.process.Converter;
+import kafka.automq.table.process.SchemaFormat;
 import kafka.automq.table.process.exception.ProcessorInitializationException;
-import kafka.automq.table.transformer.SchemaFormat;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
@@ -40,107 +40,93 @@ import java.util.concurrent.ConcurrentHashMap;
 import io.confluent.kafka.schemaregistry.avro.AvroSchemaProvider;
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig;
 
-/**
- * Factory for creating and managing {@link Converter} instances.
- *
- * <p>This factory provides a centralized mechanism for creating converters for different
- * data formats. It caches converter instances by format to avoid redundant object
- * creation and expensive re-initialization.</p>
- *
- * <p>It supports lazy initialization of converters to defer resource-intensive
- * setup until a converter is actually needed.</p>
- */
 public class RegistryConverterFactory {
-    private static final Logger log = LoggerFactory.getLogger(RegistryConverterFactory.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RegistryConverterFactory.class);
 
-    private String schemaRegistryUrl;
-    private SchemaRegistryClient client;
-
+    private final String schemaRegistryUrl;
+    private final SchemaRegistryClient client;
     private final Map<String, Converter> converterCache = new ConcurrentHashMap<>();
-
-    // Cache topic schema format to avoid repeated Schema Registry queries
     private final Cache<String, String> topicSchemaFormatCache = CacheBuilder.newBuilder()
         .expireAfterAccess(Duration.ofMinutes(20))
         .maximumSize(10000)
         .build();
 
-
     public RegistryConverterFactory(String registryUrl) {
         this.schemaRegistryUrl = registryUrl;
         if (registryUrl != null) {
-            client = new CachedSchemaRegistryClient(
+            this.client = new CachedSchemaRegistryClient(
                 registryUrl,
                 AbstractKafkaSchemaSerDeConfig.MAX_SCHEMAS_PER_SUBJECT_DEFAULT,
                 List.of(new AvroSchemaProvider(), new ProtobufSchemaProvider()),
                 null
             );
+        } else {
+            this.client = null;
         }
     }
 
-    /**
-     * Gets or creates a converter for a specific topic.
-     *
-     * <p>This method determines the schema format for the topic and returns a cached
-     * converter for that format. Multiple topics with the same format share the same
-     * converter instance, which improves resource efficiency.</p>
-     */
-    public Converter getOrCreate(String topic, boolean useLatestSchema) {
-        try {
-            return new LazyConverter(() -> {
-                // 1. Try to get schema format from cache first
-                String schemaType = topicSchemaFormatCache.getIfPresent(topic);
-                try {
-                    if (schemaType == null) {
-                        String subject = getSubjectName(topic);
-                        schemaType = client.getLatestSchemaMetadata(subject).getSchemaType();
+    public RegistryConverterFactory(String registryUrl, SchemaRegistryClient client) {
+        this.schemaRegistryUrl = registryUrl;
+        this.client = client;
+    }
 
-                        // Cache the result for future queries
-                        topicSchemaFormatCache.put(topic, schemaType);
-                    }
-                } catch (IOException | io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException e) {
-                    log.error("Failed to get schema metadata for topic '{}' due to Schema Registry error", topic, e);
-                    throw new ProcessorInitializationException("Failed to get schema metadata for topic: " + topic, e);
-                }
+    public Converter createForSchemaId(String topic) {
+        return new LazyConverter(() -> {
+            String subject = getSubjectName(topic);
+            String schemaType = getSchemaType(subject);
+            SchemaFormat format = SchemaFormat.fromString(schemaType);
+            return converterCache.computeIfAbsent(format.name(), this::createConverterForFormat);
+        });
+    }
 
-                if (useLatestSchema && "PROTOBUF".equals(schemaType)) {
-                    String subject = getSubjectName(topic);
-                    String cacheKey = schemaType + "-" + subject;
-                    return converterCache.computeIfAbsent(cacheKey, v -> new ProtobufRegistryConverter(client, schemaRegistryUrl, new LatestSchemaResolutionResolver(client, subject)));
-                }
+    public Converter createForSubjectName(String topic, String subjectName, String messageFullName) {
+        String subject = subjectName != null ? subjectName : getSubjectName(topic);
+        return new LazyConverter(() -> {
+            String schemaType = getSchemaType(subject);
+            if (!"PROTOBUF".equals(schemaType)) {
+                throw new ProcessorInitializationException(
+                    String.format("by_subject_name is only supported for PROTOBUF, but got %s for subject %s", schemaType, subject));
+            }
 
-                if (!useLatestSchema) {
-                    SchemaFormat cacheKey = SchemaFormat.fromString(schemaType);
-                    return converterCache.computeIfAbsent(cacheKey.name(), this::createConverterForFormat);
-                }
-                throw new RuntimeException("Unsupported schema format: " + schemaType);
+            String cacheKey = schemaType + "-" + subject + "-" + (messageFullName == null ? "" : messageFullName);
+            return converterCache.computeIfAbsent(cacheKey, key -> {
+                var resolver = new LatestSchemaResolutionResolver(client, subject, messageFullName);
+                return new ProtobufRegistryConverter(client, schemaRegistryUrl, resolver);
             });
-        } catch (Exception e) {
-            log.error("An unexpected error occurred while getting converter for topic '{}'", topic, e);
-            throw new ProcessorInitializationException("Failed to get converter for topic: " + topic, e);
+        });
+    }
+
+    private String getSchemaType(String subject) {
+        String schemaType = topicSchemaFormatCache.getIfPresent(subject);
+        if (schemaType == null) {
+            try {
+                schemaType = client.getLatestSchemaMetadata(subject).getSchemaType();
+                topicSchemaFormatCache.put(subject, schemaType);
+            } catch (IOException | RestClientException e) {
+                LOGGER.error("Failed to get schema metadata for subject '{}' due to Schema Registry error", subject, e);
+                throw new ProcessorInitializationException("Failed to get schema metadata for subject: " + subject, e);
+            }
         }
+        return schemaType;
     }
 
     private String getSubjectName(String topic) {
         return topic + "-value";
     }
 
-    /**
-     * Creates a concrete converter instance for a given format.
-     * This method is called by the {@link LazyConverter} supplier.
-     */
     private Converter createConverterForFormat(String format) {
-        log.info("Creating new converter for format: {}", format);
+        LOGGER.info("Creating new converter for format: {}", format);
         SchemaFormat schemaFormat = SchemaFormat.fromString(format);
         switch (schemaFormat) {
             case AVRO:
                 return new AvroRegistryConverter(client, schemaRegistryUrl);
             case PROTOBUF:
                 return new ProtobufRegistryConverter(client, schemaRegistryUrl);
-
             default:
-                log.error("Unsupported schema format '{}'", format);
+                LOGGER.error("Unsupported schema format '{}'", format);
                 throw new RuntimeException("Unsupported schema format: " + format);
         }
     }

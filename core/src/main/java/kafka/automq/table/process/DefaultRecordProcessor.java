@@ -66,7 +66,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
     }
 
     @Override
-    public ProcessingResult process(org.apache.kafka.common.record.Record kafkaRecord) {
+    public ProcessingResult process(int partition, Record kafkaRecord) {
         try {
             Objects.requireNonNull(kafkaRecord, "Kafka record cannot be null");
             if (converter == null) {
@@ -75,7 +75,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
             ConversionResult conversionResult = converter.convert(topicName, kafkaRecord);
 
-            GenericRecord transformedRecord = applyTransformChain(conversionResult);
+            GenericRecord transformedRecord = applyTransformChain(conversionResult, partition);
 
             return createFinalAvroRecord(conversionResult, transformedRecord);
         } catch (ConverterException e) {
@@ -97,9 +97,9 @@ public class DefaultRecordProcessor implements RecordProcessor {
         return new ProcessingResult(error);
     }
 
-    private GenericRecord applyTransformChain(ConversionResult conversionResult) throws TransformException {
+    private GenericRecord applyTransformChain(ConversionResult conversionResult, int partition) throws TransformException {
         GenericRecord currentRecord = conversionResult.getValueRecord();
-        TransformContext context = new TransformContext(conversionResult.getKafkaRecord(), topicName);
+        TransformContext context = new TransformContext(conversionResult.getKafkaRecord(), topicName, partition);
 
         for (Transform transform : transformChain) {
             currentRecord = transform.apply(currentRecord, context);

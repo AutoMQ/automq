@@ -38,14 +38,17 @@ import org.apache.avro.generic.GenericRecordBuilder;
  */
 public interface Converter {
 
+    String CONVERSION_RECORD_NAME = "ConversionRecord";
+    String KEY_FIELD_NAME = "key";
     String VALUE_FIELD_NAME = "value";
-    String RECORD_NAME = "ValueRecord";
+    String TIMESTAMP_FIELD_NAME = "timestamp";
+    Schema BYTES = Schema.create(Schema.Type.BYTES);
 
     /**
      * Converts a raw Kafka record into a structured representation.
      *
      * <p>This method performs the core format conversion operation. It reads the
-     * byte[] payload from the Kafka record and converts it to an Avro GenericRecord
+     * key, value and timestamp from the Kafka record and converts it to an Avro GenericRecord
      * that serves as the standardized internal representation for subsequent processing.</p>
      *
      * @param topic the name of the Kafka topic from which the record originated,
@@ -60,30 +63,28 @@ public interface Converter {
     ConversionResult convert(String topic, Record record) throws ConverterException;
 
     /**
-     * A convenience wrapper for {@link #buildValueRecord(Object, Schema)}.
-     * Extracts the schema from the given record.
+     * A utility to build a standard record that wraps a key, value and timestamp.
      *
-     * @param valueRecord the record to wrap.
-     * @return a new GenericRecord wrapping the value record.
-     */
-    static GenericRecord buildValueRecord(GenericRecord valueRecord) {
-        return buildValueRecord(valueRecord, valueRecord.getSchema());
-    }
-    /**
-     * A utility to build a standard record that wraps a value.
-     * The created record will have a single field named "value".
-     *
+     * @param key the key to wrap
+     * @param keySchema the schema for the key
      * @param value the value to wrap
      * @param valueSchema the schema for the value
+     * @param timestamp the timestamp of the record
      * @return a new GenericRecord wrapping the value
      */
-    static GenericRecord buildValueRecord(Object value, Schema valueSchema) {
-        Schema schema = SchemaBuilder.record(RECORD_NAME)
+    static GenericRecord buildConversionRecord(Object key, Schema keySchema, Object value, Schema valueSchema, long timestamp) {
+        keySchema = keySchema == null ? BYTES : keySchema;
+        valueSchema = valueSchema == null ? BYTES : valueSchema;
+        Schema schema = SchemaBuilder.record(CONVERSION_RECORD_NAME)
             .fields()
-            .name(VALUE_FIELD_NAME).type(valueSchema).noDefault()
+            .name(KEY_FIELD_NAME).type(Schema.createUnion(Schema.create(Schema.Type.NULL), keySchema)).withDefault(null)
+            .name(VALUE_FIELD_NAME).type(Schema.createUnion(Schema.create(Schema.Type.NULL), valueSchema)).withDefault(null)
+            .name(TIMESTAMP_FIELD_NAME).type(Schema.create(Schema.Type.LONG)).withDefault(-1L)
             .endRecord();
         GenericRecordBuilder builder = new GenericRecordBuilder(schema);
+        builder.set(KEY_FIELD_NAME, key);
         builder.set(VALUE_FIELD_NAME, value);
+        builder.set(TIMESTAMP_FIELD_NAME, timestamp);
         return builder.build();
     }
 }
