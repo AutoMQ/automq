@@ -19,18 +19,25 @@
 
 package kafka.automq.table.worker;
 
+import kafka.automq.table.binder.RecordBinder;
 import kafka.automq.table.events.PartitionMetric;
 import kafka.automq.table.events.TopicMetric;
-import kafka.automq.table.process.exception.InvalidDataException;
-import kafka.automq.table.transformer.Converter;
+import kafka.automq.table.process.DataError;
+import kafka.automq.table.process.ProcessingResult;
+import kafka.automq.table.process.RecordProcessor;
+import kafka.automq.table.process.exception.RecordProcessorException;
+
+import org.apache.kafka.server.record.ErrorsTolerance;
 
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 
+import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
+import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.GenericAppenderFactory;
@@ -67,7 +74,7 @@ public class IcebergWriter implements Writer {
     private static final int WRITER_RESULT_SIZE_LIMIT = 5;
     final List<WriteResult> results = new ArrayList<>();
     private final TableIdentifier tableId;
-    private final Converter converter;
+    private final RecordProcessor processor;
     private final IcebergTableManager icebergTableManager;
     private final Map<Integer, OffsetRange> offsetRangeMap = new HashMap<>();
     private TaskWriter<Record> writer;
@@ -78,11 +85,13 @@ public class IcebergWriter implements Writer {
     private Status status = Status.WRITABLE;
     private final WorkerConfig config;
     private final boolean deltaWrite;
+    private RecordBinder binder;
+    private String lastSchemaIdentity;
 
-    public IcebergWriter(IcebergTableManager icebergTableManager, Converter converter, WorkerConfig config) {
+    public IcebergWriter(IcebergTableManager icebergTableManager, RecordProcessor processor, WorkerConfig config) {
         this.tableId = icebergTableManager.tableId();
         this.icebergTableManager = icebergTableManager;
-        this.converter = converter;
+        this.processor = processor;
         this.config = config;
         this.deltaWrite = StringUtils.isNoneBlank(config.cdcField()) || config.upsertEnable();
     }
@@ -93,22 +102,21 @@ public class IcebergWriter implements Writer {
             throw new IOException(String.format("The writer %s isn't in WRITABLE status, current status is %s", this, status));
         }
         try {
-            write0(partition, kafkaRecord);
-            recordCount++;
-            dirtyBytes += kafkaRecord.sizeInBytes();
-            offsetRangeMap.compute(partition, (k, v) -> {
-                if (v == null) {
-                    throw new IllegalArgumentException(String.format("The partition %s initial offset is not set", partition));
-                }
-                long recordOffset = kafkaRecord.offset();
-                if (recordOffset < v.end) {
-                    throw new IllegalArgumentException(String.format("The record offset[%s] is less than the end[%s]", recordOffset, v.end));
-                }
-                v.end = recordOffset + 1;
-                return v;
-            });
-        } catch (InvalidDataException e) {
-            INVALID_DATA_LOGGER.warn("[INVALID_DATA],{}", this, e);
+            if (write0(partition, kafkaRecord)) {
+                recordCount++;
+                dirtyBytes += kafkaRecord.sizeInBytes();
+                offsetRangeMap.compute(partition, (k, v) -> {
+                    if (v == null) {
+                        throw new IllegalArgumentException(String.format("The partition %s initial offset is not set", partition));
+                    }
+                    long recordOffset = kafkaRecord.offset();
+                    if (recordOffset < v.end) {
+                        throw new IllegalArgumentException(String.format("The record offset[%s] is less than the end[%s]", recordOffset, v.end));
+                    }
+                    v.end = recordOffset + 1;
+                    return v;
+                });
+            }
         } catch (Throwable e) {
             LOGGER.error("[WRITE_FAIL],{}", this, e);
             status = Status.ERROR;
@@ -121,26 +129,52 @@ public class IcebergWriter implements Writer {
         return tableId.toString();
     }
 
-    protected void write0(int partition,
-        org.apache.kafka.common.record.Record kafkaRecord) throws IOException, InvalidDataException {
-        long beforeFieldCount = converter.fieldCount();
-        Record record = converter.convert(kafkaRecord);
+    protected boolean write0(int partition,
+        org.apache.kafka.common.record.Record kafkaRecord) throws IOException, RecordProcessorException {
+        ProcessingResult result = processor.process(partition, kafkaRecord);
 
-        if (!converter.currentSchema().isTableSchemaUsed()) {
-            //  compare table schema and evolution
-            boolean schemaChanges = icebergTableManager.handleSchemaChangesWithFlush(
-                record,
-                this::flush
-            );
-            Table table = icebergTableManager.getTableOrCreate(record.struct().asSchema());
-            converter.tableSchema(table.schema());
-            if (schemaChanges) {
-                beforeFieldCount = converter.fieldCount();
-                record = converter.convert(kafkaRecord);
+        if (!result.isSuccess()) {
+            DataError error = result.getError();
+            String recordContext = buildRecordContext(partition, kafkaRecord);
+            String errorMsg = String.format("Data processing failed for record: %s", recordContext);
+            LOGGER.warn("{} - Error: {}", errorMsg, error.getDetailedMessage());
+
+            if (config.errorsTolerance() == ErrorsTolerance.ALL
+                || (DataError.ErrorType.DATA_ERROR.equals(error.getType())
+                    && config.errorsTolerance().equals(ErrorsTolerance.INVALID_DATA))) {
+                INVALID_DATA_LOGGER.warn("[INVALID_DATA],{}", this, error.getCause());
+                return false;
+            } else {
+                throw new RecordProcessorException(errorMsg + " - " + error.getDetailedMessage(), error.getCause());
             }
         }
-        long recordFieldCount = converter.fieldCount() - beforeFieldCount;
-        recordMetric(partition, recordFieldCount, kafkaRecord.timestamp());
+
+        GenericRecord finalRecord = result.getFinalRecord();
+
+        RecordBinder currentBinder = this.binder;
+        // first write
+        if (currentBinder == null) {
+            currentBinder = new RecordBinder(finalRecord);
+        }
+
+        // schema change
+        if (!result.getFinalSchemaIdentity().equals(lastSchemaIdentity)) {
+            Schema icebergSchema = new RecordBinder(finalRecord).getIcebergSchema();
+            //  compare table schema and evolution
+            icebergTableManager.handleSchemaChangesWithFlush(
+                icebergSchema,
+                this::flush
+            );
+
+            // update Binder
+            Table table = icebergTableManager.getTableOrCreate(icebergSchema);
+            currentBinder = currentBinder.createBinderForNewSchema(table.schema(), finalRecord.getSchema());
+            lastSchemaIdentity = result.getFinalSchemaIdentity();
+        }
+        Record record = currentBinder.bind(finalRecord);
+        this.binder = currentBinder;
+
+        recordMetric(partition, kafkaRecord.timestamp());
 
         TaskWriter<Record> writer = getWriter(record.struct());
         if (deltaWrite) {
@@ -148,6 +182,7 @@ public class IcebergWriter implements Writer {
         } else {
             writer.write(record);
         }
+        return true;
     }
 
     @Override
@@ -259,7 +294,7 @@ public class IcebergWriter implements Writer {
     }
 
     public void updateWatermark(int partition, long watermark) {
-        recordMetric(partition, 0, watermark);
+        recordMetric(partition, watermark);
     }
 
     @Override
@@ -387,7 +422,14 @@ public class IcebergWriter implements Writer {
             if (recordCount == 0) {
                 return false;
             }
+            // Complete writer first, then collect statistics only if successful
             results.add(this.writer.complete());
+
+            // Collect field count statistics from the binder after successful completion
+            if (binder != null) {
+                fieldCount += binder.getAndResetFieldCount();
+            }
+
             this.writer = null;
             recordCount = 0;
             dirtyBytes = 0;
@@ -398,12 +440,22 @@ public class IcebergWriter implements Writer {
         }
     }
 
-    private void recordMetric(int partition, long fieldCount, long timestamp) {
+    private void recordMetric(int partition, long timestamp) {
         Metric metric = metrics.get(partition);
-        this.fieldCount += fieldCount;
         if (metric.watermark < timestamp) {
             metric.watermark = timestamp;
         }
+    }
+
+    /**
+     * Builds a descriptive context string for a Kafka record to include in error messages.
+     */
+    private String buildRecordContext(int partition, org.apache.kafka.common.record.Record kafkaRecord) {
+        return String.format("topic=%s, partition=%d, offset=%d, timestamp=%d",
+                           tableId.name(),
+                           partition,
+                           kafkaRecord.offset(),
+                           kafkaRecord.timestamp());
     }
 
     static class Metric {

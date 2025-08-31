@@ -17,27 +17,30 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package org.apache.kafka.server.record;
 
-public enum SchemaFormat {
-    AVRO,
-    JSON,
-    PROTOBUF;
+import java.util.Locale;
 
-    public static SchemaFormat fromString(String format) {
-        switch (format) {
-            case "AVRO": {
-                return AVRO;
-            }
-            case "JSON": {
-                return JSON;
-            }
-            case "PROTOBUF": {
-                return PROTOBUF;
-            }
-            default: {
-                throw new IllegalArgumentException("Unsupported schema format: " + format);
-            }
+public enum ErrorsTolerance {
+    NONE,
+    INVALID_DATA,
+    ALL;
+
+    public final String name;
+
+    ErrorsTolerance() {
+        this.name = this.name().toLowerCase(Locale.ROOT);
+    }
+
+    public static ErrorsTolerance forName(String name) {
+        if (name == null) {
+            return INVALID_DATA;
+        }
+        String upperCaseName = name.toUpperCase(Locale.ROOT);
+        try {
+            return valueOf(upperCaseName);
+        } catch (IllegalArgumentException e) {
+            return INVALID_DATA;
         }
     }
 }

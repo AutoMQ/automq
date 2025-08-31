@@ -19,7 +19,7 @@
 
 package kafka.automq.table.worker.convert;
 
-import kafka.automq.table.transformer.FieldMetric;
+import kafka.automq.table.metric.FieldMetric;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 

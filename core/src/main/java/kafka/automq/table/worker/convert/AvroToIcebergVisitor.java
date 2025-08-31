@@ -50,19 +50,28 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
     @Override
     protected Map<String, FieldValue<org.apache.avro.Schema>> getFieldValues(GenericRecord genericRecord) {
         Map<String, FieldValue<org.apache.avro.Schema>> fieldValues = new HashMap<>();
-        genericRecord.getSchema().getFields().forEach(field -> {
-            Object value = genericRecord.get(field.name());
-            FieldValue<org.apache.avro.Schema> fieldValue = new FieldValue<>(field.schema(), value);
-            fieldValues.put(field.name(), fieldValue);
-        });
+        org.apache.avro.Schema recordSchema = unwrapSchema(genericRecord.getSchema());
+        if (recordSchema != null) {
+            recordSchema.getFields().forEach(field -> {
+                Object value = genericRecord.get(field.name());
+                FieldValue<org.apache.avro.Schema> fieldValue = new FieldValue<>(field.schema(), value);
+                fieldValues.put(field.name(), fieldValue);
+            });
+        }
         return fieldValues;
     }
 
     @Override
     protected FieldValue<org.apache.avro.Schema> getFieldValue(GenericRecord genericRecord, String fieldName) {
-        org.apache.avro.Schema fieldSchema = genericRecord.getSchema().getField(fieldName).schema();
-        Object value = genericRecord.get(fieldName);
-        return new FieldValue<>(fieldSchema, value);
+        org.apache.avro.Schema recordSchema = unwrapSchema(genericRecord.getSchema());
+        if (recordSchema != null) {
+            org.apache.avro.Schema.Field field = recordSchema.getField(fieldName);
+            if (field != null) {
+                Object value = genericRecord.get(fieldName);
+                return new FieldValue<>(field.schema(), value);
+            }
+        }
+        return new FieldValue<>(null, null);
     }
 
     @Override
@@ -181,11 +190,17 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
         org.apache.avro.Schema type = fieldValue.type();
         if (value instanceof GenericData.Array<?>) {
             GenericData.Array<?> arrayValue = (GenericData.Array<?>) value;
-            org.apache.avro.Schema elementSchema = type.getElementType();
+            org.apache.avro.Schema elementSchema = unwrapSchema(type.getElementType());
+            if (elementSchema == null) {
+                throw new IllegalArgumentException("Expected Record for map element type, but not found in union: " + type.getElementType());
+            }
             List<org.apache.avro.Schema.Field> fields = elementSchema.getFields();
             int mapSize = arrayValue.size();
             Map<Object, Object> result = new HashMap<>(mapSize);
             for (Object element : arrayValue) {
+                if (element == null) {
+                    continue;
+                }
                 GenericRecord record = (GenericRecord) element;
                 Object key = convertValue(new FieldValue<>(fields.get(0).schema(), record.get(0)), mapType.keyType());
                 Object val = convertValue(new FieldValue<>(fields.get(1).schema(), record.get(1)), mapType.valueType());
@@ -205,5 +220,18 @@ public class AvroToIcebergVisitor extends AbstractIcebergRecordVisitor<org.apach
         } else {
             throw new IllegalArgumentException("Expected Map for map type, but received: " + value.getClass());
         }
+    }
+
+    private org.apache.avro.Schema unwrapSchema(org.apache.avro.Schema schema) {
+        if (schema == null) {
+            return null;
+        }
+        if (schema.getType() == org.apache.avro.Schema.Type.UNION) {
+            return schema.getTypes().stream()
+                .filter(s -> s.getType() == org.apache.avro.Schema.Type.RECORD)
+                .findFirst()
+                .orElse(null);
+        }
+        return schema.getType() == org.apache.avro.Schema.Type.RECORD ? schema : null;
     }
 }

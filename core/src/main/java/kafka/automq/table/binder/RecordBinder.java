@@ -19,7 +19,7 @@
 package kafka.automq.table.binder;
 
 
-import kafka.automq.table.transformer.FieldMetric;
+import kafka.automq.table.metric.FieldMetric;
 
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
@@ -81,6 +81,10 @@ public class RecordBinder {
 
         // Pre-compute nested struct binders
         this.nestedStructBinders = precomputeNestedStructBinders(typeAdapter);
+    }
+
+    public RecordBinder createBinderForNewSchema(org.apache.iceberg.Schema icebergSchema, Schema avroSchema) {
+        return new RecordBinder(icebergSchema, avroSchema, typeAdapter, batchFieldCount);
     }
 
 

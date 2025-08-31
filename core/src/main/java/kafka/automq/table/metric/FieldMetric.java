@@ -17,18 +17,31 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package kafka.automq.table.metric;
 
-import java.util.Map;
+import java.nio.ByteBuffer;
 
-public interface KafkaRecordConvert<T> {
+public class FieldMetric {
 
-    T convert(String topic, org.apache.kafka.common.record.Record record, int schemaId);
+    public static int count(String value) {
+        if (value == null) {
+            return 0;
+        }
+        return Math.max((value.length() + 23) / 24, 1);
+    }
 
-    /**
-     * Configure this class.
-     * @param configs configs in key/value pairs
-     * @param isKey whether this converter is for a key or a value
-     */
-    void configure(Map<String, ?> configs, boolean isKey);
+    public static int count(ByteBuffer value) {
+        if (value == null) {
+            return 0;
+        }
+        return Math.max((value.remaining() + 31) / 32, 1);
+    }
+
+    public static int count(byte[] value) {
+        if (value == null) {
+            return 0;
+        }
+        return Math.max((value.length + 31) / 32, 1);
+    }
+
 }

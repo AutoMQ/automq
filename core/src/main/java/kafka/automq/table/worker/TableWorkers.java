@@ -22,7 +22,7 @@ package kafka.automq.table.worker;
 import kafka.automq.table.Channel;
 import kafka.automq.table.events.CommitRequest;
 import kafka.automq.table.events.Envelope;
-import kafka.automq.table.transformer.ConverterFactory;
+import kafka.automq.table.process.RecordProcessorFactory;
 import kafka.automq.table.utils.TableIdentifierUtil;
 import kafka.cluster.Partition;
 import kafka.server.KafkaConfig;
@@ -53,7 +53,7 @@ public class TableWorkers {
     private final ExecutorService executor = Threads.newFixedThreadPool(1, ThreadUtils.createThreadFactory("table-worker-poll", true), LOGGER);
     private final ExecutorService flushExecutor = Threads.newFixedThreadPool(Systems.CPU_CORES, ThreadUtils.createThreadFactory("table-workers-flush", true), LOGGER);
     private final KafkaConfig config;
-    private final ConverterFactory converterFactory;
+    private final RecordProcessorFactory recordProcessorFactory;
     private final Semaphore commitLimiter = new Semaphore(Systems.CPU_CORES);
     private volatile boolean closed = false;
 
@@ -71,7 +71,7 @@ public class TableWorkers {
         this.eventLoops = new EventLoops(eventLoops);
         executor.submit(new ControlListener());
         this.config = config;
-        this.converterFactory = new ConverterFactory(config.tableTopicSchemaRegistryUrl());
+        this.recordProcessorFactory = new RecordProcessorFactory(config.tableTopicSchemaRegistryUrl());
     }
 
     public void add(Partition partition) {
@@ -101,7 +101,7 @@ public class TableWorkers {
                     if (worker == null) {
                         WorkerConfig config = new WorkerConfig(partition);
                         IcebergWriterFactory writerFactory = new IcebergWriterFactory(catalog,
-                            TableIdentifierUtil.of(config.namespace(), partition.topic()), converterFactory, config, partition.topic());
+                            TableIdentifierUtil.of(config.namespace(), partition.topic()), recordProcessorFactory, config, partition.topic());
                         worker = new TopicPartitionsWorker(partition.topic(), config,
                             writerFactory, channel, eventLoop, eventLoops, flushExecutor, commitLimiter);
                     }

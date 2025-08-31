@@ -19,8 +19,9 @@
 
 package kafka.automq.table.worker;
 
-import kafka.automq.table.process.exception.InvalidDataException;
-import kafka.automq.table.transformer.SchemalessConverter;
+import kafka.automq.table.process.DefaultRecordProcessor;
+import kafka.automq.table.process.convert.RawConverter;
+import kafka.automq.table.process.exception.RecordProcessorException;
 
 import org.apache.kafka.common.record.Record;
 
@@ -41,13 +42,14 @@ public class MemoryWriter extends IcebergWriter {
     List<Record> records = new LinkedList<>();
 
     public MemoryWriter(WorkerConfig config) {
-        super(new IcebergTableManager(catalog(), TableIdentifier.parse("default.test"), config), new SchemalessConverter(), config);
+        super(new IcebergTableManager(catalog(), TableIdentifier.parse("default.test"), config), new DefaultRecordProcessor("test", new RawConverter()), config);
     }
 
     @Override
-    protected void write0(int partition, Record kafkaRecord) throws IOException, InvalidDataException {
+    protected boolean write0(int partition, Record kafkaRecord) throws IOException, RecordProcessorException {
         super.write0(partition, kafkaRecord);
         records.add(kafkaRecord);
+        return true;
     }
 
     private static Catalog catalog() {
