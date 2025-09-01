@@ -1,8 +1,8 @@
-name: Nightly Main E2E tests
+name: Nightly E2E tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 16 1,7,14,21,28 * *'
 
 jobs:
   main_e2e_1:
@@ -45,11 +45,51 @@ jobs:
       suite-id: "main5"
       test-path: "tests/kafkatest/automq"
       runner: "e2e"
+  benchmarks_e2e:
+    name: "Run benchmarks E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "benchmarks"
+      test-path: "tests/kafkatest/benchmarks"
+      runner: "e2e"
+  connect_e2e_1:
+    name: "Run connect E2E Tests 1"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect1"
+      test-yaml: "tests/suites/connect_test_suite1.yml"
+      runner: "e2e"
+  connect_e2e_2:
+    name: "Run connect E2E Tests 2"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect2"
+      test-yaml: "tests/suites/connect_test_suite2.yml"
+      runner: "e2e"
+  connect_e2e_3:
+    name: "Run connect E2E Tests 3"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "connect3"
+      test-yaml: "tests/suites/connect_test_suite3.yml"
+      runner: "e2e"
+  streams_e2e:
+    name: "Run streams E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "streams"
+      test-path: "tests/kafkatest/tests/streams"
+      runner: "e2e"
   e2e_summary:
     runs-on: "e2e"
     name: "E2E Tests Summary"
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
-    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5 ]
+    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
@@ -57,5 +97,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}}"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"
