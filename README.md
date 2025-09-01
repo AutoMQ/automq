@@ -24,7 +24,7 @@
 
 <div align="center">
     
-<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/19d9d686-c681-494e-bc27-937371e15760" />
+<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/f8f579d7-7874-4025-9ba0-d9b3cb87dc13" />
 
 
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
