@@ -1,11 +1,16 @@
 name: Docker Strimzi Release
 
 on:
-   workflow_dispatch:
-   workflow_run:
-     workflows: ["GitHub Release"]
-     types:
-       - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'AutoMQ Version Tag'
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["GitHub Release"]
+    types:
+      - completed
 
 env:
   KAFKA_VERSION: "3.9.0"
@@ -29,16 +34,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get release information
+      - name: Get release tag
         run: |
-          TAG="${{ github.event.workflow_run.head_branch }}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          # use the latest tag if not specified
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG=$(git ls-remote --tags https://github.com/AutoMQ/automq.git | grep -v '\^{}' | tail -1 | sed 's/.*refs\/tags\///')
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          fi
+
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
-          KAFKA_URL="https://archive\.apache\.org/dist/kafka/${KAFKA_VERSION}/kafka_2\.13-${KAFKA_VERSION}\.tgz"
 
           {
             echo "AUTOMQ_VERSION=${TAG}"
             echo "AUTOMQ_URL=${AUTOMQ_URL}"
-            echo "KAFKA_URL=${KAFKA_URL}"
           } >> $GITHUB_ENV
 
       - name: Set up JDK ${{ matrix.jdk }}
@@ -46,88 +57,6 @@ jobs:
         with:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
-
-      - name: Clone Strimzi Repository
-        run: |
-          git clone --depth 1 --branch "${{ env.STRIMZI_BRANCH }}" "${{ env.STRIMZI_REPO }}" strimzi
-
-      - name: Update Strimzi Configuration
-        run: |
-          cd strimzi
-
-          AUTOMQ_CHECKSUM=$(curl -L "$AUTOMQ_URL" | sha512sum | cut -d' ' -f1)
-          ORIGINAL_CHECKSUM=$(grep -A 4 "version: ${KAFKA_VERSION}" kafka-versions.yaml | grep "checksum:" | awk '{print $2}')
-
-          # replace kafka url to automq
-          sed -i "s|${KAFKA_URL}|${AUTOMQ_URL}|" kafka-versions.yaml
-          # replace checksum
-          sed -i "s|${ORIGINAL_CHECKSUM}|${AUTOMQ_CHECKSUM}|" kafka-versions.yaml
-          # set 3.9.0 as default
-          sed -i '/- version: 3\.9\.0/,/^- version:/ { /default: false/c\  default: true
-          }' kafka-versions.yaml
-          sed -i '/- version: 4\.0\.0/,$ { s/default: true/default: false/; }' kafka-versions.yaml
-
-          # exclude other versions to speed up building
-          sed -i '/- version: 3\.9\.1/,/^- version:/ { s/supported: true/supported: false/; }' kafka-versions.yaml
-          sed -i '/- version: 4\.0\.0/,$ { s/supported: true/supported: false/; }' kafka-versions.yaml
-
-      - name: Prepare Strimzi Image Environment
-        run: |
-          cd strimzi
-          mvn clean install -DskipTests
-          make -C docker-images/artifacts java_build
-
-          cd ./docker-images/artifacts/binaries/kafka/archives/
-          mv automq-${AUTOMQ_VERSION}_kafka-${KAFKA_VERSION}.tgz kafka_2.13-${KAFKA_VERSION}.tgz
-          mv automq-${AUTOMQ_VERSION}_kafka-${KAFKA_VERSION}.tgz.sha512 kafka_2.13-${KAFKA_VERSION}.tgz.sha512
-          cd ..
-
-          IGNORE_LIST="gson-2.9.0.jar
-          gson-2.10.1.jar
-          guava-32.0.1-jre.jar
-          guava-32.1.3-jre.jar
-          jackson-annotations-2.16.2.jar
-          jackson-annotations-2.17.1.jar
-          jackson-core-2.16.2.jar
-          jackson-core-2.17.1.jar
-          jackson-databind-2.16.2.jar
-          jackson-databind-2.17.1.jar
-          jackson-dataformat-yaml-2.16.2.jar
-          jackson-dataformat-yaml-2.17.1.jar
-          opentelemetry-api-1.32.0.jar
-          opentelemetry-api-1.40.0.jar
-          opentelemetry-exporter-common-1.34.1.jar
-          opentelemetry-exporter-common-1.40.0.jar
-          opentelemetry-exporter-otlp-common-1.34.1.jar
-          opentelemetry-exporter-otlp-common-1.40.0.jar
-          opentelemetry-exporter-otlp-1.34.1.jar
-          opentelemetry-exporter-otlp-1.40.0.jar
-          opentelemetry-instrumentation-api-1.32.0.jar
-          opentelemetry-instrumentation-api-2.6.0.jar
-          opentelemetry-sdk-common-1.34.1.jar
-          opentelemetry-sdk-common-1.40.0.jar
-          opentelemetry-sdk-extension-autoconfigure-spi-1.34.1.jar
-          opentelemetry-sdk-extension-autoconfigure-spi-1.40.0.jar
-          opentelemetry-sdk-logs-1.34.1.jar
-          opentelemetry-sdk-logs-1.40.0.jar
-          opentelemetry-sdk-metrics-1.34.1.jar
-          opentelemetry-sdk-metrics-1.40.0.jar
-          opentelemetry-sdk-trace-1.34.1.jar
-          opentelemetry-sdk-trace-1.40.0.jar
-          opentelemetry-semconv-1.21.0-alpha.jar
-          opentelemetry-semconv-1.25.0-alpha.jar
-          prometheus-metrics-config-1.3.1.jar
-          prometheus-metrics-config-1.3.6.jar
-          prometheus-metrics-exposition-formats-1.3.1.jar
-          prometheus-metrics-exposition-textformats-1.3.6.jar
-          prometheus-metrics-exporter-common-1.3.1.jar
-          prometheus-metrics-exporter-common-1.3.6.jar
-          prometheus-metrics-exporter-httpserver-1.3.1.jar
-          prometheus-metrics-exporter-httpserver-1.3.6.jar
-          prometheus-metrics-model-1.3.1.jar
-          prometheus-metrics-model-1.3.6.jar"
-
-          printf "%s\n" "$IGNORE_LIST" >> ${KAFKA_VERSION}.ignorelist
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -141,18 +70,15 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_READ_WRITE_TOKEN }}
 
-      - name: Push AutoMQ Strimzi Image
-        env:
-          DOCKER_ORG: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKER_TAG: "${{ env.AUTOMQ_VERSION }}-strimzi"
-          PROJECT_NAME: "automq"
+      - name: Build AutoMQ Strimzi Image
         run: |
-          cd $GITHUB_WORKSPACE/strimzi
+          git clone --depth 1 --branch "${{ env.STRIMZI_BRANCH }}" "${{ env.STRIMZI_REPO }}" strimzi
+          cd strimzi
 
-          for ARCH in arm64 amd64; do
-            DOCKER_ARCHITECTURE=$ARCH make -C docker-images/base docker_build
-            DOCKER_ARCHITECTURE=$ARCH make -C docker-images/kafka-based docker_build docker_tag docker_push
-            DOCKER_ARCHITECTURE=$ARCH make -C docker-images/kafka-based docker_amend_manifest
-          done
-
-          make -C docker-images/kafka-based docker_push_manifest
+          chmod +x ./tools/automq/build-automq-image.sh
+          ./tools/automq/build-automq-image.sh \
+            "${{ env.AUTOMQ_VERSION }}" \
+            "${{ env.AUTOMQ_URL }}" \
+            "${{ env.KAFKA_VERSION }}" \
+            "${{ secrets.DOCKERHUB_USERNAME }}" \
+            "automq"
