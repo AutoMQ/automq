@@ -24,18 +24,23 @@ import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
 import kafka.automq.table.process.exception.TransformException;
 
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.Record;
 
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.jetbrains.annotations.NotNull;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
 
 /**
  * Default implementation of RecordProcessor using a two-stage processing pipeline.
@@ -45,39 +50,45 @@ import java.util.Objects;
  * @see Transform
  */
 public class DefaultRecordProcessor implements RecordProcessor {
+    private final String topicName;
+    private final Converter keyConverter;
+    private final Converter valueConverter;
+    private final List<Transform> transformChain;
 
-    private static final Logger log = LoggerFactory.getLogger(DefaultRecordProcessor.class);
-
-    // Core components
-    private String topicName;
-    private Converter converter;
-    private List<Transform> transformChain;
-
-    public DefaultRecordProcessor(String topicName, Converter converter) {
+    public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter) {
         this.transformChain = new ArrayList<>();
         this.topicName = topicName;
-        this.converter = converter;
+        this.keyConverter = keyConverter;
+        this.valueConverter = valueConverter;
     }
 
-    public DefaultRecordProcessor(String topicName, Converter converter, List<Transform> transforms) {
+    public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter, List<Transform> transforms) {
         this.transformChain = transforms;
         this.topicName = topicName;
-        this.converter = converter;
+        this.keyConverter = keyConverter;
+        this.valueConverter = valueConverter;
     }
 
     @Override
     public ProcessingResult process(int partition, Record kafkaRecord) {
         try {
             Objects.requireNonNull(kafkaRecord, "Kafka record cannot be null");
-            if (converter == null) {
-                throw new RecordProcessorException("Converter not configured, this is a fatal error");
-            }
 
-            ConversionResult conversionResult = converter.convert(topicName, kafkaRecord);
+            ConversionResult headerResult = processHeaders(kafkaRecord);
+            ConversionResult keyResult = keyConverter.convert(topicName, kafkaRecord.key());
+            ConversionResult valueResult = valueConverter.convert(topicName, kafkaRecord.value());
 
-            GenericRecord transformedRecord = applyTransformChain(conversionResult, partition);
+            GenericRecord baseRecord = wrapValue(valueResult);
+            GenericRecord transformedRecord = applyTransformChain(baseRecord, partition, kafkaRecord);
+            GenericRecord finalRecord = new RecordAssembler(transformedRecord)
+                .withHeader(headerResult)
+                .withKey(keyResult)
+                .withMetadata(partition, kafkaRecord.offset(), kafkaRecord.timestamp())
+                .assemble();
+            Schema finalSchema = finalRecord.getSchema();
+            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult, transformChain);
 
-            return createFinalAvroRecord(conversionResult, transformedRecord);
+            return new ProcessingResult(finalRecord, finalSchema, schemaIdentity);
         } catch (ConverterException e) {
             return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
@@ -97,31 +108,76 @@ public class DefaultRecordProcessor implements RecordProcessor {
         return new ProcessingResult(error);
     }
 
-    private GenericRecord applyTransformChain(ConversionResult conversionResult, int partition) throws TransformException {
-        GenericRecord currentRecord = conversionResult.getValueRecord();
-        TransformContext context = new TransformContext(conversionResult.getKafkaRecord(), topicName, partition);
+    private ConversionResult processHeaders(Record kafkaRecord) throws ConverterException {
+        try {
+            Schema headerSchema = Schema.createMap(Schema.create(Schema.Type.BYTES));
+            Map<String, ByteBuffer> headers = new HashMap<>();
+            Header[] recordHeaders = kafkaRecord.headers();
+            if (recordHeaders != null) {
+                for (Header header : recordHeaders) {
+                    ByteBuffer value = header.value() != null ?
+                        ByteBuffer.wrap(header.value()) : null;
+                    headers.put(header.key(), value);
+                }
+            }
+            String schemaIdentity = String.valueOf(headerSchema.toString().hashCode());
+            return new ConversionResult(headers, headerSchema, schemaIdentity);
+        } catch (Exception e) {
+            throw new ConverterException("Failed to process headers", e);
+        }
+    }
+
+    private GenericRecord wrapValue(ConversionResult valueResult) {
+        Schema.Field valueField = new Schema.Field(KAFKA_VALUE_FIELD, valueResult.getSchema(), null, null);
+        Object valueContent = valueResult.getValue();
+
+        Schema recordSchema = Schema.createRecord("KafkaValueWrapper", null, "kafka.automq.table.process", false);
+        recordSchema.setFields(Collections.singletonList(valueField));
+
+        GenericRecord baseRecord = new GenericData.Record(recordSchema);
+        baseRecord.put(KAFKA_VALUE_FIELD, valueContent);
+
+        return baseRecord;
+    }
+
+    private GenericRecord applyTransformChain(GenericRecord baseRecord, int partition, Record kafkaRecord) throws TransformException {
+        if (transformChain.isEmpty()) {
+            return baseRecord;
+        }
+
+        GenericRecord currentRecord = baseRecord;
+        TransformContext context = new TransformContext(kafkaRecord, topicName, partition);
 
         for (Transform transform : transformChain) {
             currentRecord = transform.apply(currentRecord, context);
-
             if (currentRecord == null) {
                 throw new TransformException("Transform " + transform.getName() + " returned null record");
             }
         }
-
         return currentRecord;
     }
 
 
-    private ProcessingResult createFinalAvroRecord(ConversionResult conversionResult, GenericRecord transformedRecord) {
-        // Use the schema identity from the conversion result if available,
-        // otherwise generate one from the final schema
-        String schemaIdentity = conversionResult.getSchemaIdentity();
-        if (schemaIdentity == null) {
-            // Fallback: generate schema identity at Process layer if Converter didn't provide one
-            schemaIdentity = generateSchemaIdentity(transformedRecord.getSchema());
-        }
-        return new ProcessingResult(transformedRecord, transformedRecord.getSchema(), schemaIdentity);
+    private String generateCompositeSchemaIdentity(
+        ConversionResult headerResult,
+        ConversionResult keyResult,
+        ConversionResult valueResult,
+        List<Transform> transforms) {
+
+        // Extract schema identities with null safety
+        String headerIdentity = headerResult.getSchemaIdentity();
+        String keyIdentity = keyResult.getSchemaIdentity();
+        String valueIdentity = valueResult.getSchemaIdentity();
+
+        // Generate transform chain identity
+        String transformIdentity = transforms.isEmpty() ?
+            "noTransform" :
+            transforms.stream()
+                .map(Transform::getName)
+                .collect(java.util.stream.Collectors.joining("->"));
+
+        // Join all parts with the identity separator
+        return String.join("|", headerIdentity, keyIdentity, valueIdentity, transformIdentity);
     }
 
     @Override
@@ -129,13 +185,6 @@ public class DefaultRecordProcessor implements RecordProcessor {
         // ignore
     }
 
-    private String generateSchemaIdentity(org.apache.avro.Schema schema) {
-        return String.valueOf(schema.toString().hashCode());
-    }
-
-    /**
-     * Builds a descriptive context string for a Kafka record to include in error messages.
-     */
     private String buildRecordContext(org.apache.kafka.common.record.Record kafkaRecord) {
         return String.format("topic=%s, key=%s, offset=%d, timestamp=%d",
                            topicName,
@@ -146,10 +195,6 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
     public String getTopicName() {
         return topicName;
-    }
-
-    public List<Transform> getTransformChain() {
-        return Collections.unmodifiableList(transformChain);
     }
 
 }

@@ -89,10 +89,6 @@ public final class ServerTopicConfigSynonyms {
         sameName(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG),
         sameName(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG),
         sameName(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG),
-        sameName(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG),
-        sameName(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_CONFIG),
-        sameName(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_CONFIG),
-        sameName(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG),
 
         sameName(TopicConfig.KAFKA_LINKS_ID_CONFIG),
         sameName(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG),

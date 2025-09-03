@@ -26,9 +26,9 @@ import java.util.stream.Collectors;
 import static java.util.Arrays.asList;
 
 public enum TableTopicTransformType {
-    VALUE_UNWRAP("value_unwarp"),
-    DEBEZIUM_UNWRAP("debezium_unwarp"),
-    KAFKA_METADATA("kafka_metadata");
+    NONE("none"),
+    FLATTEN("flatten"),
+    FLATTEN_DEBEZIUM("flatten_debezium");
 
     public final String name;
     private static final List<TableTopicTransformType> VALUES = asList(values());

@@ -24,9 +24,9 @@ import kafka.server.{ControllerConfigurationValidator, KafkaConfig}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.TOPIC
-import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG, TABLE_TOPIC_SCHEMA_TYPE_CONFIG}
+import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG}
 import org.apache.kafka.common.errors.InvalidConfigurationException
-import org.apache.kafka.server.record.{TableTopicConvertType, TableTopicSchemaType, TableTopicTransformType}
+import org.apache.kafka.server.record.{TableTopicConvertType, TableTopicTransformType}
 import org.junit.jupiter.api.Assertions.{assertDoesNotThrow, assertEquals, assertThrows}
 import org.junit.jupiter.api.{BeforeEach, Tag, Test, Timeout}
 
@@ -52,63 +52,64 @@ class ControllerConfigurationValidatorTableTest {
     }
 
     @Test
-    def testMixedOldAndNewConfigs(): Unit = {
-        val config = new util.TreeMap[String, String]()
-        config.put(TABLE_TOPIC_SCHEMA_TYPE_CONFIG, TableTopicSchemaType.SCHEMA.name)
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.RAW.name)
-
-        val exception = assertThrows(classOf[InvalidConfigurationException], () => {
-            validator.validate(new ConfigResource(TOPIC, "foo"), config)
-        })
-        assertEquals("Cannot set both old '" + TABLE_TOPIC_SCHEMA_TYPE_CONFIG +
-            "' and new '" + AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG + "' or '" +
-            AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG + "' configurations.", exception.getMessage)
-    }
-
-    @Test
     def testConvertTypeWithSchemaRegistryUrlNotConfigured(): Unit = {
         val config = new util.TreeMap[String, String]()
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
+        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TableTopicTransformType.NONE.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.STRING.name)
 
         var exception = assertThrows(classOf[InvalidConfigurationException], () => {
             validator.validate(new ConfigResource(TOPIC, "foo"), config)
         })
         assertEquals("Table topic convert type is set to 'by_schema_id' but schema registry URL is not configured", exception.getMessage)
 
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.BY_SUBJECT_NAME.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.BY_LATEST_SCHEMA.name)
         exception = assertThrows(classOf[InvalidConfigurationException], () => {
             validator.validate(new ConfigResource(TOPIC, "foo"), config)
         })
-        assertEquals("Table topic convert type is set to 'by_subject_name' but schema registry URL is not configured", exception.getMessage)
+        assertEquals("Table topic convert type is set to 'by_latest_schema' but schema registry URL is not configured", exception.getMessage)
     }
 
     @Test
     def testConvertTypeWithSchemaRegistryUrlConfigured(): Unit = {
         val config = new util.TreeMap[String, String]()
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
+        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TableTopicTransformType.NONE.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.STRING.name)
+
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
         assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config) })
 
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.BY_SUBJECT_NAME.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.BY_LATEST_SCHEMA.name)
         assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config) })
     }
 
     @Test
     def testRawConvertTypeWithDebeziumUnwrapTransform(): Unit = {
         val config = new util.TreeMap[String, String]()
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.RAW.name)
-        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG, TableTopicTransformType.DEBEZIUM_UNWRAP.name().toLowerCase(Locale.ROOT))
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.RAW.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.STRING.name)
+        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TableTopicTransformType.FLATTEN_DEBEZIUM.name().toLowerCase(Locale.ROOT))
 
         val exception = assertThrows(classOf[InvalidConfigurationException], () => {
             validator.validate(new ConfigResource(TOPIC, "foo"), config)
         })
-        assertEquals("'raw' convert type cannot be used with 'debezium_unwrap' transform type", exception.getMessage)
+        assertEquals("raw convert type cannot be used with 'flatten_debezium' transform type", exception.getMessage)
     }
 
     @Test
     def testValidRawConvertType(): Unit = {
         val config = new util.TreeMap[String, String]()
-        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, TableTopicConvertType.RAW.name)
+        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TableTopicTransformType.NONE.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.RAW.name)
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.STRING.name)
 
         assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validator.validate(new ConfigResource(TOPIC, "foo"), config) })
+    }
+
+    @Test
+    def testEmptyTableTopicConfigShouldBeValid(): Unit = {
+      val config = new util.TreeMap[String, String]()
+
+      assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validator.validate(new ConfigResource(TOPIC, "foo"), config) })
     }
 }

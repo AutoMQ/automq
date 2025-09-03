@@ -44,6 +44,7 @@ import org.apache.kafka.server.config.ServerTopicConfigSynonyms;
 import org.apache.kafka.server.record.BrokerCompressionType;
 import org.apache.kafka.server.record.TableTopicConvertType;
 import org.apache.kafka.server.record.TableTopicSchemaType;
+import org.apache.kafka.server.record.TableTopicTransformType;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -72,10 +73,11 @@ import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
 import static org.apache.kafka.server.common.MetadataVersion.IBP_3_0_IV1;
+import static org.apache.kafka.server.record.TableTopicConvertType.BY_LATEST_SCHEMA;
 import static org.apache.kafka.server.record.TableTopicConvertType.BY_SCHEMA_ID;
-import static org.apache.kafka.server.record.TableTopicConvertType.BY_SUBJECT_NAME;
 import static org.apache.kafka.server.record.TableTopicConvertType.RAW;
-import static org.apache.kafka.server.record.TableTopicTransformType.DEBEZIUM_UNWRAP;
+import static org.apache.kafka.server.record.TableTopicTransformType.FLATTEN_DEBEZIUM;
+import static org.apache.kafka.server.record.TableTopicTransformType.NONE;
 
 public class LogConfig extends AbstractConfig {
 
@@ -345,10 +347,13 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(5), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.SCHEMALESS.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG, LIST, "", TableTopicConfigValidator.TableTopicTransformTypesValidator.INSTANCE, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, STRING, NONE.name, in(TableTopicTransformType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG, STRING, null, TableTopicConfigValidator.IdColumnsValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_ID_COLUMNS_DOC)
                 .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, TableTopicConfigValidator.PartitionValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
@@ -412,10 +417,13 @@ public class LogConfig extends AbstractConfig {
     public final String tableTopicNamespace;
     @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
-    public final TableTopicConvertType convertType;
-    public final String convertBySubjectNameSubject;
-    public final String convertBySubjectNameMessageFullName;
-    public final List<String> transformTypes;
+    public final TableTopicConvertType valueConvertType;
+    public final TableTopicConvertType keyConvertType;
+    public final String valueSubject;
+    public final String valueMessageFullName;
+    public final String keySubject;
+    public final String keyMessageFullName;
+    public final TableTopicTransformType transformType;
     public final String tableTopicIdColumns;
     public final String tableTopicPartitionBy;
     public final boolean tableTopicUpsertEnable;
@@ -481,10 +489,13 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
-        this.convertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG));
-        this.convertBySubjectNameSubject = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_CONFIG);
-        this.convertBySubjectNameMessageFullName = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_CONFIG);
-        this.transformTypes = getList(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG);
+        this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
+        this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));
+        this.valueSubject = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG);
+        this.valueMessageFullName = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG);
+        this.keySubject = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG);
+        this.keyMessageFullName = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG);
+        this.transformType = TableTopicTransformType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG));
         this.tableTopicIdColumns = getString(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG);
         this.tableTopicPartitionBy = getString(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG);
         this.tableTopicUpsertEnable = getBoolean(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG);
@@ -772,30 +783,19 @@ public class LogConfig extends AbstractConfig {
 
     // AutoMQ inject start
     public static void validateTableTopicSchemaConfigValues(Properties props, String tableTopicSchemaRegistryUrl) {
-        // New configurations
-        TableTopicConvertType convertType = TableTopicConvertType.forName(props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG));
-        String transformTypes = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG);
-
-        // Old configuration
-        String schemaType = props.getProperty(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG);
-
-        boolean newConfigIsSet = (convertType != null && !convertType.name().equals(CONFIG.defaultValues().get(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG))) ||
-            (transformTypes != null && !transformTypes.equals(CONFIG.defaultValues().get(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG)));
-        boolean oldConfigIsSet = schemaType != null && !schemaType.equals(CONFIG.defaultValues().get(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
-
-        if (newConfigIsSet && oldConfigIsSet) {
-            throw new InvalidConfigurationException("Cannot set both old '" + TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG +
-                "' and new '" + TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG + "' or '" +
-                TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG + "' configurations.");
-        }
+        String valueConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG);
+        String keyConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG);
+        String transformProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG);
 
         // Validation logic using new (or mapped) configs
-        if ((BY_SCHEMA_ID.equals(convertType) || BY_SUBJECT_NAME.equals(convertType)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
-            throw new InvalidConfigurationException("Table topic convert type is set to '" + convertType.name + "' but schema registry URL is not configured");
+        if ((BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
+            throw new InvalidConfigurationException("Table topic convert type is set to '" + valueConvertProperty + "' but schema registry URL is not configured");
         }
-
-        if (RAW.equals(convertType) && transformTypes != null && transformTypes.contains(DEBEZIUM_UNWRAP.name().toLowerCase(Locale.ROOT))) {
-            throw new InvalidConfigurationException("'raw' convert type cannot be used with 'debezium_unwrap' transform type");
+        if ((BY_SCHEMA_ID.name.equals(keyConvertProperty) || BY_LATEST_SCHEMA.name.equals(keyConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
+            throw new InvalidConfigurationException("Table topic convert type is set to '" + keyConvertProperty + "' but schema registry URL is not configured");
+        }
+        if (!(BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && FLATTEN_DEBEZIUM.name.equals(transformProperty)) {
+            throw new InvalidConfigurationException(valueConvertProperty + " convert type cannot be used with '" + FLATTEN_DEBEZIUM.name + "' transform type");
         }
     }
 

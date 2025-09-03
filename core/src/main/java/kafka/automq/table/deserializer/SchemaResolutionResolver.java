@@ -21,8 +21,6 @@ package kafka.automq.table.deserializer;
 
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 
-import org.apache.kafka.common.record.Record;
-
 import java.nio.ByteBuffer;
 
 
@@ -45,7 +43,7 @@ public interface SchemaResolutionResolver {
     SchemaResolution resolve(String topic, ByteBuffer payload);
 
 
-    int getSchemaId(String topic, Record record);
+    int getSchemaId(String topic, ByteBuffer payload);
 
     /**
      * Container class for resolved schema information.

@@ -19,12 +19,11 @@
 
 package kafka.automq.table.process.transform;
 
-import kafka.automq.table.process.Converter;
+import kafka.automq.table.process.RecordAssembler;
 import kafka.automq.table.process.Transform;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
 
-import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
 import java.util.Map;
@@ -32,7 +31,9 @@ import java.util.Map;
 /**
  * A transform to unwrap a record from a standard {@code ValueRecord} container.
  */
-public class ValueUnwrapTransform implements Transform {
+public class FlattenTransform implements Transform {
+
+    public static final FlattenTransform INSTANCE = new FlattenTransform();
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -41,28 +42,19 @@ public class ValueUnwrapTransform implements Transform {
 
     @Override
     public GenericRecord apply(GenericRecord record, TransformContext context) throws TransformException {
-        if (record == null) {
-            return null;
+        if (record == null || !record.hasField(RecordAssembler.KAFKA_VALUE_FIELD)) {
+            throw new TransformException("Record is null or has no value field");
         }
-
-        Schema.Field valueField = record.getSchema().getField(Converter.VALUE_FIELD_NAME);
-        if (valueField == null) {
-            throw new TransformException(
-                String.format("Record with schema %s does not contain a '%s' field to unwrap.",
-                    record.getSchema().getFullName(), Converter.VALUE_FIELD_NAME));
-        }
-
-        Object value = record.get(Converter.VALUE_FIELD_NAME);
+        Object value = record.get(RecordAssembler.KAFKA_VALUE_FIELD);
         if (value instanceof GenericRecord) {
             return (GenericRecord) value;
         } else {
-            // The 'value' field exists but is not a record, so return the original wrapped record.
-            return record;
+            throw new TransformException("value field is not a GenericRecord");
         }
     }
 
     @Override
     public String getName() {
-        return "ValueUnwrap";
+        return "Flatten";
     }
 }

@@ -19,10 +19,9 @@
 
 package org.apache.kafka.server.common.automq;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
-
-import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -162,26 +161,6 @@ public class TableTopicConfigValidator {
                     return TRUNCATE;
                 default:
                     throw new IllegalArgumentException("Invalid transform function " + str);
-            }
-        }
-    }
-
-    public static class TableTopicTransformTypesValidator implements ConfigDef.Validator {
-        public static final TableTopicTransformTypesValidator INSTANCE = new TableTopicTransformTypesValidator();
-
-        @Override
-        public void ensureValid(String name, Object value) {
-            if (value instanceof List) {
-                List<?> list = (List<?>) value;
-                for (Object o : list) {
-                    try {
-                        org.apache.kafka.server.record.TableTopicTransformType.valueOf(String.valueOf(o).toUpperCase(Locale.ROOT));
-                    } catch (IllegalArgumentException e) {
-                        throw new ConfigException(name, o, "Invalid transform type in " + name);
-                    }
-                }
-            } else {
-                throw new ConfigException(name, value, "Must be a list of strings.");
             }
         }
     }

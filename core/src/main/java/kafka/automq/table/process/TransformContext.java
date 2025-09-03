@@ -23,22 +23,33 @@ public final class TransformContext {
     /**
      * Constructs a new TransformContext.
      *
-     * @param kafkaRecord the original Kafka Record, must not be null.
+     * @param kafkaRecord the original Kafka Record, can be null if not available.
      * @param topicName the name of the topic from which the record was consumed, must not be null.
+     * @param partition the partition number.
      */
     public TransformContext(Record kafkaRecord, String topicName, int partition) {
-        this.kafkaRecord = Objects.requireNonNull(kafkaRecord, "kafkaRecord cannot be null");
+        this.kafkaRecord = kafkaRecord;
         this.topicName = Objects.requireNonNull(topicName, "topicName cannot be null");
         this.partition = partition;
     }
 
+    /**
+     * 获取原始的 Kafka 记录（如果有）
+     */
     public Record getKafkaRecord() {
         return kafkaRecord;
     }
+    
+    /**
+     * 获取主题名称
+     */
     public String getTopicName() {
         return topicName;
     }
 
+    /**
+     * 获取分区号
+     */
     public int getPartition() {
         return partition;
     }

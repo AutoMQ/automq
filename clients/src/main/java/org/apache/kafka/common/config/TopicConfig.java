@@ -268,17 +268,23 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_SCHEMA_TYPE_CONFIG = "automq.table.topic.schema.type";
     public static final String TABLE_TOPIC_SCHEMA_TYPE_DOC = "The table topic schema type, support schemaless (deprecated), schema (deprecated)";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_CONFIG = "automq.table.topic.convert.type";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_TYPE_DOC = "The convert type for table topic, support: raw, by_schema_id, by_subject_name.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG = "automq.table.topic.convert.value.type";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC = "The convert value type for table topic, support: raw, by_schema_id, by_subject_name.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG = "automq.table.topic.convert.key.type";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC = "The convert key type for table topic, support: raw, by_schema_id, by_subject_name.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_CONFIG = "automq.table.topic.convert.by_subject_name.config.subject";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_SUBJECT_DOC = "The subject name for schema registry, default is topic-value.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG = "automq.table.topic.convert.value.subject";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_DOC = "The subject name for schema registry, default is topic-value.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG = "automq.table.topic.convert.value.message.full.name";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_DOC = "The message full name for schema registry, default is the first message in schema.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_CONFIG = "automq.table.topic.convert.by_subject_name.config.messageFullName";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_BY_SUBJECT_NAME_CONFIG_MESSAGE_FULL_NAME_DOC = "The message full name for schema registry, default is the first message in schema.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG = "automq.table.topic.convert.key.subject";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_DOC = "The subject name for schema registry, default is topic-key.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG = "automq.table.topic.convert.key.message.full.name";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_DOC = "The message full name for schema registry, default is the first message in schema.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_CONFIG = "automq.table.topic.transform.types";
-    public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_TYPES_DOC = "A list of transformations to apply to the record, support: value_unwrap, debezium_unwrap, kafka_metadata.";
+    public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG = "automq.table.topic.transform.value.type";
+    public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_DOC = "transformation to apply to the record value, support: none, flatten, flatten_debezium.";
 
     public static final String TABLE_TOPIC_ID_COLUMNS_CONFIG = "automq.table.topic.id.columns";
     public static final String TABLE_TOPIC_ID_COLUMNS_DOC = "The primary key, comma-separated list of columns that identify a row in tables."

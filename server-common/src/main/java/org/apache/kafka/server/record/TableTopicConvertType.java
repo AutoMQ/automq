@@ -26,8 +26,9 @@ import static java.util.Arrays.asList;
 
 public enum TableTopicConvertType {
     RAW("raw"),
+    STRING("string"),
     BY_SCHEMA_ID("by_schema_id"),
-    BY_SUBJECT_NAME("by_subject_name");
+    BY_LATEST_SCHEMA("by_latest_schema");
 
     public final String name;
     private static final List<TableTopicConvertType> VALUES = asList(values());

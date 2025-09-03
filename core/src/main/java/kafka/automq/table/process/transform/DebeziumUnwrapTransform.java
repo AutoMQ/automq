@@ -51,6 +51,8 @@ import java.util.Objects;
  */
 public class DebeziumUnwrapTransform implements Transform {
 
+    public static final DebeziumUnwrapTransform INSTANCE = new DebeziumUnwrapTransform();
+
     private static final Logger log = LoggerFactory.getLogger(DebeziumUnwrapTransform.class);
 
     // Debezium standard field names

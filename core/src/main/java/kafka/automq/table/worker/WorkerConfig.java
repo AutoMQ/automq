@@ -28,7 +28,6 @@ import org.apache.kafka.server.record.TableTopicTransformType;
 import org.apache.kafka.storage.internals.log.LogConfig;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.stringToList;
 
@@ -56,22 +55,31 @@ public class WorkerConfig {
         return config.tableTopicSchemaType;
     }
 
-    public TableTopicConvertType convertType() {
-        return config.convertType;
+    public TableTopicConvertType valueConvertType() {
+        return config.valueConvertType;
+    }
+    public TableTopicConvertType keyConvertType() {
+        return config.keyConvertType;
     }
 
-    public String convertBySubjectNameSubject() {
-        return config.convertBySubjectNameSubject;
+    public String valueSubject() {
+        return config.valueSubject;
     }
 
-    public String convertBySubjectNameMessageFullName() {
-        return config.convertBySubjectNameMessageFullName;
+    public String valueMessageFullName() {
+        return config.valueMessageFullName;
     }
 
-    public List<TableTopicTransformType> transformTypes() {
-        return config.transformTypes.stream()
-            .map(TableTopicTransformType::forName)
-            .collect(Collectors.toList());
+    public String keySubject() {
+        return config.keySubject;
+    }
+
+    public String keyMessageFullName() {
+        return config.keyMessageFullName;
+    }
+
+    public TableTopicTransformType transformType() {
+        return config.transformType;
     }
 
 

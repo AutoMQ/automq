@@ -19,83 +19,62 @@
 
 package kafka.automq.table.process;
 
+import kafka.automq.table.process.convert.ConverterFactory;
 import kafka.automq.table.process.convert.RawConverter;
-import kafka.automq.table.process.convert.RegistryConverterFactory;
+import kafka.automq.table.process.convert.StringConverter;
 import kafka.automq.table.process.transform.DebeziumUnwrapTransform;
-import kafka.automq.table.process.transform.KafkaMetadataTransform;
-import kafka.automq.table.process.transform.ValueUnwrapTransform;
+import kafka.automq.table.process.transform.FlattenTransform;
+import kafka.automq.table.process.transform.SchemalessTransform;
 import kafka.automq.table.worker.WorkerConfig;
 
 import org.apache.kafka.server.record.TableTopicSchemaType;
 import org.apache.kafka.server.record.TableTopicTransformType;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 
 public class RecordProcessorFactory {
-    private final RegistryConverterFactory registryConverterFactory;
+    private final ConverterFactory converterFactory;
 
     public RecordProcessorFactory(String registryUrl) {
-        this.registryConverterFactory = new RegistryConverterFactory(registryUrl);
+        this.converterFactory = new ConverterFactory(registryUrl);
     }
 
     public RecordProcessorFactory(String registryUrl, SchemaRegistryClient client) {
-        this.registryConverterFactory = new RegistryConverterFactory(registryUrl, client);
+        this.converterFactory = new ConverterFactory(registryUrl, client);
     }
 
     public RecordProcessor create(WorkerConfig config, String topic) {
         // Handle deprecated configurations
         if (config.schemaType() == TableTopicSchemaType.SCHEMALESS) {
-            return new DefaultRecordProcessor(topic, new RawConverter());
+            return new DefaultRecordProcessor(topic, RawConverter.INSTANCE, RawConverter.INSTANCE, List.of(new SchemalessTransform()));
         }
         if (config.schemaType() == TableTopicSchemaType.SCHEMA) {
-            return new DefaultRecordProcessor(topic, registryConverterFactory.createForSchemaId(topic), List.of(new ValueUnwrapTransform()));
+            return new DefaultRecordProcessor(topic,
+                StringConverter.INSTANCE,
+                converterFactory.createValueConverter(topic, config), List.of(FlattenTransform.INSTANCE));
         }
 
-        // Create converter based on convert type
-        var converter = createConverter(config, topic);
+        var keyConverter = converterFactory.createKeyConverter(topic, config);
+        var valueConverter = converterFactory.createValueConverter(topic, config);
 
-        // Create transform list based on transform types
-        var transforms = createTransforms(config.transformTypes());
+        var transforms = createTransforms(config.transformType());
 
-        return new DefaultRecordProcessor(topic, converter, transforms);
+        return new DefaultRecordProcessor(topic, keyConverter, valueConverter, transforms);
     }
 
-    private Converter createConverter(WorkerConfig config, String topic) {
-        switch (config.convertType()) {
-            case RAW:
-                return new RawConverter();
-            case BY_SCHEMA_ID:
-                return registryConverterFactory.createForSchemaId(topic);
-            case BY_SUBJECT_NAME:
-                return registryConverterFactory.createForSubjectName(topic, config.convertBySubjectNameSubject(), config.convertBySubjectNameMessageFullName());
-            default:
-                throw new IllegalArgumentException("Unsupported convert type: " + config.convertType());
-        }
-    }
-
-    private List<Transform> createTransforms(List<TableTopicTransformType> transformTypes) {
-        if (transformTypes == null || transformTypes.isEmpty()) {
+    private List<Transform> createTransforms(TableTopicTransformType transformType) {
+        if (transformType == null || TableTopicTransformType.NONE.equals(transformType)) {
             return List.of();
         }
-        List<Transform> transforms = new ArrayList<>();
-        for (TableTopicTransformType type : transformTypes) {
-            switch (type) {
-                case VALUE_UNWRAP:
-                    transforms.add(new ValueUnwrapTransform());
-                    break;
-                case DEBEZIUM_UNWRAP:
-                    transforms.add(new DebeziumUnwrapTransform());
-                    break;
-                case KAFKA_METADATA:
-                    transforms.add(new KafkaMetadataTransform());
-                    break;
-                default:
-                    throw new IllegalArgumentException("Unsupported transform type: " + type);
-            }
+        switch (transformType) {
+            case FLATTEN:
+                return List.of(FlattenTransform.INSTANCE);
+            case FLATTEN_DEBEZIUM:
+                return List.of(FlattenTransform.INSTANCE, DebeziumUnwrapTransform.INSTANCE);
+            default:
+                throw new IllegalArgumentException("Unsupported transform type: " + transformType);
         }
-        return transforms;
     }
 }

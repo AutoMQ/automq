@@ -23,7 +23,6 @@ import kafka.automq.table.deserializer.SchemaResolutionResolver;
 import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 
 import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.record.Record;
 
 import com.automq.stream.utils.Time;
 
@@ -83,7 +82,7 @@ public class LatestSchemaResolutionResolver implements SchemaResolutionResolver 
     }
 
     @Override
-    public int getSchemaId(String topic, Record record) {
+    public int getSchemaId(String topic, ByteBuffer payload) {
         LatestSchemaResolutionResolver.CachedSchemaInfo cachedInfo = getCachedSchemaInfo(subject);
         return cachedInfo.schemaId;
     }
