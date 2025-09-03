@@ -79,6 +79,8 @@ public class DefaultWriter implements Writer {
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
     private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
     private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
+    private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
+    private static final ScheduledExecutorService SCHEDULE = Threads.newSingleThreadScheduledExecutor("S3_WAL_SCHEDULE", true, LOGGER);
 
     protected final ObjectWALConfig config;
     protected final Time time;
@@ -89,7 +91,6 @@ public class DefaultWriter implements Writer {
     private final ConcurrentNavigableMap<Long, WALObject> lastRecordOffset2object = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
     private final String objectPrefix;
-    private final ScheduledExecutorService scheduler;
 
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
@@ -102,7 +103,6 @@ public class DefaultWriter implements Writer {
 
     private final Queue<Bulk> waitingUploadBulks = new ConcurrentLinkedQueue<>();
     private final Queue<Bulk> uploadingBulks = new ConcurrentLinkedQueue<>();
-    private final ExecutorService uploadExecutor = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
 
     private CompletableFuture<Void> callbackCf = CompletableFuture.completedFuture(null);
     private final EventLoop callbackExecutor = new EventLoop("S3_WAL_CALLBACK");
@@ -119,7 +119,6 @@ public class DefaultWriter implements Writer {
         this.config = config;
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
-        this.scheduler = Threads.newSingleThreadScheduledExecutor("s3-wal-schedule", true, LOGGER);
         if (!(config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER)) {
             throw new IllegalArgumentException("The open mode must be READ_WRITE or FAILOVER, but got " + config.openMode());
         }
@@ -168,20 +167,6 @@ public class DefaultWriter implements Writer {
     @Override
     public void close() {
         closed = true;
-
-        if (scheduler != null && !scheduler.isShutdown()) {
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(20, TimeUnit.SECONDS)) {
-                    LOGGER.error("Main executor {} did not terminate in time", scheduler);
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                LOGGER.error("Failed to shutdown main executor service.", e);
-                scheduler.shutdownNow();
-            }
-        }
-
         uploadActiveBulk();
         if (lastInActiveBulk != null) {
             try {
@@ -312,7 +297,7 @@ public class DefaultWriter implements Writer {
     }
 
     private void tryUploadBulkInWaiting() {
-        uploadExecutor.submit(this::uploadBulk0);
+        UPLOAD_EXECUTOR.submit(this::uploadBulk0);
     }
 
     private void uploadBulk0() {
@@ -440,7 +425,12 @@ public class DefaultWriter implements Writer {
     }
 
     public CompletableFuture<Void> reset() throws WALFencedException {
-        return trim0(nextOffset.get());
+        long nextOffset = this.nextOffset.get();
+        if (nextOffset == 0) {
+            return CompletableFuture.completedFuture(null);
+        }
+        // The next offset is the next record's offset.
+        return trim0(nextOffset - 1);
     }
 
     // Trim objects where the last offset is less than or equal to the given offset.
@@ -470,24 +460,24 @@ public class DefaultWriter implements Writer {
     }
 
     // Trim objects where the last offset is less than or equal to the given offset.
-    public CompletableFuture<Void> trim0(long newStartOffset) throws WALFencedException {
+    public CompletableFuture<Void> trim0(long inclusiveTrimRecordOffset) throws WALFencedException {
         checkStatus();
         List<ObjectStorage.ObjectPath> deleteObjectList = new ArrayList<>();
         AtomicLong deletedObjectSize = new AtomicLong();
         CompletableFuture<?> persistTrimOffsetCf;
         lock.writeLock().lock();
         try {
-            if (trimOffset.get() >= newStartOffset) {
+            if (trimOffset.get() >= inclusiveTrimRecordOffset) {
                 return lastTrimCf;
             }
-            trimOffset.set(newStartOffset);
+            trimOffset.set(inclusiveTrimRecordOffset);
             // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
             // So we use a fake record to trigger the wal object upload.
             persistTrimOffsetCf = append(new StreamRecordBatch(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
-                Long lastFlushedRecordOffset = lastRecordOffset2object.lastKey();
+                Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {
-                    lastRecordOffset2object.headMap(newStartOffset, true)
+                    lastRecordOffset2object.headMap(inclusiveTrimRecordOffset, true)
                         .forEach((lastRecordOffset, object) -> {
                             if (Objects.equals(lastRecordOffset, lastFlushedRecordOffset)) {
                                 // skip the last object to prevent wal offset reset back to zero
@@ -505,7 +495,7 @@ public class DefaultWriter implements Writer {
                     List<ObjectStorage.ObjectPath> list = new ArrayList<>(previousObjects.size());
                     for (int i = 0; i < previousObjects.size() - (skipTheLastObject ? 1 : 0); i++) {
                         WALObject object = previousObjects.get(i);
-                        if (object.endOffset() > newStartOffset) {
+                        if (object.endOffset() > inclusiveTrimRecordOffset) {
                             break;
                         }
                         list.add(new ObjectStorage.ObjectPath(object.bucketId(), object.path()));
@@ -524,7 +514,7 @@ public class DefaultWriter implements Writer {
                     if (throwable != null) {
                         LOGGER.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                     }
-                    scheduler.schedule(() -> {
+                    SCHEDULE.schedule(() -> {
                         // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
                         objectStorage.delete(deleteObjectList);
                     }, 10, TimeUnit.SECONDS);
@@ -539,7 +529,7 @@ public class DefaultWriter implements Writer {
     }
 
     private void startMonitor() {
-        scheduler.scheduleWithFixedDelay(() -> {
+        SCHEDULE.scheduleWithFixedDelay(() -> {
             try {
                 long count = uploadingBulks.stream()
                     .filter(bulk -> time.nanoseconds() - bulk.startNanos > DEFAULT_UPLOAD_WARNING_TIMEOUT)
@@ -563,7 +553,7 @@ public class DefaultWriter implements Writer {
         public Bulk(long baseOffset) {
             this.startNanos = time.nanoseconds();
             this.baseOffset = baseOffset;
-            scheduler.schedule(() -> forceUploadBulk(this), config.batchInterval(), TimeUnit.MILLISECONDS);
+            SCHEDULE.schedule(() -> forceUploadBulk(this), config.batchInterval(), TimeUnit.MILLISECONDS);
         }
 
         public void add(Record record) {
