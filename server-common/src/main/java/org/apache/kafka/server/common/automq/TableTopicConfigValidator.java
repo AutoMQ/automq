@@ -19,9 +19,10 @@
 
 package org.apache.kafka.server.common.automq;
 
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
+
+import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Arrays;
 import java.util.Collections;

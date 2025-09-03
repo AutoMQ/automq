@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
 import static java.util.Arrays.asList;
 
 public enum TableTopicSchemaType {
+    NONE("none"),
     SCHEMALESS("schemaless"),
     SCHEMA("schema");
 

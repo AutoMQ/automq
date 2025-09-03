@@ -187,7 +187,7 @@ public class RecordProcessorFactoryTest {
         assertTrue(finalRecord.hasField("_kafka_metadata"));
 
         assertEquals("test-key", finalRecord.get("_kafka_key"));
-        assertEquals("test123", (finalRecord.get("_kafka_value")));
+        assertEquals("test123", finalRecord.get("_kafka_value"));
 
         GenericRecord metadataRecord = (GenericRecord) finalRecord.get("_kafka_metadata");
         assertEquals(TEST_PARTITION, metadataRecord.get("partition"));
@@ -634,7 +634,7 @@ public class RecordProcessorFactoryTest {
 
         // Check value remains as ByteBuffer
         assertTrue(finalRecord.hasField("_kafka_value"));
-        assertEquals(ByteBuffer.wrap(value), ByteBuffer.wrap((byte[])finalRecord.get("_kafka_value")));
+        assertEquals(ByteBuffer.wrap(value), ByteBuffer.wrap((byte[]) finalRecord.get("_kafka_value")));
     }
 
     // --- Test Group 6: Deprecated Configs ---

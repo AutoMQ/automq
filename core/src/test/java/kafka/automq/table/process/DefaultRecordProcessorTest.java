@@ -20,23 +20,21 @@
 
 package kafka.automq.table.process;
 
-import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
-import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
-import io.confluent.kafka.serializers.KafkaAvroSerializer;
 import kafka.automq.table.process.convert.AvroRegistryConverter;
 import kafka.automq.table.process.convert.RawConverter;
 import kafka.automq.table.process.convert.StringConverter;
 import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.transform.FlattenTransform;
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
+
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.record.TimestampType;
+
+import org.apache.avro.Schema;
+import org.apache.avro.SchemaBuilder;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.generic.GenericRecordBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -44,6 +42,10 @@ import org.junit.jupiter.api.Test;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+
+import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.serializers.KafkaAvroSerializer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

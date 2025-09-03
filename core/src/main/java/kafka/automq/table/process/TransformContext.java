@@ -33,23 +33,14 @@ public final class TransformContext {
         this.partition = partition;
     }
 
-    /**
-     * 获取原始的 Kafka 记录（如果有）
-     */
     public Record getKafkaRecord() {
         return kafkaRecord;
     }
-    
-    /**
-     * 获取主题名称
-     */
+
     public String getTopicName() {
         return topicName;
     }
 
-    /**
-     * 获取分区号
-     */
     public int getPartition() {
         return partition;
     }

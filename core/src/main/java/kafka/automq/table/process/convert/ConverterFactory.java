@@ -78,9 +78,6 @@ public class ConverterFactory {
     }
 
     public ConverterFactory(String registryUrl, SchemaRegistryClient client) {
-        if (client != null && (registryUrl == null || registryUrl.trim().isEmpty())) {
-            throw new IllegalArgumentException("Registry URL cannot be null or empty when client is provided");
-        }
         this.schemaRegistryUrl = registryUrl;
         this.client = client;
     }
