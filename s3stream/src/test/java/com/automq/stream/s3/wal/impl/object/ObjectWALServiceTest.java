@@ -180,6 +180,34 @@ public class ObjectWALServiceTest {
         }
     }
 
+    @Test
+    public void testReset() throws Exception {
+        ObjectWALConfig config;
+        ObjectWALService wal;
+        int resetIndex = 0;
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int r = 0; r < 4; r++) {
+            config = ObjectWALConfig.builder().withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            wal = new ObjectWALService(time, objectStorage, config);
+            acquire(config);
+            wal.start();
+            List<RecoverResult> records = new ArrayList<>();
+            wal.recover().forEachRemaining(records::add);
+            if (r != 0) {
+                assertEquals(10, records.size());
+            }
+            for (int i = 0; i < records.size(); i++) {
+                assertEquals(resetIndex + i, records.get(i).record().getBaseOffset());
+            }
+            resetIndex = appendCfList.size();
+            wal.reset().get();
+            for (int i = 0; i < 10; i++) {
+                appendCfList.add(wal.append(TraceContext.DEFAULT, new StreamRecordBatch(233L, 10, r * 10 + i, 1, generateByteBuf(256))));
+            }
+            wal.shutdownGracefully();
+        }
+    }
+
     public static Stream<Arguments> testRecoverIteratorGetContinuousFromTrimOffsetData() {
         return Stream.of(
             Arguments.of(
