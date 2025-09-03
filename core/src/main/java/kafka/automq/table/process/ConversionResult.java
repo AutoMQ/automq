@@ -22,6 +22,8 @@ package kafka.automq.table.process;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
+import java.util.Objects;
+
 
 public final class ConversionResult {
 
@@ -31,14 +33,14 @@ public final class ConversionResult {
 
     public ConversionResult(Object value, Schema schema, String schemaIdentity) {
         this.value = value;
-        this.schema = schema;
-        this.schemaIdentity = schemaIdentity;
+        this.schema = Objects.requireNonNull(schema, "schema cannot be null");
+        this.schemaIdentity = Objects.requireNonNull(schemaIdentity, "schemaIdentity cannot be null");
     }
 
     public ConversionResult(GenericRecord record, String schemaIdentity) {
-        this.value = record;
+        this.value = Objects.requireNonNull(record, "record cannot be null");
         this.schema = record.getSchema();
-        this.schemaIdentity = schemaIdentity;
+        this.schemaIdentity = Objects.requireNonNull(schemaIdentity, "schemaIdentity cannot be null");
     }
 
     public Object getValue() {
