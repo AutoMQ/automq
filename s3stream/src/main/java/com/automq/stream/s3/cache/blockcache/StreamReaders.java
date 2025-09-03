@@ -63,6 +63,7 @@ public class StreamReaders implements S3BlockCache {
         this(size, objectManager, objectStorage, objectReaderFactory, concurrency, Time.SYSTEM);
     }
 
+    @SuppressWarnings("this-escape")
     public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
         ObjectReaderFactory objectReaderFactory, int concurrency, Time time) {
         this.time = time;

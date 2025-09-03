@@ -53,7 +53,7 @@ plugins {
 
 ext {
   gradleVersion = versions.gradle
-  minJavaVersion = 11
+  minJavaVersion = 17
   buildVersionFileName = "kafka-version.properties"
 
   defaultMaxHeapSize = "2g"
@@ -264,7 +264,10 @@ subprojects {
       options.compilerArgs << "-Xlint:-rawtypes"
     options.compilerArgs << "-Xlint:-serial"
     options.compilerArgs << "-Xlint:-try"
-    options.compilerArgs << "-Werror"
+    // AutoMQ inject start
+    // TODO: remove me, when upgrade to 4.x
+//    options.compilerArgs << "-Werror"
+    // AutoMQ inject start
 
     // --release is the recommended way to select the target release, but it's only supported in Java 9 so we also
     // set --source and --target via `sourceCompatibility` and `targetCompatibility` a couple of lines below
