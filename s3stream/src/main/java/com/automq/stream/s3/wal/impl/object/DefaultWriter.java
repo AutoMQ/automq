@@ -100,6 +100,9 @@ public class DefaultWriter implements Writer {
 
     private Bulk activeBulk = null;
     private Bulk lastInActiveBulk = null;
+    private long lastBulkForceUploadNanos;
+    private final long batchNanos;
+    private final long minBulkUploadIntervalNanos;
 
     private final Queue<Bulk> waitingUploadBulks = new ConcurrentLinkedQueue<>();
     private final Queue<Bulk> uploadingBulks = new ConcurrentLinkedQueue<>();
@@ -119,6 +122,9 @@ public class DefaultWriter implements Writer {
         this.config = config;
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
         this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
+        this.batchNanos = TimeUnit.MILLISECONDS.toNanos(config.batchInterval());
+        this.minBulkUploadIntervalNanos = Math.min(TimeUnit.MILLISECONDS.toNanos(10), batchNanos);
+        this.lastBulkForceUploadNanos = time.nanoseconds();
         if (!(config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER)) {
             throw new IllegalArgumentException("The open mode must be READ_WRITE or FAILOVER, but got " + config.openMode());
         }
@@ -553,7 +559,14 @@ public class DefaultWriter implements Writer {
         public Bulk(long baseOffset) {
             this.startNanos = time.nanoseconds();
             this.baseOffset = baseOffset;
-            SCHEDULE.schedule(() -> forceUploadBulk(this), config.batchInterval(), TimeUnit.MILLISECONDS);
+            long forceUploadNanos = lastBulkForceUploadNanos + batchNanos;
+            long forceUploadDelayNanos = Math.max(
+                // Try batch the requests in a short time window to save the PUT API.
+                minBulkUploadIntervalNanos,
+                forceUploadNanos - startNanos
+            );
+            lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
+            SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
         }
 
         public void add(Record record) {
