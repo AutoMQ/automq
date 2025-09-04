@@ -281,13 +281,6 @@ public class TopicConfig {
         "Supported: 'raw', 'string', 'by_schema_id', 'by_latest_schema'. " +
         "Schema Registry URL required for 'by_schema_id' and 'by_latest_schema'.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG = "automq.table.topic.convert.value.subject";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_DOC = "The Schema Registry subject name for value schemas. " +
-        "Defaults to '{topic-name}-value' if not specified.";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG = "automq.table.topic.convert.value.message.full.name";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_DOC = "The fully qualified message name for Protobuf schemas. " +
-        "Used when schema contains multiple message types. Defaults to first message type.";
-
     public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_PREFIX = "automq.table.topic.convert.value.by_latest_schema.";
     public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_PREFIX = "automq.table.topic.convert.key.by_latest_schema.";
 

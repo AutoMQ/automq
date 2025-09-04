@@ -349,8 +349,6 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.NONE.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG, STRING, null, null, LOW, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, STRING, NONE.name, in(TableTopicTransformType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_DOC)
