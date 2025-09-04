@@ -20,7 +20,6 @@
 package kafka.automq.table.process;
 
 import kafka.automq.table.process.convert.ConverterFactory;
-import kafka.automq.table.process.convert.RawConverter;
 import kafka.automq.table.process.convert.StringConverter;
 import kafka.automq.table.process.transform.DebeziumUnwrapTransform;
 import kafka.automq.table.process.transform.FlattenTransform;
