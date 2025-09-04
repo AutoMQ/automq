@@ -50,6 +50,8 @@ import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
  * @see Transform
  */
 public class DefaultRecordProcessor implements RecordProcessor {
+    private final static Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
+    private final static String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
     private final String topicName;
     private final Converter keyConverter;
     private final Converter valueConverter;
@@ -110,7 +112,6 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
     private ConversionResult processHeaders(Record kafkaRecord) throws ConverterException {
         try {
-            Schema headerSchema = Schema.createMap(Schema.create(Schema.Type.BYTES));
             Map<String, ByteBuffer> headers = new HashMap<>();
             Header[] recordHeaders = kafkaRecord.headers();
             if (recordHeaders != null) {
@@ -120,8 +121,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
                     headers.put(header.key(), value);
                 }
             }
-            String schemaIdentity = String.valueOf(headerSchema.toString().hashCode());
-            return new ConversionResult(headers, headerSchema, schemaIdentity);
+            return new ConversionResult(headers, HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
         } catch (Exception e) {
             throw new ConverterException("Failed to process headers", e);
         }
