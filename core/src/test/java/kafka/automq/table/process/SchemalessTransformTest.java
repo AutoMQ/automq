@@ -62,14 +62,12 @@ public class SchemalessTransformTest {
     @Test
     public void testApply_WithKeyAndValue() throws TransformException {
         // Arrange
-        ByteBuffer keyBuffer = ByteBuffer.wrap(new byte[]{1, 2, 3});
-        ByteBuffer valueBuffer = ByteBuffer.wrap(new byte[]{4, 5, 6});
         long timestamp = 1234567890L;
 
         when(kafkaRecord.hasKey()).thenReturn(true);
-        when(kafkaRecord.key()).thenReturn(keyBuffer);
+        when(kafkaRecord.key()).thenReturn(ByteBuffer.wrap("321".getBytes()));
         when(kafkaRecord.hasValue()).thenReturn(true);
-        when(kafkaRecord.value()).thenReturn(valueBuffer);
+        when(kafkaRecord.value()).thenReturn(ByteBuffer.wrap("321".getBytes()));
         when(kafkaRecord.timestamp()).thenReturn(timestamp);
 
         // Act
@@ -78,8 +76,8 @@ public class SchemalessTransformTest {
         // Assert
         assertNotNull(result);
         assertEquals(SchemalessTransform.SCHEMALESS_SCHEMA, result.getSchema());
-        assertEquals(keyBuffer, result.get("key"));
-        assertEquals(valueBuffer, result.get("value"));
+        assertEquals("321", (String) result.get("key"));
+        assertEquals("123",  (String) result.get("value"));
         assertEquals(timestamp, result.get("timestamp"));
     }
 

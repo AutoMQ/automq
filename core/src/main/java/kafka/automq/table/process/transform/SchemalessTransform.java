@@ -30,6 +30,8 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -51,11 +53,11 @@ public class SchemalessTransform implements Transform {
             .namespace("kafka.automq.table.process.transform")
             .doc("A simple record containing raw key, value, and timestamp.")
             .fields()
-                .name(FIELD_KEY).doc("Original record key as raw bytes")
-                .type().unionOf().nullType().and().bytesType().endUnion()
+                .name(FIELD_KEY).doc("Original record key as string")
+                .type().unionOf().nullType().and().stringType().endUnion()
                 .nullDefault()
-            .name(FIELD_VALUE).doc("Original record value as raw bytes")
-                .type().unionOf().nullType().and().bytesType().endUnion()
+            .name(FIELD_VALUE).doc("Original record value as string")
+                .type().unionOf().nullType().and().stringType().endUnion()
                 .nullDefault()
             .name(FIELD_TIMESTAMP).doc("Record timestamp")
                 .type().longType()
@@ -72,8 +74,8 @@ public class SchemalessTransform implements Transform {
             GenericRecord schemalessRecord = new GenericData.Record(SCHEMALESS_SCHEMA);
 
             // Set fields using constants
-            schemalessRecord.put(FIELD_KEY, kafkaRecord.hasKey() ? kafkaRecord.key() : null);
-            schemalessRecord.put(FIELD_VALUE, kafkaRecord.hasValue() ? kafkaRecord.value() : null);
+            schemalessRecord.put(FIELD_KEY, kafkaRecord.hasKey() ? buf2String(kafkaRecord.key()) : null);
+            schemalessRecord.put(FIELD_VALUE, kafkaRecord.hasValue() ? buf2String(kafkaRecord.value()) : null);
             schemalessRecord.put(FIELD_TIMESTAMP, kafkaRecord.timestamp());
 
             return schemalessRecord;
@@ -90,5 +92,11 @@ public class SchemalessTransform implements Transform {
     @Override
     public String getName() {
         return TRANSFORM_NAME;
+    }
+
+    private String buf2String(ByteBuffer buffer) {
+        byte[] bytes = new byte[buffer.remaining()];
+        buffer.slice().get(bytes);
+        return new String(bytes, StandardCharsets.UTF_8);
     }
 }
