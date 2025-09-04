@@ -48,7 +48,7 @@ public final class RecordAssembler {
             .namespace("kafka.automq.table.process")
             .doc("Holds metadata about the original Kafka record.")
             .fields()
-                .name(METADATA_PARTITION_FIELD).doc("Partition number").type().intType().noDefault()
+                .name(METADATA_PARTITION_FIELD).doc("Partition id").type().intType().noDefault()
                 .name(METADATA_OFFSET_FIELD).doc("Record offset").type().longType().noDefault()
                 .name(METADATA_TIMESTAMP_FIELD).doc("Record timestamp").type().longType().noDefault()
             .endRecord();
