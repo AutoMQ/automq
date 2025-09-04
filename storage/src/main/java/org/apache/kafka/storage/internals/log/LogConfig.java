@@ -419,10 +419,8 @@ public class LogConfig extends AbstractConfig {
     public final TableTopicSchemaType tableTopicSchemaType;
     public final TableTopicConvertType valueConvertType;
     public final TableTopicConvertType keyConvertType;
-    public final String valueSubject;
-    public final String valueMessageFullName;
-    public final String keySubject;
-    public final String keyMessageFullName;
+    public final Map<String, Object> valueSchemaLatestConfig;
+    public final Map<String, Object> keySchemaLatestConfig;
     public final TableTopicTransformType transformType;
     public final String tableTopicIdColumns;
     public final String tableTopicPartitionBy;
@@ -491,10 +489,8 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
         this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));
-        this.valueSubject = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_SUBJECT_CONFIG);
-        this.valueMessageFullName = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_MESSAGE_FULL_NAME_CONFIG);
-        this.keySubject = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG);
-        this.keyMessageFullName = getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG);
+        this.valueSchemaLatestConfig = originalsWithPrefix(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_PREFIX);
+        this.keySchemaLatestConfig = originalsWithPrefix(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_PREFIX);
         this.transformType = TableTopicTransformType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG));
         this.tableTopicIdColumns = getString(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG);
         this.tableTopicPartitionBy = getString(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG);

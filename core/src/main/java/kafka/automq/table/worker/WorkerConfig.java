@@ -63,19 +63,19 @@ public class WorkerConfig {
     }
 
     public String valueSubject() {
-        return config.valueSubject;
+        return config.valueSchemaLatestConfig.get("subjet").toString();
     }
 
     public String valueMessageFullName() {
-        return config.valueMessageFullName;
+        return config.valueSchemaLatestConfig.get("message.full.name").toString();
     }
 
     public String keySubject() {
-        return config.keySubject;
+        return config.keySchemaLatestConfig.get("subjet").toString();
     }
 
     public String keyMessageFullName() {
-        return config.keyMessageFullName;
+        return config.keySchemaLatestConfig.get("message.full.name").toString();
     }
 
     public TableTopicTransformType transformType() {

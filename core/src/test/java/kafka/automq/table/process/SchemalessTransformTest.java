@@ -67,7 +67,7 @@ public class SchemalessTransformTest {
         when(kafkaRecord.hasKey()).thenReturn(true);
         when(kafkaRecord.key()).thenReturn(ByteBuffer.wrap("321".getBytes()));
         when(kafkaRecord.hasValue()).thenReturn(true);
-        when(kafkaRecord.value()).thenReturn(ByteBuffer.wrap("321".getBytes()));
+        when(kafkaRecord.value()).thenReturn(ByteBuffer.wrap("123".getBytes()));
         when(kafkaRecord.timestamp()).thenReturn(timestamp);
 
         // Act

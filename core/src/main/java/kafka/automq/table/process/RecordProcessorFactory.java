@@ -48,7 +48,7 @@ public class RecordProcessorFactory {
     public RecordProcessor create(WorkerConfig config, String topic) {
         // Handle deprecated configurations
         if (config.schemaType() == TableTopicSchemaType.SCHEMALESS) {
-            return new DefaultRecordProcessor(topic, RawConverter.INSTANCE, RawConverter.INSTANCE, List.of(new SchemalessTransform()));
+            return new DefaultRecordProcessor(topic, StringConverter.INSTANCE, StringConverter.INSTANCE, List.of(new SchemalessTransform()));
         }
         if (config.schemaType() == TableTopicSchemaType.SCHEMA) {
             return new DefaultRecordProcessor(topic,

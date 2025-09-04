@@ -44,6 +44,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -651,9 +652,9 @@ public class RecordProcessorFactoryTest {
 
         RecordProcessor processor = recordProcessorFactory.create(mockConfig, TEST_TOPIC);
 
-        byte[] key = "schemaless-key".getBytes();
-        byte[] value = "schemaless-value".getBytes();
-        Record kafkaRecord = createKafkaRecord(TEST_TOPIC, value, key);
+        String key = "schemaless-key";
+        String value = "schemaless-value";
+        Record kafkaRecord = createKafkaRecord(TEST_TOPIC, value.getBytes(StandardCharsets.UTF_8), key.getBytes(StandardCharsets.UTF_8));
 
         // Act
         ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
@@ -668,8 +669,8 @@ public class RecordProcessorFactoryTest {
         assertTrue(finalRecord.hasField("value"));
         assertTrue(finalRecord.hasField("timestamp"));
 
-        assertEquals(ByteBuffer.wrap(key), finalRecord.get("key"));
-        assertEquals(ByteBuffer.wrap(value), finalRecord.get("value"));
+        assertEquals(key, finalRecord.get("key"));
+        assertEquals(value, finalRecord.get("value"));
         assertEquals(TEST_TIMESTAMP, finalRecord.get("timestamp"));
 
         // Check that Kafka metadata is still present
@@ -680,7 +681,7 @@ public class RecordProcessorFactoryTest {
             "Value should be unwrapped by SchemalessTransform, not present as _kafka_value");
 
         // The key converter in schemaless mode is RawConverter
-        assertEquals(ByteBuffer.wrap(key), ByteBuffer.wrap((byte[]) finalRecord.get("_kafka_key")));
+        assertEquals(key, finalRecord.get("_kafka_key"));
     }
 
     @Test

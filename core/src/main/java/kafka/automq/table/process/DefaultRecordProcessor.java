@@ -50,8 +50,8 @@ import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
  * @see Transform
  */
 public class DefaultRecordProcessor implements RecordProcessor {
-    private final static Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
-    private final static String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
+    private static final Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
+    private static final String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
     private final String topicName;
     private final Converter keyConverter;
     private final Converter valueConverter;

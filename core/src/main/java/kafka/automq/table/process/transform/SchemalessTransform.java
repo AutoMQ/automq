@@ -95,6 +95,9 @@ public class SchemalessTransform implements Transform {
     }
 
     private String buf2String(ByteBuffer buffer) {
+        if (buffer == null) {
+            return "";
+        }
         byte[] bytes = new byte[buffer.remaining()];
         buffer.slice().get(bytes);
         return new String(bytes, StandardCharsets.UTF_8);
