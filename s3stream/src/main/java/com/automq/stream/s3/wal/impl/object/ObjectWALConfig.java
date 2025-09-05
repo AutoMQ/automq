@@ -111,7 +111,7 @@ public class ObjectWALConfig {
 
     public static final class Builder {
         private ReservationService reservationService = ReservationService.NOOP;
-        private long batchInterval = 256; // 256ms
+        private long batchInterval = 250; // 250ms
         private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
         private int maxInflightUploadCount = 50;
