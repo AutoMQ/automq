@@ -16,7 +16,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.kafka.server.record;
 
 import java.util.List;
@@ -25,23 +24,23 @@ import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 
-public enum TableTopicSchemaType {
-    NONE("none"),
-    SCHEMALESS("schemaless"),
-    SCHEMA("schema");
+public enum TableTopicConvertType {
+    RAW("raw"),
+    STRING("string"),
+    BY_SCHEMA_ID("by_schema_id"),
+    BY_LATEST_SCHEMA("by_latest_schema");
 
     public final String name;
-    private static final List<TableTopicSchemaType> VALUES = asList(values());
+    private static final List<TableTopicConvertType> VALUES = asList(values());
 
-    TableTopicSchemaType(String name) {
+    TableTopicConvertType(String name) {
         this.name = name;
     }
-
     public static List<String> names() {
         return VALUES.stream().map(v -> v.name).collect(Collectors.toList());
     }
 
-    public static TableTopicSchemaType forName(String n) {
+    public static TableTopicConvertType forName(String n) {
         String name = n.toLowerCase(Locale.ROOT);
         return VALUES.stream().filter(v -> v.name.equals(name)).findFirst().orElseThrow(() ->
             new IllegalArgumentException("Unknown table topic type name: " + name)

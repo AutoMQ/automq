@@ -16,26 +16,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package kafka.automq.table.process.transform;
 
+import kafka.automq.table.process.RecordAssembler;
 import kafka.automq.table.process.Transform;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
 
-import org.apache.kafka.common.record.Record;
-
-import org.apache.avro.Schema;
-import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
 
 import java.util.Map;
 
-public class KafkaRecordTransform implements Transform {
+/**
+ * A transform to unwrap a record from a standard {@code ValueRecord} container.
+ */
+public class FlattenTransform implements Transform {
 
-    // Define constants to avoid magic strings and ensure consistency.
-    private static final String KAFKA_RECORD_NAMESPACE = "kafka.automq.table.process.transform";
-    private static final String KAFKA_RECORD_NAME = "KafkaRecord";
+    public static final FlattenTransform INSTANCE = new FlattenTransform();
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -44,21 +42,19 @@ public class KafkaRecordTransform implements Transform {
 
     @Override
     public GenericRecord apply(GenericRecord record, TransformContext context) throws TransformException {
-        final Record kafkaRecord = context.getKafkaRecord();
-        final Schema schema = record.getSchema();
+        if (record == null || !record.hasField(RecordAssembler.KAFKA_VALUE_FIELD)) {
+            throw new TransformException("Record is null or has no value field");
+        }
+        Object value = record.get(RecordAssembler.KAFKA_VALUE_FIELD);
+        if (value instanceof GenericRecord) {
+            return (GenericRecord) value;
+        } else {
+            throw new TransformException("value field is not a GenericRecord");
+        }
+    }
 
-        Schema wrapperSchema = SchemaBuilder.record(KAFKA_RECORD_NAME)
-            .namespace(KAFKA_RECORD_NAMESPACE)
-            .fields()
-            .name("timestamp").doc("Timestamp of the Kafka record").type().longType().noDefault()
-            .name("key").doc("Key of the Kafka record").type().unionOf().nullType().and().bytesType().endUnion().nullDefault()
-            .name("value").doc("Value of the Kafka record").type(schema).noDefault()
-            .endRecord();
-
-        return new GenericRecordBuilder(wrapperSchema)
-            .set("timestamp", kafkaRecord.timestamp())
-            .set("key", kafkaRecord.key())
-            .set("value", record)
-            .build();
+    @Override
+    public String getName() {
+        return "Flatten";
     }
 }

@@ -34,10 +34,11 @@ public interface RecordProcessor {
     /**
      * Processes a Kafka record into Avro format.
      *
-     * @param record the Kafka record to process
+     * @param partition topic partition
+     * @param record    the Kafka record to process
      * @return ProcessingResult containing the converted record or error information
      */
-    ProcessingResult process(Record record);
+    ProcessingResult process(int partition, Record record);
 
 
     void configure(Map<String, ?> configs) throws RecordProcessorException;

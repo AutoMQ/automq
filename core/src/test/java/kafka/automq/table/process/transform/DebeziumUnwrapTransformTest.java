@@ -19,7 +19,6 @@
 
 package kafka.automq.table.process.transform;
 
-import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
 
@@ -30,19 +29,19 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.nio.ByteBuffer;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 class DebeziumUnwrapTransformTest {
 
     private static final Schema ROW_SCHEMA =
@@ -89,8 +88,7 @@ class DebeziumUnwrapTransformTest {
             .endRecord();
 
     private DebeziumUnwrapTransform transform;
-    private ValueUnwrapTransform valueUnwrapTransform;
-    private KafkaRecordTransform kafkaRecordTransform;
+    private FlattenTransform flattenTransform;
     private TransformContext context;
     private Record kafkaRecord;
 
@@ -99,10 +97,8 @@ class DebeziumUnwrapTransformTest {
         transform = new DebeziumUnwrapTransform();
         transform.configure(Collections.emptyMap());
 
-        valueUnwrapTransform = new ValueUnwrapTransform();
-        valueUnwrapTransform.configure(Collections.emptyMap());
-
-        kafkaRecordTransform = new KafkaRecordTransform();
+        flattenTransform = new FlattenTransform();
+        flattenTransform.configure(Collections.emptyMap());
 
         context = mock(TransformContext.class);
         kafkaRecord = mock(Record.class);
@@ -171,33 +167,6 @@ class DebeziumUnwrapTransformTest {
         assertTrue(e.getMessage().contains("Invalid DELETE record: missing required 'before' data"));
     }
 
-    @Test
-    void testFullPipelineWithWrapAndUnwrap() throws TransformException {
-        // 1. Initial Debezium event
-        GenericRecord debeziumEvent = createDebeziumEvent("c", 1L, 100.0);
-        when(kafkaRecord.timestamp()).thenReturn(System.currentTimeMillis());
-        when(kafkaRecord.key()).thenReturn(ByteBuffer.wrap("some-key".getBytes()));
-
-        // 2. Wrap with Kafka metadata
-        GenericRecord wrappedRecord = Converter.buildValueRecord(debeziumEvent);
-        assertNotNull(wrappedRecord.get(Converter.VALUE_FIELD_NAME));
-
-        // 3. Unwrap the value
-        GenericRecord unwrappedRecord = valueUnwrapTransform.apply(wrappedRecord, context);
-        assertSame(debeziumEvent, unwrappedRecord);
-
-        // 4. Apply the final Debezium transform
-        GenericRecord result = transform.apply(unwrappedRecord, context);
-
-        // 5. Assert final result is correct
-        assertNotNull(result);
-        assertEquals(1L, result.get("account_id"));
-        assertEquals(100.0, result.get("balance"));
-        GenericRecord cdc = (GenericRecord) result.get("_cdc");
-        assertNotNull(cdc);
-        assertEquals("I", cdc.get("op"));
-        assertEquals(123L, cdc.get("offset"));
-    }
 
     @Test
     void testSourceWithNullSchema() throws TransformException {

@@ -23,11 +23,10 @@ import kafka.automq.table.process.ConversionResult;
 import kafka.automq.table.process.Converter;
 import kafka.automq.table.process.exception.ConverterException;
 
-import org.apache.kafka.common.record.Record;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.ByteBuffer;
 import java.util.function.Supplier;
 
 /**
@@ -75,7 +74,7 @@ public class LazyConverter implements Converter {
     }
 
     @Override
-    public ConversionResult convert(String topic, Record record) throws ConverterException {
-        return getDelegate().convert(topic, record);
+    public ConversionResult convert(String topic, ByteBuffer buffer) throws ConverterException {
+        return getDelegate().convert(topic, buffer);
     }
 }

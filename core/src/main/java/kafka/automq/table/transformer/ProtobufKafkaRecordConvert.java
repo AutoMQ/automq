@@ -20,6 +20,7 @@
 package kafka.automq.table.transformer;
 
 import kafka.automq.table.deserializer.proto.CustomKafkaProtobufDeserializer;
+import kafka.automq.table.process.convert.ProtoToAvroConverter;
 
 import org.apache.kafka.common.record.Record;
 import org.apache.kafka.common.serialization.Deserializer;
