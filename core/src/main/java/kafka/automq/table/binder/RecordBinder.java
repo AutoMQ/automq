@@ -20,6 +20,7 @@ package kafka.automq.table.binder;
 
 
 import kafka.automq.table.metric.FieldMetric;
+
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.iceberg.avro.AvroSchemaUtil;
@@ -280,7 +281,7 @@ public class RecordBinder {
             }
             long total = 1;
             if (list instanceof List) {
-                for (Object element : (List)list) {
+                for (Object element : (List) list) {
                     total += calculateFieldCount(element, elementType);
                 }
             }
