@@ -19,17 +19,18 @@
 
 package kafka.automq.table.process;
 
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
+import kafka.automq.table.process.exception.SchemaRegistrySystemException;
 import kafka.automq.table.process.exception.TransformException;
-
-import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.record.Record;
-
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.record.Record;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
@@ -40,6 +41,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
 
 /**
@@ -98,9 +100,32 @@ public class DefaultRecordProcessor implements RecordProcessor {
         } catch (InvalidDataException e) {
             return getProcessingResult(kafkaRecord, "Transform operation failed for record: %s", DataError.ErrorType.DATA_ERROR, e);
         } catch (Exception e) {
+            RestClientException exception = null;
+            if (e instanceof RestClientException) {
+                exception = (RestClientException) e;
+            } else if (e instanceof KafkaException && e.getCause() instanceof RestClientException) {
+                exception = (RestClientException) e.getCause();
+            }
+            if (exception != null) {
+                // io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe#toKafkaException
+                if (isSchemaOrSubjectNotFoundException(exception)){ // not found
+                    return getProcessingResult(kafkaRecord, "Schema or subject not found for record: %s", DataError.ErrorType.CONVERT_ERROR, exception);
+                }
+                throw SchemaRegistrySystemException.fromStatusCode(exception, buildRecordContext(kafkaRecord));
+            }
             return getProcessingResult(kafkaRecord, "Unexpected error processing record: %s", DataError.ErrorType.UNKNOW_ERROR, e);
         }
     }
+
+    // io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient#isSchemaOrSubjectNotFoundException
+    private boolean isSchemaOrSubjectNotFoundException(RestClientException rce) {
+        int SCHEMA_NOT_FOUND_ERROR_CODE = 40403;
+        int SUBJECT_NOT_FOUND_ERROR_CODE = 40401;
+        return rce.getStatus() == HTTP_NOT_FOUND
+            && (rce.getErrorCode() == SCHEMA_NOT_FOUND_ERROR_CODE
+            || rce.getErrorCode() == SUBJECT_NOT_FOUND_ERROR_CODE);
+    }
+
 
     @NotNull
     private ProcessingResult getProcessingResult(Record kafkaRecord, String format, DataError.ErrorType unknow, Exception e) {
