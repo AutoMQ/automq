@@ -17,31 +17,39 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package org.apache.kafka.server.record;
 
-import java.nio.ByteBuffer;
+import java.util.List;
+import java.util.Locale;
+import java.util.stream.Collectors;
 
-public class FieldMetric {
+import static java.util.Arrays.asList;
 
-    public static int count(String value) {
-        if (value == null) {
-            return 0;
-        }
-        return Math.max((value.length() + 23) / 24, 1);
+public enum ErrorsTolerance {
+    NONE("none"),
+    INVALID_DATA("invalid_data"),
+    ALL("all");
+
+    private static final List<ErrorsTolerance> VALUES = asList(values());
+    public final String name;
+
+    ErrorsTolerance(String name) {
+        this.name = name;
     }
 
-    public static int count(ByteBuffer value) {
-        if (value == null) {
-            return 0;
-        }
-        return Math.max((value.remaining() + 31) / 32, 1);
+    public static List<String> names() {
+        return VALUES.stream().map(v -> v.name).collect(Collectors.toList());
     }
 
-    public static int count(byte[] value) {
-        if (value == null) {
-            return 0;
+    public static ErrorsTolerance forName(String name) {
+        if (name == null) {
+            return INVALID_DATA;
         }
-        return Math.max((value.length + 31) / 32, 1);
+        String upperCaseName = name.toUpperCase(Locale.ROOT);
+        try {
+            return valueOf(upperCaseName);
+        } catch (IllegalArgumentException e) {
+            return INVALID_DATA;
+        }
     }
-
 }

@@ -159,6 +159,12 @@ public final class DataError {
          * This can be due to the input data not matching the format expected by a transform (e.g., an invalid Debezium record).
          */
         TRANSFORMATION_ERROR,
+
+        /**
+         *
+         */
+        SYSTEM_ERROR,
+
         /**
          * Unknown exception during processing.
          */

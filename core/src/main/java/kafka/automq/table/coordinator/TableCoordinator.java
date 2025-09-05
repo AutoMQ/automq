@@ -20,7 +20,6 @@
 package kafka.automq.table.coordinator;
 
 import kafka.automq.table.Channel;
-import kafka.automq.table.TableTopicMetricsManager;
 import kafka.automq.table.events.CommitRequest;
 import kafka.automq.table.events.CommitResponse;
 import kafka.automq.table.events.Envelope;
@@ -28,6 +27,7 @@ import kafka.automq.table.events.Errors;
 import kafka.automq.table.events.Event;
 import kafka.automq.table.events.EventType;
 import kafka.automq.table.events.WorkerOffset;
+import kafka.automq.table.metric.TableTopicMetricsManager;
 import kafka.automq.table.utils.PartitionUtil;
 import kafka.automq.table.utils.TableIdentifierUtil;
 import kafka.log.streamaspect.MetaKeyValue;
