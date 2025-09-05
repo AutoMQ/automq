@@ -357,7 +357,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, STRING, null, TableTopicConfigValidator.PartitionValidator.INSTANCE, MEDIUM, TopicConfig.TABLE_TOPIC_PARTITION_BY_DOC)
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
-                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG, STRING, ErrorsTolerance.INVALID_DATA.name, in(ErrorsTolerance.NONE.name, ErrorsTolerance.INVALID_DATA.name, ErrorsTolerance.ALL.name), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG, STRING, ErrorsTolerance.INVALID_DATA.name, in(ErrorsTolerance.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)

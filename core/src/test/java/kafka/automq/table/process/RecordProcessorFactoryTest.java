@@ -18,7 +18,6 @@
  */
 package kafka.automq.table.process;
 
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.deserializer.proto.CustomProtobufSchema;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.process.exception.ProcessorInitializationException;
@@ -26,7 +25,6 @@ import kafka.automq.table.process.exception.TransformException;
 import kafka.automq.table.process.proto.PersonProto;
 import kafka.automq.table.worker.WorkerConfig;
 
-import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.Record;
@@ -53,6 +51,7 @@ import java.util.Map;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

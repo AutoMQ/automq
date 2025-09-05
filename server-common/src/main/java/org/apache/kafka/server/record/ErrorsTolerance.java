@@ -19,17 +19,26 @@
 
 package org.apache.kafka.server.record;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
+
+import static java.util.Arrays.asList;
 
 public enum ErrorsTolerance {
-    NONE,
-    INVALID_DATA,
-    ALL;
+    NONE("none"),
+    INVALID_DATA("invalid_data"),
+    ALL("all");
 
+    private static final List<ErrorsTolerance> VALUES = asList(values());
     public final String name;
 
-    ErrorsTolerance() {
-        this.name = this.name().toLowerCase(Locale.ROOT);
+    ErrorsTolerance(String name) {
+        this.name = name;
+    }
+
+    public static List<String> names() {
+        return VALUES.stream().map(v -> v.name).collect(Collectors.toList());
     }
 
     public static ErrorsTolerance forName(String name) {
