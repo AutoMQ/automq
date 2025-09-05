@@ -48,7 +48,9 @@ jobs:
           java-version: ${{ matrix.jdk }}
           distribution: "zulu"
       - name: Setup Gradle
-        uses: gradle/gradle-build-action@v2.9.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10'
       - name: Publish
         run: |
           gradle publish -PmavenUrl='https://maven.pkg.github.com/AutoMQ/automq' \
