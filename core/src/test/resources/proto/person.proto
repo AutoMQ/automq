@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package kafka.automq.table.process.proto;
+
+import "google/protobuf/timestamp.proto";
+
+option java_package = "kafka.automq.table.process.proto";
+option java_outer_classname = "PersonProto";
+
+message Address {
+    string street = 1;
+    string city = 2;
+}
+
+message Person {
+    int64 id = 1;
+    string name = 2;
+    bool is_active = 3;
+    bytes extra_data = 4;
+
+    Address address = 5;
+
+    repeated string roles = 6;
+
+    map<string, string> attributes = 7;
+
+    google.protobuf.Timestamp last_updated = 8;
+}

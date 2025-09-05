@@ -20,7 +20,7 @@
 
 package kafka.automq.table.process.transform;
 
-import kafka.automq.table.process.Converter;
+import kafka.automq.table.process.RecordAssembler;
 import kafka.automq.table.process.TransformContext;
 import kafka.automq.table.process.exception.TransformException;
 
@@ -29,17 +29,18 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.generic.GenericRecordBuilder;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
-class ValueUnwrapTransformTest {
+@Tag("S3Unit")
+class FlattenTransformTest {
 
     private static final Schema INNER_SCHEMA =
         SchemaBuilder.record("Inner")
@@ -51,7 +52,7 @@ class ValueUnwrapTransformTest {
     private static final Schema VALUE_CONTAINER_SCHEMA =
         SchemaBuilder.record("ValueContainer")
             .fields()
-            .name(Converter.VALUE_FIELD_NAME).type(INNER_SCHEMA).noDefault()
+            .name(RecordAssembler.KAFKA_VALUE_FIELD).type(INNER_SCHEMA).noDefault()
             .endRecord();
 
     private static final Schema NON_WRAPPED_SCHEMA =
@@ -63,16 +64,16 @@ class ValueUnwrapTransformTest {
     private static final Schema STRING_VALUE_SCHEMA =
         SchemaBuilder.record("StringValue")
             .fields()
-            .requiredString(Converter.VALUE_FIELD_NAME)
+            .requiredString(RecordAssembler.KAFKA_VALUE_FIELD)
             .endRecord();
 
 
-    private ValueUnwrapTransform transform;
+    private FlattenTransform transform;
     private TransformContext context;
 
     @BeforeEach
     void setUp() {
-        transform = new ValueUnwrapTransform();
+        transform = new FlattenTransform();
         transform.configure(Collections.emptyMap());
         context = mock(TransformContext.class);
     }
@@ -85,7 +86,7 @@ class ValueUnwrapTransformTest {
             .build();
 
         GenericRecord outerRecord = new GenericRecordBuilder(VALUE_CONTAINER_SCHEMA)
-            .set(Converter.VALUE_FIELD_NAME, innerRecord)
+            .set(RecordAssembler.KAFKA_VALUE_FIELD, innerRecord)
             .build();
 
         GenericRecord result = transform.apply(outerRecord, context);
@@ -100,24 +101,7 @@ class ValueUnwrapTransformTest {
             .build();
 
         TransformException e = assertThrows(TransformException.class, () -> transform.apply(nonWrappedRecord, context));
-        assertTrue(e.getMessage().contains("does not contain a 'value' field to unwrap"));
-    }
-
-    @Test
-    void testApplyWhenValueIsNotRecordShouldReturnOriginal() throws TransformException {
-        GenericRecord stringValueRecord = new GenericRecordBuilder(STRING_VALUE_SCHEMA)
-            .set(Converter.VALUE_FIELD_NAME, "just a string")
-            .build();
-
-        GenericRecord result = transform.apply(stringValueRecord, context);
-
-        assertSame(stringValueRecord, result, "The transform should return the original record if the 'value' field is not a record.");
-    }
-
-    @Test
-    void testApplyWhenRecordIsNullShouldReturnNull() throws TransformException {
-        GenericRecord result = transform.apply(null, context);
-        assertNull(result, "The transform should return null when the input record is null.");
+        assertTrue(e.getMessage().contains("Record is null or has no value field"));
     }
 
 }

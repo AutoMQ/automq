@@ -26,20 +26,21 @@ import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
-public class RawConverter implements Converter {
-    public static final RawConverter INSTANCE = new RawConverter();
+public class StringConverter implements Converter {
+    public static final StringConverter INSTANCE = new StringConverter();
 
-    private static final Schema SCHEMA = SchemaBuilder.builder().bytesType();
+    private static final Schema SCHEMA = SchemaBuilder.builder().stringType();
     private static final String SCHEMA_IDENTITY = String.valueOf(SCHEMA.hashCode());
 
     @Override
     public ConversionResult convert(String topic, ByteBuffer buffer) throws ConverterException {
         if (buffer == null) {
-            return new ConversionResult(new byte[0], SCHEMA, SCHEMA_IDENTITY);
+            return new ConversionResult("", SCHEMA, SCHEMA_IDENTITY);
         }
         byte[] bytes = new byte[buffer.remaining()];
         buffer.slice().get(bytes);
-        return new ConversionResult(bytes, SCHEMA, SCHEMA_IDENTITY);
+        return new ConversionResult(new String(bytes, StandardCharsets.UTF_8), SCHEMA, SCHEMA_IDENTITY);
     }
 }

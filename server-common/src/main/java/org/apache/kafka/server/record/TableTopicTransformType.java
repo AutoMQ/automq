@@ -25,23 +25,22 @@ import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 
-public enum TableTopicSchemaType {
+public enum TableTopicTransformType {
     NONE("none"),
-    SCHEMALESS("schemaless"),
-    SCHEMA("schema");
+    FLATTEN("flatten"),
+    FLATTEN_DEBEZIUM("flatten_debezium");
 
     public final String name;
-    private static final List<TableTopicSchemaType> VALUES = asList(values());
+    private static final List<TableTopicTransformType> VALUES = asList(values());
 
-    TableTopicSchemaType(String name) {
+    TableTopicTransformType(String name) {
         this.name = name;
     }
-
     public static List<String> names() {
         return VALUES.stream().map(v -> v.name).collect(Collectors.toList());
     }
 
-    public static TableTopicSchemaType forName(String n) {
+    public static TableTopicTransformType forName(String n) {
         String name = n.toLowerCase(Locale.ROOT);
         return VALUES.stream().filter(v -> v.name.equals(name)).findFirst().orElseThrow(() ->
             new IllegalArgumentException("Unknown table topic type name: " + name)
