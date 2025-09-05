@@ -142,8 +142,8 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(3, table.schema().columns().size());
-        assertNotNull(table.schema().findField("value.email"));
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.email"));
     }
 
     @Test
@@ -188,7 +188,7 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(false, table.schema().findField("value.name").isRequired());
+        assertEquals(false, table.schema().findField("_kafka_value.name").isRequired());
     }
 
     @Test
@@ -232,7 +232,7 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(Types.LongType.get(), table.schema().findField("value.count").type());
+        assertEquals(Types.LongType.get(), table.schema().findField("_kafka_value.count").type());
     }
 
     @Test
@@ -278,9 +278,9 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(3, table.schema().columns().size());
-        assertNotNull(table.schema().findField("value.email"));
-        assertEquals(false, table.schema().findField("value.email").isRequired());
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.email"));
+        assertEquals(false, table.schema().findField("_kafka_value.email").isRequired());
     }
 
     @Test
@@ -328,10 +328,10 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(3, table.schema().columns().size());
-        assertNotNull(table.schema().findField("value.id"));
-        assertNotNull(table.schema().findField("value.name"));
-        assertNotNull(table.schema().findField("value.email"));
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.id"));
+        assertNotNull(table.schema().findField("_kafka_value.name"));
+        assertNotNull(table.schema().findField("_kafka_value.email"));
     }
 
     @Test

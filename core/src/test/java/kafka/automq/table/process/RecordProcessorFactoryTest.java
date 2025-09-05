@@ -18,6 +18,7 @@
  */
 package kafka.automq.table.process;
 
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.deserializer.proto.CustomProtobufSchema;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.process.exception.ProcessorInitializationException;
@@ -495,8 +496,8 @@ public class RecordProcessorFactoryTest {
         // Assert
         assertFalse(result.isSuccess());
         assertNotNull(result.getError());
-        assertEquals(DataError.ErrorType.UNKNOW_ERROR, result.getError().getType());
-        assertTrue(result.getError().getCause() instanceof SerializationException);
+        assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
+        assertTrue(result.getError().getCause() instanceof RestClientException);
     }
 
     @Test
@@ -800,8 +801,8 @@ public class RecordProcessorFactoryTest {
         // Assert
         assertFalse(result.isSuccess());
         assertNotNull(result.getError());
-        assertEquals(DataError.ErrorType.UNKNOW_ERROR, result.getError().getType());
-        assertTrue(result.getError().getCause() instanceof SerializationException,
+        assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
+        assertTrue(result.getError().getCause() instanceof RestClientException,
             "Cause should be SerializationException from the deserializer");
     }
 
