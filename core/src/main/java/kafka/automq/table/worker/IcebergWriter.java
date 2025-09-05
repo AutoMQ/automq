@@ -105,18 +105,18 @@ public class IcebergWriter implements Writer {
             if (write0(partition, kafkaRecord)) {
                 recordCount++;
                 dirtyBytes += kafkaRecord.sizeInBytes();
-                offsetRangeMap.compute(partition, (k, v) -> {
-                    if (v == null) {
-                        throw new IllegalArgumentException(String.format("The partition %s initial offset is not set", partition));
-                    }
-                    long recordOffset = kafkaRecord.offset();
-                    if (recordOffset < v.end) {
-                        throw new IllegalArgumentException(String.format("The record offset[%s] is less than the end[%s]", recordOffset, v.end));
-                    }
-                    v.end = recordOffset + 1;
-                    return v;
-                });
             }
+            offsetRangeMap.compute(partition, (k, v) -> {
+                if (v == null) {
+                    throw new IllegalArgumentException(String.format("The partition %s initial offset is not set", partition));
+                }
+                long recordOffset = kafkaRecord.offset();
+                if (recordOffset < v.end) {
+                    throw new IllegalArgumentException(String.format("The record offset[%s] is less than the end[%s]", recordOffset, v.end));
+                }
+                v.end = recordOffset + 1;
+                return v;
+            });
         } catch (Throwable e) {
             LOGGER.error("[WRITE_FAIL],{}", this, e);
             status = Status.ERROR;
