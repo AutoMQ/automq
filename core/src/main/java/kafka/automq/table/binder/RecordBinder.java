@@ -20,7 +20,6 @@ package kafka.automq.table.binder;
 
 
 import kafka.automq.table.metric.FieldMetric;
-
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.iceberg.avro.AvroSchemaUtil;
@@ -264,9 +263,9 @@ public class RecordBinder {
                 case FIXED:
                     return FieldMetric.count((byte[]) value);
                 case LIST:
-                    return calculateListFieldCount((List<?>) value, ((Types.ListType) icebergType).elementType());
+                    return calculateListFieldCount(value, ((Types.ListType) icebergType).elementType());
                 case MAP:
-                    return calculateMapFieldCount((Map<?, ?>) value, (Types.MapType) icebergType);
+                    return calculateMapFieldCount(value, (Types.MapType) icebergType);
                 default:
                     return 1; // Struct or Primitive types count as 1 field
             }
@@ -275,14 +274,15 @@ public class RecordBinder {
         /**
          * Calculates field count for List values by summing element costs.
          */
-        private long calculateListFieldCount(List<?> list, Type elementType) {
+        private long calculateListFieldCount(Object list, Type elementType) {
             if (list == null) {
                 return 0;
             }
-
             long total = 1;
-            for (Object element : list) {
-                total += calculateFieldCount(element, elementType);
+            if (list instanceof List) {
+                for (Object element : (List)list) {
+                    total += calculateFieldCount(element, elementType);
+                }
             }
             return total;
         }
@@ -290,15 +290,17 @@ public class RecordBinder {
         /**
          * Calculates field count for Map values by summing key and value costs.
          */
-        private long calculateMapFieldCount(Map<?, ?> map, Types.MapType mapType) {
-            if (map == null || map.isEmpty()) {
+        private long calculateMapFieldCount(Object map, Types.MapType mapType) {
+            if (map == null) {
                 return 0;
             }
 
             long total = 1;
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                total += calculateFieldCount(entry.getKey(), mapType.keyType());
-                total += calculateFieldCount(entry.getValue(), mapType.valueType());
+            if (map instanceof Map) {
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) map).entrySet()) {
+                    total += FieldMetric.count(entry.getKey().toString());
+                    total += calculateFieldCount(entry.getValue(), mapType.valueType());
+                }
             }
             return total;
         }

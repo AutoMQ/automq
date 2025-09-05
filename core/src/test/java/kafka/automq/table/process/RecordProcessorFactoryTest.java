@@ -802,7 +802,7 @@ public class RecordProcessorFactoryTest {
         assertNotNull(result.getError());
         assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
         assertTrue(result.getError().getCause() instanceof RestClientException,
-            "Cause should be SerializationException from the deserializer");
+            "Cause should be RestClientException from the deserializer");
     }
 
     // --- Helper Methods ---

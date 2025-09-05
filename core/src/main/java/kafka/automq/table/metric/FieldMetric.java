@@ -27,21 +27,31 @@ public class FieldMetric {
         if (value == null) {
             return 0;
         }
-        return Math.max((value.length() + 23) / 24, 1);
+        if (value.isEmpty()) {
+            return 1;
+        }
+        return (value.length() + 23) / 24;
     }
 
     public static int count(ByteBuffer value) {
         if (value == null) {
             return 0;
         }
-        return Math.max((value.remaining() + 31) / 32, 1);
+        int remaining = value.remaining();
+        if (remaining == 0) {
+            return 1;
+        }
+        return (remaining + 31) >> 5;
     }
 
     public static int count(byte[] value) {
         if (value == null) {
             return 0;
         }
-        return Math.max((value.length + 31) / 32, 1);
+        if (value.length == 0) {
+            return 1;
+        }
+        return (value.length + 31) >> 5;
     }
 
 }
