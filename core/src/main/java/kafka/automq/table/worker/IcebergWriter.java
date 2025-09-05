@@ -137,7 +137,6 @@ public class IcebergWriter implements Writer {
             DataError error = result.getError();
             String recordContext = buildRecordContext(partition, kafkaRecord);
             String errorMsg = String.format("Data processing failed for record: %s", recordContext);
-            LOGGER.warn("{} - Error: {}", errorMsg, error.getDetailedMessage());
 
             if (config.errorsTolerance() == ErrorsTolerance.ALL
                 || (DataError.ErrorType.DATA_ERROR.equals(error.getType())

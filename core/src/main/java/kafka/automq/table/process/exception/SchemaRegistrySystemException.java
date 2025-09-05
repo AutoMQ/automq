@@ -19,8 +19,8 @@
 
 package kafka.automq.table.process.exception;
 
+
 import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
-import org.apache.kafka.common.record.Record;
 
 /**
  * Exception representing system-level errors when interacting with the Schema Registry.

@@ -26,6 +26,7 @@ import kafka.automq.table.process.DefaultRecordProcessor;
 import kafka.automq.table.process.RecordProcessor;
 import kafka.automq.table.process.convert.AvroRegistryConverter;
 import kafka.automq.table.process.convert.ProtobufRegistryConverter;
+import kafka.automq.table.process.convert.RawConverter;
 import kafka.automq.table.worker.IcebergTableManager;
 import kafka.automq.table.worker.IcebergWriter;
 import kafka.automq.table.worker.WorkerConfig;
@@ -551,7 +552,7 @@ public class FieldsPerf {
                     InMemoryCatalog catalog = new InMemoryCatalog();
                     catalog.initialize("test", ImmutableMap.of());
                     Converter recordConvert = getKafkaRecordConverter(schema);
-                    RecordProcessor processor = new DefaultRecordProcessor("", recordConvert);
+                    RecordProcessor processor = new DefaultRecordProcessor("", RawConverter.INSTANCE, recordConvert);
                     writer = new IcebergWriter(new IcebergTableManager(catalog, tableId, config), processor, config);
                     writer.setOffset(0, i);
                 }

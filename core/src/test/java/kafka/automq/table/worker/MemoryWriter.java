@@ -42,7 +42,7 @@ public class MemoryWriter extends IcebergWriter {
     List<Record> records = new LinkedList<>();
 
     public MemoryWriter(WorkerConfig config) {
-        super(new IcebergTableManager(catalog(), TableIdentifier.parse("default.test"), config), new DefaultRecordProcessor("test", new RawConverter()), config);
+        super(new IcebergTableManager(catalog(), TableIdentifier.parse("default.test"), config), new DefaultRecordProcessor("test", new RawConverter(), new RawConverter()), config);
     }
 
     @Override

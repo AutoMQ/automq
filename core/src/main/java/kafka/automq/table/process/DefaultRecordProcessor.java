@@ -19,18 +19,19 @@
 
 package kafka.automq.table.process;
 
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
 import kafka.automq.table.process.exception.SchemaRegistrySystemException;
 import kafka.automq.table.process.exception.TransformException;
-import org.apache.avro.Schema;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericRecord;
+
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.Record;
+
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
@@ -40,6 +41,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
@@ -108,7 +111,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
             }
             if (exception != null) {
                 // io.confluent.kafka.serializers.AbstractKafkaSchemaSerDe#toKafkaException
-                if (isSchemaOrSubjectNotFoundException(exception)){ // not found
+                if (isSchemaOrSubjectNotFoundException(exception)) { // not found
                     return getProcessingResult(kafkaRecord, "Schema or subject not found for record: %s", DataError.ErrorType.CONVERT_ERROR, exception);
                 }
                 throw SchemaRegistrySystemException.fromStatusCode(exception, buildRecordContext(kafkaRecord));
@@ -119,11 +122,9 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
     // io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient#isSchemaOrSubjectNotFoundException
     private boolean isSchemaOrSubjectNotFoundException(RestClientException rce) {
-        int SCHEMA_NOT_FOUND_ERROR_CODE = 40403;
-        int SUBJECT_NOT_FOUND_ERROR_CODE = 40401;
         return rce.getStatus() == HTTP_NOT_FOUND
-            && (rce.getErrorCode() == SCHEMA_NOT_FOUND_ERROR_CODE
-            || rce.getErrorCode() == SUBJECT_NOT_FOUND_ERROR_CODE);
+            && (rce.getErrorCode() == 40403 // SCHEMA_NOT_FOUND_ERROR_CODE
+            || rce.getErrorCode() == 40401); // SUBJECT_NOT_FOUND_ERROR_CODE
     }
 
 

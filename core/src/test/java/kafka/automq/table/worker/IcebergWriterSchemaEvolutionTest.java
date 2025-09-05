@@ -22,6 +22,7 @@ package kafka.automq.table.worker;
 import kafka.automq.table.process.DefaultRecordProcessor;
 import kafka.automq.table.process.RecordProcessor;
 import kafka.automq.table.process.convert.AvroRegistryConverter;
+import kafka.automq.table.process.convert.StringConverter;
 
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.Record;
@@ -87,7 +88,7 @@ class IcebergWriterSchemaEvolutionTest {
         IcebergTableManager tableManager = new IcebergTableManager(catalog, tableId, config);
 
         AvroRegistryConverter registryConverter = new AvroRegistryConverter(kafkaAvroDeserializer, null);
-        RecordProcessor processor = new DefaultRecordProcessor(TOPIC, registryConverter);
+        RecordProcessor processor = new DefaultRecordProcessor(TOPIC, StringConverter.INSTANCE, registryConverter);
         writer = new IcebergWriter(tableManager, processor, config);
         writer.setOffset(0, 0);
     }
