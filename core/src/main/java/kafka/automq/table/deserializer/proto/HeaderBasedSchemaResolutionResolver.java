@@ -24,7 +24,6 @@ import kafka.automq.table.deserializer.proto.schema.MessageIndexes;
 import kafka.automq.table.process.exception.InvalidDataException;
 
 import org.apache.kafka.common.errors.SerializationException;
-import org.apache.kafka.common.record.Record;
 
 import java.nio.ByteBuffer;
 
@@ -59,9 +58,9 @@ public class HeaderBasedSchemaResolutionResolver implements SchemaResolutionReso
     }
 
     @Override
-    public int getSchemaId(String topic, Record record) {
+    public int getSchemaId(String topic, ByteBuffer payload) {
         // io.confluent.kafka.serializers.DeserializationContext#constructor
-        return readSchemaId(record.value().duplicate());
+        return readSchemaId(payload.duplicate());
     }
 
     private int readSchemaId(ByteBuffer buffer) {

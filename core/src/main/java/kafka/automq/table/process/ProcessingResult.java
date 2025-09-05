@@ -34,7 +34,7 @@ import java.util.Objects;
  *       all other fields are null</li>
  * </ul>
  *
- * @see RecordProcessor#process(org.apache.kafka.common.record.Record)
+ * @see RecordProcessor#process(int, org.apache.kafka.common.record.Record)
  * @see DataError
  */
 public final class ProcessingResult {

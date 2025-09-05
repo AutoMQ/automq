@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.transformer;
+package kafka.automq.table.process.convert;
 
 import kafka.automq.table.process.exception.ConverterException;
 
@@ -137,7 +137,7 @@ public class ProtoToAvroConverter {
         } else if (value instanceof Enum) {
             return value.toString(); // protobuf Enum is represented as string
         } else if (value instanceof List) {
-            throw new ConverterException("Should be handled in convertValue");
+            throw new ConverterException("Unexpected list type found; repeated fields should have been handled in convertValue");
         }
 
         // primitive types

@@ -19,13 +19,25 @@
 
 package kafka.automq.table.process;
 
-import kafka.automq.table.process.exception.ConverterException;
+public enum SchemaFormat {
+    AVRO,
+    JSON,
+    PROTOBUF;
 
-import java.nio.ByteBuffer;
-
-
-public interface Converter {
-
-    ConversionResult convert(String topic, ByteBuffer buffer) throws ConverterException;
-
+    public static SchemaFormat fromString(String format) {
+        switch (format) {
+            case "AVRO": {
+                return AVRO;
+            }
+            case "JSON": {
+                return JSON;
+            }
+            case "PROTOBUF": {
+                return PROTOBUF;
+            }
+            default: {
+                throw new IllegalArgumentException("Unsupported schema format: " + format);
+            }
+        }
+    }
 }

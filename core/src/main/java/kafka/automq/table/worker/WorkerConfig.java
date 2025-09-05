@@ -22,7 +22,9 @@ package kafka.automq.table.worker;
 import kafka.cluster.Partition;
 import kafka.log.UnifiedLog;
 
+import org.apache.kafka.server.record.TableTopicConvertType;
 import org.apache.kafka.server.record.TableTopicSchemaType;
+import org.apache.kafka.server.record.TableTopicTransformType;
 import org.apache.kafka.storage.internals.log.LogConfig;
 
 import java.util.List;
@@ -53,9 +55,38 @@ public class WorkerConfig {
         return config.tableTopicSchemaType;
     }
 
+    public TableTopicConvertType valueConvertType() {
+        return config.valueConvertType;
+    }
+    public TableTopicConvertType keyConvertType() {
+        return config.keyConvertType;
+    }
+
+    public String valueSubject() {
+        return config.valueSchemaLatestConfig.get("subjet").toString();
+    }
+
+    public String valueMessageFullName() {
+        return config.valueSchemaLatestConfig.get("message.full.name").toString();
+    }
+
+    public String keySubject() {
+        return config.keySchemaLatestConfig.get("subjet").toString();
+    }
+
+    public String keyMessageFullName() {
+        return config.keySchemaLatestConfig.get("message.full.name").toString();
+    }
+
+    public TableTopicTransformType transformType() {
+        return config.transformType;
+    }
+
+
     public long incrementSyncThreshold() {
         return 32 * 1024 * 1024;
     }
+
 
     public int microSyncBatchSize() {
         return 32 * 1024 * 1024;

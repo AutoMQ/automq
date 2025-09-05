@@ -18,22 +18,30 @@ public final class TransformContext {
 
     private final Record kafkaRecord;
     private final String topicName;
+    private final int partition;
 
     /**
      * Constructs a new TransformContext.
      *
-     * @param kafkaRecord the original Kafka Record, must not be null.
+     * @param kafkaRecord the original Kafka Record, can be null if not available.
      * @param topicName the name of the topic from which the record was consumed, must not be null.
+     * @param partition the partition number.
      */
-    public TransformContext(Record kafkaRecord, String topicName) {
-        this.kafkaRecord = Objects.requireNonNull(kafkaRecord, "kafkaRecord cannot be null");
+    public TransformContext(Record kafkaRecord, String topicName, int partition) {
+        this.kafkaRecord = kafkaRecord;
         this.topicName = Objects.requireNonNull(topicName, "topicName cannot be null");
+        this.partition = partition;
     }
 
     public Record getKafkaRecord() {
         return kafkaRecord;
     }
+
     public String getTopicName() {
         return topicName;
+    }
+
+    public int getPartition() {
+        return partition;
     }
 }
