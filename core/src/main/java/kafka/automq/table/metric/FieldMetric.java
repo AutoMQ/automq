@@ -17,15 +17,41 @@
  * limitations under the License.
  */
 
-package kafka.automq.table.worker.convert;
+package kafka.automq.table.metric;
 
-import org.apache.iceberg.data.Record;
+import java.nio.ByteBuffer;
 
-public interface IcebergRecordConverter<R> {
-    Record convertRecord(R record);
+public class FieldMetric {
 
-    /**
-     * Return processed field count
-     */
-    long fieldCount();
+    public static int count(String value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value.isEmpty()) {
+            return 1;
+        }
+        return (value.length() + 23) / 24;
+    }
+
+    public static int count(ByteBuffer value) {
+        if (value == null) {
+            return 0;
+        }
+        int remaining = value.remaining();
+        if (remaining == 0) {
+            return 1;
+        }
+        return (remaining + 31) >> 5;
+    }
+
+    public static int count(byte[] value) {
+        if (value == null) {
+            return 0;
+        }
+        if (value.length == 0) {
+            return 1;
+        }
+        return (value.length + 31) >> 5;
+    }
+
 }

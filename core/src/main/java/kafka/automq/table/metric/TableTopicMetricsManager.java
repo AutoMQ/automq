@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package kafka.automq.table;
+package kafka.automq.table.metric;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;

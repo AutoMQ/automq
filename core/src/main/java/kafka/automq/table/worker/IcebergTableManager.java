@@ -31,7 +31,6 @@ import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.SupportsNamespaces;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.iceberg.data.Record;
 import org.apache.iceberg.exceptions.AlreadyExistsException;
 import org.apache.iceberg.exceptions.NoSuchNamespaceException;
 import org.apache.iceberg.exceptions.NoSuchTableException;
@@ -113,9 +112,9 @@ public class IcebergTableManager {
         return result.get();
     }
 
-    public boolean handleSchemaChangesWithFlush(Record record, FlushAction flush) throws IOException {
-        Table currentTable = getTableOrCreate(record.struct().asSchema());
-        List<SchemaChange> changes = checkSchemaChanges(currentTable, record);
+    public boolean handleSchemaChangesWithFlush(Schema schema, FlushAction flush) throws IOException {
+        Table currentTable = getTableOrCreate(schema);
+        List<SchemaChange> changes = checkSchemaChanges(currentTable, schema);
         if (changes.isEmpty()) {
             return false;
         }
@@ -140,13 +139,9 @@ public class IcebergTableManager {
 
     /**
      * Check schema changes between the current record and the table schema
-     *
-     * @param record current record
-     * @return list of schema changes
      */
     @VisibleForTesting
-    protected List<SchemaChange> checkSchemaChanges(Table table, Record record) {
-        Schema currentSchema = record.struct().asSchema();
+    protected List<SchemaChange> checkSchemaChanges(Table table, Schema currentSchema) {
         return collectSchemaChanges(currentSchema, table);
     }
 
@@ -169,17 +164,17 @@ public class IcebergTableManager {
             case ADD_COLUMN:
                 if (change.getParentName() == null) {
                     return updateSchema
-                        .addColumn(change.getColumnName(), change.getNewType());
+                        .addColumn(change.getColumnFullName(), change.getNewType());
                 } else {
                     return updateSchema
                         .addColumn(change.getParentName(), change.getColumnName(), change.getNewType());
                 }
             case MAKE_OPTIONAL:
                 return updateSchema
-                    .makeColumnOptional(change.getColumnName());
+                    .makeColumnOptional(change.getColumnFullName());
             case PROMOTE_TYPE:
                 return updateSchema
-                    .updateColumn(change.getColumnName(), change.getNewType());
+                    .updateColumn(change.getColumnFullName(), change.getNewType().asPrimitiveType());
             default:
                 return updateSchema;
         }
@@ -192,10 +187,10 @@ public class IcebergTableManager {
                 return field != null;
             }
             case MAKE_OPTIONAL: {
-                return field.isOptional();
+                return field != null && field.isOptional();
             }
             case PROMOTE_TYPE: {
-                return field.type().equals(change.getNewType());
+                return field != null && field.type().equals(change.getNewType());
             }
             default: {
                 return false;
@@ -203,40 +198,76 @@ public class IcebergTableManager {
         }
     }
 
-    private List<SchemaChange> collectSchemaChanges(Schema currentSchema, Table table) {
+    protected List<SchemaChange> collectSchemaChanges(Schema currentSchema, Table table) {
         Schema tableSchema = table.schema();
         List<SchemaChange> changes = new ArrayList<>();
 
         for (Types.NestedField currentField : currentSchema.columns()) {
             collectFieldChanges(currentField, null, tableSchema, changes);
         }
+
+        for (Types.NestedField tableField : tableSchema.columns()) {
+            collectRemovedField(tableField, null, currentSchema, changes);
+        }
         return changes;
+    }
+
+    private void collectRemovedField(Types.NestedField tableField, String parentName, Schema currentSchema,
+                                     List<SchemaChange> changes) {
+        String fieldName = tableField.name();
+        String fullFieldName = parentName == null ? fieldName : parentName + "." + fieldName;
+        Types.NestedField currentField = currentSchema.findField(fullFieldName);
+
+        // if field doesn't exist in current schema and it's not a struct, mark it as optional (soft removal)
+        if (currentField == null && !tableField.isOptional()) {
+            changes.add(new SchemaChange(SchemaChange.ChangeType.MAKE_OPTIONAL, fieldName,
+                tableField.type().asPrimitiveType(), parentName));
+            return;
+        }
+        // if it is a nested field, recursively process subfields
+        if (tableField.type().isStructType()) {
+            List<Types.NestedField> tableSubFields = tableField.type().asStructType().fields();
+
+            for (Types.NestedField tableSubField : tableSubFields) {
+                collectRemovedField(tableSubField, fullFieldName, currentSchema, changes);
+            }
+        }
     }
 
     private void collectFieldChanges(Types.NestedField currentField, String parentName, Schema tableSchema,
         List<SchemaChange> changes) {
-        String fullName = parentName == null ? currentField.name() : parentName + "." + currentField.name();
-        Types.NestedField tableField = tableSchema.findField(fullName);
+        String fieldName = currentField.name();
+        String fullFieldName = parentName == null ? fieldName : parentName + "." + fieldName;
+        Types.NestedField tableField = tableSchema.findField(fullFieldName);
 
         if (tableField == null) {
-            changes.add(new SchemaChange(SchemaChange.ChangeType.ADD_COLUMN, currentField.name(), currentField.type().asPrimitiveType(), parentName));
+            // if it is a nested field, recursively process subfields
+            if (currentField.type().isStructType()) {
+                List<Types.NestedField> currentSubFields = currentField.type().asStructType().fields();
+
+                for (Types.NestedField currentSubField : currentSubFields) {
+                    collectFieldChanges(currentSubField, fullFieldName, tableSchema, changes);
+                }
+            } else {
+                changes.add(new SchemaChange(SchemaChange.ChangeType.ADD_COLUMN, fieldName, currentField.type(), parentName));
+            }
         } else {
-            // process optional fields
-            if (!tableField.isOptional() && currentField.isOptional()) {
-                changes.add(new SchemaChange(SchemaChange.ChangeType.MAKE_OPTIONAL, fullName, null, parentName));
-            }
-
-            // promote type if needed
-            if (!tableField.type().equals(currentField.type()) && canPromoteType(tableField.type(), currentField.type())) {
-                changes.add(new SchemaChange(SchemaChange.ChangeType.PROMOTE_TYPE, fullName, currentField.type().asPrimitiveType(), parentName));
-            }
-
             // if it is a nested field, recursively process subfields
             if (currentField.type().isStructType() && tableField.type().isStructType()) {
                 List<Types.NestedField> currentSubFields = currentField.type().asStructType().fields();
 
                 for (Types.NestedField currentSubField : currentSubFields) {
-                    collectFieldChanges(currentSubField, fullName, tableSchema, changes);
+                    collectFieldChanges(currentSubField, fullFieldName, tableSchema, changes);
+                }
+            } else if (!currentField.type().isStructType() && !tableField.type().isStructType()) {
+                // process optional fields
+                if (!tableField.isOptional() && currentField.isOptional()) {
+                    changes.add(new SchemaChange(SchemaChange.ChangeType.MAKE_OPTIONAL, fieldName, null, parentName));
+                }
+
+                // promote type if needed
+                if (!tableField.type().equals(currentField.type()) && canPromoteType(tableField.type(), currentField.type())) {
+                    changes.add(new SchemaChange(SchemaChange.ChangeType.PROMOTE_TYPE, fieldName, currentField.type(), parentName));
                 }
             }
         }
@@ -265,10 +296,10 @@ public class IcebergTableManager {
     static class SchemaChange {
         private final ChangeType type;
         private final String columnName;
-        private final Type.PrimitiveType newType;
+        private final Type newType;
         private final String parentName;  // For nested fields
 
-        public SchemaChange(ChangeType type, String columnName, Type.PrimitiveType newType, String parentName) {
+        public SchemaChange(ChangeType type, String columnName, Type newType, String parentName) {
             this.type = type;
             this.columnName = columnName;
             this.newType = newType;
@@ -283,7 +314,7 @@ public class IcebergTableManager {
             return columnName;
         }
 
-        public Type.PrimitiveType getNewType() {
+        public Type getNewType() {
             return newType;
         }
 

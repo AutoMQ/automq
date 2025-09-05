@@ -19,7 +19,7 @@
 
 package kafka.log.stream.s3.telemetry;
 
-import kafka.automq.table.TableTopicMetricsManager;
+import kafka.automq.table.metric.TableTopicMetricsManager;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporter;
 import kafka.log.stream.s3.telemetry.exporter.MetricsExporterURI;
 import kafka.log.stream.s3.telemetry.otel.OTelHistogramReporter;

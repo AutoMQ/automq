@@ -21,11 +21,12 @@ package kafka.automq.table.perf;
 
 import kafka.automq.table.deserializer.proto.schema.DynamicSchema;
 import kafka.automq.table.deserializer.proto.schema.MessageDefinition;
-import kafka.automq.table.transformer.AvroKafkaRecordConvert;
-import kafka.automq.table.transformer.Converter;
-import kafka.automq.table.transformer.KafkaRecordConvert;
-import kafka.automq.table.transformer.ProtobufKafkaRecordConvert;
-import kafka.automq.table.transformer.RegistrySchemaAvroConverter;
+import kafka.automq.table.process.Converter;
+import kafka.automq.table.process.DefaultRecordProcessor;
+import kafka.automq.table.process.RecordProcessor;
+import kafka.automq.table.process.convert.AvroRegistryConverter;
+import kafka.automq.table.process.convert.ProtobufRegistryConverter;
+import kafka.automq.table.process.convert.RawConverter;
 import kafka.automq.table.worker.IcebergTableManager;
 import kafka.automq.table.worker.IcebergWriter;
 import kafka.automq.table.worker.WorkerConfig;
@@ -493,9 +494,9 @@ public class FieldsPerf {
         }
 
         @Override
-        KafkaRecordConvert<GenericRecord> getKafkaRecordConverter(Schema schema) {
+        kafka.automq.table.process.Converter getKafkaRecordConverter(Schema schema) {
             StaticAvroDeserializer deserializer = new StaticAvroDeserializer(schema);
-            return new AvroKafkaRecordConvert(deserializer);
+            return new AvroRegistryConverter(deserializer, null);
         }
     }
 
@@ -506,9 +507,9 @@ public class FieldsPerf {
         }
 
         @Override
-        KafkaRecordConvert<GenericRecord> getKafkaRecordConverter(Descriptors.Descriptor descriptor) {
+        kafka.automq.table.process.Converter getKafkaRecordConverter(Descriptors.Descriptor descriptor) {
             StaticProtobufDeserializer deserializer = new StaticProtobufDeserializer(descriptor);
-            return new ProtobufKafkaRecordConvert(deserializer);
+            return new ProtobufRegistryConverter(deserializer);
         }
     }
 
@@ -550,9 +551,9 @@ public class FieldsPerf {
                 if (writer == null) {
                     InMemoryCatalog catalog = new InMemoryCatalog();
                     catalog.initialize("test", ImmutableMap.of());
-                    KafkaRecordConvert<GenericRecord> recordConvert = getKafkaRecordConverter(schema);
-                    Converter converter = new RegistrySchemaAvroConverter(recordConvert, "");
-                    writer = new IcebergWriter(new IcebergTableManager(catalog, tableId, config), converter, config);
+                    Converter recordConvert = getKafkaRecordConverter(schema);
+                    RecordProcessor processor = new DefaultRecordProcessor("", RawConverter.INSTANCE, recordConvert);
+                    writer = new IcebergWriter(new IcebergTableManager(catalog, tableId, config), processor, config);
                     writer.setOffset(0, i);
                 }
                 byte[] payload = payloads.get(i % payloads.size());
@@ -570,7 +571,7 @@ public class FieldsPerf {
             writer.complete();
         }
 
-        abstract KafkaRecordConvert<GenericRecord> getKafkaRecordConverter(T schema);
+        abstract kafka.automq.table.process.Converter getKafkaRecordConverter(T schema);
 
     }
 

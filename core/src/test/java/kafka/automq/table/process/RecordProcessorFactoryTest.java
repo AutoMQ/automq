@@ -25,7 +25,6 @@ import kafka.automq.table.process.exception.TransformException;
 import kafka.automq.table.process.proto.PersonProto;
 import kafka.automq.table.worker.WorkerConfig;
 
-import org.apache.kafka.common.errors.SerializationException;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.Record;
@@ -52,6 +51,7 @@ import java.util.Map;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -495,8 +495,8 @@ public class RecordProcessorFactoryTest {
         // Assert
         assertFalse(result.isSuccess());
         assertNotNull(result.getError());
-        assertEquals(DataError.ErrorType.UNKNOW_ERROR, result.getError().getType());
-        assertTrue(result.getError().getCause() instanceof SerializationException);
+        assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
+        assertTrue(result.getError().getCause() instanceof RestClientException);
     }
 
     @Test
@@ -800,9 +800,9 @@ public class RecordProcessorFactoryTest {
         // Assert
         assertFalse(result.isSuccess());
         assertNotNull(result.getError());
-        assertEquals(DataError.ErrorType.UNKNOW_ERROR, result.getError().getType());
-        assertTrue(result.getError().getCause() instanceof SerializationException,
-            "Cause should be SerializationException from the deserializer");
+        assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
+        assertTrue(result.getError().getCause() instanceof RestClientException,
+            "Cause should be RestClientException from the deserializer");
     }
 
     // --- Helper Methods ---
