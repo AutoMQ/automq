@@ -19,8 +19,10 @@
 
 package kafka.automq.table.worker;
 
-import kafka.automq.table.transformer.AvroKafkaRecordConvert;
-import kafka.automq.table.transformer.RegistrySchemaAvroConverter;
+import kafka.automq.table.process.DefaultRecordProcessor;
+import kafka.automq.table.process.RecordProcessor;
+import kafka.automq.table.process.convert.AvroRegistryConverter;
+import kafka.automq.table.process.convert.StringConverter;
 
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.record.Record;
@@ -52,8 +54,10 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -82,9 +86,10 @@ class IcebergWriterSchemaEvolutionTest {
         WorkerConfig config = mock(WorkerConfig.class);
         when(config.partitionBy()).thenReturn(Collections.emptyList());
         IcebergTableManager tableManager = new IcebergTableManager(catalog, tableId, config);
-        AvroKafkaRecordConvert recordConvert = new AvroKafkaRecordConvert(kafkaAvroDeserializer);
-        RegistrySchemaAvroConverter converter = new RegistrySchemaAvroConverter(recordConvert, TOPIC);
-        writer = new IcebergWriter(tableManager, converter, config);
+
+        AvroRegistryConverter registryConverter = new AvroRegistryConverter(kafkaAvroDeserializer, null);
+        RecordProcessor processor = new DefaultRecordProcessor(TOPIC, StringConverter.INSTANCE, registryConverter);
+        writer = new IcebergWriter(tableManager, processor, config);
         writer.setOffset(0, 0);
     }
 
@@ -137,8 +142,8 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(3, table.schema().columns().size());
-        assertNotNull(table.schema().findField("email"));
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.email"));
     }
 
     @Test
@@ -183,7 +188,7 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(false, table.schema().findField("name").isRequired());
+        assertEquals(false, table.schema().findField("_kafka_value.name").isRequired());
     }
 
     @Test
@@ -227,7 +232,146 @@ class IcebergWriterSchemaEvolutionTest {
         // Verify schema evolution
         Table table = catalog.loadTable(tableId);
         assertNotNull(table);
-        assertEquals(Types.LongType.get(), table.schema().findField("count").type());
+        assertEquals(Types.LongType.get(), table.schema().findField("_kafka_value.count").type());
+    }
+
+    @Test
+    void testSchemaEvolutionDropColumn() throws IOException {
+        // Given: Initial Avro schema (v1)
+        Schema avroSchemaV1 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV1 = new ArrayList<>();
+        fieldsV1.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV1.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        fieldsV1.add(new Schema.Field("email", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV1.setFields(fieldsV1);
+
+        // Create v1 record
+        GenericRecord avroRecordV1 = new GenericData.Record(avroSchemaV1);
+        avroRecordV1.put("id", 1L);
+        avroRecordV1.put("name", "test");
+        avroRecordV1.put("email", "test@example.com");
+
+        // Given: Updated Avro schema (v2) with dropped email field
+        Schema avroSchemaV2 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV2 = new ArrayList<>();
+        fieldsV2.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV2.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV2.setFields(fieldsV2);
+
+        // Create v2 record
+        GenericRecord avroRecordV2 = new GenericData.Record(avroSchemaV2);
+        avroRecordV2.put("id", 2L);
+        avroRecordV2.put("name", "test2");
+
+        // Mock deserializer behavior
+        when(kafkaAvroDeserializer.deserialize(anyString(), any(), any(ByteBuffer.class)))
+            .thenReturn(avroRecordV1)
+            .thenReturn(avroRecordV2);
+
+        // Write records
+        Record kafkaRecordV1 = createMockKafkaRecord(1, 0);
+        writer.write(0, kafkaRecordV1);
+
+        Record kafkaRecordV2 = createMockKafkaRecord(2, 1);
+        writer.write(0, kafkaRecordV2);
+
+        // Verify schema evolution
+        Table table = catalog.loadTable(tableId);
+        assertNotNull(table);
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.email"));
+        assertEquals(false, table.schema().findField("_kafka_value.email").isRequired());
+    }
+
+    @Test
+    void testSchemaEvolutionReorderColumn() throws IOException {
+        // Given: Initial Avro schema (v1)
+        Schema avroSchemaV1 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV1 = new ArrayList<>();
+        fieldsV1.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV1.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        fieldsV1.add(new Schema.Field("email", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV1.setFields(fieldsV1);
+
+        // Create v1 record
+        GenericRecord avroRecordV1 = new GenericData.Record(avroSchemaV1);
+        avroRecordV1.put("id", 1L);
+        avroRecordV1.put("name", "test");
+        avroRecordV1.put("email", "test@example.com");
+
+        // Given: Updated Avro schema (v2) with reordered fields
+        Schema avroSchemaV2 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV2 = new ArrayList<>();
+        fieldsV2.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        fieldsV2.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV2.add(new Schema.Field("email", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV2.setFields(fieldsV2);
+
+        // Create v2 record
+        GenericRecord avroRecordV2 = new GenericData.Record(avroSchemaV2);
+        avroRecordV2.put("name", "test2");
+        avroRecordV2.put("id", 2L);
+        avroRecordV2.put("email", "test2@example.com");
+
+        // Mock deserializer behavior
+        when(kafkaAvroDeserializer.deserialize(anyString(), any(), any(ByteBuffer.class)))
+            .thenReturn(avroRecordV1)
+            .thenReturn(avroRecordV2);
+
+        // Write records
+        Record kafkaRecordV1 = createMockKafkaRecord(1, 0);
+        writer.write(0, kafkaRecordV1);
+
+        Record kafkaRecordV2 = createMockKafkaRecord(2, 1);
+        writer.write(0, kafkaRecordV2);
+
+        // Verify schema evolution
+        Table table = catalog.loadTable(tableId);
+        assertNotNull(table);
+        assertEquals(4, table.schema().columns().size());
+        assertNotNull(table.schema().findField("_kafka_value.id"));
+        assertNotNull(table.schema().findField("_kafka_value.name"));
+        assertNotNull(table.schema().findField("_kafka_value.email"));
+    }
+
+    @Test
+    void testSchemaEvolutionIncompatibleTypeChange() throws IOException {
+        // Given: Initial Avro schema with string type
+        Schema avroSchemaV1 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV1 = new ArrayList<>();
+        fieldsV1.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV1.add(new Schema.Field("age", Schema.create(Schema.Type.INT), null, null));
+        avroSchemaV1.setFields(fieldsV1);
+
+        // Create v1 record
+        GenericRecord avroRecordV1 = new GenericData.Record(avroSchemaV1);
+        avroRecordV1.put("id", 2L);
+        avroRecordV1.put("age", 30);
+
+        // Given: Updated schema with incompatible string type for age
+        Schema avroSchemaV2 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV2 = new ArrayList<>();
+        fieldsV2.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV2.add(new Schema.Field("age", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV2.setFields(fieldsV2);
+
+        // Create v2 record
+        GenericRecord avroRecordV2 = new GenericData.Record(avroSchemaV2);
+        avroRecordV2.put("id", 1L);
+        avroRecordV2.put("age", "twenty");
+
+        // Mock deserializer behavior
+        when(kafkaAvroDeserializer.deserialize(anyString(), any(), any(ByteBuffer.class)))
+            .thenReturn(avroRecordV1)
+            .thenReturn(avroRecordV2);
+
+        // Write records
+        Record kafkaRecordV1 = createMockKafkaRecord(1, 0);
+        assertDoesNotThrow(() -> writer.write(0, kafkaRecordV1));
+
+        // Verify that writing the second record with an incompatible schema throws an exception
+        Record kafkaRecordV2 = createMockKafkaRecord(2, 1);
+        assertThrows(IOException.class, () -> writer.write(0, kafkaRecordV2));
     }
 
     private Record createMockKafkaRecord(int schemaId, int offset) {
@@ -236,7 +380,7 @@ class IcebergWriterSchemaEvolutionTest {
         value.putInt(schemaId);
         // Add some dummy data
         value.put("test".getBytes());
-        
+
         return new Record() {
             @Override
             public long offset() {

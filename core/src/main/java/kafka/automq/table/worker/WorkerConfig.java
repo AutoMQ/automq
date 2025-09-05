@@ -22,6 +22,7 @@ package kafka.automq.table.worker;
 import kafka.cluster.Partition;
 import kafka.log.UnifiedLog;
 
+import org.apache.kafka.server.record.ErrorsTolerance;
 import org.apache.kafka.server.record.TableTopicConvertType;
 import org.apache.kafka.server.record.TableTopicSchemaType;
 import org.apache.kafka.server.record.TableTopicTransformType;
@@ -112,6 +113,10 @@ public class WorkerConfig {
 
     public String cdcField() {
         return config.tableTopicCdcField;
+    }
+
+    public ErrorsTolerance errorsTolerance() {
+        return config.errorsTolerance;
     }
 
     public void refresh() {
