@@ -7,9 +7,9 @@ image:
   tag: 1.5.0-bitnami
   pullPolicy: Always
 extraEnvVars:
-  - name: AWS_ACCESS_KEY_ID
+  - name: KAFKA_S3_ACCESS_KEY
     value: "${access-key}"
-  - name: AWS_SECRET_ACCESS_KEY
+  - name: KAFKA_S3_SECRET_KEY
     value: "${secret-key}"
 controller:
   replicaCount: 3
