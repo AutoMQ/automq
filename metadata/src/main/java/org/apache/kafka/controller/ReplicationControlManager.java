@@ -1544,7 +1544,7 @@ public class ReplicationControlManager {
                 (short) 1));
         }
         generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId), ElasticStreamSwitch.isEnabled());
+            brokerId, NO_LEADER, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId));
     }
 
     /**
@@ -2076,33 +2076,15 @@ public class ReplicationControlManager {
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
-        generateLeaderAndIsrUpdates(context, brokerToRemove, brokerToAdd, brokerWithUncleanShutdown, records, iterator, false);
+        generateLeaderAndIsrUpdates0(context, brokerToRemove, brokerToAdd, brokerWithUncleanShutdown, records, iterator);
     }
 
-    /**
-     * Iterate over a sequence of partitions and generate ISR changes and/or leader
-     * changes if necessary.
-     *
-     * @param context           A human-readable context string used in log4j logging.
-     * @param brokerToRemove    NO_LEADER if no broker is being removed; the ID of the
-     *                          broker to remove from the ISR and leadership, otherwise.
-     * @param brokerToAdd       NO_LEADER if no broker is being added; the ID of the
-     *                          broker which is now eligible to be a leader, otherwise.
-     * @param records           A list of records which we will append to.
-     * @param iterator          The iterator containing the partitions to examine.
-     * @param fencing           Whether to fence the provided partitions. That is to say,
-     *                          set their leader to {@link org.apache.kafka.metadata.LeaderConstants#NO_LEADER}
-     *                          temporarily. It aims to ensure that the partitions should be firstly closed and
-     *                          then be re-opened. In case that the original broker is out of communication and
-     *                          then fail to touch re-elections, The partitions are scheduled to be re-elected.
-     */
-    void generateLeaderAndIsrUpdates(String context,
+    void generateLeaderAndIsrUpdates0(String context,
                                      int brokerToRemove,
                                      int brokerToAdd,
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
-                                     Iterator<TopicIdPartition> iterator,
-                                     boolean fencing) {
+                                     Iterator<TopicIdPartition> iterator) {
         int oldSize = records.size();
 
         // If the caller passed a valid broker ID for brokerToAdd, rather than passing
@@ -2119,8 +2101,9 @@ public class ReplicationControlManager {
         // the ISR.
 
         // AutoMQ for Kafka inject start
-        IntPredicate isAcceptableLeader = fencing ? r -> false :
-            r -> (r != brokerToRemove) && (r == brokerToAdd || clusterControl.isActive(r));
+        // We should set up set leader after the partition is opened in the new broker to avoid client fast retry.
+        // When the partition is opened in a new broker, the new broker will try to elect leader for the partition.
+        IntPredicate isAcceptableLeader = n -> false;
 
         BrokerRegistration brokerRegistrationToRemove = clusterControl.brokerRegistrations().get(brokerToRemove);
         PartitionLeaderSelector partitionLeaderSelector = null;
@@ -2170,10 +2153,6 @@ public class ReplicationControlManager {
                     partitionLeaderSelector
                         .select(new TopicPartition(topic.name(), topicIdPart.partitionId()))
                         .ifPresent(builder::setTargetNode);
-                }
-                if (fencing) {
-                    TopicPartition topicPartition = new TopicPartition(topic.name(), topicIdPart.partitionId());
-                    addPartitionToReElectTimeouts(topicPartition);
                 }
             } else {
                 builder.setTargetIsr(Replicas.toList(
