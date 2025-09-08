@@ -3848,8 +3848,25 @@ project(':opentelemetry') {
     // Yammer metrics (for integration)
     api 'com.yammer.metrics:metrics-core:2.2.0'
 
-    implementation project(':s3stream')
-    
+    implementation (project(':s3stream')) {
+      exclude(group: 'io.opentelemetry', module: '*')
+      exclude(group: 'io.opentelemetry.instrumentation', module: '*')
+      exclude(group: 'io.opentelemetry.proto', module: '*')
+      exclude(group: 'io.netty', module: 'netty-tcnative-boringssl-static')
+      exclude(group: 'com.github.jnr', module: '*')
+      exclude(group: 'org.aspectj', module: '*')
+      exclude(group: 'net.java.dev.jna', module: '*')
+      exclude(group: 'net.sourceforge.argparse4j', module: '*')
+      exclude(group: 'com.bucket4j', module: '*')
+      exclude(group: 'com.yammer.metrics', module: '*')
+      exclude(group: 'com.github.spotbugs', module: '*')
+      exclude(group: 'software.amazon.awssdk', module: '*')
+      exclude(group: 'org.apache.kafka.shaded', module: '*')
+    }
+    implementation libs.nettyBuffer
+    implementation libs.jacksonDatabind
+    implementation libs.guava
+
     // Test dependencies
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore
