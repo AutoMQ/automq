@@ -3827,6 +3827,10 @@ project(':opentelemetry') {
     archivesName = "opentelemetry"
   }
 
+  repositories {
+    mavenCentral()
+  }
+
   dependencies {
     // OpenTelemetry core dependencies
     api libs.opentelemetryJava8
