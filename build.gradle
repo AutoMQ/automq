@@ -1258,6 +1258,8 @@ project(':core') {
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').jar) { into("libs/") }
+    from(project(':opentelemetry').jar) { into("libs/") }
+    from(project(':opentelemetry').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
@@ -3877,6 +3879,43 @@ project(':opentelemetry') {
     testImplementation libs.slf4jReload4j
     
     testRuntimeOnly libs.junitPlatformLanucher
+  }
+
+  task createVersionFile() {
+    def receiptFile = file("$buildDir/kafka/$buildVersionFileName")
+    inputs.property "commitId", commitId
+    inputs.property "version", version
+    outputs.file receiptFile
+
+    doLast {
+      def data = [
+        commitId: commitId,
+        version: version,
+      ]
+
+      receiptFile.parentFile.mkdirs()
+      def content = data.entrySet().collect { "$it.key=$it.value" }.sort().join("\n")
+      receiptFile.setText(content, "ISO-8859-1")
+    }
+  }
+
+  jar {
+    dependsOn createVersionFile
+    from("$buildDir") {
+      include "kafka/$buildVersionFileName"
+    }
+  }
+
+  clean.doFirst {
+    delete "$buildDir/kafka/"
+  }
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-server.xml")
+  }
+
+  javadoc {
+    enabled = false
   }
 }
 // AutoMQ inject end
