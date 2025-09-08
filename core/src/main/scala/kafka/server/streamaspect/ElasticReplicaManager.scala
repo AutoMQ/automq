@@ -252,10 +252,6 @@ class ElasticReplicaManager(
                 val start = System.currentTimeMillis()
                 hostedPartition.partition.close()
                 info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")
-                if (!metadataCache.autoMQVersion().isReassignmentV1Supported) {
-                  // TODO: https://github.com/AutoMQ/automq/issues/1153 add schedule check when leader isn't successfully set
-                  alterPartitionManager.tryElectLeader(topicPartition)
-                }
               } else {
                 // Logs are not deleted here. They are deleted in a single batch later on.
                 // This is done to avoid having to checkpoint for every deletions.
