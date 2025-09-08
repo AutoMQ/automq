@@ -83,7 +83,7 @@ public abstract class AbstractWALChannel implements WALChannel {
         return retry(() -> read(dst, position, length), retryIntervalMillis, retryTimeoutMillis);
     }
 
-    private void retry(IORunnable runnable, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
+    protected void retry(IORunnable runnable, long retryIntervalMillis, long retryTimeoutMillis) throws IOException {
         retry(IOSupplier.from(runnable), retryIntervalMillis, retryTimeoutMillis);
     }
 
@@ -106,7 +106,7 @@ public abstract class AbstractWALChannel implements WALChannel {
         }
     }
 
-    private void checkFailed() throws IOException {
+    protected void checkFailed() throws IOException {
         if (failed) {
             IOException e = new IOException("Failed to execute IO operation, WAL failed");
             LOGGER.error("Failed to execute IO operation, WAL failed", e);
