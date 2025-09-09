@@ -156,6 +156,8 @@ RUN useradd -o -u $UID -ms /bin/bash ducker \
   && echo 'PATH=$PATH:'"$JAVA_HOME/bin" >> /home/ducker/.profile \
   && echo 'ducker ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
+
 USER ducker
 
 CMD sudo service ssh start && tail -f /dev/null
