@@ -90,8 +90,8 @@ public class ConverterFactory {
             throw new IllegalArgumentException("WorkerConfig cannot be null");
         }
         TableTopicConvertType convertType = config.keyConvertType();
-        String subject = config.valueSubject();
-        String messageName = config.valueMessageFullName();
+        String subject = config.keySubject();
+        String messageName = config.keyMessageFullName();
         return createConverterByType(topic, convertType, subject, messageName, true);
     }
 
