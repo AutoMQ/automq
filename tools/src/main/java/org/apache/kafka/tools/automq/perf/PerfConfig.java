@@ -332,6 +332,7 @@ public class PerfConfig {
             .dest("valuesFile")
             .metavar("VALUES_FILE")
             .help("The avro value file. Example file content {\"f1\": \"value1\"}");
+        // removed --values-random; default to random when no --values-file is provided
     }
 
     public String bootstrapServer() {
