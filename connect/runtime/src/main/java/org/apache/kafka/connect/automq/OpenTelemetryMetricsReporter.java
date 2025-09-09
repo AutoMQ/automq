@@ -81,14 +81,9 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private final Map<String, LongCounter> counters = new ConcurrentHashMap<>();
     private final Map<String, Double> lastValues = new ConcurrentHashMap<>();
     
-    static {
+    public static void initializeTelemetry(Properties props) {
+        AutoMQTelemetryManager.initializeInstance(props);
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
-        // 在测试初始化代码中
-        Properties telemetryProps = new Properties();
-        telemetryProps.setProperty("automq.telemetry.exporter.uri", "prometheus://0.0.0.0:9464");
-        telemetryProps.setProperty("service.name", "kafka-connect-test");
-        telemetryProps.setProperty("service.instance.id", "worker-1");
-        AutoMQTelemetryManager.initializeInstance(telemetryProps);
     }
     
     @Override
@@ -183,6 +178,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
     
     private void registerMetric(KafkaMetric metric) {
+        LOGGER.info("OpenTelemetryMetricsReporter Registering metric {}", metric.metricName());
         MetricName metricName = metric.metricName();
         String metricKey = buildMetricKey(metricName);
         

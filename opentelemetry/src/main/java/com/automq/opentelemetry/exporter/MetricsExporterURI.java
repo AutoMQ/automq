@@ -1,6 +1,7 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
+import com.automq.opentelemetry.exporter.remotewrite.RemoteWriteMetricsExporter;
 import com.automq.stream.s3.operator.BucketURI;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -32,6 +33,7 @@ public class MetricsExporterURI {
 
     public static MetricsExporterURI parse(TelemetryConfig config) {
         String uriStr = config.getExporterUri();
+        LOGGER.info("Parsing metrics exporter URI: {}", uriStr);
         if (StringUtils.isBlank(uriStr)) {
             LOGGER.info("Metrics exporter URI is not configured, no metrics will be exported.");
             return new MetricsExporterURI(Collections.emptyList());
@@ -83,10 +85,16 @@ public class MetricsExporterURI {
                 return buildOtlpExporter(config, queries, uri);
             case S3:
                 return buildS3MetricsExporter(config, queries, uri);
+            case REMOTE_WRITE:
+                return buildRemoteWriteExporter(config.getExporterIntervalMs(), uri.toString());
             default:
                 LOGGER.warn("Unsupported metrics exporter type: {}", type);
                 return null;
         }
+    }
+
+    public static MetricsExporter buildRemoteWriteExporter(long intervalMs, String uriStr) {
+        return new RemoteWriteMetricsExporter(intervalMs, uriStr);
     }
 
     private static MetricsExporter buildPrometheusExporter(TelemetryConfig config,

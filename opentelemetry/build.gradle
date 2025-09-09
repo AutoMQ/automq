@@ -1,0 +1,151 @@
+plugins {
+  id 'application'
+  id 'checkstyle'
+  id('com.google.protobuf') version '0.9.4'
+}
+
+project(':opentelemetry') {
+  archivesBaseName="opentelemetry"
+}
+
+repositories {
+  mavenCentral()
+}
+
+dependencies {
+  // OpenTelemetry core dependencies
+  api libs.opentelemetryJava8
+  api libs.opentelemetryOshi
+  api libs.opentelemetrySdk
+  api libs.opentelemetrySdkMetrics
+  api libs.opentelemetryExporterLogging
+  api libs.opentelemetryExporterProm
+  api libs.opentelemetryExporterOTLP
+  api libs.opentelemetryJmx
+
+  // Logging dependencies
+  api libs.slf4jApi
+  api libs.slf4jBridge  // 添加 SLF4J Bridge 依赖
+  api libs.reload4j
+
+  api libs.commonLang
+
+  // Yammer metrics (for integration)
+  api 'com.yammer.metrics:metrics-core:2.2.0'
+
+  implementation(project(':s3stream')) {
+    exclude(group: 'io.opentelemetry', module: '*')
+    exclude(group: 'io.opentelemetry.instrumentation', module: '*')
+    exclude(group: 'io.opentelemetry.proto', module: '*')
+    exclude(group: 'io.netty', module: 'netty-tcnative-boringssl-static')
+    exclude(group: 'com.github.jnr', module: '*')
+    exclude(group: 'org.aspectj', module: '*')
+    exclude(group: 'net.java.dev.jna', module: '*')
+    exclude(group: 'net.sourceforge.argparse4j', module: '*')
+    exclude(group: 'com.bucket4j', module: '*')
+    exclude(group: 'com.yammer.metrics', module: '*')
+    exclude(group: 'com.github.spotbugs', module: '*')
+    exclude(group: 'software.amazon.awssdk', module: '*')
+    exclude(group: 'org.apache.kafka.shaded', module: '*')
+  }
+  implementation libs.nettyBuffer
+  implementation libs.jacksonDatabind
+  implementation libs.guava
+
+  // Test dependencies
+  testImplementation libs.junitJupiter
+  testImplementation libs.mockitoCore
+  testImplementation libs.slf4jReload4j
+
+  testRuntimeOnly libs.junitPlatformLanucher
+
+  implementation('io.opentelemetry:opentelemetry-sdk:1.40.0')
+  implementation("io.opentelemetry.semconv:opentelemetry-semconv:1.25.0-alpha")
+  implementation("io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:2.6.0-alpha")
+  implementation('com.google.protobuf:protobuf-java:3.25.5')
+  implementation('org.xerial.snappy:snappy-java:1.1.10.5')
+
+  implementation('com.squareup.okhttp3:okhttp:4.12.0')
+  implementation('software.amazon.awssdk:http-auth-aws:2.26.10')
+  implementation('software.amazon.awssdk:sts:2.26.10')
+
+  //---- azure ----
+  implementation platform('com.azure:azure-sdk-bom:1.2.30')
+  implementation('com.azure:azure-identity')
+  implementation('com.azure:azure-core')
+  implementation('com.azure.resourcemanager:azure-resourcemanager-compute:2.48.0')
+  implementation('com.azure.resourcemanager:azure-resourcemanager-resources:2.48.0')
+  implementation('com.azure:azure-storage-blob')
+  implementation('com.azure:azure-storage-blob-batch')
+  implementation('com.azure:azure-security-keyvault-certificates')
+  implementation('com.azure:azure-security-keyvault-keys')
+  implementation('com.azure:azure-security-keyvault-secrets')
+}
+
+task createVersionFile() {
+  def receiptFile = file("$buildDir/kafka/$buildVersionFileName")
+  inputs.property "commitId", commitId
+  inputs.property "version", version
+  outputs.file receiptFile
+
+  doLast {
+    def data = [
+      commitId: commitId,
+      version: version,
+    ]
+
+    receiptFile.parentFile.mkdirs()
+    def content = data.entrySet().collect { "$it.key=$it.value" }.sort().join("\n")
+    receiptFile.setText(content, "ISO-8859-1")
+  }
+}
+
+jar {
+  dependsOn createVersionFile
+  from("$buildDir") {
+    include "kafka/$buildVersionFileName"
+  }
+}
+
+clean.doFirst {
+  delete "$buildDir/kafka/"
+}
+
+checkstyle {
+  configProperties=checkstyleConfigProperties("import-control-server.xml")
+}
+
+javadoc {
+  enabled=false
+}
+
+protobuf {
+  protoc {
+    // The artifact spec for the Protobuf Compiler
+    artifact = 'com.google.protobuf:protoc:3.25.5'
+  }
+
+  generateProtoTasks {
+    ofSourceSet('test').each { task ->
+      task.builtins {
+        java {}
+      }
+    }
+  }
+}
+
+sourceSets {
+  main {
+    java {
+      srcDirs 'build/generated/source/proto/main/java'
+    }
+  }
+  test {
+    proto {
+      srcDir 'src/test/resources/proto'
+    }
+    java {
+      srcDirs 'build/generated/source/proto/test/java'
+    }
+  }
+}

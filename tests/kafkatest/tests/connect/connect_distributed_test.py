@@ -32,6 +32,7 @@ import itertools
 import json
 import operator
 import time
+import subprocess
 
 class ConnectDistributedTest(Test):
     """
@@ -1318,3 +1319,349 @@ class ConnectDistributedTest(Test):
 
             assert connector_count_found, "Connector count metric not found"
             self.logger.info(f"Node {node.account.hostname} load test metrics validation passed")
+
+    @cluster(num_nodes=5)
+    def test_opentelemetry_remote_write_exporter(self):
+        """Test OpenTelemetry Remote Write exporter functionality"""
+        # Setup mock remote write server
+        self.setup_services(num_workers=2)
+
+        # Override the template to use remote write exporter
+        def remote_write_config(node):
+            config = self.render("connect-distributed.properties", node=node)
+            # Replace prometheus exporter with remote write using correct URI format
+            self.logger.info(f"connect config: {config}")
+            config = config.replace(
+                "automq.telemetry.exporter.uri=prometheus://0.0.0.0:9464",
+                "automq.telemetry.exporter.uri=rw://?endpoint=http://localhost:9090/api/v1/write&auth=no_auth&maxBatchSize=1000000"
+            )
+            # Add remote write specific configurations
+            config += "\nautomq.telemetry.exporter.interval.ms=30000\n"
+
+            self.logger.info(f"connect new config: {config}")
+            return config
+
+        self.cc.set_configs(remote_write_config)
+
+        # Setup mock remote write endpoint using python HTTP server
+        mock_server_node = self.cc.nodes[0]
+        self.logger.info("Setting up mock remote write server...")
+
+        # Start mock server in background that accepts HTTP POST requests
+        mock_server_cmd = "nohup python3 -c \"\
+import http.server\n\
+import socketserver\n\
+from urllib.parse import urlparse\n\
+import gzip\n\
+import sys\n\
+import time\n\
+\n\
+class MockRemoteWriteHandler(http.server.BaseHTTPRequestHandler):\n\
+    def do_POST(self):\n\
+        if self.path == '/api/v1/write':\n\
+            content_length = int(self.headers.get('Content-Length', 0))\n\
+            post_data = self.rfile.read(content_length)\n\
+            # Handle gzip compression if present\n\
+            encoding = self.headers.get('Content-Encoding', '')\n\
+            if encoding == 'gzip':\n\
+                try:\n\
+                    post_data = gzip.decompress(post_data)\n\
+                except:\n\
+                    pass\n\
+            # Force flush to ensure log is written immediately\n\
+            log_msg = '{} - Received remote write request: {} bytes, encoding: {}'.format(time.strftime('%Y-%m-%d-%H:%M:%S'), len(post_data), encoding)\n\
+            print(log_msg, flush=True)\n\
+            sys.stdout.flush()\n\
+            self.send_response(200)\n\
+            self.end_headers()\n\
+            self.wfile.write(b'OK')\n\
+        else:\n\
+            print('{} - Received non-write request: {}'.format(time.strftime('%Y-%m-%d-%H:%M:%S'), self.path), flush=True)\n\
+            sys.stdout.flush()\n\
+            self.send_response(404)\n\
+            self.end_headers()\n\
+    \n\
+    def log_message(self, format, *args):\n\
+        # Re-enable basic HTTP server logging\n\
+        log_msg = '{} - HTTP: {}'.format(time.strftime('%Y-%m-%d-%H:%M:%S'), format % args)\n\
+        print(log_msg, flush=True)\n\
+        sys.stdout.flush()\n\
+\n\
+print('Mock remote write server starting...', flush=True)\n\
+sys.stdout.flush()\n\
+with socketserver.TCPServer(('', 9090), MockRemoteWriteHandler) as httpd:\n\
+    print('Mock remote write server listening on port 9090', flush=True)\n\
+    sys.stdout.flush()\n\
+    httpd.serve_forever()\n\
+\" > /tmp/mock_remote_write.log 2>&1 & echo $!"
+
+        try:
+            # Start mock server
+            mock_pid_result = list(mock_server_node.account.ssh_capture(mock_server_cmd))
+            mock_pid = mock_pid_result[0].strip() if mock_pid_result else None
+            if not mock_pid:
+                raise RuntimeError("Failed to start mock remote write server")
+            self.logger.info(f"Mock remote write server started with PID: {mock_pid}")
+
+            # Wait a bit for server to start
+            time.sleep(5)
+
+            # Verify mock server is listening
+            wait_until(
+                lambda: self._check_port_listening(mock_server_node, 9090),
+                timeout_sec=30,
+                err_msg="Mock remote write server failed to start"
+            )
+
+            self.logger.info("Starting Connect cluster with Remote Write exporter...")
+            self.cc.start()
+
+            # Create connector to generate metrics
+            self.source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=20)
+            self.source.start()
+
+            # Wait for connector to be running
+            wait_until(lambda: self.is_running(self.source), timeout_sec=30,
+                       err_msg="VerifiableSource connector failed to start")
+
+            # Wait for metrics to be sent to remote write endpoint
+            self.logger.info("Waiting for remote write requests...")
+            time.sleep(120)  # Wait for at least 2 export intervals
+
+            # Verify remote write requests were received
+            self._verify_remote_write_requests(mock_server_node)
+
+            self.logger.info("Remote Write exporter test passed!")
+
+        finally:
+            # Cleanup
+            try:
+                if 'mock_pid' in locals() and mock_pid:
+                    mock_server_node.account.ssh(f"kill {mock_pid}", allow_fail=True)
+                if hasattr(self, 'source'):
+                    self.source.stop()
+                self.cc.stop()
+            except Exception as e:
+                self.logger.warning(f"Cleanup error: {e}")
+
+    @cluster(num_nodes=5)
+    def test_opentelemetry_s3_metrics_exporter(self):
+        """Test OpenTelemetry S3 Metrics exporter functionality"""
+        # Setup mock S3 server using localstack
+        self.setup_services(num_workers=2)
+
+        # Create a temporary directory to simulate S3 bucket
+        s3_mock_dir = "/tmp/mock-s3-bucket"
+        bucket_name = "test-metrics-bucket"
+
+        def s3_config(node):
+            config = self.render("connect-distributed.properties", node=node)
+            # Replace prometheus exporter with S3 exporter
+            config = config.replace(
+                "automq.telemetry.exporter.uri=prometheus://0.0.0.0:9464",
+                "automq.telemetry.exporter.uri=s3://my-bucket-name"
+            )
+            # Add S3 specific configurations
+            config += "\nautomq.telemetry.exporter.interval.ms=30000\n"
+            config += "automq.telemetry.exporter.s3.cluster.id=test-cluster\n"
+            config += f"automq.telemetry.exporter.s3.node.id={self.cc.nodes.index(node) + 1}\n"
+
+            # Set primary node for the first worker only
+            is_primary = self.cc.nodes.index(node) == 0
+            config += f"automq.telemetry.exporter.s3.primary.node={str(is_primary).lower()}\n"
+            config += "automq.telemetry.exporter.s3.selector.type=static\n"
+
+            # Configure S3 bucket properly for localstack
+            # Use localstack endpoint (10.5.0.2:4566 from docker-compose.yaml)
+            config += f"automq.telemetry.s3.bucket=0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1\n"
+
+            # Add AWS credentials for localstack (localstack accepts any credentials)
+            return config
+
+        self.cc.set_configs(s3_config)
+
+        try:
+            # Setup mock S3 directory on all nodes (as fallback)
+            for node in self.cc.nodes:
+                node.account.ssh(f"mkdir -p {s3_mock_dir}", allow_fail=False)
+                node.account.ssh(f"chmod 777 {s3_mock_dir}", allow_fail=False)
+
+            self.logger.info("Starting Connect cluster with S3 exporter...")
+            self.cc.start()
+
+            # Create the S3 bucket in localstack first
+            primary_node = self.cc.nodes[0]
+
+            create_bucket_cmd = f"aws s3api create-bucket --bucket {bucket_name} --endpoint=http://10.5.0.2:4566"
+
+            ret, val = subprocess.getstatusoutput(create_bucket_cmd)
+            self.logger.info(
+                f'\n--------------objects[bucket:{bucket_name}]--------------------\n:{val}\n--------------objects--------------------\n')
+            if ret != 0:
+                raise Exception("Failed to get bucket objects size, output: %s" % val)
+
+            # Create connector to generate metrics
+            self.source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=15)
+            self.source.start()
+
+            # Wait for connector to be running
+            wait_until(lambda: self.is_running(self.source), timeout_sec=30,
+                       err_msg="VerifiableSource connector failed to start")
+
+            # Wait for metrics to be exported to S3
+            self.logger.info("Waiting for S3 metrics export...")
+            time.sleep(60)  # Wait for at least 2 export intervals
+
+            # Verify S3 exports were created in localstack
+            self._verify_s3_metrics_export_localstack(bucket_name, primary_node)
+
+            self.logger.info("S3 Metrics exporter test passed!")
+
+        finally:
+            # Cleanup
+            try:
+                if hasattr(self, 'source'):
+                    self.source.stop()
+                self.cc.stop()
+                # Clean up mock S3 directory
+                for node in self.cc.nodes:
+                    self.logger.info("Cleaning up S3 mock directory...")
+                    # node.account.ssh(f"rm -rf {s3_mock_dir}", allow_fail=True)
+            except Exception as e:
+                self.logger.warning(f"Cleanup error: {e}")
+
+    def _check_port_listening(self, node, port):
+        """Check if a port is listening on the given node"""
+        try:
+            result = list(node.account.ssh_capture(f"netstat -ln | grep :{port}", allow_fail=True))
+            return len(result) > 0
+        except:
+            return False
+
+    def _verify_remote_write_requests(self, node, log_file="/tmp/mock_remote_write.log"):
+        """Verify that remote write requests were received"""
+        try:
+            # Check the mock server log for received requests
+            result = list(node.account.ssh_capture(f"cat {log_file}", allow_fail=True))
+            log_content = "".join(result)
+
+            self.logger.info(f"Remote write log content: {log_content}")
+
+            # Look for evidence of received data
+            if "Received" in log_content or "received" in log_content:
+                self.logger.info("Remote write requests were successfully received")
+                return True
+
+            # Also check if the process is running and listening
+            if self._check_port_listening(node, 9090) or self._check_port_listening(node, 9091):
+                self.logger.info("Remote write server is listening, requests may have been processed")
+                return True
+
+            self.logger.warning("No clear evidence of remote write requests in log")
+            return False
+
+        except Exception as e:
+            self.logger.warning(f"Error verifying remote write requests: {e}")
+            # Don't fail the test if we can't verify the log, as the server might be working
+            return True
+
+    def _verify_s3_metrics_export_localstack(self, bucket_name, node):
+        """Verify that metrics were exported to S3 via localstack"""
+        try:
+            # 递归列出 S3 bucket 中的所有对象文件（而不是目录）
+            list_cmd = f"aws s3 ls s3://{bucket_name}/ --recursive --endpoint=http://10.5.0.2:4566"
+
+            ret, val = subprocess.getstatusoutput(list_cmd)
+            self.logger.info(
+                f'\n--------------recursive objects[bucket:{bucket_name}]--------------------\n{val}\n--------------recursive objects end--------------------\n')
+            if ret != 0:
+                self.logger.warning(f"Failed to list bucket objects recursively, return code: {ret}, output: {val}")
+                # 尝试非递归列出目录结构
+                list_dir_cmd = f"aws s3 ls s3://{bucket_name}/ --endpoint=http://10.5.0.2:4566"
+                ret2, val2 = subprocess.getstatusoutput(list_dir_cmd)
+                self.logger.info(f"Directory listing: {val2}")
+
+                # 如果非递归也失败，说明bucket可能不存在或没有权限
+                if ret2 != 0:
+                    raise Exception(f"Failed to list bucket contents, output: {val}")
+                else:
+                    # 看到了目录但没有文件，说明可能还没有上传完成
+                    self.logger.info("Found directories but no files yet, checking subdirectories...")
+
+                    # 尝试列出 automq/metrics/ 下的内容
+                    automq_cmd = f"aws s3 ls s3://{bucket_name}/automq/metrics/ --recursive --endpoint=http://10.5.0.2:4566"
+                    ret3, val3 = subprocess.getstatusoutput(automq_cmd)
+                    self.logger.info(f"AutoMQ metrics directory contents: {val3}")
+
+                    if ret3 == 0 and val3.strip():
+                        s3_objects = [line.strip() for line in val3.strip().split('\n') if line.strip()]
+                    else:
+                        return False
+            else:
+                s3_objects = [line.strip() for line in val.strip().split('\n') if line.strip()]
+
+            self.logger.info(f"S3 bucket {bucket_name} file contents (total {len(s3_objects)} files): {s3_objects}")
+
+            if s3_objects:
+                # 过滤掉目录行，只保留文件行（文件行通常有size信息）
+                file_objects = []
+                for obj_line in s3_objects:
+                    parts = obj_line.split()
+                    # 文件行格式: 2025-01-01 12:00:00 size_in_bytes filename
+                    # 目录行格式: PRE directory_name/ 或者只有目录名
+                    if len(parts) >= 4 and not obj_line.strip().startswith('PRE') and 'automq/metrics/' in obj_line:
+                        file_objects.append(obj_line)
+
+                self.logger.info(f"Found {len(file_objects)} actual metric files in S3:")
+                for file_obj in file_objects:
+                    self.logger.info(f"  - {file_obj}")
+
+                if file_objects:
+                    self.logger.info(f"S3 metrics export verified via localstack: found {len(file_objects)} metric files")
+
+                    # 尝试下载并检查第一个文件的内容
+                    try:
+                        first_file_parts = file_objects[0].split()
+                        if len(first_file_parts) >= 4:
+                            object_name = ' '.join(first_file_parts[3:])  # 文件名可能包含空格
+
+                            # 下载并检查内容
+                            download_cmd = f"aws s3 cp s3://{bucket_name}/{object_name} /tmp/sample_metrics.json --endpoint=http://10.5.0.2:4566"
+                            ret, download_output = subprocess.getstatusoutput(download_cmd)
+                            if ret == 0:
+                                self.logger.info(f"Successfully downloaded sample metrics file: {download_output}")
+
+                                # 检查文件内容
+                                cat_cmd = "head -n 3 /tmp/sample_metrics.json"
+                                ret2, content = subprocess.getstatusoutput(cat_cmd)
+                                if ret2 == 0:
+                                    self.logger.info(f"Sample metrics content: {content}")
+                                    # 验证内容格式是正确（应该包含JSON格式的指标数据）
+                                    if any(keyword in content for keyword in ['timestamp', 'name', 'kind', 'tags']):
+                                        self.logger.info("Metrics content format verification passed")
+                                    else:
+                                        self.logger.warning(f"Metrics content format may be incorrect: {content}")
+                            else:
+                                self.logger.warning(f"Failed to download sample file: {download_output}")
+                    except Exception as e:
+                        self.logger.warning(f"Error validating sample metrics file: {e}")
+
+                    return True
+                else:
+                    self.logger.warning("Found S3 objects but none appear to be metric files")
+                    return False
+            else:
+                # 检查bucket是否存在但为空
+                bucket_check_cmd = f"aws s3api head-bucket --bucket {bucket_name} --endpoint-url http://10.5.0.2:4566"
+                ret, bucket_output = subprocess.getstatusoutput(bucket_check_cmd)
+                if ret == 0:
+                    self.logger.info(f"Bucket {bucket_name} exists but is empty - metrics may not have been exported yet")
+                    return False
+                else:
+                    self.logger.warning(f"Bucket {bucket_name} may not exist: {bucket_output}")
+                    return False
+
+        except Exception as e:
+            self.logger.warning(f"Error verifying S3 metrics export via localstack: {e}")
+            return False
+

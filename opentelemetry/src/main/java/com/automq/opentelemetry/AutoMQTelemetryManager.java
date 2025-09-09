@@ -149,7 +149,7 @@ public class AutoMQTelemetryManager {
         SdkMeterProviderBuilder meterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
 
         // Configure exporters from URI
-        MetricsExporterURI exporterURI = MetricsExporterURI.parse(config);
+        MetricsExporterURI exporterURI = buildMetricsExporterURI(config);
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
             MetricReader reader = exporter.asMetricReader();
             metricReaders.add(reader);
@@ -158,6 +158,10 @@ public class AutoMQTelemetryManager {
         }
 
         return meterProviderBuilder.build();
+    }
+
+    protected MetricsExporterURI buildMetricsExporterURI(TelemetryConfig config) {
+        return MetricsExporterURI.parse(config);
     }
 
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {

@@ -22,6 +22,7 @@ package com.automq.opentelemetry.exporter;
 public enum MetricsExporterType {
     OTLP("otlp"),
     PROMETHEUS("prometheus"),
+    REMOTE_WRITE("rw"),
     S3("s3");
 
     private final String type;

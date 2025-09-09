@@ -19,6 +19,7 @@ package org.apache.kafka.connect.cli;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.automq.OpenTelemetryMetricsReporter;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.Herder;
@@ -36,6 +37,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Properties;
 
 /**
  * Common initialization logic for Kafka Connect, intended for use by command line utilities
@@ -92,6 +94,12 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             Map<String, String> workerProps = !workerPropsFile.isEmpty() ?
                     Utils.propsToStringMap(Utils.loadProps(workerPropsFile)) : Collections.emptyMap();
             String[] extraArgs = Arrays.copyOfRange(args, 1, args.length);
+            
+            // Initialize OpenTelemetry with worker properties
+            Properties telemetryProps = new Properties();
+            telemetryProps.putAll(workerProps);
+            OpenTelemetryMetricsReporter.initializeTelemetry(telemetryProps);
+            
             Connect<H> connect = startConnect(workerProps);
             processExtraArgs(connect, extraArgs);
 

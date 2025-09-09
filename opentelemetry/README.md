@@ -1,6 +1,34 @@
 # AutoMQ OpenTelemetry Module
 
-## Overview
+##├── exporter/
+│   ├── MetricsExporter.java       # Exporter interface
+│   ├── MetricsExporterURI.java    # URI parser
+│   ├── OTLPMetricsExporter.java   # OTLP exporter implementation
+│   ├── PrometheusMetricsExporter.java # Prometheus exporter implementation
+│   ├── remotewrite/               # Remote Write exporter implementation
+│   │   ├── PromConsts.java        # Prometheus constants
+│   │   ├── PromLabels.java        # Label management for Prometheus format
+│   │   ├── PromTimeSeries.java    # Time series data structures
+│   │   ├── PromUtils.java         # Prometheus utility functions
+│   │   ├── RemoteWriteExporter.java # Main remote write exporter
+│   │   ├── RemoteWriteMetricsExporter.java # Metrics exporter adapter
+│   │   ├── RemoteWriteRequestMarshaller.java # Request marshalling
+│   │   ├── RemoteWriteURI.java    # URI parsing for remote write
+│   │   └── auth/                  # Authentication support
+│   │       ├── AuthType.java      # Authentication type enum
+│   │       ├── AuthUtils.java     # Authentication utilities
+│   │       ├── AwsSigV4Auth.java  # AWS SigV4 authentication
+│   │       ├── AwsSigV4Interceptor.java
+│   │       ├── AwsSigV4Signer.java
+│   │       ├── AzureADAuth.java   # Azure AD authentication
+│   │       ├── AzureADInterceptor.java
+│   │       ├── AzureCloudConst.java
+│   │       ├── BasicAuth.java     # HTTP Basic authentication
+│   │   │   ├── BasicAuthInterceptor.java
+│   │       ├── BearerAuthInterceptor.java # Bearer token authentication
+│   │       ├── BearerTokenAuth.java
+│   │       └── RemoteWriteAuth.java # Authentication interface
+│   └── s3/                        # S3 metrics exporter implementationiew
 
 The AutoMQ OpenTelemetry module is a telemetry data collection and export component based on OpenTelemetry SDK, specifically designed for AutoMQ Kafka. This module provides unified telemetry data management capabilities, supporting the collection of JVM metrics, JMX metrics, and Yammer metrics, and can export data to Prometheus, OTLP-compatible backend systems, or S3-compatible storage.
 
@@ -14,6 +42,7 @@ The AutoMQ OpenTelemetry module is a telemetry data collection and export compon
 ### 2. Multiple Exporter Support
 - **Prometheus**: Expose metrics in Prometheus format through HTTP server
 - **OTLP**: Support both gRPC and HTTP/Protobuf protocols for exporting to OTLP backends
+- **Remote Write**: Support Prometheus Remote Write protocol for direct integration with time-series databases
 - **S3**: Export metrics to S3-compatible object storage systems
 
 ### 3. Flexible Configuration
@@ -119,6 +148,26 @@ automq.telemetry.exporter.interval.ms=60000
 automq.telemetry.exporter.otlp.protocol=grpc
 automq.telemetry.exporter.otlp.compression=gzip
 automq.telemetry.exporter.otlp.timeout.ms=30000
+```
+
+#### Remote Write Exporter
+```properties
+# Basic Remote Write configuration
+automq.telemetry.exporter.uri=remote_write://prometheus.example.com:9090/api/v1/write
+automq.telemetry.exporter.interval.ms=30000
+
+# With authentication
+# Basic Auth:
+automq.telemetry.exporter.uri=rw://username:password@prometheus.example.com:9090/api/v1/write
+
+# Bearer Token:
+automq.telemetry.exporter.uri=rw://token@prometheus.example.com:9090/api/v1/write?authType=bearer
+
+# AWS SigV4 (for Amazon Managed Prometheus):
+automq.telemetry.exporter.uri=rw://ACCESS_KEY:SECRET_KEY@aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-xxx/api/v1/remote_write?authType=aws&region=us-west-2
+
+# Azure AD:
+automq.telemetry.exporter.uri=rw://CLIENT_ID:CLIENT_SECRET@prometheus.monitor.azure.com/api/v1/write?authType=azure&tenantId=TENANT_ID&cloud=azure_public
 ```
 
 #### S3 Metrics Exporter

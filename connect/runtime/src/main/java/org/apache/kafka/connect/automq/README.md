@@ -2,7 +2,15 @@
 
 ## Overview
 
-This integration allows Kafka Connect to export metrics through the AutoMQ OpenTelemetry module, enabling unified observability across your Kafka ecosystem.
+This integration allows Kafka Connect to export metrics through the AutoMQ OpenTelemetry module, enabling unified observability across your Kafka ecosystem. The integration supports multiple export formats including Prometheus, OTLP, Remote Write, and S3.
+
+## Features
+
+- **Unified Metrics Export**: Export Connect metrics through multiple backends (Prometheus, OTLP, Remote Write, S3)
+- **Authentication Support**: Support for various authentication methods including Basic Auth, Bearer Token, AWS SigV4, and Azure AD
+- **Automatic Type Detection**: Automatically converts Kafka metrics to appropriate OpenTelemetry instruments
+- **Flexible Filtering**: Include/exclude metrics based on configurable patterns
+- **Low-overhead**: Minimal performance impact on Connect workers
 
 ## Configuration
 
@@ -27,10 +35,10 @@ opentelemetry.metrics.exclude.pattern=.*jmx.*|.*debug.*
 
 Ensure the AutoMQ telemetry is properly configured. Add these properties to your application configuration:
 
+#### Prometheus Export
 ```properties
 # Telemetry export configuration
-automq.telemetry.exporter.uri=prometheus://localhost:9090
-# or for OTLP: automq.telemetry.exporter.uri=otlp://localhost:4317
+automq.telemetry.exporter.uri=prometheus://localhost:9464
 
 # Service identification
 service.name=kafka-connect
@@ -39,6 +47,46 @@ service.instance.id=connect-worker-1
 # Export settings
 automq.telemetry.exporter.interval.ms=30000
 automq.telemetry.metric.cardinality.limit=10000
+```
+
+#### Remote Write Export
+```properties
+# Basic Remote Write configuration
+automq.telemetry.exporter.uri=rw://?endpoint=http://prometheus.example.com:9090/api/v1/write&auth=no_auth&maxBatchSize=1000000
+
+# With Basic Authentication
+automq.telemetry.exporter.uri=rw://?endpoint=http://prometheus.example.com:9090/api/v1/write&auth=basic&username=user&password=pass&maxBatchSize=1000000
+
+# With Bearer Token Authentication
+automq.telemetry.exporter.uri=rw://?endpoint=http://prometheus.example.com:9090/api/v1/write&auth=bearer&token=your_token&maxBatchSize=1000000
+
+# With SSL skip verification
+automq.telemetry.exporter.uri=rw://?endpoint=https://prometheus.example.com:9090/api/v1/write&auth=bearer&token=your_token&insecureSkipVerify=true&maxBatchSize=1000000
+
+# AWS Managed Prometheus (AMP) with SigV4
+automq.telemetry.exporter.uri=rw://?endpoint=https://aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-xxx/api/v1/remote_write&auth=sigv4&region=us-west-2&accessKey=ACCESS_KEY&secretKey=SECRET_KEY&maxBatchSize=1000000
+
+# Azure Monitor with Azure AD
+automq.telemetry.exporter.uri=rw://?endpoint=https://prometheus.monitor.azure.com/api/v1/write&auth=azuread&cloud=azure_public&clientId=CLIENT_ID&clientSecret=CLIENT_SECRET&tenantId=TENANT_ID&maxBatchSize=1000000
+
+# With custom headers
+automq.telemetry.exporter.uri=rw://?endpoint=http://prometheus.example.com:9090/api/v1/write&auth=no_auth&maxBatchSize=1000000&header_X-Custom-Header=value&header_Authorization-Extra=extra_token
+
+# Service identification
+service.name=kafka-connect
+service.instance.id=connect-worker-1
+```
+
+#### OTLP Export
+```properties
+# OTLP export (for OpenTelemetry Collector, Jaeger, etc.)
+automq.telemetry.exporter.uri=otlp://localhost:4317
+automq.telemetry.exporter.otlp.protocol=grpc
+automq.telemetry.exporter.otlp.compression=gzip
+
+# Service identification
+service.name=kafka-connect
+service.instance.id=connect-worker-1
 ```
 
 ## Programmatic Usage
