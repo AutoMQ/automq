@@ -16,60 +16,31 @@
 # limitations under the License.
 ###############################################################################
 
-FROM eclipse-temurin:21-jre-alpine AS build-jsa
-
-USER root
-
-# Get kafka from https://archive.apache.org/dist/kafka and pass the url through build arguments
-ARG kafka_url
-
-COPY jsa_launch /etc/kafka/docker/jsa_launch
-
-RUN set -eux ; \
-    apk update ; \
-    apk upgrade ; \
-    apk add --no-cache wget gcompat gpg gpg-agent procps bash; \
-    mkdir opt/kafka; \
-    wget -nv -O kafka.tgz "$kafka_url"; \
-    wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
-    wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
-    gpg --import KEYS; \
-    gpg --batch --verify kafka.tgz.asc kafka.tgz
-
-# Generate jsa files using dynamic CDS for kafka server start command and kafka storage format command
-RUN /etc/kafka/docker/jsa_launch
-
-
-FROM eclipse-temurin:21-jre-alpine
+FROM amazoncorretto:17-alpine
 
 # exposed ports
 EXPOSE 9092
 
 USER root
 
-# Get kafka from https://archive.apache.org/dist/kafka and pass the url through build arguments
+# Get AutoMQ URL from https://github.com/AutoMQ/automq/releases and pass the url passed through build arguments
 ARG kafka_url
 ARG build_date
 
 
-LABEL org.label-schema.name="kafka" \
-      org.label-schema.description="Apache Kafka" \
+LABEL org.label-schema.name="automq-kafka" \
+      org.label-schema.description="AutoMQ for Kafka" \
       org.label-schema.build-date="${build_date}" \
-      org.label-schema.vcs-url="https://github.com/apache/kafka" \
-      maintainer="Apache Kafka"
+      org.label-schema.vcs-url="https://github.com/AutoMQ/automq" \
+      maintainer="AutoMQ"
 
 RUN set -eux ; \
     apk update ; \
     apk upgrade ; \
-    apk add --no-cache wget gcompat gpg gpg-agent procps bash; \
+    apk add --no-cache wget gcompat procps bash jemalloc; \
     mkdir opt/kafka; \
-    wget -nv -O kafka.tgz "$kafka_url"; \
-    wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
-    wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
-    gpg --import KEYS; \
-    gpg --batch --verify kafka.tgz.asc kafka.tgz; \
+    wget -nv -O automq.tgz "$kafka_url"; \
+    tar xfz automq.tgz -C /opt/kafka --strip-components 1; \
     mkdir -p /var/lib/kafka/data /etc/kafka/secrets; \
     mkdir -p /etc/kafka/docker /usr/logs /mnt/shared/config; \
     adduser -h /home/appuser -D --shell /bin/bash appuser; \
@@ -78,15 +49,16 @@ RUN set -eux ; \
     chmod -R ug+w /etc/kafka /var/lib/kafka /etc/kafka/secrets; \
     cp /opt/kafka/config/log4j.properties /etc/kafka/docker/log4j.properties; \
     cp /opt/kafka/config/tools-log4j.properties /etc/kafka/docker/tools-log4j.properties; \
-    cp /opt/kafka/config/kraft/server.properties /etc/kafka/docker/server.properties; \
-    rm kafka.tgz kafka.tgz.asc KEYS; \
-    apk del wget gpg gpg-agent; \
+    cp /opt/kafka/config/kraft/reconfig-server.properties /etc/kafka/docker/server.properties; \
+    rm automq.tgz; \
+    apk del wget; \
     apk cache clean;
 
-COPY --from=build-jsa kafka.jsa /opt/kafka/kafka.jsa
-COPY --from=build-jsa storage.jsa /opt/kafka/storage.jsa
 COPY --chown=appuser:appuser resources/common-scripts /etc/kafka/docker
 COPY --chown=appuser:appuser launch /etc/kafka/docker/launch
+
+# Configure jemalloc as the memory allocator
+ENV LD_PRELOAD="/usr/lib/libjemalloc.so.2"
 
 USER appuser
 
