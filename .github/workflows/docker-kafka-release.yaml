@@ -59,6 +59,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_READ_WRITE_TOKEN }}
 
       - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
         run: |
           python3 -m venv .venv
           source .venv/bin/activate
