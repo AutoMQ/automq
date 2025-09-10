@@ -29,23 +29,23 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      -   name: Get release tag
-          run: |
-            if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
-              TAG="${{ github.event.inputs.tag }}"
-            # use the latest tag if not specified
-            elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              TAG=$(git ls-remote --tags https://github.com/AutoMQ/automq.git | grep -v '\^{}' | tail -1 | sed 's/.*refs\/tags\///')
-            else
-              TAG="${{ github.event.workflow_run.head_branch }}"
-            fi
+      - name: Get release tag
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          # use the latest tag if not specified
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG=$(git ls-remote --tags https://github.com/AutoMQ/automq.git | grep -v '\^{}' | tail -1 | sed 's/.*refs\/tags\///')
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+          fi
 
-            AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
+          AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
-            {
-              echo "AUTOMQ_VERSION=${TAG}-kafka"
-              echo "AUTOMQ_URL=${AUTOMQ_URL}"
-            } >> $GITHUB_ENV
+          {
+            echo "AUTOMQ_VERSION=${TAG}-kafka"
+            echo "AUTOMQ_URL=${AUTOMQ_URL}"
+          } >> $GITHUB_ENV
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -66,5 +66,5 @@ jobs:
 
           cd docker
           python3 docker_release.py \
-            ${{ secrets.DOCKERHUB_USERNAME }}:${AUTOMQ_VERSION} \
+            ${{ secrets.DOCKERHUB_USERNAME }}/automq:${AUTOMQ_VERSION} \
             --kafka-url ${AUTOMQ_URL}
