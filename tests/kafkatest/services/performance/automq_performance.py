@@ -122,7 +122,11 @@ class AutoMQPerformanceService(HttpMetricsCollector, PerformanceService):
             if self.values_file:
                 args.append(f"--values-file {self.values_file}")
 
-        cmd = f"{script} {' '.join(args)} 2>>{AutoMQPerformanceService.STDERR_CAPTURE} | tee {AutoMQPerformanceService.STDOUT_CAPTURE}"
+        # Run under PERSISTENT_ROOT so perf-*.json is created there
+        cmd = (
+            f"cd {AutoMQPerformanceService.PERSISTENT_ROOT}; "
+            f"{script} {' '.join(args)} 2>>{AutoMQPerformanceService.STDERR_CAPTURE} | tee {AutoMQPerformanceService.STDOUT_CAPTURE}"
+        )
         return cmd
 
     def _worker(self, idx, node):
@@ -154,19 +158,70 @@ class AutoMQPerformanceService(HttpMetricsCollector, PerformanceService):
                     break
             # Fallback: find latest perf-*.json in CWD
             if not result_file:
-                candidates = list(node.account.ssh_capture("ls -1t perf-*.json 2>/dev/null | head -1"))
+                candidates = list(node.account.ssh_capture(
+                    f"ls -1t {AutoMQPerformanceService.PERSISTENT_ROOT}/perf-*.json 2>/dev/null | head -1"
+                ))
                 if candidates:
                     result_file = candidates[0].strip()
             if result_file:
-                node.account.ssh(f"cp -f {result_file} {AutoMQPerformanceService.PERSISTENT_ROOT}/result.json || true", allow_fail=True)
+                # Ensure absolute path when parsed from stdout
+                if not result_file.startswith('/'):
+                    result_file = f"{AutoMQPerformanceService.PERSISTENT_ROOT}/{result_file}"
+                # Copy for unified collection
+                node.account.ssh(
+                    f"cp -f {result_file} {AutoMQPerformanceService.PERSISTENT_ROOT}/result.json || true",
+                    allow_fail=True
+                )
                 content = "".join(node.account.ssh_capture(f"cat {result_file}"))
+                # Log full content for validation and future analysis
+                self.logger.info(f"[AutoMQPerf] Result file: {result_file}\nContent: {content}")
                 data = json.loads(content)
                 produced = int(data.get("produceCountTotal", 0))
         except Exception:
             pass
-        # record to results for test usage
+        # record to results for test usage (simple, extensible structure)
         if self.results is not None and len(self.results) > 0:
-            self.results[idx-1] = {"produced": produced, "result_file": result_file}
+            parsed = {
+                "produced": produced,
+                "consumed": None,
+                "produce_rate": None,
+                "consume_rate": None,
+                "produce_throughput_bps": None,
+                "consume_throughput_bps": None,
+                "errors": None,
+                "backlog_last": None,
+                "result_file": result_file,
+            }
+            try:
+                data_map = json.loads(content) if 'content' in locals() else None
+                if isinstance(data_map, dict):
+                    parsed["consumed"] = int(data_map.get("consumeCountTotal", 0))
+                    parsed["produce_rate"] = float(data_map.get("produceRateTotal", 0.0))
+                    parsed["consume_rate"] = float(data_map.get("consumeRateTotal", 0.0))
+                    parsed["produce_throughput_bps"] = float(data_map.get("produceThroughputTotalBps", 0.0))
+                    parsed["consume_throughput_bps"] = float(data_map.get("consumeThroughputTotalBps", 0.0))
+                    parsed["errors"] = int(data_map.get("produceErrorTotal", 0))
+                    bl = data_map.get("backlog")
+                    if isinstance(bl, list) and bl:
+                        try:
+                            parsed["backlog_last"] = int(bl[-1])
+                        except Exception:
+                            parsed["backlog_last"] = None
+            except Exception:
+                pass
+
+            self.results[idx-1] = parsed
+
+    def stop(self, **kwargs):
+        """Stop the service but swallow non-fatal exceptions to keep log collection intact."""
+        try:
+            super(AutoMQPerformanceService, self).stop(**kwargs)
+        except Exception as e:
+            try:
+                # Attempt to continue even if reverse forwarder or httpd shutdown races
+                self.logger.warn(f"AutoMQPerf stop encountered error: {e}")
+            except Exception:
+                pass
 
     def java_class_name(self):
         # Target the actual perf runner class to avoid killing unrelated Java processes
