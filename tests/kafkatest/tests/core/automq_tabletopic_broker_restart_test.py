@@ -34,9 +34,6 @@ class TableTopicBrokerRestartTest(TableTopicBase):
             ]
         }
 
-    def _perf_topic_name(self, prefix: str, partitions: int, index: int) -> str:
-        return f"__automq_perf_{prefix}_{partitions:04d}_{index:07d}"
-
     def _restart_brokers_periodically(self, interval_secs: int, total_secs: int):
         stop_event = threading.Event()
 
