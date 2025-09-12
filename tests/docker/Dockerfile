@@ -71,6 +71,7 @@ RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddre
 
 # AutoMQ inject start
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
 # AutoMQ inject end
 
 COPY --from=build-native-image /build/kafka-binary/ /opt/kafka-binary/
@@ -155,8 +156,6 @@ RUN useradd -o -u $UID -ms /bin/bash ducker \
   && echo "PATH=$(runuser -l ducker -c 'echo $PATH'):$JAVA_HOME/bin" >> /home/ducker/.ssh/environment \
   && echo 'PATH=$PATH:'"$JAVA_HOME/bin" >> /home/ducker/.profile \
   && echo 'ducker ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-
-RUN curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
 
 USER ducker
 
