@@ -1118,12 +1118,18 @@ class LogManager(logDirs: Seq[File],
             UnifiedLog.logDirName(topicPartition)
         }
 
-        val logDir = logDirs
-          .iterator // to prevent actually mapping the whole list, lazy map
-          .map(createLogDirectory(_, logDirName))
-          .find(_.isSuccess)
-          .getOrElse(Failure(new KafkaStorageException("No log directories available. Tried " + logDirs.map(_.getAbsolutePath).mkString(", "))))
-          .get // If Failure, will throw
+        val logDir = {
+          if (ElasticLogManager.enabled()) {
+            new File(logDirs.iterator.next().getAbsolutePath, logDirName)
+          } else {
+            logDirs
+              .iterator // to prevent actually mapping the whole list, lazy map
+              .map(createLogDirectory(_, logDirName))
+              .find(_.isSuccess)
+              .getOrElse(Failure(new KafkaStorageException("No log directories available. Tried " + logDirs.map(_.getAbsolutePath).mkString(", "))))
+              .get // If Failure, will throw
+          }
+        }
 
         val config = fetchLogConfig(topicPartition.topic)
         val log = if (ElasticLogManager.enabled()) {

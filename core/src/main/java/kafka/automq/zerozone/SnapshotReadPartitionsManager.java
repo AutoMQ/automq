@@ -83,6 +83,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     // all snapshot read partition changes exec in a single eventloop to ensure the thread-safe.
     final EventLoop eventLoop = new EventLoop("AUTOMQ_SNAPSHOT_READ_WORKER");
     private AutoMQVersion version;
+    private volatile boolean closed = false;
 
     public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time, ConfirmWALProvider confirmWALProvider,
         ElasticReplicaManager replicaManager, MetadataCache metadataCache, Replayer replayer) {
@@ -105,6 +106,12 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         this.metadataCache = metadataCache;
         this.replayer = replayer;
         this.asyncSender = asyncSender;
+    }
+
+    public synchronized void close() {
+        closed = true;
+        subscribers.forEach((nodeId, subscriber) -> subscriber.close());
+        subscribers.clear();
     }
 
     @Override
@@ -189,6 +196,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
 
     @Override
     public synchronized void onChange(Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack) {
+        if (closed) {
+            return;
+        }
         Set<Integer> newSubscribeNodes = calSubscribeNodes(main2proxyByRack, config.nodeId());
         subscribers.entrySet().removeIf(entry -> {
             if (!newSubscribeNodes.contains(entry.getKey())) {
