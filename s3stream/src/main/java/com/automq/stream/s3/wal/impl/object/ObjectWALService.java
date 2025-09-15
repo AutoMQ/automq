@@ -123,4 +123,11 @@ public class ObjectWALService implements WriteAheadLog {
             return CompletableFuture.failedFuture(e);
         }
     }
+
+    @Override
+    public String toString() {
+        return "ObjectWALService{" +
+            "config=" + config +
+            '}';
+    }
 }

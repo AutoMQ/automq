@@ -204,7 +204,7 @@ public class SnapshotReadCache {
             this.loadCf = new CompletableFuture<>();
             loadCf.whenComplete((rst, ex) -> {
                 if (ex != null) {
-                    LOGGER.error("Replay WAL [{}, {}) fail", startOffset, endOffset, ex);
+                    LOGGER.error("Replay WAL [{}, {}) fail, wal={}", startOffset, endOffset, wal, ex);
                 }
             });
         }
@@ -230,7 +230,7 @@ public class SnapshotReadCache {
                         cfList.forEach(cf -> cf.thenAccept(StreamRecordBatch::release));
                         return;
                     }
-                    records.addAll(cfList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
+                    records.addAll(cfList.stream().map(CompletableFuture::join).toList());
                     // move to mem pool
                     records.forEach(StreamRecordBatch::encoded);
                     loadCf.complete(null);
