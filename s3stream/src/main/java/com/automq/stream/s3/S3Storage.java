@@ -498,9 +498,12 @@ public class S3Storage implements Storage {
         throws InterruptedException, ExecutionException {
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
-            task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
-            releaseAllRecords(cacheBlock.records().values());
+            try {
+                UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
+                task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
+            } finally {
+                releaseAllRecords(cacheBlock.records().values());
+            }
         }
     }
 
