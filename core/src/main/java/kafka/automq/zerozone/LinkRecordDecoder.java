@@ -24,12 +24,16 @@ import org.apache.kafka.common.record.MutableRecordBatch;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Function;
 
 import io.netty.buffer.Unpooled;
 
 public class LinkRecordDecoder implements Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LinkRecordDecoder.class);
     private final RouterChannelProvider channelProvider;
 
     public LinkRecordDecoder(RouterChannelProvider channelProvider) {
@@ -59,6 +63,10 @@ public class LinkRecordDecoder implements Function<StreamRecordBatch, Completabl
                 } finally {
                     src.release();
                     buf.release();
+                }
+            }).whenComplete((rst, ex) -> {
+                if (ex != null) {
+                    LOGGER.error("Error while decoding link record, link={}", linkRecord, ex);
                 }
             });
         } catch (Throwable t) {

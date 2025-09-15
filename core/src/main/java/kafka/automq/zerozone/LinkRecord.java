@@ -63,6 +63,17 @@ public class LinkRecord {
         return channelOffset;
     }
 
+    @Override
+    public String toString() {
+        return "LinkRecord{" +
+            "lastOffset=" + lastOffset +
+            ", timestampType=" + timestampType +
+            ", maxTimestamp=" + maxTimestamp +
+            ", partitionLeaderEpoch=" + partitionLeaderEpoch +
+            ", channelOffset=" + channelOffset +
+            '}';
+    }
+
     public static ByteBuf encode(ChannelOffset channelOffset, MemoryRecords memoryRecords) {
         // The MemoryRecords only contains one RecordBatch, cause of produce only send one RecordBatch per partition.
         if (channelOffset == null) {
