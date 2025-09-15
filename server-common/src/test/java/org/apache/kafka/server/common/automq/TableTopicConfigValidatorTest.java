@@ -63,6 +63,7 @@ public class TableTopicConfigValidatorTest {
 
     @Test
     public void testStringToList() {
+        Assertions.assertEquals(List.of("a", "b", "c"), TableTopicConfigValidator.stringToList("a, b, c", COMMA_NO_PARENS_REGEX));
         Assertions.assertEquals(List.of("a", "b", "c"), TableTopicConfigValidator.stringToList("[a, b, c]", COMMA_NO_PARENS_REGEX));
     }
 }
