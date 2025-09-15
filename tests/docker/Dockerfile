@@ -71,6 +71,7 @@ RUN python3 -m pip install -U pip==21.1.1;
 
 # AutoMQ inject start
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
 # AutoMQ inject end
 
 
