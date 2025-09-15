@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -50,6 +51,8 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
     private CompletableFuture<Void> commitCf = CompletableFuture.completedFuture(null);
     private final NavigableMap<Long, AtomicLong> epoch2inflight = new ConcurrentSkipListMap<>();
 
+    private volatile ScheduledFuture<?> tryBumpCommitedEpochFuture;
+
     private final int nodeId;
 
     public CommittedEpochManager(int nodeId) {
@@ -65,7 +68,13 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
     }
 
     private void start() {
-        Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::tryBumpCommittedEpoch, 1, 1, TimeUnit.SECONDS);
+        this.tryBumpCommitedEpochFuture = Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::tryBumpCommittedEpoch, 1, 1, TimeUnit.SECONDS);
+    }
+
+    public void close() {
+        if (tryBumpCommitedEpochFuture != null) {
+            tryBumpCommitedEpochFuture.cancel(true);
+        }
     }
 
     private void tryBumpCommittedEpoch() {

@@ -84,6 +84,7 @@ public class ChannelOffset {
             ", orderHint=" + orderHint() +
             ", channelOwnerNodeId=" + channelOwnerNodeId() +
             ", attributes=" + attributes() +
+            ", walRecordOffset=" + walRecordOffset() +
             '}';
     }
 }
