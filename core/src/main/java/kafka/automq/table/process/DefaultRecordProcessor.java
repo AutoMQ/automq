@@ -19,18 +19,17 @@
 
 package kafka.automq.table.process;
 
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
 import kafka.automq.table.process.exception.SchemaRegistrySystemException;
 import kafka.automq.table.process.exception.TransformException;
-
-import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.record.Record;
-
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.record.Record;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
@@ -40,8 +39,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
@@ -60,12 +57,14 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private final Converter keyConverter;
     private final Converter valueConverter;
     private final List<Transform> transformChain;
+    private final RecordAssembler recordAssembler; // Reusable assembler
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter) {
         this.transformChain = new ArrayList<>();
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
+        this.recordAssembler = new RecordAssembler();
     }
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter, List<Transform> transforms) {
@@ -73,6 +72,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
+        this.recordAssembler = new RecordAssembler();
     }
 
     @Override
@@ -86,15 +86,19 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
             GenericRecord baseRecord = wrapValue(valueResult);
             GenericRecord transformedRecord = applyTransformChain(baseRecord, partition, kafkaRecord);
-            GenericRecord finalRecord = new RecordAssembler(transformedRecord)
-                .withHeader(headerResult)
-                .withKey(keyResult)
-                .withMetadata(partition, kafkaRecord.offset(), kafkaRecord.timestamp())
-                .assemble();
-            Schema finalSchema = finalRecord.getSchema();
+
             String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult, transformChain);
 
-            return new ProcessingResult(finalRecord, finalSchema, schemaIdentity);
+            GenericRecord record = recordAssembler
+                .reset(transformedRecord)
+                .withHeader(headerResult)
+                .withKey(keyResult)
+                .withSchemaIdentity(schemaIdentity)
+                .withMetadata(partition, kafkaRecord.offset(), kafkaRecord.timestamp())
+                .assemble();
+            Schema schema = record.getSchema();
+
+            return new ProcessingResult(record, schema, schemaIdentity);
         } catch (ConverterException e) {
             return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
@@ -190,14 +194,11 @@ public class DefaultRecordProcessor implements RecordProcessor {
         String valueIdentity = valueResult.getSchemaIdentity();
 
         // Generate transform chain identity
-        String transformIdentity = transforms.isEmpty() ?
-            "noTransform" :
-            transforms.stream()
+        String transformIdentity = transforms.stream()
                 .map(Transform::getName)
-                .collect(java.util.stream.Collectors.joining("->"));
+                .collect(java.util.stream.Collectors.joining(","));
 
-        // Join all parts with the identity separator
-        return String.join("|", headerIdentity, keyIdentity, valueIdentity, transformIdentity);
+        return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity;
     }
 
     @Override

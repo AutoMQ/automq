@@ -19,8 +19,12 @@
 
 package kafka.automq.table.process;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
+import org.apache.avro.SchemaNormalization;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 
@@ -30,6 +34,9 @@ import java.util.List;
 /**
  * A specialized assembler for constructing the final record structure
  * in a clean, fluent manner following the builder pattern.
+ * <p>
+ * This class is designed to be reused at the Processor level to avoid
+ * unnecessary object allocation on the hot path.
  * <p>
  * This class also serves as the holder for the public contract of field names.
  */
@@ -53,15 +60,29 @@ public final class RecordAssembler {
                 .name(METADATA_TIMESTAMP_FIELD).doc("Record timestamp").type().longType().noDefault()
             .endRecord();
 
-    private final GenericRecord baseRecord;
+    private final Map<String, Schema> schemaMap = new HashMap<>();
+
+    // Reusable state - reset for each record
+    private GenericRecord baseRecord;
     private ConversionResult headerResult;
     private ConversionResult keyResult;
     private int partition;
     private long offset;
     private long timestamp;
+    private String schemaIdentity;
 
-    public RecordAssembler(GenericRecord baseRecord) {
+    public RecordAssembler() {
+    }
+
+    public RecordAssembler reset(GenericRecord baseRecord) {
         this.baseRecord = baseRecord;
+        this.headerResult = null;
+        this.keyResult = null;
+        this.partition = 0;
+        this.offset = 0L;
+        this.timestamp = 0L;
+        this.schemaIdentity = null;
+        return this;
     }
 
     public RecordAssembler withHeader(ConversionResult headerResult) {
@@ -74,6 +95,12 @@ public final class RecordAssembler {
         return this;
     }
 
+
+    public RecordAssembler withSchemaIdentity(String schemaIdentity) {
+        this.schemaIdentity = schemaIdentity;
+        return this;
+    }
+
     public RecordAssembler withMetadata(int partition, long offset, long timestamp) {
         this.partition = partition;
         this.offset = offset;
@@ -82,21 +109,41 @@ public final class RecordAssembler {
     }
 
     public GenericRecord assemble() {
-        Schema finalSchema = buildFinalSchema();
+        Schema finalSchema = getOrCreateSchema();
         GenericRecord finalRecord = new GenericData.Record(finalSchema);
         populateFields(finalRecord);
         return finalRecord;
     }
 
+    private Schema getOrCreateSchema() {
+        if (schemaIdentity == null) {
+            long baseFp = SchemaNormalization.parsingFingerprint64(baseRecord.getSchema());
+            long keyFp = keyResult != null ? SchemaNormalization.parsingFingerprint64(keyResult.getSchema()) : 0L;
+            long headerFp = headerResult != null ? SchemaNormalization.parsingFingerprint64(headerResult.getSchema()) : 0L;
+            long metadataFp = SchemaNormalization.parsingFingerprint64(METADATA_SCHEMA);
+
+            schemaIdentity = "v:" + Long.toUnsignedString(baseFp) +
+                           "|k:" + Long.toUnsignedString(keyFp) +
+                           "|h:" + Long.toUnsignedString(headerFp) +
+                           "|m:" + Long.toUnsignedString(metadataFp);
+        }
+        final String cacheKey = schemaIdentity;
+        return schemaMap.computeIfAbsent(cacheKey, k -> buildFinalSchema());
+    }
+
     private Schema buildFinalSchema() {
-        List<Schema.Field> finalFields = new ArrayList<>();
+        List<Schema.Field> finalFields = new ArrayList<>(baseRecord.getSchema().getFields().size() + 3);
         Schema baseSchema = baseRecord.getSchema();
         for (Schema.Field field : baseSchema.getFields()) {
             finalFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
         }
 
-        finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, headerResult.getSchema(), "Kafka record headers", null));
-        finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, keyResult.getSchema(), "Kafka record key", null));
+        if (headerResult != null) {
+            finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, headerResult.getSchema(), "Kafka record headers", null));
+        }
+        if (keyResult != null) {
+            finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, keyResult.getSchema(), "Kafka record key", null));
+        }
         finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, METADATA_SCHEMA, "Kafka record metadata", null));
 
         return Schema.createRecord(baseSchema.getName() + "WithMetadata", null,
@@ -109,8 +156,12 @@ public final class RecordAssembler {
             finalRecord.put(field.name(), baseRecord.get(field.name()));
         }
 
-        finalRecord.put(KAFKA_HEADER_FIELD, headerResult.getValue());
-        finalRecord.put(KAFKA_KEY_FIELD, keyResult.getValue());
+        if (headerResult != null) {
+            finalRecord.put(KAFKA_HEADER_FIELD, headerResult.getValue());
+        }
+        if (keyResult != null) {
+            finalRecord.put(KAFKA_KEY_FIELD, keyResult.getValue());
+        }
 
         GenericRecord metadata = new GenericData.Record(METADATA_SCHEMA);
         metadata.put(METADATA_PARTITION_FIELD, partition);
