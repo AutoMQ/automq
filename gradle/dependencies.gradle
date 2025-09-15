@@ -177,7 +177,7 @@ versions += [
   nettyTcnativeBoringSsl: "2.0.65.Final",
   avro: "1.11.4",
   confluentSchema: "7.8.0",
-  iceberg: "1.6.1",
+  iceberg: "1.9.2",
   wire: "4.9.1",
   oshi: "6.8.1",
   // AutoMQ inject end
