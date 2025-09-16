@@ -59,6 +59,7 @@ import io.netty.buffer.Unpooled;
     private int sessionId;
     private int sessionEpoch;
     boolean requestCommit = false;
+    boolean requestReset = false;
 
     private final SnapshotReadPartitionsManager.Subscriber subscriber;
     private final Node node;
@@ -81,8 +82,7 @@ import io.netty.buffer.Unpooled;
     }
 
     public void reset() {
-        sessionId = 0;
-        sessionEpoch = 0;
+        requestReset = true;
     }
 
     public void close() {
@@ -97,6 +97,7 @@ import io.netty.buffer.Unpooled;
         if (closed) {
             return;
         }
+        tryReset0();
         lastRequestTime = time.milliseconds();
         AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
         if (version.isZeroZoneV2Supported()) {
@@ -132,6 +133,10 @@ import io.netty.buffer.Unpooled;
         if (closed) {
             return;
         }
+        if (tryReset0()) {
+            // If it needs to reset, then drop the response.
+            return;
+        }
         if (!clientResponse.hasResponse()) {
             if (clientResponse.wasDisconnected() || clientResponse.wasTimedOut()) {
                 LOGGER.warn("[GET_SNAPSHOTS],[REQUEST_FAIL],response={}", clientResponse);
@@ -149,16 +154,17 @@ import io.netty.buffer.Unpooled;
             LOGGER.error("[GET_SNAPSHOTS],[ERROR],response={}", resp);
             return;
         }
-        if (resp.sessionId() != sessionId) {
+        if (sessionId != 0 && resp.sessionId() != sessionId) {
             // switch to a new session
-            subscriber.reset();
+            subscriber.reset(String.format("switch sessionId from %s to %s", sessionId, resp.sessionId()));
         }
         SnapshotReadPartitionsManager.OperationBatch batch = new SnapshotReadPartitionsManager.OperationBatch();
         resp.topics().forEach(topic -> topic.partitions().forEach(partition -> {
             String topicName = topicNameGetter.apply(topic.topicId());
             if (topicName == null) {
-                subscriber.reset();
-                throw new RuntimeException(String.format("Cannot find topic uuid=%s, the kraft metadata replay delay or the topic is deleted.", topic.topicId()));
+                String reason = String.format("Cannot find topic uuid=%s, the kraft metadata replay delay or the topic is deleted.", topic.topicId());
+                subscriber.reset(reason);
+                throw new RuntimeException(reason);
             }
             batch.operations.add(convert(new TopicIdPartition(topic.topicId(), partition.partitionIndex(), topicName), partition));
         }));
@@ -172,6 +178,17 @@ import io.netty.buffer.Unpooled;
         subscriber.onNewOperationBatch(batch);
         sessionId = resp.sessionId();
         sessionEpoch = resp.sessionEpoch();
+    }
+
+    private boolean tryReset0() {
+        if (requestReset) {
+            sessionId = 0;
+            sessionEpoch = 0;
+            requestReset = false;
+            return true;
+        } else {
+            return false;
+        }
     }
 
     static SnapshotReadPartitionsManager.SnapshotWithOperation convert(TopicIdPartition topicIdPartition,
