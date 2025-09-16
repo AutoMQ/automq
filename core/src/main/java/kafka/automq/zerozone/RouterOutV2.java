@@ -34,9 +34,6 @@ import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -71,7 +68,6 @@ public class RouterOutV2 {
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
-    private final NetworkBandwidthLimiter inboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, AsyncSender asyncSender, Time time) {
