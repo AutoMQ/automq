@@ -160,7 +160,7 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
             }
         }
         if (uuid != null) {
-            return UUIDUtil.convert(uuid);
+            return uuid;
         }
         throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to " + targetType.typeId());
     }

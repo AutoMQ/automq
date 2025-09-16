@@ -640,7 +640,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field value
-        assertEquals(uuid, UUIDUtil.convert((byte[]) icebergRecord.getField("uuidField")));
+        assertEquals(uuid, icebergRecord.getField("uuidField"));
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
