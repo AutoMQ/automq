@@ -19,13 +19,18 @@
 
 package kafka.automq.table.metric;
 
+import org.apache.avro.util.Utf8;
+
 import java.nio.ByteBuffer;
 
 public class FieldMetric {
 
-    public static int count(String value) {
+    public static int count(CharSequence value) {
         if (value == null) {
             return 0;
+        }
+        if (value instanceof Utf8) {
+            return (((Utf8) value).getByteLength() + 23) / 24;
         }
         if (value.isEmpty()) {
             return 1;

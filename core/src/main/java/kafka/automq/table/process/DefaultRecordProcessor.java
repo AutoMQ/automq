@@ -19,17 +19,20 @@
 
 package kafka.automq.table.process;
 
-import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import kafka.automq.table.process.exception.ConverterException;
 import kafka.automq.table.process.exception.InvalidDataException;
 import kafka.automq.table.process.exception.RecordProcessorException;
 import kafka.automq.table.process.exception.SchemaRegistrySystemException;
 import kafka.automq.table.process.exception.TransformException;
+
+import org.apache.kafka.common.cache.Cache;
+import org.apache.kafka.common.cache.LRUCache;
+import org.apache.kafka.common.header.Header;
+import org.apache.kafka.common.record.Record;
+
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.record.Record;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
@@ -39,6 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
@@ -53,11 +58,17 @@ import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
 public class DefaultRecordProcessor implements RecordProcessor {
     private static final Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
     private static final String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
+    private static final ConversionResult EMPTY_HEADERS_RESULT =
+        new ConversionResult(Map.of(), HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
     private final String topicName;
     private final Converter keyConverter;
     private final Converter valueConverter;
     private final List<Transform> transformChain;
     private final RecordAssembler recordAssembler; // Reusable assembler
+    private final String transformIdentity; // precomputed transform chain identity
+
+    private static final int VALUE_WRAPPER_SCHEMA_CACHE_MAX = 32;
+    private final Cache<String, Schema> valueWrapperSchemaCache = new LRUCache<>(VALUE_WRAPPER_SCHEMA_CACHE_MAX);
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter) {
         this.transformChain = new ArrayList<>();
@@ -65,6 +76,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
         this.recordAssembler = new RecordAssembler();
+        this.transformIdentity = ""; // no transforms
     }
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter, List<Transform> transforms) {
@@ -73,6 +85,14 @@ public class DefaultRecordProcessor implements RecordProcessor {
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
         this.recordAssembler = new RecordAssembler();
+
+        // Precompute transform identity (names joined by comma)
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < this.transformChain.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(this.transformChain.get(i).getName());
+        }
+        this.transformIdentity = sb.toString();
     }
 
     @Override
@@ -87,12 +107,12 @@ public class DefaultRecordProcessor implements RecordProcessor {
             GenericRecord baseRecord = wrapValue(valueResult);
             GenericRecord transformedRecord = applyTransformChain(baseRecord, partition, kafkaRecord);
 
-            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult, transformChain);
+            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult);
 
             GenericRecord record = recordAssembler
                 .reset(transformedRecord)
-                .withHeader(headerResult)
-                .withKey(keyResult)
+                .withHeader(null)
+                .withKey(null)
                 .withSchemaIdentity(schemaIdentity)
                 .withMetadata(partition, kafkaRecord.offset(), kafkaRecord.timestamp())
                 .assemble();
@@ -136,14 +156,26 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
     private ConversionResult processHeaders(Record kafkaRecord) throws ConverterException {
         try {
-            Map<String, ByteBuffer> headers = new HashMap<>();
             Header[] recordHeaders = kafkaRecord.headers();
-            if (recordHeaders != null) {
-                for (Header header : recordHeaders) {
-                    ByteBuffer value = header.value() != null ?
-                        ByteBuffer.wrap(header.value()) : null;
-                    headers.put(header.key(), value);
-                }
+            if (recordHeaders == null || recordHeaders.length == 0) {
+                return EMPTY_HEADERS_RESULT;
+            }
+
+            int n = recordHeaders.length;
+
+            // Small maps: use Map.of for zero/one header handled above; for one here (defensive), use Map.of
+            if (n == 1) {
+                Header h = recordHeaders[0];
+                ByteBuffer value = h.value() != null ? ByteBuffer.wrap(h.value()) : null;
+                Map<String, ByteBuffer> headers = Map.of(h.key(), value);
+                return new ConversionResult(headers, HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
+            }
+
+            // Larger maps: pre-size HashMap
+            Map<String, ByteBuffer> headers = new HashMap<>(Math.max(16, (int) (n / 0.75f) + 1));
+            for (Header header : recordHeaders) {
+                ByteBuffer value = header.value() != null ? ByteBuffer.wrap(header.value()) : null;
+                headers.put(header.key(), value);
             }
             return new ConversionResult(headers, HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
         } catch (Exception e) {
@@ -152,15 +184,18 @@ public class DefaultRecordProcessor implements RecordProcessor {
     }
 
     private GenericRecord wrapValue(ConversionResult valueResult) {
-        Schema.Field valueField = new Schema.Field(KAFKA_VALUE_FIELD, valueResult.getSchema(), null, null);
         Object valueContent = valueResult.getValue();
-
-        Schema recordSchema = Schema.createRecord("KafkaValueWrapper", null, "kafka.automq.table.process", false);
-        recordSchema.setFields(Collections.singletonList(valueField));
+        Schema recordSchema = valueWrapperSchemaCache.get(valueResult.getSchemaIdentity());
+        if (recordSchema == null) {
+            Schema.Field valueField = new Schema.Field(KAFKA_VALUE_FIELD, valueResult.getSchema(), null, null);
+            Schema schema = Schema.createRecord("KafkaValueWrapper", null, "kafka.automq.table.process", false);
+            schema.setFields(Collections.singletonList(valueField));
+            valueWrapperSchemaCache.put(valueResult.getSchemaIdentity(), schema);
+            recordSchema = schema;
+        }
 
         GenericRecord baseRecord = new GenericData.Record(recordSchema);
         baseRecord.put(KAFKA_VALUE_FIELD, valueContent);
-
         return baseRecord;
     }
 
@@ -185,19 +220,11 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private String generateCompositeSchemaIdentity(
         ConversionResult headerResult,
         ConversionResult keyResult,
-        ConversionResult valueResult,
-        List<Transform> transforms) {
-
-        // Extract schema identities with null safety
+        ConversionResult valueResult) {
+        // Extract schema identities
         String headerIdentity = headerResult.getSchemaIdentity();
         String keyIdentity = keyResult.getSchemaIdentity();
         String valueIdentity = valueResult.getSchemaIdentity();
-
-        // Generate transform chain identity
-        String transformIdentity = transforms.stream()
-                .map(Transform::getName)
-                .collect(java.util.stream.Collectors.joining(","));
-
         return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity;
     }
 

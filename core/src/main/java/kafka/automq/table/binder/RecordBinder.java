@@ -258,7 +258,7 @@ public class RecordBinder {
 
             switch (icebergType.typeId()) {
                 case STRING:
-                    return FieldMetric.count((String) value);
+                    return FieldMetric.count((CharSequence) value);
                 case BINARY:
                     return FieldMetric.count((ByteBuffer) value);
                 case FIXED:

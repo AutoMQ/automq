@@ -19,8 +19,7 @@
 
 package kafka.automq.table.process;
 
-import java.util.HashMap;
-import java.util.Map;
+import org.apache.kafka.common.cache.LRUCache;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
@@ -34,9 +33,6 @@ import java.util.List;
 /**
  * A specialized assembler for constructing the final record structure
  * in a clean, fluent manner following the builder pattern.
- * <p>
- * This class is designed to be reused at the Processor level to avoid
- * unnecessary object allocation on the hot path.
  * <p>
  * This class also serves as the holder for the public contract of field names.
  */
@@ -60,7 +56,9 @@ public final class RecordAssembler {
                 .name(METADATA_TIMESTAMP_FIELD).doc("Record timestamp").type().longType().noDefault()
             .endRecord();
 
-    private final Map<String, Schema> schemaMap = new HashMap<>();
+    private static final int SCHEMA_CACHE_MAX = 32;
+    // Cache of assembled schema + precomputed indexes bound to a schema identity
+    private final LRUCache<String, AssemblerSchema> assemblerSchemaCache = new LRUCache<>(SCHEMA_CACHE_MAX);
 
     // Reusable state - reset for each record
     private GenericRecord baseRecord;
@@ -109,13 +107,17 @@ public final class RecordAssembler {
     }
 
     public GenericRecord assemble() {
-        Schema finalSchema = getOrCreateSchema();
-        GenericRecord finalRecord = new GenericData.Record(finalSchema);
-        populateFields(finalRecord);
-        return finalRecord;
+        AssemblerSchema aSchema = getOrCreateAssemblerSchema();
+        // Return a lightweight view that implements GenericRecord
+        // and adapts schema position/name lookups to the underlying values
+        // without copying the base record data.
+        return new AssembledRecordView(aSchema, baseRecord,
+            headerResult != null ? headerResult.getValue() : null,
+            keyResult != null ? keyResult.getValue() : null,
+            partition, offset, timestamp);
     }
 
-    private Schema getOrCreateSchema() {
+    private AssemblerSchema getOrCreateAssemblerSchema() {
         if (schemaIdentity == null) {
             long baseFp = SchemaNormalization.parsingFingerprint64(baseRecord.getSchema());
             long keyFp = keyResult != null ? SchemaNormalization.parsingFingerprint64(keyResult.getSchema()) : 0L;
@@ -128,45 +130,145 @@ public final class RecordAssembler {
                            "|m:" + Long.toUnsignedString(metadataFp);
         }
         final String cacheKey = schemaIdentity;
-        return schemaMap.computeIfAbsent(cacheKey, k -> buildFinalSchema());
+        AssemblerSchema cached = assemblerSchemaCache.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        AssemblerSchema created = buildFinalAssemblerSchema();
+        assemblerSchemaCache.put(cacheKey, created);
+        return created;
     }
 
-    private Schema buildFinalSchema() {
+    private AssemblerSchema buildFinalAssemblerSchema() {
         List<Schema.Field> finalFields = new ArrayList<>(baseRecord.getSchema().getFields().size() + 3);
         Schema baseSchema = baseRecord.getSchema();
         for (Schema.Field field : baseSchema.getFields()) {
             finalFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
         }
 
+        int baseFieldCount = baseSchema.getFields().size();
+        int headerIndex = -1;
+        int keyIndex = -1;
+        int metadataIndex = -1;
+
         if (headerResult != null) {
             finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, headerResult.getSchema(), "Kafka record headers", null));
+            headerIndex = baseFieldCount;
         }
         if (keyResult != null) {
             finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, keyResult.getSchema(), "Kafka record key", null));
+            keyIndex = (headerIndex >= 0) ? baseFieldCount + 1 : baseFieldCount;
         }
-        finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, METADATA_SCHEMA, "Kafka record metadata", null));
 
-        return Schema.createRecord(baseSchema.getName() + "WithMetadata", null,
+        finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, METADATA_SCHEMA, "Kafka record metadata", null));
+        metadataIndex = baseFieldCount + (headerIndex >= 0 ? 1 : 0) + (keyIndex >= 0 ? 1 : 0);
+
+        Schema finalSchema = Schema.createRecord(baseSchema.getName() + "WithMetadata", null,
             "kafka.automq.table.process", false, finalFields);
+
+        return new AssemblerSchema(finalSchema, baseFieldCount, headerIndex, keyIndex, metadataIndex);
     }
 
-    private void populateFields(GenericRecord finalRecord) {
-        Schema baseSchema = baseRecord.getSchema();
-        for (Schema.Field field : baseSchema.getFields()) {
-            finalRecord.put(field.name(), baseRecord.get(field.name()));
+    /**
+     * A read-only GenericRecord view that adapts accesses (by name or position)
+     * to the underlying base record and the synthetic kafka fields.
+     */
+    private static final class AssembledRecordView implements GenericRecord {
+        private final Schema finalSchema;
+        private final GenericRecord baseRecord;
+        private final Object headerValue;   // May be null if not present in schema
+        private final Object keyValue;      // May be null if not present in schema
+        private final int baseFieldCount;
+        private final int headerIndex;   // -1 if absent
+        private final int keyIndex;      // -1 if absent
+        private final int metadataIndex; // always >= 0
+
+        private GenericRecord metadataRecord;
+
+        AssembledRecordView(AssemblerSchema aSchema,
+                            GenericRecord baseRecord,
+                            Object headerValue,
+                            Object keyValue,
+                            int partition,
+                            long offset,
+                            long timestamp) {
+            this.finalSchema = aSchema.schema;
+            this.baseRecord = baseRecord;
+            this.headerValue = headerValue;
+            this.keyValue = keyValue;
+
+            this.baseFieldCount = aSchema.baseFieldCount;
+            this.headerIndex = aSchema.headerIndex;
+            this.keyIndex = aSchema.keyIndex;
+            this.metadataIndex = aSchema.metadataIndex;
+
+            this.metadataRecord = new GenericData.Record(METADATA_SCHEMA);
+            metadataRecord.put(METADATA_PARTITION_FIELD, partition);
+            metadataRecord.put(METADATA_OFFSET_FIELD, offset);
+            metadataRecord.put(METADATA_TIMESTAMP_FIELD, timestamp);
         }
 
-        if (headerResult != null) {
-            finalRecord.put(KAFKA_HEADER_FIELD, headerResult.getValue());
-        }
-        if (keyResult != null) {
-            finalRecord.put(KAFKA_KEY_FIELD, keyResult.getValue());
+        @Override
+        public void put(String key, Object v) {
+            throw new UnsupportedOperationException("AssembledRecordView is read-only");
         }
 
-        GenericRecord metadata = new GenericData.Record(METADATA_SCHEMA);
-        metadata.put(METADATA_PARTITION_FIELD, partition);
-        metadata.put(METADATA_OFFSET_FIELD, offset);
-        metadata.put(METADATA_TIMESTAMP_FIELD, timestamp);
-        finalRecord.put(KAFKA_METADATA_FIELD, metadata);
+        @Override
+        public Object get(String key) {
+            Schema.Field field = finalSchema.getField(key);
+            if (field == null) {
+                return null;
+            }
+            return get(field.pos());
+        }
+
+        @Override
+        public Schema getSchema() {
+            return finalSchema;
+        }
+
+        @Override
+        public void put(int i, Object v) {
+            throw new UnsupportedOperationException("AssembledRecordView is read-only");
+        }
+
+        @Override
+        public Object get(int i) {
+            if (i < 0 || i >= finalSchema.getFields().size()) {
+                throw new IndexOutOfBoundsException("Field position out of bounds: " + i);
+            }
+            // Base fields delegate directly
+            if (i < baseFieldCount) {
+                return baseRecord.get(i);
+            }
+            // Synthetic fields
+            if (i == headerIndex) {
+                return headerValue;
+            }
+            if (i == keyIndex) {
+                return keyValue;
+            }
+            if (i == metadataIndex) {
+                return metadataRecord;
+            }
+            // Should not happen if schema is consistent
+            return null;
+        }
+    }
+
+    private static final class AssemblerSchema {
+        final Schema schema;
+        final int baseFieldCount;
+        final int headerIndex;
+        final int keyIndex;
+        final int metadataIndex;
+
+        AssemblerSchema(Schema schema, int baseFieldCount, int headerIndex, int keyIndex, int metadataIndex) {
+            this.schema = schema;
+            this.baseFieldCount = baseFieldCount;
+            this.headerIndex = headerIndex;
+            this.keyIndex = keyIndex;
+            this.metadataIndex = metadataIndex;
+        }
     }
 }
