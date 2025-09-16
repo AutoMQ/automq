@@ -146,9 +146,9 @@ public class DeltaHistogram {
                 long snapshotCount = newCount - lastCount;
                 long snapshotSum = newSum - lastSum;
 
-                double p99 = intervalHistogram.getValueAtPercentile(0.99);
-                double p95 = intervalHistogram.getValueAtPercentile(0.95);
-                double p50 = intervalHistogram.getValueAtPercentile(0.50);
+                double p99 = intervalHistogram.getValueAtPercentile(99);
+                double p95 = intervalHistogram.getValueAtPercentile(95);
+                double p50 = intervalHistogram.getValueAtPercentile(50);
 
                 lastCount = newCount;
                 lastSum = newSum;
