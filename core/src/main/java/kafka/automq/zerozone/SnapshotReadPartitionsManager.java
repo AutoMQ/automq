@@ -305,7 +305,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                 this.run0();
             } catch (Throwable e) {
                 LOGGER.error("[SNAPSHOT_SUBSCRIBE_ERROR]", e);
-                reset();
+                reset("SUBSCRIBE_ERROR: " + e.getMessage());
                 scheduler.schedule(this::run, 1, TimeUnit.SECONDS);
             }
         }
@@ -321,8 +321,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             applySnapshot();
         }
 
-        void reset() {
-            LOGGER.info("[SNAPSHOT_READ_SUBSCRIBER_RESET],node={}", node);
+        void reset(String reason) {
+            LOGGER.info("[SNAPSHOT_READ_SUBSCRIBER_RESET],node={},reason={}", node, reason);
             partitions.forEach(SnapshotReadPartitionsManager.this::removePartition);
             partitions.clear();
             waitingMetadataReadyQueue.clear();
@@ -348,7 +348,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                     case ADD: {
                         Optional<Partition> partition = addPartition(topicIdPartition, snapshotWithOperation.snapshot);
                         if (partition.isEmpty()) {
-                            reset();
+                            reset(String.format("Cannot find partition %s", topicIdPartition));
                             return;
                         }
                         partition.ifPresent(p -> partitions.put(topicIdPartition, p));
@@ -360,7 +360,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                         if (partition != null) {
                             partition.snapshot(snapshotWithOperation.snapshot);
                         } else {
-                            LOGGER.warn("[SNAPSHOT_READ_PATCH],[SKIP],{}", snapshotWithOperation);
+                            LOGGER.error("[SNAPSHOT_READ_PATCH],[SKIP],{}", snapshotWithOperation);
                         }
                         snapshotWithOperations.poll();
                         break;
