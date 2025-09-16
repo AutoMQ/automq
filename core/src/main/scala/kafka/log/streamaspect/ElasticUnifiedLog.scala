@@ -215,7 +215,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             flush(true)
             elasticLog.close()
         }
-        elasticLog.segments.clear()
         // graceful await append ack
         elasticLog.lastAppendAckFuture.get()
         elasticLog.isMemoryMappedBufferClosed = true
