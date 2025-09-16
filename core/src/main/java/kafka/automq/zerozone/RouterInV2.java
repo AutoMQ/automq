@@ -22,6 +22,7 @@ package kafka.automq.zerozone;
 import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
+import kafka.server.KafkaRequestHandler;
 import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
@@ -58,6 +59,13 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
+
+    static {
+        // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
+        // So the append thread isn't the KafkaRequestHandler
+        KafkaRequestHandler.setBypassThreadCheck(true);
+    }
+
     private final RouterChannelProvider channelProvider;
     private final ElasticKafkaApis kafkaApis;
     private final String rack;
