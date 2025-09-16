@@ -29,7 +29,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
-import org.apache.kafka.common.utils.Time
+import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -215,11 +215,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             flush(true)
             elasticLog.close()
         }
-        elasticLog.segments.clear()
         // graceful await append ack
         elasticLog.lastAppendAckFuture.get()
         elasticLog.isMemoryMappedBufferClosed = true
-        elasticLog.deleteEmptyDir()
+        // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
+        // The deletion here aims to clean the old directory.
+        Utils.delete(dir)
     }
 
     /**
