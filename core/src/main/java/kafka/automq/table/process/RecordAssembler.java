@@ -19,13 +19,14 @@
 
 package kafka.automq.table.process;
 
+import org.apache.kafka.common.cache.LRUCache;
+
 import org.apache.avro.JsonProperties;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.SchemaNormalization;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.kafka.common.cache.LRUCache;
 
 import java.util.ArrayList;
 import java.util.List;
