@@ -1,7 +1,9 @@
 package com.automq.stream.s3.metrics.wrapper;
 
-import java.util.Random;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.util.Random;
 
 public class DeltaHistogramTest {
 
@@ -26,6 +28,11 @@ public class DeltaHistogramTest {
             logIt(deltaHistogram);
             Thread.sleep(1000);
         }
+        DeltaHistogram.SnapshotExt snapshotExt = deltaHistogram.snapshotAndReset();
+        Assertions.assertTrue(snapshotExt.getCount() > 0);
+        Assertions.assertTrue(snapshotExt.mean() > 0);
+        Assertions.assertTrue(snapshotExt.getMax() > 0);
+        Assertions.assertTrue(snapshotExt.getP99() > 0);
     }
 
     public static void logIt(DeltaHistogram deltaHistogram) {
@@ -34,8 +41,8 @@ public class DeltaHistogramTest {
         System.out.printf("Append task | Append Rate %d msg/s %d KB/s | Avg Latency %.3f ms | Max Latency %d ms | P99 Latency %.3f ms\n",
             snapshotExt.getCount() * 1000 / deltaHistogram.getSnapshotInterval(),
             snapshotExt.getCount() * 1000 / deltaHistogram.getSnapshotInterval() * recordSizeBytes / 1024,
-            deltaHistogram.mean(),
-            deltaHistogram.max(),
-            deltaHistogram.p99());
+            snapshotExt.mean(),
+            snapshotExt.getMax(),
+            snapshotExt.getP99());
     }
 }

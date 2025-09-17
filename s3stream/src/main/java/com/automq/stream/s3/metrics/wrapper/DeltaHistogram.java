@@ -182,7 +182,7 @@ public class DeltaHistogram {
             this.p95 = p95;
         }
 
-        double mean() {
+        public double mean() {
             if (count == 0) {
                 return 0;
             } else {
