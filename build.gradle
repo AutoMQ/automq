@@ -1118,7 +1118,7 @@ project(':core') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -2258,7 +2258,7 @@ project(':s3stream') {
     implementation 'software.amazon.awssdk.crt:aws-crt:0.30.8'
     implementation 'com.ibm.async:asyncutil:0.1.0'
 
-    testImplementation 'org.slf4j:slf4j-simple:1.7.36'
+    testImplementation 'org.slf4j:slf4j-simple:2.0.13'
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
@@ -2425,7 +2425,7 @@ project(':tools') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -2476,7 +2476,7 @@ project(':trogdor') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3321,7 +3321,7 @@ project(':connect:api') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3360,7 +3360,7 @@ project(':connect:transforms') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3403,7 +3403,7 @@ project(':connect:json') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3487,7 +3487,7 @@ project(':connect:runtime') {
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
       // No need to copy log4j since the module has an explicit dependency on that
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
     }
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
@@ -3594,7 +3594,7 @@ project(':connect:file') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3637,7 +3637,7 @@ project(':connect:basic-auth-extension') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3701,7 +3701,7 @@ project(':connect:mirror') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
@@ -3767,7 +3767,7 @@ project(':connect:mirror-client') {
 
   tasks.create(name: "copyDependantLibs", type: Copy) {
     from (configurations.testRuntimeClasspath) {
-      include('slf4j-log4j12*')
+      include('slf4j-reload4j*')
       include('reload4j*jar')
     }
     from (configurations.runtimeClasspath) {
