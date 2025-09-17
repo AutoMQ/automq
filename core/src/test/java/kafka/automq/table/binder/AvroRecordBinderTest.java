@@ -158,6 +158,54 @@ public class AvroRecordBinderTest {
         }
     }
 
+    private static Map<String, Object> toStringKeyMap(Object value) {
+        if (value == null) {
+            return null;
+        }
+        Map<?, ?> map = (Map<?, ?>) value;
+        Map<String, Object> result = new HashMap<>(map.size());
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String key = entry.getKey() == null ? null : entry.getKey().toString();
+            result.put(key, normalizeValue(entry.getValue()));
+        }
+        return result;
+    }
+
+    private static Object normalizeValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof CharSequence) {
+            return value.toString();
+        }
+        if (value instanceof List<?>) {
+            List<?> list = (List<?>) value;
+            List<Object> normalized = new ArrayList<>(list.size());
+            for (Object element : list) {
+                normalized.add(normalizeValue(element));
+            }
+            return normalized;
+        }
+        if (value instanceof Map<?, ?>) {
+            return toStringKeyMap(value);
+        }
+        return value;
+    }
+
+    private static <K> Map<K, Object> normalizeMapValues(Object value) {
+        if (value == null) {
+            return null;
+        }
+        Map<?, ?> map = (Map<?, ?>) value;
+        Map<K, Object> result = new HashMap<>(map.size());
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            @SuppressWarnings("unchecked")
+            K key = (K) entry.getKey();
+            result.put(key, normalizeValue(entry.getValue()));
+        }
+        return result;
+    }
+
 
     @Test
     public void testSchemaEvolution() {
@@ -190,7 +238,7 @@ public class AvroRecordBinderTest {
         Record bind = recordBinder.bind(avroRecord);
 
         assertEquals(12345L, bind.get(0)); // id
-        assertEquals("John Doe", bind.get(1)); // name
+        assertEquals("John Doe", bind.get(1).toString()); // name
         assertNull(bind.get(2)); // age - doesn't exist in Avro record
     }
 
@@ -222,7 +270,7 @@ public class AvroRecordBinderTest {
 
         Record bind1 = recordBinder.bind(record1);
         assertEquals(1L, bind1.get(0));
-        assertEquals("Alice", bind1.get(1));
+        assertEquals("Alice", bind1.get(1).toString());
 
         // Reuse wrapper for second record
         GenericRecord record2 = new GenericData.Record(avroSchema);
@@ -231,7 +279,7 @@ public class AvroRecordBinderTest {
 
         Record bind2 = recordBinder.bind(record2);
         assertEquals(2L, bind2.get(0));
-        assertEquals("Bob", bind2.get(1));
+        assertEquals("Bob", bind2.get(1).toString());
     }
 
 
@@ -258,7 +306,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(record);
 
         // Verify the field value
-        assertEquals("test_string", icebergRecord.getField("stringField"));
+        assertEquals("test_string", icebergRecord.getField("stringField").toString());
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
@@ -697,7 +745,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field value
-        assertEquals(Arrays.asList("a", "b", "c"), icebergRecord.getField("listField"));
+        assertEquals(Arrays.asList("a", "b", "c"), normalizeValue(icebergRecord.getField("listField")));
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
@@ -727,7 +775,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field value
-        assertEquals(map, icebergRecord.getField("mapField"));
+        assertEquals(map, normalizeValue(icebergRecord.getField("mapField")));
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
@@ -757,7 +805,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field value
-        assertEquals(map, icebergRecord.getField("mapField"));
+        assertEquals(map, normalizeValue(icebergRecord.getField("mapField")));
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
@@ -812,8 +860,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Convert the list of records back to a map
-        @SuppressWarnings("unchecked")
-        Map<Integer, String> mapField = (Map<Integer, String>) icebergRecord.getField("mapField");
+        Map<Integer, Object> mapField = normalizeMapValues(icebergRecord.getField("mapField"));
         // Verify the field value
         assertEquals(expectedMap, mapField);
 
@@ -856,7 +903,7 @@ public class AvroRecordBinderTest {
 
         // Verify the field values
         Record nestedIcebergRecord = (Record) icebergRecord.getField("nestedField");
-        assertEquals("nested_string", nestedIcebergRecord.getField("nestedStringField"));
+        assertEquals("nested_string", nestedIcebergRecord.getField("nestedStringField").toString());
         assertEquals(42, nestedIcebergRecord.getField("nestedIntField"));
 
         // Send the record to the table
@@ -891,7 +938,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field values
-        assertEquals("optional_string", icebergRecord.getField("optionalStringField"));
+        assertEquals("optional_string", icebergRecord.getField("optionalStringField").toString());
         assertEquals(42, icebergRecord.getField("optionalIntField"));
         assertNull(icebergRecord.getField("optionalStringNullField"));
         assertNull(icebergRecord.getField("optionalIntNullField"));
@@ -925,7 +972,7 @@ public class AvroRecordBinderTest {
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
 
         // Verify the field values
-        assertEquals("default_string", icebergRecord.getField("defaultStringField"));
+        assertEquals("default_string", icebergRecord.getField("defaultStringField").toString());
         assertEquals(42, icebergRecord.getField("defaultIntField"));
 
         // Send the record to the table
@@ -973,7 +1020,7 @@ public class AvroRecordBinderTest {
 
         // Verify the field value
         Object unionField1 = icebergRecord.getField("unionField1");
-        assertEquals("union_string", unionField1);
+        assertEquals("union_string", unionField1.toString());
 
         Object unionField2 = icebergRecord.getField("unionField2");
         assertEquals(42, unionField2);
@@ -1118,8 +1165,8 @@ public class AvroRecordBinderTest {
         Record icebergRecord = recordBinder.bind(avroRecord);
 
         // Access fields to trigger counting
-        assertEquals(Arrays.asList("a", "b", "c"), icebergRecord.getField("stringList"));
-        assertEquals(map, icebergRecord.getField("stringMap"));
+        assertEquals(Arrays.asList("a", "b", "c"), normalizeValue(icebergRecord.getField("stringList")));
+        assertEquals(map, normalizeValue(icebergRecord.getField("stringMap")));
 
         // Total: 4 (list) + 5 (map) = 9 fields
         long fieldCount = recordBinder.getAndResetFieldCount();

@@ -24,6 +24,7 @@ import kafka.automq.table.process.exception.ConverterException;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
+import org.apache.avro.SchemaNormalization;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -32,7 +33,7 @@ public class StringConverter implements Converter {
     public static final StringConverter INSTANCE = new StringConverter();
 
     private static final Schema SCHEMA = SchemaBuilder.builder().stringType();
-    private static final String SCHEMA_IDENTITY = String.valueOf(SCHEMA.hashCode());
+    private static final String SCHEMA_IDENTITY = Long.toUnsignedString(SchemaNormalization.parsingFingerprint64(SCHEMA));
 
     @Override
     public ConversionResult convert(String topic, ByteBuffer buffer) throws ConverterException {
