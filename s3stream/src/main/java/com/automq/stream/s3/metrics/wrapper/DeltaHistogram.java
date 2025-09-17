@@ -135,13 +135,13 @@ public class DeltaHistogram {
     public SnapshotExt snapshotAndReset() {
         synchronized (this) {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
-                doSnapshotAndReset();
+                snapshotAndReset0();
             }
         }
         return lastSnapshot;
     }
 
-    private void doSnapshotAndReset() {
+    private void snapshotAndReset0() {
         this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
 
         long snapshotMin = min.get();
@@ -167,9 +167,9 @@ public class DeltaHistogram {
     }
 
     // for benchmark only
-    public SnapshotExt snapshotAndResetIndividual() {
+    public SnapshotExt snapshotAndResetForce() {
         synchronized (this) {
-            doSnapshotAndReset();
+            snapshotAndReset0();
         }
         return lastSnapshot;
     }
