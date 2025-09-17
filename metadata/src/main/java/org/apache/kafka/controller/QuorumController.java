@@ -675,7 +675,7 @@ public final class QuorumController implements Controller {
             } finally {
                 long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
                 if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
-                    log.error("Controller took {} µs to process control event: {}", processTime, name);
+                    log.warn("Controller took {} µs to process control event: {}", processTime, name);
                 }
             }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
@@ -733,7 +733,7 @@ public final class QuorumController implements Controller {
             } finally {
                 long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
                 if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
-                    log.error("Controller took {} µs to process read event: {}", processTime, name);
+                    log.warn("Controller took {} µs to process read event: {}", processTime, name);
                 }
             }
             handleEventEnd(this.toString(), startProcessingTimeNs.getAsLong());
@@ -914,7 +914,7 @@ public final class QuorumController implements Controller {
             } finally {
                 long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
                 if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
-                    log.error("Controller took {} µs to process write event: {}", processTime, name);
+                    log.warn("Controller took {} µs to process write event: {}", processTime, name);
                 }
             }
 

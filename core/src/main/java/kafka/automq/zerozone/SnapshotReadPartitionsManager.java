@@ -85,7 +85,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     private AutoMQVersion version;
     private volatile boolean closed = false;
 
-    public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time, ConfirmWALProvider confirmWALProvider,
+    public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
+        ConfirmWALProvider confirmWALProvider,
         ElasticReplicaManager replicaManager, MetadataCache metadataCache, Replayer replayer) {
         this.config = config;
         this.time = time;
@@ -97,7 +98,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     }
 
     // test only
-    SnapshotReadPartitionsManager(KafkaConfig config, Time time, ConfirmWALProvider confirmWALProvider, ElasticReplicaManager replicaManager,
+    SnapshotReadPartitionsManager(KafkaConfig config, Time time, ConfirmWALProvider confirmWALProvider,
+        ElasticReplicaManager replicaManager,
         MetadataCache metadataCache, Replayer replayer, AsyncSender asyncSender) {
         this.config = config;
         this.time = time;
@@ -110,7 +112,12 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
 
     public synchronized void close() {
         closed = true;
-        subscribers.forEach((nodeId, subscriber) -> subscriber.close());
+        CompletableFuture.allOf(
+            subscribers.values().stream()
+                .map(Subscriber::close)
+                .toList()
+                .toArray(new CompletableFuture<?>[0])
+        ).join();
         subscribers.clear();
     }
 
@@ -229,7 +236,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     }
 
     // only for test
-    Subscriber newSubscriber(Node node, AutoMQVersion version, SubscriberRequester requester, SubscriberReplayer dataLoader) {
+    Subscriber newSubscriber(Node node, AutoMQVersion version, SubscriberRequester requester,
+        SubscriberReplayer dataLoader) {
         return new Subscriber(node, version, requester, dataLoader);
     }
 
@@ -256,7 +264,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         }
 
         // only for test
-        public Subscriber(Node node, AutoMQVersion version, SubscriberRequester requester, SubscriberReplayer replayer) {
+        public Subscriber(Node node, AutoMQVersion version, SubscriberRequester requester,
+            SubscriberReplayer replayer) {
             this.node = node;
             this.version = version;
             this.requester = requester;
@@ -281,16 +290,23 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             }
         }
 
-        public void close() {
+        public CompletableFuture<Void> close() {
             LOGGER.info("[SNAPSHOT_READ_UNSUBSCRIBE],node={}", node);
+            CompletableFuture<Void> cf = new CompletableFuture<>();
             eventLoop.execute(() -> {
-                closed = true;
-                requester.close();
-                partitions.forEach(SnapshotReadPartitionsManager.this::removePartition);
-                partitions.clear();
-                snapshotWithOperations.clear();
-                replayer.close();
+                try {
+                    closed = true;
+                    requester.close();
+                    partitions.forEach(SnapshotReadPartitionsManager.this::removePartition);
+                    partitions.clear();
+                    snapshotWithOperations.clear();
+                    replayer.close();
+                    cf.complete(null);
+                } catch (Throwable e) {
+                    cf.completeExceptionally(e);
+                }
             });
+            return cf;
         }
 
         void run() {
