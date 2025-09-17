@@ -47,7 +47,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
     @Override
     protected Object convertString(Object sourceValue, Schema sourceSchema, Type targetType) {
-        if (sourceValue instanceof  Utf8) {
+        if (sourceValue instanceof Utf8) {
             return sourceValue;
         }
         if (sourceValue instanceof GenericData.EnumSymbol) {

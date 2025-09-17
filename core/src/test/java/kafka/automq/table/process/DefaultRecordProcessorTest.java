@@ -24,8 +24,12 @@ import kafka.automq.table.process.convert.AvroRegistryConverter;
 import kafka.automq.table.process.convert.RawConverter;
 import kafka.automq.table.process.convert.StringConverter;
 import kafka.automq.table.process.exception.ConverterException;
+import kafka.automq.table.process.exception.InvalidDataException;
+import kafka.automq.table.process.exception.SchemaRegistrySystemException;
+import kafka.automq.table.process.exception.TransformException;
 import kafka.automq.table.process.transform.FlattenTransform;
 
+import org.apache.kafka.common.cache.Cache;
 import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.header.internals.RecordHeader;
 import org.apache.kafka.common.record.Record;
@@ -39,19 +43,26 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientException;
 import io.confluent.kafka.serializers.KafkaAvroSerializer;
 
+import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
@@ -251,8 +262,262 @@ public class DefaultRecordProcessorTest {
         assertEquals(ByteBuffer.wrap("v1".getBytes()), headerMap.get("h1"));
     }
 
+    @Test
+    void testProcessHeadersWithMultipleEntriesIncludingNullValue() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), new RawConverter());
+        Header[] headers = {
+            new RecordHeader("h1", "v1".getBytes(StandardCharsets.UTF_8)),
+            new RecordHeader("h2", null),
+            new RecordHeader("h3", "v3".getBytes(StandardCharsets.UTF_8))
+        };
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), headers);
+
+        ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
+
+        assertTrue(result.isSuccess());
+        GenericRecord finalRecord = result.getFinalRecord();
+        @SuppressWarnings("unchecked")
+        Map<String, ByteBuffer> headerMap = (Map<String, ByteBuffer>) finalRecord.get(RecordAssembler.KAFKA_HEADER_FIELD);
+        assertEquals(3, headerMap.size());
+        assertEquals(ByteBuffer.wrap("v1".getBytes(StandardCharsets.UTF_8)), headerMap.get("h1"));
+        assertNull(headerMap.get("h2"));
+        assertEquals(ByteBuffer.wrap("v3".getBytes(StandardCharsets.UTF_8)), headerMap.get("h3"));
+    }
+
+    @Test
+    void testProcessHeadersReuseEmptyResultInstance() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), new RawConverter());
+
+        Record recordWithoutHeaders = createKafkaRecord("key1".getBytes(StandardCharsets.UTF_8), "value1".getBytes(StandardCharsets.UTF_8), null);
+        ProcessingResult firstResult = processor.process(TEST_PARTITION, recordWithoutHeaders);
+        assertTrue(firstResult.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, ByteBuffer> firstHeaders = (Map<String, ByteBuffer>) firstResult.getFinalRecord().get(RecordAssembler.KAFKA_HEADER_FIELD);
+        assertTrue(firstHeaders.isEmpty());
+
+        Record recordWithEmptyHeaders = createKafkaRecord("key2".getBytes(StandardCharsets.UTF_8), "value2".getBytes(StandardCharsets.UTF_8), new Header[0]);
+        ProcessingResult secondResult = processor.process(TEST_PARTITION, recordWithEmptyHeaders);
+        assertTrue(secondResult.isSuccess());
+        @SuppressWarnings("unchecked")
+        Map<String, ByteBuffer> secondHeaders = (Map<String, ByteBuffer>) secondResult.getFinalRecord().get(RecordAssembler.KAFKA_HEADER_FIELD);
+        assertTrue(secondHeaders.isEmpty());
+        assertSame(firstHeaders, secondHeaders);
+    }
+
+    @Test
+    void testMetadataFieldsPopulatedOnSuccess() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), new RawConverter());
+        int partition = 7;
+        long offset = 456L;
+        long timestamp = 1_234_567_890L;
+        Record kafkaRecord = new SimpleRecord(offset, timestamp,
+            "k".getBytes(StandardCharsets.UTF_8), "v".getBytes(StandardCharsets.UTF_8), new Header[0]);
+
+        ProcessingResult result = processor.process(partition, kafkaRecord);
+
+        assertTrue(result.isSuccess());
+        GenericRecord finalRecord = result.getFinalRecord();
+        GenericRecord metadata = (GenericRecord) finalRecord.get(RecordAssembler.KAFKA_METADATA_FIELD);
+        assertNotNull(metadata);
+        assertEquals(partition, ((Integer) metadata.get(RecordAssembler.METADATA_PARTITION_FIELD)).intValue());
+        assertEquals(offset, ((Long) metadata.get(RecordAssembler.METADATA_OFFSET_FIELD)).longValue());
+        assertEquals(timestamp, ((Long) metadata.get(RecordAssembler.METADATA_TIMESTAMP_FIELD)).longValue());
+    }
+
+    @Test
+    void testWrapValueSchemaCacheReusedBetweenCalls() {
+        Schema valueSchema = SchemaBuilder.record("CachedValue")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("field").type().stringType().noDefault()
+            .endRecord();
+        AtomicBoolean alternateIdentity = new AtomicBoolean(false);
+
+        Converter keyConverter = new StringConverter();
+        Converter valueConverter = (topic, buffer) -> {
+            GenericRecord record = new GenericRecordBuilder(valueSchema)
+                .set("field", alternateIdentity.get() ? "value-b" : "value-a")
+                .build();
+            String identity = alternateIdentity.get() ? "value-schema-b" : "value-schema-a";
+            return new ConversionResult(record, identity);
+        };
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter);
+
+        Record kafkaRecord1 = createKafkaRecord("key1".getBytes(StandardCharsets.UTF_8), "value1".getBytes(StandardCharsets.UTF_8), new Header[0]);
+        ProcessingResult result1 = processor.process(TEST_PARTITION, kafkaRecord1);
+        assertTrue(result1.isSuccess());
+        Cache<String, Schema> cache = extractValueWrapperSchemaCache(processor);
+        assertEquals(1L, cache.size());
+
+        Record kafkaRecord2 = createKafkaRecord("key2".getBytes(StandardCharsets.UTF_8), "value2".getBytes(StandardCharsets.UTF_8), new Header[0]);
+        ProcessingResult result2 = processor.process(TEST_PARTITION, kafkaRecord2);
+        assertTrue(result2.isSuccess());
+        assertEquals(1L, cache.size());
+
+        alternateIdentity.set(true);
+        Record kafkaRecord3 = createKafkaRecord("key3".getBytes(StandardCharsets.UTF_8), "value3".getBytes(StandardCharsets.UTF_8), new Header[0]);
+        ProcessingResult result3 = processor.process(TEST_PARTITION, kafkaRecord3);
+        assertTrue(result3.isSuccess());
+        assertEquals(2L, cache.size());
+    }
+
+    @Test
+    void testCompositeSchemaIdentityReflectsTransformChain() {
+        Schema valueSchema = SchemaBuilder.record("IdentityRecord")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("field").type().stringType().noDefault()
+            .endRecord();
+        Converter keyConverter = new StringConverter();
+        Converter valueConverter = (topic, buffer) -> {
+            GenericRecord record = new GenericRecordBuilder(valueSchema)
+                .set("field", "payload")
+                .build();
+            return new ConversionResult(record, "identity-value");
+        };
+
+        DefaultRecordProcessor ordered = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
+            List.of(new NamedPassthroughTransform("A"), new NamedPassthroughTransform("B")));
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), new Header[0]);
+        ProcessingResult orderedResult = ordered.process(TEST_PARTITION, kafkaRecord);
+        assertTrue(orderedResult.isSuccess());
+        String orderedIdentity = orderedResult.getFinalSchemaIdentity();
+        assertTrue(orderedIdentity.endsWith("|t:A,B"));
+
+        DefaultRecordProcessor reversed = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
+            List.of(new NamedPassthroughTransform("B"), new NamedPassthroughTransform("A")));
+        ProcessingResult reversedResult = reversed.process(TEST_PARTITION, kafkaRecord);
+        assertTrue(reversedResult.isSuccess());
+        assertNotEquals(orderedIdentity, reversedResult.getFinalSchemaIdentity());
+    }
+
+    @Test
+    void testTransformReturningNullProducesError() {
+        Schema valueSchema = SchemaBuilder.record("NullRecord")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("field").type().stringType().noDefault()
+            .endRecord();
+        Converter keyConverter = new StringConverter();
+        Converter valueConverter = (topic, buffer) -> {
+            GenericRecord record = new GenericRecordBuilder(valueSchema)
+                .set("field", "payload")
+                .build();
+            return new ConversionResult(record, "null-transform-identity");
+        };
+
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter, List.of(new NullingTransform()));
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), new Header[0]);
+
+        ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
+
+        assertFalse(result.isSuccess());
+        assertEquals(DataError.ErrorType.TRANSFORMATION_ERROR, result.getError().getType());
+        assertTrue(result.getError().getMessage().contains("NullingTransform"));
+    }
+
+    @Test
+    void testTransformThrowsInvalidDataException() {
+        Schema valueSchema = SchemaBuilder.record("InvalidRecord")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("field").type().stringType().noDefault()
+            .endRecord();
+        Converter keyConverter = new StringConverter();
+        Converter valueConverter = (topic, buffer) -> {
+            GenericRecord record = new GenericRecordBuilder(valueSchema)
+                .set("field", "payload")
+                .build();
+            return new ConversionResult(record, "invalid-transform-identity");
+        };
+
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter, List.of(new InvalidDataThrowingTransform()));
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), new Header[0]);
+
+        ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
+
+        assertFalse(result.isSuccess());
+        assertEquals(DataError.ErrorType.DATA_ERROR, result.getError().getType());
+        assertTrue(result.getError().getMessage().contains("Invalid data"));
+    }
+
+    @Test
+    void testTransformThrowsTransformException() {
+        Schema valueSchema = SchemaBuilder.record("TransformRecord")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("field").type().stringType().noDefault()
+            .endRecord();
+        Converter keyConverter = new StringConverter();
+        Converter valueConverter = (topic, buffer) -> {
+            GenericRecord record = new GenericRecordBuilder(valueSchema)
+                .set("field", "payload")
+                .build();
+            return new ConversionResult(record, "transform-exception-identity");
+        };
+
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter, List.of(new ThrowingTransform()));
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), new Header[0]);
+
+        ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
+
+        assertFalse(result.isSuccess());
+        assertEquals(DataError.ErrorType.TRANSFORMATION_ERROR, result.getError().getType());
+        assertTrue(result.getError().getMessage().contains("transform failure"));
+    }
+
+    @Test
+    void testConverterRestClientNotFoundReturnsDataError() {
+        Converter restNotFoundConverter = (topic, buffer) -> {
+            RestClientException restException = new RestClientException("missing", HTTP_NOT_FOUND, 40403);
+            throw new RuntimeException("wrapper", restException);
+        };
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), restNotFoundConverter);
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), null);
+
+        ProcessingResult result = processor.process(TEST_PARTITION, kafkaRecord);
+
+        assertFalse(result.isSuccess());
+        assertEquals(DataError.ErrorType.CONVERT_ERROR, result.getError().getType());
+        String errorMessage = result.getError().getMessage();
+        assertNotNull(errorMessage);
+        assertTrue(errorMessage.contains("Schema or subject not found for record"), () -> "actual message: " + errorMessage);
+        assertTrue(errorMessage.contains("topic=" + TEST_TOPIC), () -> "actual message: " + errorMessage);
+    }
+
+    @Test
+    void testConverterRestClientServerErrorPropagates() {
+        Converter restErrorConverter = (topic, buffer) -> {
+            RestClientException restException = new RestClientException("server", 500, 50001);
+            throw new RuntimeException("wrapper", restException);
+        };
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), restErrorConverter);
+        Record kafkaRecord = createKafkaRecord("key".getBytes(StandardCharsets.UTF_8), "value".getBytes(StandardCharsets.UTF_8), null);
+
+        assertThrows(SchemaRegistrySystemException.class, () -> processor.process(TEST_PARTITION, kafkaRecord));
+    }
+
+    @Test
+    void testProcessWithNullRecordThrows() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new RawConverter(), new RawConverter());
+
+        assertThrows(NullPointerException.class, () -> processor.process(TEST_PARTITION, null));
+    }
+
+    private Cache<String, Schema> extractValueWrapperSchemaCache(DefaultRecordProcessor processor) {
+        try {
+            Field cacheField = DefaultRecordProcessor.class.getDeclaredField("valueWrapperSchemaCache");
+            cacheField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Cache<String, Schema> cache = (Cache<String, Schema>) cacheField.get(processor);
+            return cache;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Failed to access valueWrapperSchemaCache", e);
+        }
+    }
+
     /**
-     * A simplified implementation of the Record interface for testing purposes.
+     * Test helper implementations.
      */
     private static class SimpleRecord implements Record {
         private final long offset;
@@ -343,6 +608,70 @@ public class DefaultRecordProcessorTest {
         @Override
         public Header[] headers() {
             return headers;
+        }
+    }
+
+    private static final class NamedPassthroughTransform implements Transform {
+        private final String name;
+
+        private NamedPassthroughTransform(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public void configure(Map<String, ?> configs) {
+            // no-op
+        }
+
+        @Override
+        public GenericRecord apply(GenericRecord record, TransformContext context) {
+            return record;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+    }
+
+    private static final class NullingTransform implements Transform {
+        @Override
+        public void configure(Map<String, ?> configs) {
+            // no-op
+        }
+
+        @Override
+        public GenericRecord apply(GenericRecord record, TransformContext context) {
+            return null;
+        }
+    }
+
+    private static final class InvalidDataThrowingTransform implements Transform {
+        @Override
+        public void configure(Map<String, ?> configs) {
+            // no-op
+        }
+
+        @Override
+        public GenericRecord apply(GenericRecord record, TransformContext context) {
+            throw new InvalidDataException("Invalid data from transform");
+        }
+
+        @Override
+        public String getName() {
+            return "InvalidDataTransform";
+        }
+    }
+
+    private static final class ThrowingTransform implements Transform {
+        @Override
+        public void configure(Map<String, ?> configs) {
+            // no-op
+        }
+
+        @Override
+        public GenericRecord apply(GenericRecord record, TransformContext context) {
+            throw new TransformException("transform failure");
         }
     }
 }

@@ -47,6 +47,7 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
 
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
+import static kafka.automq.table.process.RecordAssembler.ensureOptional;
 
 /**
  * Default implementation of RecordProcessor using a two-stage processing pipeline.
@@ -187,7 +188,10 @@ public class DefaultRecordProcessor implements RecordProcessor {
         Object valueContent = valueResult.getValue();
         Schema recordSchema = valueWrapperSchemaCache.get(valueResult.getSchemaIdentity());
         if (recordSchema == null) {
-            Schema.Field valueField = new Schema.Field(KAFKA_VALUE_FIELD, valueResult.getSchema(), null, null);
+            Schema.Field valueField = new Schema.Field(
+                KAFKA_VALUE_FIELD,
+                ensureOptional(valueResult.getSchema()),
+                null, null);
             Schema schema = Schema.createRecord("KafkaValueWrapper", null, "kafka.automq.table.process", false);
             schema.setFields(Collections.singletonList(valueField));
             valueWrapperSchemaCache.put(valueResult.getSchemaIdentity(), schema);

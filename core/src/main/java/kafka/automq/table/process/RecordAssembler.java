@@ -19,14 +19,13 @@
 
 package kafka.automq.table.process;
 
-import org.apache.kafka.common.cache.LRUCache;
-
 import org.apache.avro.JsonProperties;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.SchemaNormalization;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.common.cache.LRUCache;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +37,7 @@ import java.util.List;
  * This class also serves as the holder for the public contract of field names.
  */
 public final class RecordAssembler {
+    private static final Schema NULL_SCHEMA = Schema.create(Schema.Type.NULL);
 
     public static final String KAFKA_HEADER_FIELD = "_kafka_header";
     public static final String KAFKA_KEY_FIELD = "_kafka_key";
@@ -173,7 +173,7 @@ public final class RecordAssembler {
         return new AssemblerSchema(finalSchema, baseFieldCount, headerIndex, keyIndex, metadataIndex);
     }
 
-    private static Schema ensureOptional(Schema schema) {
+    public static Schema ensureOptional(Schema schema) {
         if (schema.getType() == Schema.Type.UNION) {
             boolean hasNull = false;
             List<Schema> types = schema.getTypes();
@@ -187,15 +187,11 @@ public final class RecordAssembler {
                 return schema;
             }
             List<Schema> withNull = new ArrayList<>(types.size() + 1);
-            withNull.add(Schema.create(Schema.Type.NULL));
+            withNull.add(NULL_SCHEMA);
             withNull.addAll(types);
             return Schema.createUnion(withNull);
         }
-
-        List<Schema> union = new ArrayList<>(2);
-        union.add(Schema.create(Schema.Type.NULL));
-        union.add(schema);
-        return Schema.createUnion(union);
+        return Schema.createUnion(List.of(NULL_SCHEMA, schema));
     }
 
     /**
