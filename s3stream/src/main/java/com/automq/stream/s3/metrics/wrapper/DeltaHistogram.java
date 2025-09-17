@@ -135,31 +135,42 @@ public class DeltaHistogram {
     public SnapshotExt snapshotAndReset() {
         synchronized (this) {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
-                this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
-
-                long snapshotMin = min.get();
-                long snapshotMax = max.get();
-
-                long newCount = cumulativeCount.sum();
-                long newSum = cumulativeSum.sum();
-
-                long snapshotCount = newCount - lastCount;
-                long snapshotSum = newSum - lastSum;
-
-                double p99 = intervalHistogram.getValueAtPercentile(99);
-                double p95 = intervalHistogram.getValueAtPercentile(95);
-                double p50 = intervalHistogram.getValueAtPercentile(50);
-
-                lastCount = newCount;
-                lastSum = newSum;
-
-                min.set(0);
-                max.set(0);
-                lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, p99, p95, p50);
-                lastSnapshotTime = System.currentTimeMillis();
+                snapshotAndReset0();
             }
         }
+        return lastSnapshot;
+    }
 
+    private void snapshotAndReset0() {
+        this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
+
+        long snapshotMin = min.get();
+        long snapshotMax = max.get();
+
+        long newCount = cumulativeCount.sum();
+        long newSum = cumulativeSum.sum();
+
+        long snapshotCount = newCount - lastCount;
+        long snapshotSum = newSum - lastSum;
+
+        double p99 = intervalHistogram.getValueAtPercentile(99);
+        double p95 = intervalHistogram.getValueAtPercentile(95);
+        double p50 = intervalHistogram.getValueAtPercentile(50);
+
+        lastCount = newCount;
+        lastSum = newSum;
+
+        min.set(0);
+        max.set(0);
+        lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, p99, p95, p50);
+        lastSnapshotTime = System.currentTimeMillis();
+    }
+
+    // for benchmark only
+    public SnapshotExt forceSnapshotAndReset() {
+        synchronized (this) {
+            snapshotAndReset0();
+        }
         return lastSnapshot;
     }
 
