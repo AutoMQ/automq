@@ -132,7 +132,7 @@ public class DeltaHistogram {
         return lastSnapshot.p50;
     }
 
-    private void snapshotAndReset() {
+    public SnapshotExt snapshotAndReset() {
         synchronized (this) {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
                 this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
@@ -159,9 +159,11 @@ public class DeltaHistogram {
                 lastSnapshotTime = System.currentTimeMillis();
             }
         }
+
+        return lastSnapshot;
     }
 
-    static class SnapshotExt {
+    public static class SnapshotExt {
         final long min;
         final long max;
         final long count;
@@ -180,12 +182,40 @@ public class DeltaHistogram {
             this.p95 = p95;
         }
 
-        double mean() {
+        public double mean() {
             if (count == 0) {
                 return 0;
             } else {
                 return (double) sum / count;
             }
+        }
+
+        public long getMin() {
+            return min;
+        }
+
+        public long getMax() {
+            return max;
+        }
+
+        public long getCount() {
+            return count;
+        }
+
+        public long getSum() {
+            return sum;
+        }
+
+        public double getP99() {
+            return p99;
+        }
+
+        public double getP95() {
+            return p95;
+        }
+
+        public double getP50() {
+            return p50;
         }
     }
 }
