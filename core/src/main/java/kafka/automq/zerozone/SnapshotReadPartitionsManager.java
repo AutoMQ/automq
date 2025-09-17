@@ -19,7 +19,6 @@
 
 package kafka.automq.zerozone;
 
-import kafka.automq.partition.snapshot.SnapshotOperation;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.LazyStream;
@@ -137,6 +136,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             // reset the subscriber
             resetSubscribers(newVersion);
         }
+    }
+
+    public synchronized CompletableFuture<Void> nextSnapshotCf() {
+        return CompletableFuture.allOf(subscribers.values().stream()
+            .map(Subscriber::nextSnapshotCf)
+            .toList()
+            .toArray(new CompletableFuture<?>[0])
+        );
     }
 
     private synchronized void triggerSubscribersApply() {
@@ -290,6 +297,13 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             }
         }
 
+        /**
+         * Get the next snapshot future. The future will be completed after the next sync snapshots have been applied.
+         */
+        public CompletableFuture<Void> nextSnapshotCf() {
+            return requester.nextSnapshotCf();
+        }
+
         public CompletableFuture<Void> close() {
             LOGGER.info("[SNAPSHOT_READ_UNSUBSCRIBE],node={}", node);
             CompletableFuture<Void> cf = new CompletableFuture<>();
@@ -301,6 +315,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                     partitions.clear();
                     snapshotWithOperations.clear();
                     replayer.close();
+                    requester.nextSnapshotCf().complete(null);
                     cf.complete(null);
                 } catch (Throwable e) {
                     cf.completeExceptionally(e);
@@ -358,6 +373,11 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         void applySnapshot() {
             while (!snapshotWithOperations.isEmpty()) {
                 SnapshotWithOperation snapshotWithOperation = snapshotWithOperations.peek();
+                if (snapshotWithOperation.isSnapshotMark()) {
+                    snapshotWithOperations.poll();
+                    snapshotWithOperation.snapshotCf.complete(null);
+                    continue;
+                }
                 TopicIdPartition topicIdPartition = snapshotWithOperation.topicIdPartition;
 
                 switch (snapshotWithOperation.operation) {
@@ -460,7 +480,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             if (batch.readyIndex == batch.operations.size() - 1) {
                 return true;
             }
-            if (isMetadataUnready(batch.operations.get(batch.readyIndex + 1).snapshot.streamEndOffsets(), metadataCache)) {
+            SnapshotWithOperation operation = batch.operations.get(batch.readyIndex + 1);
+            if (!operation.isSnapshotMark() && isMetadataUnready(operation.snapshot.streamEndOffsets(), metadataCache)) {
                 return false;
             }
             batch.readyIndex = batch.readyIndex + 1;
@@ -521,25 +542,4 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         }
     }
 
-    static class SnapshotWithOperation {
-        final TopicIdPartition topicIdPartition;
-        final PartitionSnapshot snapshot;
-        final SnapshotOperation operation;
-
-        public SnapshotWithOperation(TopicIdPartition topicIdPartition, PartitionSnapshot snapshot,
-            SnapshotOperation operation) {
-            this.topicIdPartition = topicIdPartition;
-            this.snapshot = snapshot;
-            this.operation = operation;
-        }
-
-        @Override
-        public String toString() {
-            return "SnapshotWithOperation{" +
-                "topicIdPartition=" + topicIdPartition +
-                ", snapshot=" + snapshot +
-                ", operation=" + operation +
-                '}';
-        }
-    }
 }
