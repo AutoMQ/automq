@@ -167,7 +167,7 @@ public class DeltaHistogram {
     }
 
     // for benchmark only
-    public SnapshotExt snapshotAndResetForce() {
+    public SnapshotExt forceSnapshotAndReset() {
         synchronized (this) {
             snapshotAndReset0();
         }
