@@ -22,7 +22,6 @@ import org.apache.iceberg.types.Type;
 import org.apache.iceberg.types.Types;
 import org.apache.iceberg.util.ByteBuffers;
 import org.apache.iceberg.util.DateTimeUtil;
-import org.apache.iceberg.util.UUIDUtil;
 
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
