@@ -25,8 +25,8 @@ import kafka.automq.table.process.exception.TransformException;
 
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.generic.GenericRecordBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +34,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+
+import io.confluent.kafka.schemaregistry.utils.BoundedConcurrentHashMap;
 
 /**
  * Transform for unwrapping Debezium CDC formatted records.
@@ -82,6 +84,10 @@ public class DebeziumUnwrapTransform implements Transform {
         .optionalLong(CDC_FIELD_OFFSET)
         .optionalString(CDC_FIELD_SOURCE)
         .endRecord();
+
+    // Cache enriched schemas keyed by base schema fingerprint (bounded, concurrent)
+    private static final int ENRICHED_SCHEMA_CACHE_MAX = 1024;
+    private final Map<Long, Schema> enrichedSchemaCache = new BoundedConcurrentHashMap<>(ENRICHED_SCHEMA_CACHE_MAX);
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -172,39 +178,38 @@ public class DebeziumUnwrapTransform implements Transform {
                                            TransformContext context) throws TransformException {
         try {
             Schema schemaWithMetadata = createSchemaWithMetadata(businessData.getSchema());
-            GenericRecordBuilder builder = new GenericRecordBuilder(schemaWithMetadata);
 
+            // Build the enriched record using GenericData.Record to reduce allocations
+            GenericData.Record result = new GenericData.Record(schemaWithMetadata);
             for (Schema.Field field : businessData.getSchema().getFields()) {
-                builder.set(field.name(), businessData.get(field.name()));
+                result.put(field.name(), businessData.get(field.name()));
             }
 
-            Schema cdcSchema = schemaWithMetadata.getField(CDC_RECORD_NAME).schema();
-            GenericRecordBuilder cdcBuilder = new GenericRecordBuilder(cdcSchema);
-
-            cdcBuilder.set(CDC_FIELD_OP, mapOperation(operation));
+            GenericData.Record cdc = new GenericData.Record(CDC_SCHEMA);
+            cdc.put(CDC_FIELD_OP, mapOperation(operation));
 
             Object tsMs = debeziumRecord.get(FIELD_TS_MS);
             if (tsMs instanceof Long) {
-                cdcBuilder.set(CDC_FIELD_TS, tsMs);
+                cdc.put(CDC_FIELD_TS, tsMs);
             }
 
-            cdcBuilder.set(CDC_FIELD_OFFSET, context.getKafkaRecord().offset());
+            cdc.put(CDC_FIELD_OFFSET, context.getKafkaRecord().offset());
 
             GenericRecord source = getRecordValue(debeziumRecord, FIELD_SOURCE);
             if (source != null) {
-                String schema = null;
+                String schemaName = null;
                 if (source.hasField("schema")) {
-                    schema = getStringValue(source, "schema");
+                    schemaName = getStringValue(source, "schema");
                 }
-                String db = (schema == null) ? getStringValue(source, "db") : schema;
+                String db = (schemaName == null) ? getStringValue(source, "db") : schemaName;
                 String table = getStringValue(source, "table");
                 if (db != null && table != null) {
-                    cdcBuilder.set(CDC_FIELD_SOURCE, db + "." + table);
+                    cdc.put(CDC_FIELD_SOURCE, db + "." + table);
                 }
             }
 
-            builder.set(CDC_RECORD_NAME, cdcBuilder.build());
-            return builder.build();
+            result.put(CDC_RECORD_NAME, cdc);
+            return result;
 
         } catch (Exception e) {
             throw new TransformException("Failed to enrich record with Debezium metadata:" + e.getMessage(), e);
@@ -224,22 +229,25 @@ public class DebeziumUnwrapTransform implements Transform {
     }
 
     private Schema createSchemaWithMetadata(Schema originalSchema) {
-        List<Schema.Field> enhancedFields = new ArrayList<>();
-        for (Schema.Field field : originalSchema.getFields()) {
-            enhancedFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
-        }
-        enhancedFields.add(new Schema.Field(CDC_RECORD_NAME, CDC_SCHEMA, "CDC metadata", null));
+        long fp = org.apache.avro.SchemaNormalization.parsingFingerprint64(originalSchema);
+        return enrichedSchemaCache.computeIfAbsent(fp, k -> {
+            List<Schema.Field> enhancedFields = new ArrayList<>();
+            for (Schema.Field field : originalSchema.getFields()) {
+                enhancedFields.add(new Schema.Field(field, field.schema()));
+            }
+            enhancedFields.add(new Schema.Field(CDC_RECORD_NAME, CDC_SCHEMA, "CDC metadata", null));
 
-        String enhancedName = originalSchema.getName() != null ?
-            originalSchema.getName() + "_cdc_enriched" : "enriched_record";
+            String enhancedName = originalSchema.getName() != null ?
+                originalSchema.getName() + "_cdc_enriched" : "enriched_record";
 
-        return Schema.createRecord(
-            enhancedName,
-            "Record enriched with CDC metadata",
-            originalSchema.getNamespace(),
-            false,
-            enhancedFields
-        );
+            return Schema.createRecord(
+                enhancedName,
+                "Record enriched with CDC metadata",
+                originalSchema.getNamespace(),
+                false,
+                enhancedFields
+            );
+        });
     }
 
 
