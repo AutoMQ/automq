@@ -2,6 +2,7 @@ package kafka.server.streamaspect
 
 import com.automq.stream.s3.metrics.TimerUtil
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
+import com.automq.stream.utils.Threads
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
@@ -38,10 +39,12 @@ import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.record.BrokerCompressionType
 import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, FetchPartitionData}
+import org.slf4j.LoggerFactory
 
 import java.util
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.{ExecutorService, TimeUnit}
+import java.util.concurrent.{CompletableFuture, ExecutorService, TimeUnit}
+import java.util.function.Supplier
 import java.util.stream.IntStream
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -84,7 +87,10 @@ class ElasticKafkaApis(
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
 
+  private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
+
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
+  private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -820,6 +826,14 @@ class ElasticKafkaApis(
     listOffsetHandleExecutor.execute(() => super.handleListOffsetRequest(request))
   }
 
+  override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
+    offsetForLeaderEpochExecutor.execute(() => {
+      // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
+      snapshotAwaitReadySupplier.get().join()
+      super.handleOffsetForLeaderEpochRequest(request)
+    })
+  }
+
   override protected def metadataTopicsInterceptor(clientId: ClientIdMetadata, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
     trafficInterceptor.handleMetadataResponse(clientId, topics)
   }
@@ -836,6 +850,10 @@ class ElasticKafkaApis(
 
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
     this.trafficInterceptor = trafficInterceptor
+  }
+
+  def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
+    this.snapshotAwaitReadySupplier = supplier
   }
 
 }

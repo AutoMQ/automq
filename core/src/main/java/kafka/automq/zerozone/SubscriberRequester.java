@@ -40,12 +40,14 @@ import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -60,6 +62,7 @@ import io.netty.buffer.Unpooled;
     private int sessionEpoch;
     boolean requestCommit = false;
     boolean requestReset = false;
+    private CompletableFuture<Void> nextSnapshotCf = new CompletableFuture<>();
 
     private final SnapshotReadPartitionsManager.Subscriber subscriber;
     private final Node node;
@@ -89,6 +92,10 @@ import io.netty.buffer.Unpooled;
         closed = true;
     }
 
+    public CompletableFuture<Void> nextSnapshotCf() {
+        return nextSnapshotCf;
+    }
+
     private void request() {
         eventLoop.execute(this::request0);
     }
@@ -97,6 +104,12 @@ import io.netty.buffer.Unpooled;
         if (closed) {
             return;
         }
+        // The snapshotCf will be completed after all snapshots in the response have been applied.
+        CompletableFuture<Void> snapshotCf = this.nextSnapshotCf;
+        this.nextSnapshotCf = new CompletableFuture<>();
+        // The request may fail. So when the nextSnapshotCf complete, we will complete the current snapshotCf.
+        FutureUtil.propagate(nextSnapshotCf, snapshotCf);
+
         tryReset0();
         lastRequestTime = time.milliseconds();
         AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
@@ -113,7 +126,7 @@ import io.netty.buffer.Unpooled;
         AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
         asyncSender.sendRequest(node, builder)
             .thenAcceptAsync(rst -> {
-                handleResponse(rst);
+                handleResponse(rst, snapshotCf);
                 subscriber.unsafeRun();
             }, eventLoop)
             .exceptionally(ex -> {
@@ -129,7 +142,7 @@ import io.netty.buffer.Unpooled;
             });
     }
 
-    private void handleResponse(ClientResponse clientResponse) {
+    private void handleResponse(ClientResponse clientResponse, CompletableFuture<Void> snapshotCf) {
         if (closed) {
             return;
         }
@@ -175,6 +188,7 @@ import io.netty.buffer.Unpooled;
             return c1 - c2;
         });
         subscriber.onNewWalEndOffset(resp.confirmWalConfig(), DefaultRecordOffset.of(Unpooled.wrappedBuffer(resp.confirmWalEndOffset())));
+        batch.operations.add(SnapshotWithOperation.snapshotMark(snapshotCf));
         subscriber.onNewOperationBatch(batch);
         sessionId = resp.sessionId();
         sessionEpoch = resp.sessionEpoch();
@@ -191,7 +205,7 @@ import io.netty.buffer.Unpooled;
         }
     }
 
-    static SnapshotReadPartitionsManager.SnapshotWithOperation convert(TopicIdPartition topicIdPartition,
+    static SnapshotWithOperation convert(TopicIdPartition topicIdPartition,
         AutomqGetPartitionSnapshotResponseData.PartitionSnapshot src) {
         PartitionSnapshot.Builder snapshot = PartitionSnapshot.builder();
         snapshot.leaderEpoch(src.leaderEpoch());
@@ -202,7 +216,7 @@ import io.netty.buffer.Unpooled;
         snapshot.lastTimestampOffset(convertTimestampOffset(src.lastTimestampOffset()));
 
         SnapshotOperation operation = SnapshotOperation.parse(src.operation());
-        return new SnapshotReadPartitionsManager.SnapshotWithOperation(topicIdPartition, snapshot.build(), operation);
+        return new SnapshotWithOperation(topicIdPartition, snapshot.build(), operation);
     }
 
     static ElasticLogMeta convert(AutomqGetPartitionSnapshotResponseData.LogMetadata src) {

@@ -21,7 +21,6 @@ package kafka.automq.zerozone;
 
 import kafka.automq.partition.snapshot.SnapshotOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.OperationBatch;
-import kafka.automq.zerozone.SnapshotReadPartitionsManager.SnapshotWithOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.Subscriber;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
