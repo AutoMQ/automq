@@ -21,6 +21,7 @@ package kafka.automq.table.process;
 
 import org.apache.kafka.common.cache.LRUCache;
 
+import org.apache.avro.JsonProperties;
 import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.SchemaNormalization;
@@ -143,7 +144,7 @@ public final class RecordAssembler {
         List<Schema.Field> finalFields = new ArrayList<>(baseRecord.getSchema().getFields().size() + 3);
         Schema baseSchema = baseRecord.getSchema();
         for (Schema.Field field : baseSchema.getFields()) {
-            finalFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
+            finalFields.add(new Schema.Field(field, field.schema()));
         }
 
         int baseFieldCount = baseSchema.getFields().size();
@@ -152,21 +153,49 @@ public final class RecordAssembler {
         int metadataIndex = -1;
 
         if (headerResult != null) {
-            finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, headerResult.getSchema(), "Kafka record headers", null));
+            Schema optionalHeaderSchema = ensureOptional(headerResult.getSchema());
+            finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, optionalHeaderSchema, "Kafka record headers", JsonProperties.NULL_VALUE));
             headerIndex = baseFieldCount;
         }
         if (keyResult != null) {
-            finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, keyResult.getSchema(), "Kafka record key", null));
+            Schema optionalKeySchema = ensureOptional(keyResult.getSchema());
+            finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, optionalKeySchema, "Kafka record key", JsonProperties.NULL_VALUE));
             keyIndex = (headerIndex >= 0) ? baseFieldCount + 1 : baseFieldCount;
         }
 
-        finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, METADATA_SCHEMA, "Kafka record metadata", null));
+        Schema optionalMetadataSchema = ensureOptional(METADATA_SCHEMA);
+        finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, optionalMetadataSchema, "Kafka record metadata", JsonProperties.NULL_VALUE));
         metadataIndex = baseFieldCount + (headerIndex >= 0 ? 1 : 0) + (keyIndex >= 0 ? 1 : 0);
 
         Schema finalSchema = Schema.createRecord(baseSchema.getName() + "WithMetadata", null,
             "kafka.automq.table.process", false, finalFields);
 
         return new AssemblerSchema(finalSchema, baseFieldCount, headerIndex, keyIndex, metadataIndex);
+    }
+
+    private static Schema ensureOptional(Schema schema) {
+        if (schema.getType() == Schema.Type.UNION) {
+            boolean hasNull = false;
+            List<Schema> types = schema.getTypes();
+            for (Schema type : types) {
+                if (type.getType() == Schema.Type.NULL) {
+                    hasNull = true;
+                    break;
+                }
+            }
+            if (hasNull) {
+                return schema;
+            }
+            List<Schema> withNull = new ArrayList<>(types.size() + 1);
+            withNull.add(Schema.create(Schema.Type.NULL));
+            withNull.addAll(types);
+            return Schema.createUnion(withNull);
+        }
+
+        List<Schema> union = new ArrayList<>(2);
+        union.add(Schema.create(Schema.Type.NULL));
+        union.add(schema);
+        return Schema.createUnion(union);
     }
 
     /**

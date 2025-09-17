@@ -233,7 +233,7 @@ public class DebeziumUnwrapTransform implements Transform {
         return enrichedSchemaCache.computeIfAbsent(fp, k -> {
             List<Schema.Field> enhancedFields = new ArrayList<>();
             for (Schema.Field field : originalSchema.getFields()) {
-                enhancedFields.add(new Schema.Field(field.name(), field.schema(), field.doc(), field.defaultVal()));
+                enhancedFields.add(new Schema.Field(field, field.schema()));
             }
             enhancedFields.add(new Schema.Field(CDC_RECORD_NAME, CDC_SCHEMA, "CDC metadata", null));
 

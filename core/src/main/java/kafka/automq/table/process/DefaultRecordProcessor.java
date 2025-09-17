@@ -111,8 +111,8 @@ public class DefaultRecordProcessor implements RecordProcessor {
 
             GenericRecord record = recordAssembler
                 .reset(transformedRecord)
-                .withHeader(null)
-                .withKey(null)
+                .withHeader(headerResult)
+                .withKey(keyResult)
                 .withSchemaIdentity(schemaIdentity)
                 .withMetadata(partition, kafkaRecord.offset(), kafkaRecord.timestamp())
                 .assemble();
