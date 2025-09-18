@@ -148,6 +148,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     public void close() {
         if (closed.compareAndSet(false, true)) {
             committedEpochManager.close();
+            snapshotReadPartitionsManager.close();
         }
     }
 
