@@ -189,6 +189,7 @@ public class Metrics {
                         .putAll(histogramAttrs)
                         .build();
                 this.shouldRecord = level.isWithin(globalConfig.getMetricsLevel());
+                histogram.setSnapshotInterval(globalConfig.getMetricsReportIntervalMs());
             }
         }
     }
