@@ -730,7 +730,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     /**
-     * Get adjacent read tasks and merge them into one read task which read range is not exceed 16MB.
+     * Get adjacent read tasks and merge them into one read task which read range is not exceed {@link MergedReadTask#MAX_MERGE_READ_SIZE} (4MB).
      */
     private void tryMergeRead0() {
         List<AbstractObjectStorage.MergedReadTask> mergedReadTasks = new ArrayList<>();
