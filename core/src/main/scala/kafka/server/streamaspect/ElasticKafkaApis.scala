@@ -827,9 +827,10 @@ class ElasticKafkaApis(
   }
 
   override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
+    val cf = snapshotAwaitReadySupplier.get()
     offsetForLeaderEpochExecutor.execute(() => {
       // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
-      snapshotAwaitReadySupplier.get().join()
+      cf.join()
       super.handleOffsetForLeaderEpochRequest(request)
     })
   }
