@@ -22,12 +22,13 @@ package com.automq.stream.s3.metrics.wrapper;
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.Recorder;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiPredicate;
 
 public class DeltaHistogram {
-    private static final Long DEFAULT_SNAPSHOT_INTERVAL_MS = 5000L;
+    private static final Long DEFAULT_SNAPSHOT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
     private final LongAdder cumulativeCount = new LongAdder();
     private final LongAdder cumulativeSum = new LongAdder();
     private final AtomicLong min = new AtomicLong(Long.MAX_VALUE);
