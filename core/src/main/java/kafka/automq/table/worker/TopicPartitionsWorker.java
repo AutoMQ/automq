@@ -41,6 +41,7 @@ import com.automq.stream.utils.threads.EventLoop;
 
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.DeleteFile;
+import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.io.WriteResult;
 import org.apache.iceberg.types.Types;
 import org.slf4j.Logger;
@@ -685,7 +686,10 @@ class TopicPartitionsWorker {
                     .collect(Collectors.toList());
                 TopicMetric topicMetric = new TopicMetric(fieldCount);
 
-                CommitResponse commitResponse = new CommitResponse(writerFactory.partitionSpec().partitionType(), fastCommit ? Errors.MORE_DATA : Errors.NONE,
+                PartitionSpec spec = writerFactory.partitionSpec();
+                Types.StructType partitionType = spec != null ? spec.partitionType() : Types.StructType.of();
+                CommitResponse commitResponse = new CommitResponse(partitionType,
+                    fastCommit ? Errors.MORE_DATA : Errors.NONE,
                     requestWrapper.request.commitId(), topic, nextOffsets, dataFiles, deleteFiles, topicMetric, partitionMetrics);
                 return channel.asyncSend(topic, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, commitResponse))
                     .thenAccept(rst -> LOGGER.info("[COMMIT_RESPONSE],{}", commitResponse));
