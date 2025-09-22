@@ -67,7 +67,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -186,7 +186,7 @@ public class IcebergWriter implements Writer {
 
         recordMetric(partition, kafkaRecord.timestamp());
 
-        waitForNetworkPermit();
+        waitForNetworkPermit(1);
 
         TaskWriter<Record> writer = getWriter(record.struct());
 
@@ -457,23 +457,15 @@ public class IcebergWriter implements Writer {
     }
 
     private void recordNetworkCost(WriteResult writeResult) {
-        if (outboundLimiter == null) {
-            return;
-        }
         final long totalBytes = calculateWriteResultBytes(writeResult);
         if (totalBytes <= 0) {
+            LOGGER.warn("[NETWORK_LIMITER_RECORD_INVALID_BYTES],{},bytes={}", this, totalBytes);
             return;
         }
         try {
-            CompletableFuture<Void> consumeFuture = outboundLimiter.consume(ThrottleStrategy.ICEBERG_WRITE, totalBytes)
-                .whenComplete((nil, throwable) -> {
-                    if (throwable != null) {
-                        LOGGER.warn("[NETWORK_LIMITER_RECORD_FAIL],{},bytes={}", this, totalBytes, throwable);
-                    }
-                });
-            consumeFuture.join();
-        } catch (Throwable t) {
-            LOGGER.warn("[NETWORK_LIMITER_RECORD_ERROR],{},bytes={}", this, totalBytes, t);
+            waitForNetworkPermit(totalBytes);
+        } catch (IOException e) {
+            LOGGER.warn("[NETWORK_LIMITER_RECORD_FAIL],{},bytes={}", this, totalBytes, e);
         }
     }
 
@@ -488,26 +480,23 @@ public class IcebergWriter implements Writer {
         return bytes;
     }
 
-    private void waitForNetworkPermit() throws IOException {
-        if (outboundLimiter == null) {
-            return;
-        }
-        CompletableFuture<Void> consumeFuture;
+    private void waitForNetworkPermit(long size) throws IOException {
         try {
-            consumeFuture = outboundLimiter.consume(ThrottleStrategy.ICEBERG_WRITE, 1L);
-        } catch (Throwable t) {
-            LOGGER.warn("[NETWORK_LIMITER_PERMIT_FAIL],{}", this, t);
-            throw new IOException("Failed to acquire outbound network permit", t);
-        }
-        if (consumeFuture == null) {
-            return;
-        }
-        try {
-            consumeFuture.join();
-        } catch (CompletionException | CancellationException e) {
+            outboundLimiter.consumeBlocking(ThrottleStrategy.ICEBERG_WRITE, size);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_FAIL],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
+        } catch (ExecutionException e) {
             Throwable cause = e.getCause() == null ? e : e.getCause();
             LOGGER.warn("[NETWORK_LIMITER_PERMIT_ERROR],{}", this, cause);
             throw new IOException("Failed to acquire outbound network permit", cause);
+        } catch (CancellationException e) {
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_ERROR],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
+        } catch (RuntimeException e) {
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_FAIL],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
         }
     }
 
