@@ -117,8 +117,26 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
     @Override
     protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType) {
-        Schema elementSchema = sourceSchema.getElementType();
-        List<?> sourceList = (List<?>) sourceValue;
+        Schema listSchema = sourceSchema;
+        if (listSchema.getType() == Schema.Type.UNION) {
+            listSchema = listSchema.getTypes().stream()
+                .filter(s -> s.getType() == Schema.Type.ARRAY)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                    "UNION schema does not contain an ARRAY type: " + sourceSchema));
+        }
+
+        Schema elementSchema = listSchema.getElementType();
+
+        List<?> sourceList;
+        if (sourceValue instanceof GenericData.Array) {
+            sourceList = (GenericData.Array<?>) sourceValue;
+        } else if (sourceValue instanceof List) {
+            sourceList = (List<?>) sourceValue;
+        } else {
+            throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to LIST");
+        }
+
         List<Object> list = new ArrayList<>(sourceList.size());
         for (Object element : sourceList) {
             Object convert = convert(element, elementSchema, targetType.elementType());
@@ -157,13 +175,21 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
             }
             return recordMap;
         } else {
+            Schema mapSchema = sourceSchema;
+            if (mapSchema.getType() == Schema.Type.UNION) {
+                mapSchema = mapSchema.getTypes().stream()
+                    .filter(s -> s.getType() == Schema.Type.MAP)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException(
+                        "UNION schema does not contain a Map type: " + sourceSchema.getElementType()));
+            }
             // Handle standard Java Map
             Map<?, ?> sourceMap = (Map<?, ?>) sourceValue;
             Map<Object, Object> adaptedMap = new HashMap<>();
             for (Map.Entry<?, ?> entry : sourceMap.entrySet()) {
                 // Avro map keys are always strings
                 Object key = convert(entry.getKey(), STRING_SCHEMA_INSTANCE, targetType.keyType());
-                Object value = convert(entry.getValue(), sourceSchema.getValueType(), targetType.valueType());
+                Object value = convert(entry.getValue(), mapSchema.getValueType(), targetType.valueType());
                 adaptedMap.put(key, value);
             }
             return adaptedMap;
