@@ -19,12 +19,6 @@
 
 package kafka.automq.table.coordinator;
 
-import com.automq.stream.s3.metrics.Metrics;
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.Threads;
-import com.automq.stream.utils.Time;
-import com.automq.stream.utils.threads.EventLoop;
 import kafka.automq.table.Channel;
 import kafka.automq.table.events.CommitRequest;
 import kafka.automq.table.events.CommitResponse;
@@ -39,6 +33,16 @@ import kafka.automq.table.utils.TableIdentifierUtil;
 import kafka.log.streamaspect.MetaKeyValue;
 import kafka.log.streamaspect.MetaStream;
 import kafka.server.MetadataCache;
+
+import org.apache.kafka.storage.internals.log.LogConfig;
+
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.utils.Systems;
+import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.Time;
+import com.automq.stream.utils.threads.EventLoop;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.AppendFiles;
 import org.apache.iceberg.DataFile;
@@ -50,7 +54,6 @@ import org.apache.iceberg.Transaction;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.NoSuchTableException;
-import org.apache.kafka.storage.internals.log.LogConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -19,13 +19,6 @@
 
 package kafka.automq.table.worker;
 
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.utils.FutureUtil;
-import com.automq.stream.utils.LogSuppressor;
 import kafka.automq.table.binder.RecordBinder;
 import kafka.automq.table.events.PartitionMetric;
 import kafka.automq.table.events.TopicMetric;
@@ -33,6 +26,17 @@ import kafka.automq.table.process.DataError;
 import kafka.automq.table.process.ProcessingResult;
 import kafka.automq.table.process.RecordProcessor;
 import kafka.automq.table.process.exception.RecordProcessorException;
+
+import org.apache.kafka.server.record.ErrorsTolerance;
+
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.LogSuppressor;
+
 import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.DataFile;
@@ -51,7 +55,6 @@ import org.apache.iceberg.io.UnpartitionedWriter;
 import org.apache.iceberg.io.WriteResult;
 import org.apache.iceberg.types.TypeUtil;
 import org.apache.iceberg.types.Types;
-import org.apache.kafka.server.record.ErrorsTolerance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

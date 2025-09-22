@@ -38,6 +38,8 @@ public final class TableTopicMetricsManager {
         .longGauge("kafka_tabletopic_delay", "Table topic commit delay", "ms");
     private static final Metrics.DoubleGaugeBundle FIELDS_PER_SECOND_GAUGES = Metrics.instance()
         .doubleGauge("kafka_tabletopic_fps", "Table topic fields per second", "fields/s");
+    private static final Metrics.DoubleGaugeBundle EVENT_LOOP_BUSY_GAUGES = Metrics.instance()
+        .doubleGauge("kafka_tableworker_eventloop_busy_ratio", "Table worker event loop busy ratio", "%");
 
     private TableTopicMetricsManager() {
     }
@@ -54,11 +56,19 @@ public final class TableTopicMetricsManager {
         return FIELDS_PER_SECOND_GAUGES.register(MetricsLevel.INFO, getTopicAttribute(topic));
     }
 
+    public static Metrics.DoubleGaugeBundle.DoubleGauge registerEventLoopBusy(String loop) {
+        return EVENT_LOOP_BUSY_GAUGES.register(MetricsLevel.INFO, getLoopAttribute(loop));
+    }
+
     private static Attributes getTopicAttribute(String topic) {
         try {
             return TOPIC_ATTRIBUTE_CACHE.get(topic, () -> Attributes.of(AttributeKey.stringKey("topic"), topic));
         } catch (ExecutionException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    private static Attributes getLoopAttribute(String loop) {
+        return Attributes.of(AttributeKey.stringKey("event_loop"), loop);
     }
 }
