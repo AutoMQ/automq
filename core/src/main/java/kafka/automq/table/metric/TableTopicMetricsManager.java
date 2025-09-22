@@ -19,49 +19,39 @@
 
 package kafka.automq.table.metric;
 
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
-import java.util.function.Supplier;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.Meter;
-import io.opentelemetry.api.metrics.ObservableDoubleGauge;
-import io.opentelemetry.api.metrics.ObservableLongGauge;
 
-public class TableTopicMetricsManager {
+public final class TableTopicMetricsManager {
     private static final Cache<String, Attributes> TOPIC_ATTRIBUTE_CACHE = CacheBuilder.newBuilder()
         .expireAfterAccess(Duration.ofMinutes(1)).build();
-    private static Supplier<Map<String, Long>> delaySupplier = Collections::emptyMap;
-    private static Supplier<Map<String, Double>> fieldsPerSecondSupplier = Collections::emptyMap;
-    private static ObservableLongGauge delay;
-    private static ObservableDoubleGauge fieldsPerSecond;
+    private static final Metrics.LongGaugeBundle DELAY_GAUGES = Metrics.instance()
+        .longGauge("kafka_tabletopic_delay", "Table topic commit delay", "ms");
+    private static final Metrics.DoubleGaugeBundle FIELDS_PER_SECOND_GAUGES = Metrics.instance()
+        .doubleGauge("kafka_tabletopic_fps", "Table topic fields per second", "fields/s");
+
+    private TableTopicMetricsManager() {
+    }
 
     public static void initMetrics(Meter meter) {
-        String prefix = "kafka_tabletopic_";
-        delay = meter.gaugeBuilder(prefix + "delay").ofLongs().setUnit("ms")
-            .buildWithCallback(recorder ->
-                delaySupplier.get().forEach((topic, delay) -> {
-                    if (delay >= 0) {
-                        recorder.record(delay, getTopicAttribute(topic));
-                    }
-                }));
-        fieldsPerSecond = meter.gaugeBuilder(prefix + "fps")
-            .buildWithCallback(recorder ->
-                fieldsPerSecondSupplier.get().forEach((topic, fps) -> recorder.record(fps, getTopicAttribute(topic))));
+        // Metrics instruments are registered via Metrics.instance(); no additional setup required.
     }
 
-    public static void setDelaySupplier(Supplier<Map<String, Long>> supplier) {
-        delaySupplier = supplier;
+    public static Metrics.LongGaugeBundle.LongGauge registerDelay(String topic) {
+        return DELAY_GAUGES.register(MetricsLevel.INFO, getTopicAttribute(topic));
     }
 
-    public static void setFieldsPerSecondSupplier(Supplier<Map<String, Double>> supplier) {
-        fieldsPerSecondSupplier = supplier;
+    public static Metrics.DoubleGaugeBundle.DoubleGauge registerFieldsPerSecond(String topic) {
+        return FIELDS_PER_SECOND_GAUGES.register(MetricsLevel.INFO, getTopicAttribute(topic));
     }
 
     private static Attributes getTopicAttribute(String topic) {
@@ -71,5 +61,4 @@ public class TableTopicMetricsManager {
             throw new RuntimeException(e);
         }
     }
-
 }

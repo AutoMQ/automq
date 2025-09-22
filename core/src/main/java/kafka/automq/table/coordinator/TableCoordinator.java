@@ -19,6 +19,12 @@
 
 package kafka.automq.table.coordinator;
 
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.utils.Systems;
+import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.Time;
+import com.automq.stream.utils.threads.EventLoop;
 import kafka.automq.table.Channel;
 import kafka.automq.table.events.CommitRequest;
 import kafka.automq.table.events.CommitResponse;
@@ -33,15 +39,6 @@ import kafka.automq.table.utils.TableIdentifierUtil;
 import kafka.log.streamaspect.MetaKeyValue;
 import kafka.log.streamaspect.MetaStream;
 import kafka.server.MetadataCache;
-
-import org.apache.kafka.storage.internals.log.LogConfig;
-
-import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.utils.Systems;
-import com.automq.stream.utils.Threads;
-import com.automq.stream.utils.Time;
-import com.automq.stream.utils.threads.EventLoop;
-
 import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.AppendFiles;
 import org.apache.iceberg.DataFile;
@@ -53,6 +50,7 @@ import org.apache.iceberg.Transaction;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.exceptions.NoSuchTableException;
+import org.apache.kafka.storage.internals.log.LogConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -61,13 +59,10 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -82,23 +77,7 @@ public class TableCoordinator implements Closeable {
     private static final String SNAPSHOT_COMMIT_ID = "automq.commit.id";
     private static final String WATERMARK = "automq.watermark";
     private static final UUID NOOP_UUID = new UUID(0, 0);
-    private static final Map<String, Long> WATERMARK_METRICS = new ConcurrentHashMap<>();
-    private static final Map<String, Double> FIELD_PER_SECONDS_METRICS = new ConcurrentHashMap<>();
     private static final long NOOP_WATERMARK = -1L;
-
-    static {
-        TableTopicMetricsManager.setDelaySupplier(() -> {
-            Map<String, Long> delay = new HashMap<>(WATERMARK_METRICS.size());
-            long now = System.currentTimeMillis();
-            WATERMARK_METRICS.forEach((topic, watermark) -> {
-                if (watermark != NOOP_WATERMARK) {
-                    delay.put(topic, now - watermark);
-                }
-            });
-            return delay;
-        });
-        TableTopicMetricsManager.setFieldsPerSecondSupplier(() -> FIELD_PER_SECONDS_METRICS);
-    }
 
     private final Catalog catalog;
     private final String topic;
@@ -113,9 +92,11 @@ public class TableCoordinator implements Closeable {
     private final long commitTimeout = TimeUnit.SECONDS.toMillis(30);
     private volatile boolean closed = false;
     private final Supplier<LogConfig> config;
+    private final Metrics.LongGaugeBundle.LongGauge delayMetric;
+    private final Metrics.DoubleGaugeBundle.DoubleGauge fieldsPerSecondMetric;
 
     public TableCoordinator(Catalog catalog, String topic, MetaStream metaStream, Channel channel,
-        EventLoop eventLoop, MetadataCache metadataCache, Supplier<LogConfig> config) {
+                            EventLoop eventLoop, MetadataCache metadataCache, Supplier<LogConfig> config) {
         this.catalog = catalog;
         this.topic = topic;
         this.name = topic;
@@ -125,13 +106,15 @@ public class TableCoordinator implements Closeable {
         this.metadataCache = metadataCache;
         this.config = config;
         this.tableIdentifier = TableIdentifierUtil.of(config.get().tableTopicNamespace, topic);
+        this.delayMetric = TableTopicMetricsManager.registerDelay(topic);
+        this.fieldsPerSecondMetric = TableTopicMetricsManager.registerFieldsPerSecond(topic);
     }
 
     private CommitStatusMachine commitStatusMachine;
 
     public void start() {
-        WATERMARK_METRICS.put(topic, -1L);
-        FIELD_PER_SECONDS_METRICS.put(topic, 0.0);
+        delayMetric.clear();
+        fieldsPerSecondMetric.record(0.0);
 
         // await for a while to avoid multi coordinators concurrent commit.
         SCHEDULER.schedule(() -> {
@@ -157,8 +140,8 @@ public class TableCoordinator implements Closeable {
     public void close() {
         // quick close
         closed = true;
-        WATERMARK_METRICS.remove(topic);
-        FIELD_PER_SECONDS_METRICS.remove(topic);
+        delayMetric.close();
+        fieldsPerSecondMetric.close();
         eventLoop.execute(() -> {
             if (commitStatusMachine != null) {
                 commitStatusMachine.close();
@@ -474,9 +457,15 @@ public class TableCoordinator implements Closeable {
         }
 
         private void recordMetrics() {
-            double fps = commitFieldCount * 1000.0 / Math.max(System.currentTimeMillis() - lastCommitTimestamp, 1);
-            FIELD_PER_SECONDS_METRICS.computeIfPresent(topic, (k, v) -> fps);
-            WATERMARK_METRICS.computeIfPresent(topic, (k, v) -> watermark(partitionWatermarks));
+            long now = System.currentTimeMillis();
+            double fps = commitFieldCount * 1000.0 / Math.max(now - lastCommitTimestamp, 1);
+            fieldsPerSecondMetric.record(fps);
+            long watermarkTimestamp = watermark(partitionWatermarks);
+            if (watermarkTimestamp == NOOP_WATERMARK) {
+                delayMetric.clear();
+            } else {
+                delayMetric.record(Math.max(now - watermarkTimestamp, 0));
+            }
         }
 
         private boolean tryEvolvePartition() {
