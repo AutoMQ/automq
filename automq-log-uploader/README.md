@@ -1,18 +1,18 @@
 # AutoMQ Log Uploader Module
 
-该模块提供基于 Log4j 1.x 的 S3 日志异步上传能力，其他子模块只需依赖此模块并按照简单配置即可把日志同步写入对象存储。核心组件：
+This module provides asynchronous S3 log upload capability based on Log4j 1.x. Other submodules only need to depend on this module and configure it simply to synchronize logs to object storage. Core components:
 
-- `com.automq.log.uploader.S3RollingFileAppender`：继承 `RollingFileAppender`，在写本地文件的同时将日志事件推送给上传器。
-- `com.automq.log.uploader.LogUploader`：异步缓冲、压缩并上传日志；支持按配置开关和定期清理。
-- `com.automq.log.uploader.S3LogConfig`/`S3LogConfigProvider`：抽象上传所需配置，默认实现 `PropertiesS3LogConfigProvider` 会读取 `automq-log.properties`。
+- `com.automq.log.uploader.S3RollingFileAppender`: Extends `RollingFileAppender`, pushes log events to the uploader while writing to local files.
+- `com.automq.log.uploader.LogUploader`: Asynchronously buffers, compresses, and uploads logs; supports configuration switches and periodic cleanup.
+- `com.automq.log.uploader.S3LogConfig`/`S3LogConfigProvider`: Abstracts the configuration required for uploading. The default implementation `PropertiesS3LogConfigProvider` reads from `automq-log.properties`.
 
-## 快速集成
+## Quick Integration
 
-1. 在模块 `build.gradle` 中添加依赖：
+1. Add dependency in your module's `build.gradle`:
    ```groovy
    implementation project(':automq-log-uploader')
    ```
-2. 在资源目录创建 `automq-log.properties`（或者自定义 `S3LogConfigProvider`）：
+2. Create `automq-log.properties` in the resources directory (or customize `S3LogConfigProvider`):
    ```properties
    log.s3.enable=true
    log.s3.bucket=0@s3://your-log-bucket?region=us-east-1
@@ -22,7 +22,7 @@
    log.s3.selector.kafka.bootstrap.servers=PLAINTEXT://kafka:9092
    log.s3.selector.kafka.group.id=automq-log-uploader-my-cluster
    ```
-3. 在 `log4j.properties` 中引用 Appender：
+3. Reference the Appender in `log4j.properties`:
    ```properties
    log4j.appender.s3_uploader=com.automq.log.uploader.S3RollingFileAppender
    log4j.appender.s3_uploader.File=logs/server.log
@@ -31,48 +31,48 @@
    log4j.appender.s3_uploader.layout=org.apache.log4j.PatternLayout
    log4j.appender.s3_uploader.layout.ConversionPattern=[%d] %p %m (%c)%n
    ```
-   如需自定义配置提供器，可额外设置：
+   If you need to customize the configuration provider, you can set:
    ```properties
   log4j.appender.s3_uploader.configProviderClass=com.example.CustomS3LogConfigProvider
   ```
 
-## 关键配置说明
+## Key Configuration Description
 
-| 配置项 | 说明 |
+| Configuration Item | Description |
 | ------ | ---- |
-| `log.s3.enable` | 是否启用 S3 上传功能。
-| `log.s3.bucket` | 推荐使用 AutoMQ Bucket URI（如 `0@s3://bucket?region=us-east-1&pathStyle=true`）。若为简写桶名，需要额外提供 `log.s3.region` 等字段。
-| `log.s3.cluster.id` / `log.s3.node.id` | 用于构造对象存储路径 `automq/logs/{cluster}/{node}/{hour}/{uuid}`。
-| `log.s3.selector.type` | 选主策略（`static`、`nodeid`、`file`、`kafka` 或自定义）。
-| `log.s3.primary.node` | 搭配 `static` 策略使用，指示当前节点是否为主节点。
-| `log.s3.selector.kafka.*` | Kafka 选主所需的附加配置，如 `bootstrap.servers`、`group.id` 等。
-| `log.s3.active.controller` | **已废弃**，请改用 `log.s3.selector.type=static` + `log.s3.primary.node=true`。
+| `log.s3.enable` | Whether to enable S3 upload function.
+| `log.s3.bucket` | It is recommended to use AutoMQ Bucket URI (e.g. `0@s3://bucket?region=us-east-1&pathStyle=true`). If using a shorthand bucket name, additional fields such as `log.s3.region` need to be provided.
+| `log.s3.cluster.id` / `log.s3.node.id` | Used to construct the object storage path `automq/logs/{cluster}/{node}/{hour}/{uuid}`.
+| `log.s3.selector.type` | Leader election strategy (`static`, `nodeid`, `file`, `kafka`, or custom).
+| `log.s3.primary.node` | Used with `static` strategy to indicate whether the current node is the primary node.
+| `log.s3.selector.kafka.*` | Additional configuration required for Kafka leader election, such as `bootstrap.servers`, `group.id`, etc.
+| `log.s3.active.controller` | **Deprecated**, please use `log.s3.selector.type=static` + `log.s3.primary.node=true`.
 
-上传调度可通过环境变量覆盖：
+The upload schedule can be overridden by environment variables:
 
-- `AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL`：最大上传间隔（毫秒）。
-- `AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL`：保留时长（毫秒），旧对象早于该时间会被清理。
+- `AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL`: Maximum upload interval (milliseconds).
+- `AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL`: Retention period (milliseconds), old objects earlier than this time will be cleaned up.
 
-### 选主策略
+### Leader Election Strategies
 
-为避免多个节点同时执行 S3 清理任务，日志上传器内置与 OpenTelemetry 模块一致的选主机制：
+To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploader has a built-in leader election mechanism consistent with the OpenTelemetry module:
 
-1. **static**：通过 `log.s3.primary.node=true|false` 指定哪个节点为主。
-2. **nodeid**：当 `log.s3.node.id` 等于 `primaryNodeId` 时成为主节点，可在 URL 或属性中设置 `log.s3.selector.primary.node.id`。
-3. **file**：使用共享文件做抢占式选主，配置 `log.s3.selector.file.leaderFile=/shared/leader`、`log.s3.selector.file.leaderTimeoutMs=60000`。
-4. **kafka**：默认策略。所有节点加入单分区主题的同一消费组，持有分区的节点成为主节点。必要配置：
+1. **static**: Specify which node is the leader using `log.s3.primary.node=true|false`.
+2. **nodeid**: Becomes the leader node when `log.s3.node.id` equals `primaryNodeId`, which can be set in the URL or properties with `log.s3.selector.primary.node.id`.
+3. **file**: Uses a shared file for preemptive leader election, configure `log.s3.selector.file.leaderFile=/shared/leader`, `log.s3.selector.file.leaderTimeoutMs=60000`.
+4. **kafka**: Default strategy. All nodes join the same consumer group of a single-partition topic, the node holding the partition becomes the leader. Necessary configuration:
    ```properties
    log.s3.selector.type=kafka
    log.s3.selector.kafka.bootstrap.servers=PLAINTEXT://kafka:9092
    log.s3.selector.kafka.topic=__automq_log_uploader_leader_cluster1
    log.s3.selector.kafka.group.id=automq-log-uploader-cluster1
    ```
-   可通过 `log.s3.selector.kafka.*` 提供安全（SASL/SSL）、超时等高级参数。
-5. **自定义**：实现 `com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider` 并通过 SPI 注册，即可引入自定义选主策略。
+   Advanced parameters such as security (SASL/SSL), timeout, etc. can be provided through `log.s3.selector.kafka.*`.
+5. **custom**: Implement `com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
 
-## 扩展
+## Extension
 
-如果应用已有自己的依赖注入/配置方式，可实现 `S3LogConfigProvider` 并在启动时调用：
+If the application already has its own dependency injection/configuration method, you can implement `S3LogConfigProvider` and call it at startup:
 
 ```java
 import com.automq.log.uploader.S3RollingFileAppender;
@@ -80,4 +80,4 @@ import com.automq.log.uploader.S3RollingFileAppender;
 S3RollingFileAppender.setConfigProvider(new CustomConfigProvider());
 ```
 
-所有 `S3RollingFileAppender` 实例会共用这个 provider。
+All `S3RollingFileAppender` instances will share this provider.
