@@ -20,11 +20,26 @@
 package com.automq.stream.s3.network;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 
 public interface NetworkBandwidthLimiter {
     NetworkBandwidthLimiter NOOP = new Noop();
 
     CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size);
+
+    default void consumeBlocking(ThrottleStrategy throttleStrategy, long size)
+        throws InterruptedException, ExecutionException {
+        CompletableFuture<Void> future = consume(throttleStrategy, size);
+        if (future == null) {
+            return;
+        }
+        try {
+            future.get();
+        } catch (InterruptedException e) {
+            future.cancel(true);
+            throw e;
+        }
+    }
 
     long getMaxTokens();
 
