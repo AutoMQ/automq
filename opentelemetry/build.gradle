@@ -49,8 +49,10 @@ dependencies {
     exclude(group: 'org.apache.kafka.shaded', module: '*')
   }
   implementation libs.nettyBuffer
+  implementation libs.nettyBuffer
   implementation libs.jacksonDatabind
   implementation libs.guava
+  implementation project(':clients')
 
   // Test dependencies
   testImplementation libs.junitJupiter
@@ -66,8 +68,8 @@ dependencies {
   implementation('org.xerial.snappy:snappy-java:1.1.10.5')
 
   implementation('com.squareup.okhttp3:okhttp:4.12.0')
-  implementation('software.amazon.awssdk:http-auth-aws:2.26.10')
-  implementation('software.amazon.awssdk:sts:2.26.10')
+  implementation('software.amazon.awssdk:http-auth-aws:2.29.26')
+  implementation('software.amazon.awssdk:sts:2.29.26')
 
   //---- azure ----
   implementation platform('com.azure:azure-sdk-bom:1.2.30')

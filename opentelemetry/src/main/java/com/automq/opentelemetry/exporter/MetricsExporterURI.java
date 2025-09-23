@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -211,7 +212,21 @@ public class MetricsExporterURI {
         if (!selectorConfig.containsKey("isPrimaryUploader")) {
             selectorConfig.put("isPrimaryUploader", String.valueOf(config.isS3PrimaryNode()));
         }
-        
+
+        // Merge selector-specific configuration from worker properties using prefix
+        Map<String, String> selectorProps = config.getPropertiesWithPrefix("automq.telemetry.s3.selector.");
+        String normalizedSelectorType = selectorTypeString == null ? "" : selectorTypeString.toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, String> entry : selectorProps.entrySet()) {
+            String key = entry.getKey();
+            if (normalizedSelectorType.length() > 0 && key.toLowerCase(Locale.ROOT).startsWith(normalizedSelectorType + ".")) {
+                key = key.substring(normalizedSelectorType.length() + 1);
+            }
+            if (key.isEmpty() || "type".equalsIgnoreCase(key)) {
+                continue;
+            }
+            selectorConfig.putIfAbsent(key, entry.getValue());
+        }
+
         // Use the factory to create a node selector with the enum-based approach
         nodeSelector = com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorFactory
             .createSelector(selectorTypeString, clusterId, nodeId, selectorConfig);

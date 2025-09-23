@@ -105,6 +105,7 @@ include 'clients',
     'trogdor',
     's3stream',
     'automq-shell',
+    'automq-log-uploader',
     'opentelemetry'
 
 project(":storage:api").name = "storage-api"

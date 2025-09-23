@@ -41,6 +41,40 @@ automq.telemetry.exporter.interval.ms=30000
 automq.telemetry.metric.cardinality.limit=10000
 ```
 
+## S3 Log Upload
+
+Kafka Connect bundles the AutoMQ log uploader so that worker logs can be streamed to S3 together with in-cluster cleanup. The uploader reuses与指标相同的选主机制，默认使用 Kafka 选主，无需额外 apply。
+
+### Worker Configuration
+
+Add the following properties to your worker configuration (ConfigMap, properties file, etc.):
+
+```properties
+# Enable S3 log upload
+log.s3.enable=true
+log.s3.bucket=0@s3://your-log-bucket?region=us-east-1
+
+# Optional overrides (defaults shown)
+log.s3.selector.type=kafka
+log.s3.selector.kafka.bootstrap.servers=${bootstrap.servers}
+log.s3.selector.kafka.topic=__automq_connect_log_leader_${group.id}
+log.s3.selector.kafka.group.id=automq-log-uploader-${group.id}
+# Provide credentials if the bucket URI does not embed them
+# log.s3.access.key=...
+# log.s3.secret.key=...
+```
+
+`log.s3.node.id` defaults to a hash of the pod hostname if not provided, ensuring objects are partitioned per worker. For `static` 或 `nodeid` 选主可显式设置：
+
+```properties
+log.s3.selector.type=static
+log.s3.primary.node=true   # 仅在主节点设置 true，其余节点 false
+```
+
+### Log4j Integration
+
+`config/connect-log4j.properties` 已将 `connectAppender` 切换成 `com.automq.log.uploader.S3RollingFileAppender`，并指定 `org.apache.kafka.connect.automq.ConnectS3LogConfigProvider` 作为配置提供器。只要在 worker 配置中开启 `log.s3.enable=true` 且配置好桶信息，日志上传会随着 Connect 进程自动初始化；若未设置或返回 `log.s3.enable=false`，上传器保持禁用状态。
+
 ## Programmatic Usage
 
 ### 1. Initialize Telemetry Manager

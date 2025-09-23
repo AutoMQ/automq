@@ -1,2 +1,1 @@
-com.automq.opentelemetry.exporter.s3.examples.RoundRobinSelectorProvider
-
+com.automq.opentelemetry.exporter.s3.kafka.KafkaLeaderSelectorProvider

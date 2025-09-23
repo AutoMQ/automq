@@ -9,6 +9,7 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -121,7 +122,31 @@ public class TelemetryConfig {
     public String getProperty(String key, String defaultValue) {
         return props.getProperty(key, defaultValue);
     }
-    
+
+    /**
+     * Returns properties whose keys start with the given prefix.
+     * The returned map contains keys with the prefix removed.
+     *
+     * @param prefix the property key prefix to look for
+     * @return a map of keys (without the prefix) to their values
+     */
+    public Map<String, String> getPropertiesWithPrefix(String prefix) {
+        if (prefix == null || prefix.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, String> result = new java.util.HashMap<>();
+        for (String key : props.stringPropertyNames()) {
+            if (key.startsWith(prefix)) {
+                String trimmedKey = key.substring(prefix.length());
+                if (!trimmedKey.isEmpty()) {
+                    result.put(trimmedKey, props.getProperty(key));
+                }
+            }
+        }
+        return result;
+    }
+
     /**
      * Get the S3 cluster ID.
      * 

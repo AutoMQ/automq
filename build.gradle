@@ -260,12 +260,12 @@ subprojects {
 
   tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
-    options.compilerArgs << "-Xlint:all"
-    // temporary exclusions until all the warnings are fixed
-    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
-      options.compilerArgs << "-Xlint:-rawtypes"
-    options.compilerArgs << "-Xlint:-serial"
-    options.compilerArgs << "-Xlint:-try"
+//    options.compilerArgs << "-Xlint:all"
+//    // temporary exclusions until all the warnings are fixed
+//    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
+//      options.compilerArgs << "-Xlint:-rawtypes"
+//    options.compilerArgs << "-Xlint:-serial"
+//    options.compilerArgs << "-Xlint:-try"
     // AutoMQ inject start
     // TODO: remove me, when upgrade to 4.x
 //    options.compilerArgs << "-Werror"
@@ -3461,6 +3461,7 @@ project(':connect:runtime') {
     api project(':connect:json')
     api project(':connect:transforms')
     api project(':opentelemetry')
+    implementation project(':automq-log-uploader')
 
     implementation libs.slf4jApi
     implementation libs.reload4j

@@ -1,0 +1,19 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    api project(':s3stream')
+
+    implementation project(':clients')
+    implementation libs.reload4j
+    implementation libs.slf4jApi
+    implementation libs.slf4jBridge
+    implementation libs.nettyBuffer
+    implementation libs.guava
+    implementation libs.commonLang
+}
