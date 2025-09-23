@@ -303,6 +303,7 @@ public class AvroRecordBinderTest {
 
         // Convert Avro record to Iceberg record using the wrapper
         org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+
         Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(record);
 
         // Verify the field value
@@ -751,6 +752,43 @@ public class AvroRecordBinderTest {
         testSendRecord(icebergSchema, icebergRecord);
     }
 
+    @Test
+    public void testUnionListConversion() {
+        String avroSchemaStr = "    {\n" +
+            "      \"type\": \"record\",\n" +
+            "      \"name\": \"TestRecord\",\n" +
+            "      \"fields\": [\n" +
+            "        {\n" +
+            "          \"name\": \"listField\",\n" +
+            "          \"type\": [\"null\", {\"type\": \"array\", \"items\": [\"null\", \"string\"]}],\n" +
+            "          \"default\": null\n" +
+            "        }\n" +
+            "      ]\n" +
+            "    }\n";
+
+        avroSchema = new Schema.Parser().parse(avroSchemaStr);
+
+        Schema listSchema = avroSchema.getField("listField").schema().getTypes().stream()
+            .filter(s -> s.getType() == Schema.Type.ARRAY)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("UNION schema does not contain an ARRAY type"));
+
+        GenericData.Array<Object> listValue = new GenericData.Array<>(3, listSchema);
+        listValue.add(new Utf8("a"));
+        listValue.add(null);
+        listValue.add(new Utf8("c"));
+
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+        avroRecord.put("listField", listValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(serializeAndDeserialize(avroRecord, avroSchema));
+
+        assertEquals(Arrays.asList("a", null, "c"), normalizeValue(icebergRecord.getField("listField")));
+
+        testSendRecord(icebergSchema, icebergRecord);
+    }
+
     // Test method for converting a map field
     @Test
     public void testStringMapConversion() {
@@ -866,6 +904,96 @@ public class AvroRecordBinderTest {
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
+    }
+
+    @Test
+    public void testUnionStringMapConversion() {
+        String avroSchemaStr = "    {\n" +
+            "      \"type\": \"record\",\n" +
+            "      \"name\": \"TestRecord\",\n" +
+            "      \"fields\": [\n" +
+            "        {\n" +
+            "          \"name\": \"mapField\",\n" +
+            "          \"type\": [\"null\", {\"type\": \"map\", \"values\": [\"null\", \"string\"]}],\n" +
+            "          \"default\": null\n" +
+            "        }\n" +
+            "      ]\n" +
+            "    }\n";
+
+        avroSchema = new Schema.Parser().parse(avroSchemaStr);
+
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+        Map<String, Object> expectedMap = new HashMap<>();
+        expectedMap.put("key1", "value1");
+        expectedMap.put("key2", null);
+        avroRecord.put("mapField", expectedMap);
+
+        GenericRecord record = serializeAndDeserialize(avroRecord, avroSchema);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        Record icebergRecord = new RecordBinder(icebergSchema, avroSchema).bind(record);
+
+        assertEquals(expectedMap, normalizeValue(icebergRecord.getField("mapField")));
+
+        testSendRecord(icebergSchema, icebergRecord);
+    }
+
+    @Test
+    public void testUnionArrayMapConversion() {
+        String avroSchemaStr = "    {\n" +
+            "      \"type\": \"record\",\n" +
+            "      \"name\": \"TestRecord\",\n" +
+            "      \"fields\": [\n" +
+            "        {\n" +
+            "          \"name\": \"mapField\",\n" +
+            "          \"type\": {\n" +
+            "            \"type\": \"array\",\n" +
+            "            \"logicalType\": \"map\",\n" +
+            "            \"items\": [\n" +
+            "              \"null\",\n" +
+            "              {\n" +
+            "                \"type\": \"record\",\n" +
+            "                \"name\": \"UnionMapEntry\",\n" +
+            "                \"fields\": [\n" +
+            "                  {\"name\": \"key\", \"type\": \"int\"},\n" +
+            "                  {\"name\": \"value\", \"type\": \"string\"}\n" +
+            "                ]\n" +
+            "              }\n" +
+            "            ]\n" +
+            "          }\n" +
+            "        }\n" +
+            "      ]\n" +
+            "    }\n";
+
+        avroSchema = new Schema.Parser().parse(avroSchemaStr);
+
+        Map<Integer, String> expectedMap = new HashMap<>();
+        expectedMap.put(10, "alpha");
+        expectedMap.put(20, "beta");
+
+        Schema mapFieldSchema = avroSchema.getField("mapField").schema();
+        Schema elementUnionSchema = mapFieldSchema.getElementType();
+        Schema entrySchema = elementUnionSchema.getTypes().stream()
+            .filter(s -> s.getType() == Schema.Type.RECORD)
+            .findFirst()
+            .orElseThrow(() -> new IllegalStateException("Array element UNION schema does not contain a RECORD type"));
+
+        GenericData.Array<Object> mapEntries = new GenericData.Array<>(expectedMap.size() + 1, mapFieldSchema);
+        for (Map.Entry<Integer, String> entry : expectedMap.entrySet()) {
+            GenericRecord mapEntry = new GenericData.Record(entrySchema);
+            mapEntry.put("key", entry.getKey());
+            mapEntry.put("value", entry.getValue());
+            mapEntries.add(mapEntry);
+        }
+        mapEntries.add(null);
+
+        AvroValueAdapter adapter = new AvroValueAdapter();
+        Types.MapType mapType = Types.MapType.ofOptional(1, 2, Types.IntegerType.get(), Types.StringType.get());
+
+        @SuppressWarnings("unchecked")
+        Map<Integer, Object> result = (Map<Integer, Object>) adapter.convert(mapEntries, mapFieldSchema, mapType);
+
+        assertEquals(expectedMap, result);
     }
 
     // Test method for converting a record with nested fields

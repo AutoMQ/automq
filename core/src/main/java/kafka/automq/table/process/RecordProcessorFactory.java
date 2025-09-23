@@ -52,7 +52,7 @@ public class RecordProcessorFactory {
         if (config.schemaType() == TableTopicSchemaType.SCHEMA) {
             return new DefaultRecordProcessor(topic,
                 StringConverter.INSTANCE,
-                converterFactory.createValueConverter(topic, config), List.of(FlattenTransform.INSTANCE));
+                converterFactory.createForSchemaId(topic, false), List.of(FlattenTransform.INSTANCE));
         }
 
         var keyConverter = converterFactory.createKeyConverter(topic, config);
