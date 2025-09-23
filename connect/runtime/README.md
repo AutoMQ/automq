@@ -43,7 +43,7 @@ automq.telemetry.metric.cardinality.limit=10000
 
 ## S3 Log Upload
 
-Kafka Connect bundles the AutoMQ log uploader so that worker logs can be streamed to S3 together with in-cluster cleanup. The uploader reuses与指标相同的选主机制，默认使用 Kafka 选主，无需额外 apply。
+Kafka Connect bundles the AutoMQ log uploader so that worker logs can be streamed to S3 together with in-cluster cleanup. The uploader reuses the same leader election mechanism as the metrics, using Kafka by default, and requires no additional configuration.
 
 ### Worker Configuration
 
@@ -64,16 +64,16 @@ log.s3.selector.kafka.group.id=automq-log-uploader-${group.id}
 # log.s3.secret.key=...
 ```
 
-`log.s3.node.id` defaults to a hash of the pod hostname if not provided, ensuring objects are partitioned per worker. For `static` 或 `nodeid` 选主可显式设置：
+`log.s3.node.id` defaults to a hash of the pod hostname if not provided, ensuring objects are partitioned per worker. For `static` or `nodeid` leader election, you can explicitly set:
 
 ```properties
 log.s3.selector.type=static
-log.s3.primary.node=true   # 仅在主节点设置 true，其余节点 false
+log.s3.primary.node=true   # Set true only on the primary node, false on others
 ```
 
 ### Log4j Integration
 
-`config/connect-log4j.properties` 已将 `connectAppender` 切换成 `com.automq.log.uploader.S3RollingFileAppender`，并指定 `org.apache.kafka.connect.automq.ConnectS3LogConfigProvider` 作为配置提供器。只要在 worker 配置中开启 `log.s3.enable=true` 且配置好桶信息，日志上传会随着 Connect 进程自动初始化；若未设置或返回 `log.s3.enable=false`，上传器保持禁用状态。
+`config/connect-log4j.properties` has switched `connectAppender` to `com.automq.log.uploader.S3RollingFileAppender` and specifies `org.apache.kafka.connect.automq.ConnectS3LogConfigProvider` as the config provider. As long as you enable `log.s3.enable=true` and configure the bucket info in the worker config, log upload will be automatically initialized with the Connect process; if not set or returns `log.s3.enable=false`, the uploader remains disabled.
 
 ## Programmatic Usage
 

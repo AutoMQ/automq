@@ -212,15 +212,15 @@ The S3 Metrics Exporter allows you to export metrics data to S3-compatible stora
 s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
 ```
 
-S3桶URI格式完整说明：
+S3 bucket URI format description:
 ```
 s3://<bucket-name>?region=<region>[&endpoint=<endpoint>][&pathStyle=<enablePathStyle>][&authType=<authType>][&accessKey=<accessKey>][&secretKey=<secretKey>][&checksumAlgorithm=<checksumAlgorithm>]
 ```
 
-- **pathStyle**: `true|false`. 对象存储访问路径样式。使用MinIO时，应设置为true。
-- **authType**: `instance|static`. 设置为instance时，将使用实例配置文件进行身份验���。设置为static时，将从URL或系统环境变量KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY获取accessKey和secretKey。
+- **pathStyle**: `true|false`. Object storage access path style. Set to true when using MinIO.
+- **authType**: `instance|static`. When set to instance, instance profile is used for authentication. When set to static, accessKey and secretKey are obtained from the URL or system environment variables KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY.
 
-也支持简化格式，其中凭证信息作为用户信息部分：
+Simplified format is also supported, with credentials in the user info part:
 ```
 s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
 ```
