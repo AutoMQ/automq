@@ -76,14 +76,6 @@ public class S3MetricsExporterAdapter implements MetricsExporter {
                 clusterId, nodeId, intervalMs, metricsBucket);
     }
 
-//    public static void main(String[] args) {
-//        BucketURI metricsBucket = BucketURI.parse("0@s3://keqing-test-connect?region=us-east-1&authType=static&accessKey=AKIAS7UGNRY5KAWXYU6O&secretKey=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");
-//        ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(metricsBucket).threadPrefix("s3-metric").build();
-//        
-//        
-//        objectStorage.list("automq");
-//    }
-
     @Override
     public MetricReader asMetricReader() {
         // Create object storage for the bucket
