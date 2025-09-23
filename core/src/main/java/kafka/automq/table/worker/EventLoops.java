@@ -19,6 +19,9 @@
 
 package kafka.automq.table.worker;
 
+import kafka.automq.table.metric.TableTopicMetricsManager;
+
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -90,9 +93,21 @@ public class EventLoops {
             lastRecordNanoTimes[i] = recordNanoTime;
 
             long elapseDelta = Math.max(recordNanoTime - lastRecordNanoTime, 1);
-            sb.append(eventLoop.eventLoop.getName()).append(String.format(": %.1f", (double) busyTimeDelta / elapseDelta * 100)).append("%, ");
+            double busyRatio = (double) busyTimeDelta / elapseDelta * 100;
+            eventLoop.lastBusyRatio = busyRatio;
+            eventLoop.busyRatioGauge.record(busyRatio);
+            sb.append(eventLoop.eventLoop.getName()).append(String.format(": %.1f", busyRatio)).append("%, ");
         }
         LOGGER.info(sb.toString());
+    }
+
+    double busyRatio(EventLoop eventLoop) {
+        for (EventLoopWrapper wrapper : eventLoops) {
+            if (wrapper.eventLoop == eventLoop) {
+                return wrapper.lastBusyRatio;
+            }
+        }
+        return 0.0;
     }
 
     public static class EventLoopWrapper {
@@ -102,9 +117,12 @@ public class EventLoops {
         final AtomicInteger inflight = new AtomicInteger();
         volatile long runningTaskStartTime = -1;
         volatile long totalBusyTime = 0;
+        volatile double lastBusyRatio = 0.0;
+        final Metrics.DoubleGaugeBundle.DoubleGauge busyRatioGauge;
 
         public EventLoopWrapper(EventLoop eventLoop) {
             this.eventLoop = eventLoop;
+            this.busyRatioGauge = TableTopicMetricsManager.registerEventLoopBusy(eventLoop.getName());
         }
     }
 
