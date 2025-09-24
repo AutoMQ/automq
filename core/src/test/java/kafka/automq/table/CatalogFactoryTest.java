@@ -40,6 +40,7 @@ class CatalogFactoryTest {
                 final var method = ex.getRequestMethod();
                 requests.add(
                     method + ' ' + ex.getRequestURI().getPath() + '?' + ex.getRequestURI().getQuery() +
+                        ('\n' + String.join("", ex.getRequestHeaders().getOrDefault("x-custom", List.of()))) +
                         ('\n' + new String(ex.getRequestBody().readAllBytes(), UTF_8)).strip());
 
                 if (method.equals("GET") &&
@@ -74,7 +75,7 @@ class CatalogFactoryTest {
             )));
             final var catalog = new CatalogFactory.Builder(config).build();
             assertInstanceOf(RESTCatalog.class, catalog).close();
-            assertEquals(List.of("GET /v1/config?warehouse=s3://my_bucket/iceberg"), requests);
+            assertEquals(List.of("GET /v1/config?warehouse=s3://my_bucket/iceberg\nmy-x"), requests);
         } finally {
             catalogBackend.stop(0);
         }
