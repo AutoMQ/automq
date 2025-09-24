@@ -3,9 +3,11 @@ package kafka.automq.table.process.convert;
 import kafka.automq.table.deserializer.proto.CustomProtobufSchema;
 import kafka.automq.table.deserializer.proto.ProtobufSchemaProvider;
 import kafka.automq.table.deserializer.proto.parse.ProtobufSchemaParser;
-import kafka.automq.table.process.ConversionResult;
 import kafka.automq.table.deserializer.proto.parse.converter.ProtoConstants;
 import kafka.automq.table.deserializer.proto.schema.DynamicSchema;
+import kafka.automq.table.process.ConversionResult;
+
+import org.apache.kafka.common.utils.ByteUtils;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Descriptors;
@@ -26,7 +28,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
-import org.apache.kafka.common.utils.ByteUtils;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
