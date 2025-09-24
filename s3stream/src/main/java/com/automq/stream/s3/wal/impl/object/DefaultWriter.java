@@ -303,24 +303,22 @@ public class DefaultWriter implements Writer {
     }
 
     private void tryUploadBulkInWaiting() {
-        UPLOAD_EXECUTOR.submit(this::uploadBulk0);
-    }
-
-    private void uploadBulk0() {
-        Bulk bulk;
         lock.writeLock().lock();
         try {
-            if (uploadingBulks.size() >= config.maxInflightUploadCount()) {
-                return;
+            while (uploadingBulks.size() < config.maxInflightUploadCount()) {
+                Bulk bulk = waitingUploadBulks.poll();
+                if (bulk == null) {
+                    return;
+                }
+                uploadingBulks.add(bulk);
+                UPLOAD_EXECUTOR.submit(() -> uploadBulk0(bulk));
             }
-            bulk = waitingUploadBulks.poll();
-            if (bulk == null) {
-                return;
-            }
-            uploadingBulks.add(bulk);
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    private void uploadBulk0(Bulk bulk) {
         try {
             long startTime = time.nanoseconds();
             List<Record> records = bulk.records;
