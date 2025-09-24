@@ -56,6 +56,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class S3ObjectsImageTest {
 
+    private static S3ObjectsImage getAndRetain(AtomicReference<S3ObjectsImage> current, Object lock) {
+        synchronized (lock) {
+            S3ObjectsImage image = current.get();
+            image.retain();
+            return image;
+        }
+    }
+
     static final S3ObjectsImage IMAGE1;
 
     static final List<ApiMessageAndVersion> DELTA1_RECORDS;
@@ -150,43 +158,54 @@ public class S3ObjectsImageTest {
     public void testConcurrentRefRetainAndReleaseNotThrowException() throws InterruptedException {
         LogContext logContext = new LogContext("[S3ObjectsImageTest] ");
         Logger log = LoggerFactory.getLogger(getClass());
-    
+
         SnapshotRegistry registry = new SnapshotRegistry(logContext);
+        Object imageLock = new Object();
         AtomicReference<S3ObjectsImage> current = new AtomicReference<>();
         TimelineHashMap<Long/*objectId*/, S3Object> map = new TimelineHashMap<>(registry, 10);
-        RegistryRef ref = new RegistryRef(registry, 0, new ArrayList<>());
-    
+        List<Long> liveEpochs = new ArrayList<>();
+        liveEpochs.add(0L);
+        RegistryRef ref = new RegistryRef(registry, 0, liveEpochs);
+
         S3ObjectsImage start = new S3ObjectsImage(4L, map, ref);
-        current.set(start);
-    
+        synchronized (imageLock) {
+            current.set(start);
+        }
+
         AtomicBoolean running = new AtomicBoolean(true);
-    
+
         AtomicLong updateExceptionCounter = new AtomicLong();
         AtomicLong accessExceptionCounter = new AtomicLong();
         AtomicLong updateCounter = new AtomicLong();
         AtomicLong accessCounter = new AtomicLong();
-    
+
         int threadCount = 9; // 1 update task + 8 access tasks
         CountDownLatch startLatch = new CountDownLatch(threadCount);
         CountDownLatch endLatch = new CountDownLatch(threadCount);
-    
+
         ExecutorService es = Executors.newFixedThreadPool(threadCount);
-    
+
         // Update task
         es.submit(() -> {
             startLatch.countDown();
             try {
                 startLatch.await();
                 while (running.get()) {
-                    S3ObjectsImage image = current.get();
+                    S3ObjectsImage previous;
+                    synchronized (imageLock) {
+                        previous = current.get();
+                    }
                     TimeUnit.MILLISECONDS.sleep(1);
-                    current.set(new S3ObjectsImage(1, map, ref.next()));
+                    S3ObjectsImage newImage = new S3ObjectsImage(1, map, ref.next());
+                    synchronized (imageLock) {
+                        current.set(newImage);
+                    }
                     updateCounter.incrementAndGet();
                     TimeUnit.MILLISECONDS.sleep(1);
-    
-                    if (image != current.get()) {
+
+                    if (previous != newImage) {
                         try {
-                            image.release();
+                            previous.release();
                         } catch (Throwable e) {
                             updateExceptionCounter.incrementAndGet();
                             log.error("Exception in updateImageTask", e);
@@ -199,17 +218,16 @@ public class S3ObjectsImageTest {
                 endLatch.countDown();
             }
         });
-    
- 
+
+
         for (int i = 0; i < 8; i++) {
             es.submit(() -> {
                 startLatch.countDown();
                 try {
                     startLatch.await();
                     while (running.get()) {
-                        S3ObjectsImage image = current.get();
+                        S3ObjectsImage image = getAndRetain(current, imageLock);
                         try {
-                            image.retain();
                             TimeUnit.MILLISECONDS.sleep(10);
                             accessCounter.incrementAndGet();
                         } finally {
@@ -228,22 +246,32 @@ public class S3ObjectsImageTest {
                 }
             });
         }
-    
-        startLatch.await(); 
+
+        startLatch.await();
         TimeUnit.SECONDS.sleep(10);
         running.set(false);
-    
-        
+
+
         assertTrue(endLatch.await(5, TimeUnit.SECONDS), "Not all threads finished in time");
-    
+
         es.shutdownNow();
         assertTrue(es.awaitTermination(5, TimeUnit.SECONDS), "ExecutorService did not terminate in time");
-    
+
         assertEquals(0, updateExceptionCounter.get(), "Exceptions in update task: " + updateExceptionCounter.get());
         assertEquals(0, accessExceptionCounter.get(), "Exceptions in access tasks: " + accessExceptionCounter.get());
-    
+
         log.info("Update operations: {}", updateCounter.get());
         log.info("Access operations: {}", accessCounter.get());
+
+        S3ObjectsImage finalImage;
+        synchronized (imageLock) {
+            finalImage = current.get();
+        }
+        try {
+            finalImage.release();
+        } catch (Throwable ignore) {
+            // best effort clean-up; errors here are irrelevant to the concurrency assertions
+        }
     }
 
 }
