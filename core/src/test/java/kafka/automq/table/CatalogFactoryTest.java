@@ -1,10 +1,13 @@
 package kafka.automq.table;
 
-import com.sun.net.httpserver.HttpServer;
 import kafka.server.KafkaConfig;
-import org.apache.iceberg.rest.RESTCatalog;
+
 import org.apache.kafka.raft.QuorumConfig;
 import org.apache.kafka.server.config.KRaftConfigs;
+
+import com.sun.net.httpserver.HttpServer;
+
+import org.apache.iceberg.rest.RESTCatalog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
