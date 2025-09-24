@@ -81,7 +81,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory,
         LocalStreamRangeIndexCache indexCache) {
         this.nodeId = nodeId;
-        this.metadataImage = broker.metadataCache().currentImage();
+        this.metadataImage = broker.metadataCache().retainedImage();
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.objectReaderFactory = objectReaderFactory;
         this.indexCache = indexCache;
@@ -102,8 +102,11 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             if (newImage.highestOffsetAndEpoch().equals(this.metadataImage.highestOffsetAndEpoch())) {
                 return;
             }
+            newImage.retain();
+            MetadataImage oldImage = this.metadataImage;
             this.metadataImage = newImage;
             changedStreams = delta.getOrCreateStreamsMetadataDelta().changedStreams();
+            oldImage.release();
         }
         // retry all pending tasks
         retryPendingTasks();

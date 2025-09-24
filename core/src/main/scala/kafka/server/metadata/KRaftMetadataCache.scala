@@ -632,7 +632,7 @@ class KRaftMetadataCache(
     }
   }
 
-  private def retainedImage(): MetadataImage = {
+  def retainedImage(): MetadataImage = {
     imageLock.lock()
     try {
       val image = _currentImage
@@ -670,4 +670,3 @@ class KRaftMetadataCache(
   // AutoMQ inject end
 
 }
-
