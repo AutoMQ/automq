@@ -559,12 +559,13 @@ public class DefaultWriter implements Writer {
         public Bulk(long baseOffset) {
             this.startNanos = time.nanoseconds();
             this.baseOffset = baseOffset;
-            long forceUploadNanos = lastBulkForceUploadNanos + batchNanos;
-            long forceUploadDelayNanos = Math.max(
-                // Try batch the requests in a short time window to save the PUT API.
-                minBulkUploadIntervalNanos,
-                forceUploadNanos - startNanos
-            );
+            long forceUploadDelayNanos = Math.min(
+                Math.max(
+                    // Try batch the requests in a short time window to save the PUT API.
+                    minBulkUploadIntervalNanos,
+                    lastBulkForceUploadNanos + batchNanos - startNanos
+                ),
+                batchNanos);
             lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
             SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
         }
