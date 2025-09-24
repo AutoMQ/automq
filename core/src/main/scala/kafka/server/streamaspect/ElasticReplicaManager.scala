@@ -624,7 +624,7 @@ class ElasticReplicaManager(
     if (handler == null) {
       // the handler will be null if it timed out to acquire from limiter
       fetchLimiterTimeoutCounterMap.get(limiter.name).add(MetricsLevel.INFO, 1)
-      // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
+      // warn(s"Returning empty fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       ElasticReplicaManager.emptyReadResults(readPartitionInfo.map(_._1))
     } else {
       try {
