@@ -1240,9 +1240,9 @@ public class AvroRecordBinderTest {
         // Create test record with different field sizes
         GenericRecord avroRecord = new GenericData.Record(avroSchema);
         avroRecord.put("smallString", "small"); // 5 chars = 3 field
-        avroRecord.put("largeString", "a".repeat(50)); // 50 chars = 5 fields  2 + (50+256)/256 * 2 = 5
+        avroRecord.put("largeString", "a".repeat(50)); // 50 chars = 3 + 50/32 = 4
         avroRecord.put("intField", 42); // primitive = 1 field
-        avroRecord.put("binaryField", ByteBuffer.wrap("test".repeat(10).getBytes())); // 40 bytes = 2 fields
+        avroRecord.put("binaryField", ByteBuffer.wrap("test".repeat(10).getBytes())); // 5
 
         // Bind record - this should trigger field counting
         Record icebergRecord = recordBinder.bind(avroRecord);
@@ -1254,13 +1254,13 @@ public class AvroRecordBinderTest {
         assertEquals("test".repeat(10), new String(((ByteBuffer) icebergRecord.getField("binaryField")).array()));
 
         long fieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(11, fieldCount);
+        assertEquals(13, fieldCount);
 
         // Second call should return 0 (reset)
         assertEquals(0, recordBinder.getAndResetFieldCount());
 
         testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-        assertEquals(11, recordBinder.getAndResetFieldCount());
+        assertEquals(13, recordBinder.getAndResetFieldCount());
     }
 
     @Test
