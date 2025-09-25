@@ -87,7 +87,7 @@ public class DebeziumUnwrapTransform implements Transform {
 
     // Cache enriched schemas keyed by base schema fingerprint (bounded, concurrent)
     private static final int ENRICHED_SCHEMA_CACHE_MAX = 1024;
-    private final Map<Long, Schema> enrichedSchemaCache = new BoundedConcurrentHashMap<>(ENRICHED_SCHEMA_CACHE_MAX);
+    private final Map<SchemaKey, Schema> enrichedSchemaCache = new BoundedConcurrentHashMap<>(ENRICHED_SCHEMA_CACHE_MAX);
 
     @Override
     public void configure(Map<String, ?> configs) {
@@ -229,8 +229,8 @@ public class DebeziumUnwrapTransform implements Transform {
     }
 
     private Schema createSchemaWithMetadata(Schema originalSchema) {
-        long fp = org.apache.avro.SchemaNormalization.parsingFingerprint64(originalSchema);
-        return enrichedSchemaCache.computeIfAbsent(fp, k -> {
+        SchemaKey schemaKey = new SchemaKey(originalSchema);
+        return enrichedSchemaCache.computeIfAbsent(schemaKey, k -> {
             List<Schema.Field> enhancedFields = new ArrayList<>();
             for (Schema.Field field : originalSchema.getFields()) {
                 enhancedFields.add(new Schema.Field(field, field.schema()));
@@ -276,5 +276,51 @@ public class DebeziumUnwrapTransform implements Transform {
     @Override
     public String getName() {
         return "DebeziumUnwrap";
+    }
+
+    private static final class SchemaKey {
+        private final Schema schema;
+        private final int hashCode;
+        private volatile long fingerprint;
+        private volatile boolean fingerprintComputed;
+
+        private SchemaKey(Schema schema) {
+            this.schema = Objects.requireNonNull(schema, "schema");
+            this.hashCode = schema.hashCode();
+        }
+
+        @Override
+        public int hashCode() {
+            return hashCode;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof SchemaKey)) {
+                return false;
+            }
+            SchemaKey other = (SchemaKey) obj;
+            if (hashCode != other.hashCode) {
+                return false;
+            }
+            if (schema == other.schema) {
+                return true;
+            }
+            return fingerprint() == other.fingerprint();
+        }
+
+        private long fingerprint() {
+            if (!fingerprintComputed) {
+                long computed = org.apache.avro.SchemaNormalization.parsingFingerprint64(schema);
+                if (!fingerprintComputed) {
+                    fingerprint = computed;
+                    fingerprintComputed = true;
+                }
+            }
+            return fingerprint;
+        }
     }
 }
