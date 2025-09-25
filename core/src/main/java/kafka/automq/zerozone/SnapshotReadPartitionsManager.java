@@ -58,6 +58,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -83,6 +84,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     final EventLoop eventLoop = new EventLoop("AUTOMQ_SNAPSHOT_READ_WORKER");
     private AutoMQVersion version;
     private volatile boolean closed = false;
+    private final List<CompletableFuture<Void>> closingSubscribers = new CopyOnWriteArrayList<>();
 
     public SnapshotReadPartitionsManager(KafkaConfig config, Metrics metrics, Time time,
         ConfirmWALProvider confirmWALProvider,
@@ -111,12 +113,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
 
     public synchronized void close() {
         closed = true;
-        CompletableFuture.allOf(
-            subscribers.values().stream()
-                .map(Subscriber::close)
-                .toList()
-                .toArray(new CompletableFuture<?>[0])
-        ).join();
+        subscribers.forEach((k, s) -> s.close());
+        CompletableFuture.allOf(closingSubscribers.toArray(new CompletableFuture[0])).join();
         subscribers.clear();
     }
 
@@ -307,6 +305,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         public CompletableFuture<Void> close() {
             LOGGER.info("[SNAPSHOT_READ_UNSUBSCRIBE],node={}", node);
             CompletableFuture<Void> cf = new CompletableFuture<>();
+            closingSubscribers.add(cf);
+            cf.whenComplete((nil, ex) -> closingSubscribers.remove(cf));
             eventLoop.execute(() -> {
                 try {
                     closed = true;
