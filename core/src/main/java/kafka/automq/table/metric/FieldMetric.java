@@ -30,7 +30,7 @@ public final class FieldMetric {
     private static final int STRING_UNIT_STEP = 1;              // aggressive scaling for long strings
 
     private static final int BINARY_BASE_COST = 4;              // small binary payloads slightly heavier than primitives
-    private static final int BINARY_UNIT_BYTES = 64;           // granularity for binary buffers
+    private static final int BINARY_UNIT_BYTES = 32;           // granularity for binary buffers
     private static final int BINARY_UNIT_STEP = 1;              // scaling factor for binary payloads
 
     private FieldMetric() {
