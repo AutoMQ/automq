@@ -217,7 +217,7 @@ public class RecordBinder {
             }
 
             FieldMapping mapping = fieldMappings[pos];
-            if (mapping == null || !avroRecord.hasField(mapping.avroKey())) {
+            if (mapping == null) {
                 return null;
             }
 
@@ -297,9 +297,9 @@ public class RecordBinder {
             }
 
             long total = 1;
-            if (map instanceof Map) {
+            if (map instanceof Map && !((Map<?, ?>) map).isEmpty()) {
                 for (Map.Entry<?, ?> entry : ((Map<?, ?>) map).entrySet()) {
-                    total += FieldMetric.count(entry.getKey().toString());
+                    total += calculateFieldCount(entry.getKey(), mapType.keyType());
                     total += calculateFieldCount(entry.getValue(), mapType.valueType());
                 }
             }
