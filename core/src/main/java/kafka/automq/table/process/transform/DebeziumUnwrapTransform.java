@@ -314,11 +314,8 @@ public class DebeziumUnwrapTransform implements Transform {
 
         private long fingerprint() {
             if (!fingerprintComputed) {
-                long computed = org.apache.avro.SchemaNormalization.parsingFingerprint64(schema);
-                if (!fingerprintComputed) {
-                    fingerprint = computed;
-                    fingerprintComputed = true;
-                }
+                fingerprint = org.apache.avro.SchemaNormalization.parsingFingerprint64(schema);
+                fingerprintComputed = true;
             }
             return fingerprint;
         }
