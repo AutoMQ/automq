@@ -19,29 +19,31 @@
 
 package kafka.automq.table.perf;
 
-import java.util.concurrent.TimeUnit;
-
 public class BenchmarkResult {
     private final String formatName;
     private final String dataTypeName;
-    private final long durationMs;
+    private final long durationNs;
     private final long recordsProcessed;
+    private final long fieldCount;
     private final String errorMessage;
 
-    private BenchmarkResult(String formatName, String dataTypeName, long durationMs, long recordsProcessed, String errorMessage) {
+    private BenchmarkResult(String formatName, String dataTypeName, long durationNs, long recordsProcessed, long fieldCount,
+                            String errorMessage) {
         this.formatName = formatName;
         this.dataTypeName = dataTypeName;
-        this.durationMs = durationMs;
+        this.durationNs = durationNs;
         this.recordsProcessed = recordsProcessed;
+        this.fieldCount = fieldCount;
         this.errorMessage = errorMessage;
     }
 
-    public static BenchmarkResult success(String formatName, String dataTypeName, long durationMs, long recordsProcessed) {
-        return new BenchmarkResult(formatName, dataTypeName, durationMs, recordsProcessed, null);
+    public static BenchmarkResult success(String formatName, String dataTypeName, long durationNs,
+                                          long recordsProcessed, long fieldCount) {
+        return new BenchmarkResult(formatName, dataTypeName, durationNs, recordsProcessed, fieldCount, null);
     }
 
     public static BenchmarkResult failure(String formatName, String dataTypeName, String errorMessage) {
-        return new BenchmarkResult(formatName, dataTypeName, 0, 0, errorMessage);
+        return new BenchmarkResult(formatName, dataTypeName, 0, 0, 0, errorMessage);
     }
 
     public String getFormatName() {
@@ -52,12 +54,20 @@ public class BenchmarkResult {
         return dataTypeName;
     }
 
+    public long getDurationNs() {
+        return durationNs;
+    }
+
     public long getDurationMs() {
-        return durationMs;
+        return durationNs / 1_000_000L;
     }
 
     public long getRecordsProcessed() {
         return recordsProcessed;
+    }
+
+    public long getFieldCount() {
+        return fieldCount;
     }
 
     public String getErrorMessage() {
@@ -69,17 +79,32 @@ public class BenchmarkResult {
     }
 
     public long getThroughput() {
+        long durationMs = getDurationMs();
         if (durationMs == 0) {
             return 0;
         }
-        return TimeUnit.SECONDS.toMillis(recordsProcessed) / durationMs;
+        return (recordsProcessed * 1000L) / durationMs;
+    }
+
+    public double getNsPerField() {
+        if (fieldCount == 0) {
+            return 0.0d;
+        }
+        return (double) durationNs / (double) fieldCount;
+    }
+
+    public double getNsPerRecord() {
+        if (recordsProcessed == 0) {
+            return 0.0d;
+        }
+        return (double) durationNs / (double) recordsProcessed;
     }
 
     @Override
     public String toString() {
         if (isSuccess()) {
-            return String.format("%s %s: %d ms, %d records, %d records/sec",
-                formatName, dataTypeName, durationMs, recordsProcessed, getThroughput());
+            return String.format("%s %s: %d ms, %d records, fieldCount=%d, ns/field=%.2f",
+                formatName, dataTypeName, getDurationMs(), recordsProcessed, fieldCount, getNsPerField());
         } else {
             return String.format("%s %s: FAILED - %s", formatName, dataTypeName, errorMessage);
         }
