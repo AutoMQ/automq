@@ -297,8 +297,12 @@ public class RecordBinder {
             }
 
             long total = 1;
-            if (map instanceof Map && !((Map<?, ?>) map).isEmpty()) {
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) map).entrySet()) {
+            if (map instanceof Map) {
+                Map<?, ?> typedMap = (Map<?, ?>) map;
+                if (typedMap.isEmpty()) {
+                    return total;
+                }
+                for (Map.Entry<?, ?> entry : typedMap.entrySet()) {
                     total += calculateFieldCount(entry.getKey(), mapType.keyType());
                     total += calculateFieldCount(entry.getValue(), mapType.valueType());
                 }
