@@ -178,7 +178,7 @@ versions += [
   jna:"5.2.0",
   guava:"32.0.1-jre",
   hdrHistogram:"2.1.12",
-  nettyTcnativeBoringSsl: "2.0.65.Final",
+  nettyTcnativeBoringSsl: "2.0.69.Final",
   avro: "1.11.4",
   confluentSchema: "7.8.0",
   iceberg: "1.6.1",
