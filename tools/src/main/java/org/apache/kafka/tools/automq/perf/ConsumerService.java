@@ -109,7 +109,7 @@ public class ConsumerService implements AutoCloseable {
         ConsumerCallback callbackWithRateLimit = (tp, p, st) -> {
             callback.messageReceived(tp, p, st);
             counter.increment();
-            if((counter.sum()) % 1000 == 0){
+            if ((counter.sum()) % 1000 == 0) {
                 bucket.consume(1);
             }
         };
@@ -123,26 +123,26 @@ public class ConsumerService implements AutoCloseable {
     public void pause() {
         groups.forEach(Group::pause);
     }
-    
+
     /**
      * Resume all consumer groups
      */
     public void resume() {
         groups.forEach(Group::resume);
     }
-    
+
     /**
      * Resume only a percentage of consumer groups
-     * 
+     *
      * @param percentage The percentage of consumers to resume (0-100)
      */
     public void resume(int percentage) {
         int size = groups.size();
         int consumersToResume = (int) Math.ceil(size * (percentage / 100.0));
         consumersToResume = Math.max(1, Math.min(size, consumersToResume)); // Ensure at least 1 and at most size
-        
+
         LOGGER.info("Resuming {}% of consumers ({} out of {})", percentage, consumersToResume, size);
-        
+
         for (int i = 0; i < consumersToResume; i++) {
             groups.get(i).resume();
         }
@@ -182,7 +182,7 @@ public class ConsumerService implements AutoCloseable {
 
     /**
      * Reset consumer offsets for catch-up reading.
-     * 
+     *
      * @param startMillis     The timestamp to start seeking from
      * @param intervalMillis  The interval between group starts
      * @param percentage      The percentage of consumers to activate (0-100)
@@ -192,21 +192,21 @@ public class ConsumerService implements AutoCloseable {
         int size = groups.size();
         int consumersToActivate = (int) Math.ceil(size * (percentage / 100.0));
         consumersToActivate = Math.max(1, Math.min(size, consumersToActivate)); // Ensure at least 1 and at most size
-        
+
         LOGGER.info("Activating {}% of consumers ({} out of {})", percentage, consumersToActivate, size);
-        
+
         for (int i = 0; i < consumersToActivate; i++) {
             Group group = groups.get(i);
             group.seek(timestamp.getAndAdd(intervalMillis));
             LOGGER.info("Reset consumer group offsets: {}/{}", i + 1, consumersToActivate);
         }
-        
+
         // Keep the remaining consumers paused
         if (consumersToActivate < size) {
             LOGGER.info("Keeping {} consumer groups paused during catch-up", size - consumersToActivate);
         }
     }
-    
+
     /**
      * Reset all consumer offsets (100% consumers)
      * @param startMillis    The timestamp to start seeking from
