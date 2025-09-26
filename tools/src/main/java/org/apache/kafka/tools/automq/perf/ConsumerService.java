@@ -59,6 +59,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -104,9 +105,13 @@ public class ConsumerService implements AutoCloseable {
 
     public void start(ConsumerCallback callback, int pollRate) {
         BlockingBucket bucket = rateLimitBucket(pollRate);
+        LongAdder counter = new LongAdder();
         ConsumerCallback callbackWithRateLimit = (tp, p, st) -> {
             callback.messageReceived(tp, p, st);
-            bucket.consume(1);
+            counter.increment();
+            if((counter.sum()) % 1000 == 0){
+                bucket.consume(1);
+            }
         };
         CompletableFuture.allOf(
             groups.stream()
