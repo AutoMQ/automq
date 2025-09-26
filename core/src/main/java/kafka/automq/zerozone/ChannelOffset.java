@@ -43,7 +43,7 @@ public class ChannelOffset {
     public static ChannelOffset of(short channelId, short orderHint, int channelOwnerNodeId, int attributes,
         ByteBuf walRecordOffset) {
         ByteBuf channelOffset = Unpooled.buffer(1 /* magic */ + 2 /* channelId */ + 2 /* orderHint */
-            + 4 /* channelOwnerNodeId */ + 4 /* targetNodeId */ + walRecordOffset.readableBytes());
+            + 4 /* channelOwnerNodeId */ + 4 /* attributes */ + walRecordOffset.readableBytes());
         channelOffset.writeByte(MAGIC);
         channelOffset.writeShort(channelId);
         channelOffset.writeShort(orderHint);

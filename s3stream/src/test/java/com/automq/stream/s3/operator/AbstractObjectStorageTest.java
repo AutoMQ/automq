@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.lang.reflect.Field;
 import java.util.ArrayList;
@@ -58,6 +59,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
+@Timeout(10)
 class AbstractObjectStorageTest {
 
     AbstractObjectStorage objectStorage;
@@ -147,6 +149,19 @@ class AbstractObjectStorageTest {
     }
 
     @Test
+    void testHandleReadCompleted() throws Throwable {
+        ByteBuf data = TestUtils.random(4096);
+        CompletableFuture<ByteBuf> readToEndCf = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> readRangeCf = new CompletableFuture<>();
+        AbstractObjectStorage.MergedReadTask.handleReadCompleted(List.of(
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 3000, -1, readToEndCf),
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 2000, 4096, readRangeCf)
+        ), 2000, data.slice(2000, 4096 - 2000), null);
+        assertEquals(data.slice(3000, 4096 - 3000), readToEndCf.get());
+        assertEquals(data.slice(2000, 4096 - 2000), readRangeCf.get());
+    }
+
+    @Test
     void testByteBufRefCnt() throws ExecutionException, InterruptedException {
         objectStorage = new MemoryObjectStorage(false);
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 100, S3ObjectType.STREAM);
@@ -159,7 +174,6 @@ class AbstractObjectStorageTest {
                 return CompletableFuture.completedFuture(null);
             }).get();
     }
-
 
     @Test
     void testFastRetry() throws Throwable {
@@ -352,7 +366,6 @@ class AbstractObjectStorageTest {
         await().atMost(2, TimeUnit.SECONDS)
             .untilAsserted(() -> assertEquals(0, firstBuffer.refCnt()));
     }
-
 
     @Test
     void testReadToEndOfObject() throws ExecutionException, InterruptedException {

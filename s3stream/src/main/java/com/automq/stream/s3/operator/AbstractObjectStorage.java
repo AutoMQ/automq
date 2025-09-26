@@ -1027,18 +1027,24 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return objectPath != null &&
                 objectPath.equals(readTask.objectPath) &&
                 dataSparsityRate <= this.maxMergeReadSparsityRate &&
-                readTask.end != RANGE_READ_TO_END;
+                // Don't allow merge read to end task.
+                readTask.end != RANGE_READ_TO_END &&
+                end != RANGE_READ_TO_END;
         }
 
         void handleReadCompleted(ByteBuf rst, Throwable ex) {
+            handleReadCompleted(this.readTasks, this.start, rst, ex);
+        }
+
+        static void handleReadCompleted(List<ReadTask> readTasks, long mergeReadStart, ByteBuf rst, Throwable ex) {
             if (ex != null) {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
                 ArrayList<ByteBuf> sliceByteBufList = new ArrayList<>();
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
-                    int sliceStart = (int) (readTask.start - start);
+                    int sliceStart = (int) (readTask.start - mergeReadStart);
                     if (readTask.end == RANGE_READ_TO_END) {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes()));
+                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes() - sliceStart));
                     } else {
                         sliceByteBufList.add(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
                     }

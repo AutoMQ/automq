@@ -72,7 +72,7 @@ public class DefaultRecordOffset implements RecordOffset {
 
     @Override
     public ByteBuf buffer() {
-        ByteBuf buffer = Unpooled.buffer(1 + 8 + 4);
+        ByteBuf buffer = Unpooled.buffer(1 + 8 + 8 + 4);
         buffer.writeByte(MAGIC);
         buffer.writeLong(epoch);
         buffer.writeLong(this.offset);
