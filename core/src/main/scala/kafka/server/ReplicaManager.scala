@@ -67,7 +67,7 @@ import java.nio.file.{Files, Paths}
 import java.util
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import java.util.concurrent.locks.Lock
-import java.util.concurrent.{ArrayBlockingQueue, CompletableFuture, Future, RejectedExecutionException, TimeUnit}
+import java.util.concurrent.{CompletableFuture, Future, LinkedBlockingQueue, RejectedExecutionException, TimeUnit}
 import java.util.{Collections, Optional, OptionalInt, OptionalLong}
 import scala.collection.{Map, Seq, Set, mutable}
 import scala.compat.java8.OptionConverters._
@@ -939,7 +939,8 @@ class ReplicaManager(val config: KafkaConfig,
 
   case class Verification(
     hasInflight: AtomicBoolean,
-    waitingRequests: ArrayBlockingQueue[TransactionVerificationRequest],
+    // Use an unbounded queue to prevent deadlock from happening. See https://github.com/AutoMQ/automq/issues/2902
+    waitingRequests: LinkedBlockingQueue[TransactionVerificationRequest],
     timestamp: AtomicLong,
   )
 

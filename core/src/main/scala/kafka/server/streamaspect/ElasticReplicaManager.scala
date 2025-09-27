@@ -1438,7 +1438,7 @@ class ElasticReplicaManager(
       transactionWaitingForValidationMap.computeIfAbsent(producerId, _ => {
         Verification(
           new AtomicBoolean(false),
-          new ArrayBlockingQueue[TransactionVerificationRequest](5),
+          new LinkedBlockingQueue[TransactionVerificationRequest](),
           new AtomicLong(time.milliseconds()))
       })
     } else {
@@ -1474,16 +1474,19 @@ class ElasticReplicaManager(
           error("Error in transaction verification callback", e)
       }
       if (verification != null) {
+        var request: TransactionVerificationRequest = null
         verification.synchronized {
           verification.timestamp.set(time.milliseconds())
           if (!verification.waitingRequests.isEmpty) {
             // Since the callback thread and task thread may be different, we need to ensure that the tasks are executed sequentially.
-            val request = verification.waitingRequests.poll()
-            request.task()
+            request = verification.waitingRequests.poll()
           } else {
             // If there are no tasks in the queue, set hasInflight to false
             verification.hasInflight.set(false)
           }
+        }
+        if (request != null) {
+          request.task()
         }
         val lastCleanTimestamp = lastTransactionCleanTimestamp.get();
         val now = time.milliseconds()
