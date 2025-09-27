@@ -20,27 +20,25 @@
 package kafka.automq.table.perf;
 
 import org.apache.commons.lang3.tuple.Pair;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class FieldsPerformanceTest {
-    private static final Logger LOGGER = LoggerFactory.getLogger(FieldsPerformanceTest.class);
 
     public static void main(String[] args) {
         PerfConfig config = new PerfConfig();
 
-        Map<String, List<Pair<String, Long>>> results = new HashMap<>();
+        Map<String, List<BenchmarkResult>> results = new HashMap<>();
         results.put("avro", new ArrayList<>());
         results.put("proto", new ArrayList<>());
 
-        LOGGER.info("Starting performance tests with {} records per test", config.getRecordsCount());
-        LOGGER.info("Enabled data types: {}", config.getEnabledDataTypes());
-        LOGGER.info("Enabled formats: {}", config.getEnabledFormats());
+        System.out.printf("Starting performance tests with %d records per test%n", config.getRecordsCount());
+        System.out.printf("Enabled data types: %s%n", config.getEnabledDataTypes());
+        System.out.printf("Enabled formats: %s%n", config.getEnabledFormats());
 
         for (DataType dataType : config.getEnabledDataTypes()) {
             for (SerializationFormat format : config.getEnabledFormats()) {
@@ -50,29 +48,45 @@ public class FieldsPerformanceTest {
                 try {
                     PerfTestCase.clearInMemoryFiles();
 
-                    LOGGER.info("Running benchmark: {} {}", format.getName(), dataType.getName());
+                    System.out.printf("Running benchmark: %s %s%n", format.getName(), dataType.getName());
                     BenchmarkResult result = testCase.runBenchmark(config.getRecordsCount());
 
                     if (result.isSuccess()) {
-                        // Unify metric to duration (ms), consistent with original FieldsPerf "task cost"
-                        results.get(format.getName()).add(Pair.of(dataType.getName(), result.getDurationMs()));
-                        LOGGER.info("Completed: {} {} - {} ms",
-                            format.getName(), dataType.getName(), result.getDurationMs());
+                        results.get(format.getName()).add(result);
+                        System.out.printf(
+                            "Completed: %s %s - %d ms, fieldCount=%d, ns/field=%s%n",
+                            format.getName(),
+                            dataType.getName(),
+                            result.getDurationMs(),
+                            result.getFieldCount(),
+                            String.format(java.util.Locale.ROOT, "%.2f", result.getNsPerField()));
                     } else {
-                        LOGGER.error("Failed: {} {} - {}",
+                        System.err.printf("Failed: %s %s - %s%n",
                             format.getName(), dataType.getName(), result.getErrorMessage());
                     }
 
                 } catch (Exception e) {
-                    LOGGER.error("Failed: {} {} - {}", format.getName(), dataType.getName(), e.getMessage(), e);
+                    System.err.printf("Failed: %s %s - %s%n", format.getName(), dataType.getName(), e.getMessage());
+                    e.printStackTrace(System.err);
                 }
             }
         }
 
         // Output results in the same format as original
         results.forEach((format, formatResults) -> {
-            LOGGER.info("type: {}", format);
-            LOGGER.info("task cost: {}", formatResults);
+            System.out.printf("type: %s%n", format);
+            List<Pair<String, Long>> durations = formatResults.stream()
+                .map(r -> Pair.of(r.getDataTypeName(), r.getDurationMs()))
+                .collect(Collectors.toList());
+            System.out.printf("task cost: %s%n", durations);
+            formatResults.forEach(r -> System.out.printf(
+                "detail: %s %s -> records=%d, fieldCount=%d, ns/field=%s, ns/record=%s%n",
+                format,
+                r.getDataTypeName(),
+                r.getRecordsProcessed(),
+                r.getFieldCount(),
+                String.format(java.util.Locale.ROOT, "%.2f", r.getNsPerField()),
+                String.format(java.util.Locale.ROOT, "%.2f", r.getNsPerRecord())));
         });
     }
 

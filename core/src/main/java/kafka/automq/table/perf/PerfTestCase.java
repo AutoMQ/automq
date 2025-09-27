@@ -39,8 +39,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
-
 public abstract class PerfTestCase {
     // Cache InMemoryFileIO files map to avoid repeated reflection overhead
     private static final Map<String, byte[]> IN_MEMORY_FILES;
@@ -84,22 +82,22 @@ public abstract class PerfTestCase {
 
             // Actual test
             long startTime = System.nanoTime();
-            runTest(recordsCount);
-            long endTime = System.nanoTime();
+            long fieldCount = runTest(recordsCount);
+            long durationNs = System.nanoTime() - startTime;
 
-            long durationMs = TimeUnit.NANOSECONDS.toMillis(endTime - startTime);
-            return BenchmarkResult.success(formatName, dataType.getName(), durationMs, recordsCount);
+            return BenchmarkResult.success(formatName, dataType.getName(), durationNs, recordsCount, fieldCount);
         } catch (Exception e) {
             return BenchmarkResult.failure(formatName, dataType.getName(), e.getMessage());
         }
     }
 
-    private void runTest(long recordsCount) throws IOException {
+    private long runTest(long recordsCount) throws IOException {
         TableIdentifier tableId = TableIdentifier.parse("test.benchmark");
         WorkerConfig workerConfig = new BenchmarkWorkerConfig();
         IcebergWriter writer = null;
         int currentBatchSize = 0;
         final int batchSizeLimit = this.batchSizeBytes;
+        long totalFieldCount = 0;
 
         for (long i = 0; i < recordsCount; i++) {
             if (writer == null) {
@@ -116,16 +114,16 @@ public abstract class PerfTestCase {
             writer.write(0, new SimpleRecord(i, payload));
 
             if (currentBatchSize > batchSizeLimit) {
-                writer.complete();
-                clearInMemoryFiles();
+                totalFieldCount += finalizeWriter(writer);
                 writer = null;
                 currentBatchSize = 0;
             }
         }
 
         if (writer != null) {
-            writer.complete();
+            totalFieldCount += finalizeWriter(writer);
         }
+        return totalFieldCount;
     }
 
     public static void clearInMemoryFiles() {
@@ -133,6 +131,15 @@ public abstract class PerfTestCase {
             IN_MEMORY_FILES.clear();
         } catch (Exception ignored) {
             // Ignore cleanup failures
+        }
+    }
+
+    private long finalizeWriter(IcebergWriter writer) throws IOException {
+        try {
+            writer.complete();
+            return writer.topicMetric().fieldCount();
+        } finally {
+            clearInMemoryFiles();
         }
     }
 

@@ -1239,10 +1239,10 @@ public class AvroRecordBinderTest {
 
         // Create test record with different field sizes
         GenericRecord avroRecord = new GenericData.Record(avroSchema);
-        avroRecord.put("smallString", "small"); // 5 chars = 1 field (5+23)/24 = 1
-        avroRecord.put("largeString", "a".repeat(50)); // 50 chars = 3 fields (50+23)/24 = 3
+        avroRecord.put("smallString", "small"); // 5 chars = 3 field
+        avroRecord.put("largeString", "a".repeat(50)); // 50 chars = 3 + 50/32 = 4
         avroRecord.put("intField", 42); // primitive = 1 field
-        avroRecord.put("binaryField", ByteBuffer.wrap("test".repeat(10).getBytes())); // 40 bytes = 2 fields (40+31)/32 = 2
+        avroRecord.put("binaryField", ByteBuffer.wrap("test".repeat(10).getBytes())); // 5
 
         // Bind record - this should trigger field counting
         Record icebergRecord = recordBinder.bind(avroRecord);
@@ -1253,15 +1253,14 @@ public class AvroRecordBinderTest {
         assertEquals(42, icebergRecord.getField("intField"));
         assertEquals("test".repeat(10), new String(((ByteBuffer) icebergRecord.getField("binaryField")).array()));
 
-        // Check field count: 1 + 3 + 1 + 2 = 7 fields total
         long fieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(7, fieldCount);
+        assertEquals(13, fieldCount);
 
         // Second call should return 0 (reset)
         assertEquals(0, recordBinder.getAndResetFieldCount());
 
         testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-        assertEquals(7, recordBinder.getAndResetFieldCount());
+        assertEquals(13, recordBinder.getAndResetFieldCount());
     }
 
     @Test
@@ -1281,10 +1280,10 @@ public class AvroRecordBinderTest {
         RecordBinder recordBinder = new RecordBinder(icebergSchema, avroSchema);
 
         GenericRecord avroRecord = new GenericData.Record(avroSchema);
-        // List with 3 small strings: 1 (list itself) + 3 * 1 = 4 fields
+        // List with 3 small strings: 1 (list itself) + 3 * 3 * 1 = 10 fields
         avroRecord.put("stringList", Arrays.asList("a", "b", "c"));
 
-        // Map with 2 entries: 1 (map itself) + 2 * (1 key + 1 value) = 5 fields
+        // Map with 2 entries: 1 (map itself) + 2 * (3 key + 3 value) = 13 fields
         Map<String, String> map = new HashMap<>();
         map.put("key1", "val1");
         map.put("key2", "val2");
@@ -1296,12 +1295,12 @@ public class AvroRecordBinderTest {
         assertEquals(Arrays.asList("a", "b", "c"), normalizeValue(icebergRecord.getField("stringList")));
         assertEquals(map, normalizeValue(icebergRecord.getField("stringMap")));
 
-        // Total: 4 (list) + 5 (map) = 9 fields
+        // Total: 10 (list) + 13 (map) = 23 fields
         long fieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(9, fieldCount);
+        assertEquals(23, fieldCount);
 
         testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-        assertEquals(9, recordBinder.getAndResetFieldCount());
+        assertEquals(23, recordBinder.getAndResetFieldCount());
     }
 
     @Test
@@ -1347,13 +1346,13 @@ public class AvroRecordBinderTest {
         assertEquals("nested", nested.getField("nestedString"));
         assertEquals(123, nested.getField("nestedInt"));
 
-        // Total: 1 (simple) + 1(struct) + 1 (nested string) + 1 (nested int) = 4 fields
+        // Total: 3 (simple) + 1(struct) + 3 (nested string) + 1 (nested int) = 4 fields
         // Note: STRUCT type itself doesn't add to count, only its leaf fields
         long fieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(4, fieldCount);
+        assertEquals(8, fieldCount);
 
         testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-        assertEquals(4, recordBinder.getAndResetFieldCount());
+        assertEquals(8, recordBinder.getAndResetFieldCount());
     }
 
     @Test
@@ -1384,9 +1383,9 @@ public class AvroRecordBinderTest {
             icebergRecord.getField("intField");
         }
 
-        // Total: 3 records * 2 fields each = 6 fields
+        // Total: 3 records * 4 fields each = 12 fields
         long totalFieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(6, totalFieldCount);
+        assertEquals(12, totalFieldCount);
     }
 
     @Test
@@ -1417,9 +1416,9 @@ public class AvroRecordBinderTest {
 
         // Only the non-null field should count
         long fieldCount = recordBinder.getAndResetFieldCount();
-        assertEquals(1, fieldCount);
+        assertEquals(3, fieldCount);
 
         testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-        assertEquals(1, recordBinder.getAndResetFieldCount());
+        assertEquals(3, recordBinder.getAndResetFieldCount());
     }
 }
