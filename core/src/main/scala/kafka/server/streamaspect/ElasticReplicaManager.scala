@@ -9,6 +9,7 @@ import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
+import kafka.automq.zerozone.ZeroZoneThreadLocalContext
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, OpenHint, PartitionStatusTracker, ReadHint}
@@ -1466,8 +1467,11 @@ class ElasticReplicaManager(
     verification: Verification,
     callback: (RequestLocal, T) => Unit,
   ): (RequestLocal, T) => Unit = {
+    val writeContext = ZeroZoneThreadLocalContext.writeContext().detach()
     (requestLocal, args) => {
       try {
+        // The thread switch, so we need to attach the write context to the current thread.
+        ZeroZoneThreadLocalContext.attach(writeContext)
         callback(requestLocal, args)
       } catch {
         case e: Throwable =>
