@@ -277,29 +277,33 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     }
 
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
-        snapshot.firstUnstableOffset(firstUnstableOffsetMetadata.orNull)
-        val localLog = getLocalLog()
-        localLog.snapshot(snapshot)
+        lock synchronized {
+            snapshot.firstUnstableOffset(firstUnstableOffsetMetadata.orNull)
+            val localLog = getLocalLog()
+            localLog.snapshot(snapshot)
+        }
     }
 
     def snapshot(snapshot: PartitionSnapshot): Unit = {
-        val localLog = getLocalLog()
-        localLog.snapshot(snapshot)
-        if (snapshot.firstUnstableOffset() == null) {
-            firstUnstableOffsetMetadata = None
-        } else {
-            var offset = snapshot.firstUnstableOffset()
-            val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
-            offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
-            firstUnstableOffsetMetadata = Some(offset)
+        lock synchronized {
+            val localLog = getLocalLog()
+            localLog.snapshot(snapshot)
+            if (snapshot.firstUnstableOffset() == null) {
+                firstUnstableOffsetMetadata = None
+            } else {
+                var offset = snapshot.firstUnstableOffset()
+                val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
+                offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
+                firstUnstableOffsetMetadata = Some(offset)
+            }
+            if (snapshot.logMeta() != null) {
+                val opt = localLog.segments.firstSegmentBaseOffset()
+                opt.ifPresent(baseOffset => {
+                    updateLogStartOffset(baseOffset)
+                })
+            }
+            highWatermarkMetadata = localLog.logEndOffsetMetadata
         }
-        if (snapshot.logMeta() != null) {
-            val opt = localLog.segments.firstSegmentBaseOffset()
-            opt.ifPresent(baseOffset => {
-                updateLogStartOffset(baseOffset)
-            })
-        }
-        highWatermarkMetadata = localLog.logEndOffsetMetadata
     }
 
 }
