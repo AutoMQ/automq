@@ -2361,17 +2361,23 @@ class Partition(val topicPartition: TopicPartition,
 
   def snapshot(snapshot: PartitionSnapshot): Unit = {
     inWriteLock(leaderIsrUpdateLock) {
-      if (enableTraceLog) {
-        trace(s"apply snapshot partition $topic-$partitionId $snapshot")
+      try {
+        if (enableTraceLog) {
+          trace(s"apply snapshot partition $topic-$partitionId $snapshot")
+        }
+        leaderEpoch = snapshot.leaderEpoch
+        val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+        log.snapshot(snapshot)
+        log.getLocalLog().appendAckThread.submit(() => {
+          // async it to avoid deadlock
+          tryCompleteDelayedRequests()
+          null
+        })
+      } catch {
+        case e: Throwable =>
+          error(s"apply snapshot fail, snapshot=$snapshot", e)
+          throw e
       }
-      leaderEpoch = snapshot.leaderEpoch
-      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
-      log.snapshot(snapshot)
-      log.getLocalLog().appendAckThread.submit(() => {
-        // async it to avoid deadlock
-        tryCompleteDelayedRequests()
-        null
-      });
     }
   }
   // AutoMQ injection end
