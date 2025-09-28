@@ -33,12 +33,27 @@ public class ZeroZoneThreadLocalContext {
         return WRITE_CONTEXT.get();
     }
 
+    public static void attach(WriteContext writeContext) {
+        WRITE_CONTEXT.set(writeContext);
+    }
+
 
     public static class WriteContext {
         ChannelOffset channelOffset;
 
+        private WriteContext() {}
+
         public ChannelOffset channelOffset() {
             return channelOffset;
+        }
+
+        public void reset() {
+            channelOffset = null;
+        }
+
+        public WriteContext detach() {
+            WRITE_CONTEXT.set(new WriteContext());
+            return this;
         }
     }
 
