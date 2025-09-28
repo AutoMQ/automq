@@ -370,6 +370,9 @@ public class S3Stream implements Stream, StreamMetadataListener {
     public CompletableFuture<Void> close(boolean force) {
         if (snapshotRead()) {
             listenerHandle.close();
+            NetworkStats.getInstance().removeStreamReadBytesStats(streamId);
+            S3StreamMetricsManager.removePendingStreamAppendLatencySupplier(streamId);
+            S3StreamMetricsManager.removePendingStreamFetchLatencySupplier(streamId);
             return CompletableFuture.completedFuture(null);
         }
         TimerUtil timerUtil = new TimerUtil();
