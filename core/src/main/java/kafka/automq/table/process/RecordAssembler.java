@@ -201,6 +201,7 @@ public final class RecordAssembler {
      */
     private static final class AssembledRecordView implements GenericRecord {
         private final Schema finalSchema;
+        private final int finalFieldCount;
         private final GenericRecord baseRecord;
         private final Object headerValue;   // May be null if not present in schema
         private final Object keyValue;      // May be null if not present in schema
@@ -219,6 +220,7 @@ public final class RecordAssembler {
                             long offset,
                             long timestamp) {
             this.finalSchema = aSchema.schema;
+            this.finalFieldCount = finalSchema.getFields().size();
             this.baseRecord = baseRecord;
             this.headerValue = headerValue;
             this.keyValue = keyValue;
@@ -260,7 +262,7 @@ public final class RecordAssembler {
 
         @Override
         public Object get(int i) {
-            if (i < 0 || i >= finalSchema.getFields().size()) {
+            if (i < 0 || i >= finalFieldCount) {
                 throw new IndexOutOfBoundsException("Field position out of bounds: " + i);
             }
             // Base fields delegate directly

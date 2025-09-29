@@ -23,19 +23,32 @@ import org.apache.avro.util.Utf8;
 
 import java.nio.ByteBuffer;
 
-public class FieldMetric {
+public final class FieldMetric {
+
+    private static final int STRING_BASE_COST = 3;              // base cost for small strings
+    private static final int STRING_UNIT_BYTES = 32;           // granularity for string scaling
+    private static final int STRING_UNIT_STEP = 1;              // aggressive scaling for long strings
+
+    private static final int BINARY_BASE_COST = 4;              // small binary payloads slightly heavier than primitives
+    private static final int BINARY_UNIT_BYTES = 32;           // granularity for binary buffers
+    private static final int BINARY_UNIT_STEP = 1;              // scaling factor for binary payloads
+
+    private FieldMetric() {
+    }
 
     public static int count(CharSequence value) {
         if (value == null) {
             return 0;
         }
-        if (value instanceof Utf8) {
-            return (((Utf8) value).getByteLength() + 23) / 24;
+        int lengthBytes = value instanceof Utf8
+            ? ((Utf8) value).getByteLength()
+            : value.length();
+
+        if (lengthBytes <= STRING_UNIT_BYTES) {
+            return STRING_BASE_COST;
         }
-        if (value.isEmpty()) {
-            return 1;
-        }
-        return (value.length() + 23) / 24;
+        int segments = (lengthBytes + STRING_UNIT_BYTES - 1) / STRING_UNIT_BYTES;
+        return STRING_BASE_COST + (segments - 1) * STRING_UNIT_STEP;
     }
 
     public static int count(ByteBuffer value) {
@@ -43,20 +56,22 @@ public class FieldMetric {
             return 0;
         }
         int remaining = value.remaining();
-        if (remaining == 0) {
-            return 1;
+        if (remaining <= BINARY_UNIT_BYTES) {
+            return BINARY_BASE_COST;
         }
-        return (remaining + 31) >> 5;
+        int segments = (remaining + BINARY_UNIT_BYTES - 1) / BINARY_UNIT_BYTES;
+        return BINARY_BASE_COST + (segments - 1) * BINARY_UNIT_STEP;
     }
 
     public static int count(byte[] value) {
         if (value == null) {
             return 0;
         }
-        if (value.length == 0) {
-            return 1;
+        int length = value.length;
+        if (length <= BINARY_UNIT_BYTES) {
+            return BINARY_BASE_COST;
         }
-        return (value.length + 31) >> 5;
+        int segments = (length + BINARY_UNIT_BYTES - 1) / BINARY_UNIT_BYTES;
+        return BINARY_BASE_COST + (segments - 1) * BINARY_UNIT_STEP;
     }
-
 }

@@ -79,6 +79,14 @@ trait PartitionListener {
    * that the partition was deleted but only that this broker does not host a replica of it any more.
    */
   def onDeleted(partition: TopicPartition): Unit = {}
+
+  // AutoMQ inject start
+  /**
+   * Called when the partition leader epoch is changed.
+   */
+  def onNewLeaderEpoch(oldEpoch: Long, newEpoch: Long): Unit = {}
+  // AutoMQ inject end
+
 }
 
 trait AlterPartitionListener {
@@ -350,6 +358,16 @@ class Partition(val topicPartition: TopicPartition,
       }
     }
   }
+
+  // AutoMQ inject start
+  private val newLeaderEpochListener = new PartitionListener {
+    override def onNewLeaderEpoch(oldEpoch: Long, newEpoch: Long): Unit = {
+      listeners.forEach { listener =>
+        listener.onNewLeaderEpoch(oldEpoch, newEpoch)
+      }
+    }
+  }
+  // AutoMQ inject end
 
   /* Epoch of the controller that last changed the leader. This needs to be initialized correctly upon broker startup.
    * One way of doing that is through the controller's start replica state change command. When a new broker starts up
@@ -911,8 +929,12 @@ class Partition(val topicPartition: TopicPartition,
 
         // We update the leader epoch and the leader epoch start offset iff the
         // leader epoch changed.
+        val oldLeaderEpoch = leaderEpoch
         leaderEpoch = partitionState.leaderEpoch
         leaderEpochStartOffsetOpt = Some(leaderEpochStartOffset)
+        // AutoMQ inject start
+        newLeaderEpochListener.onNewLeaderEpoch(oldLeaderEpoch, partitionState.leaderEpoch)
+        // AutoMQ inject end
       } else {
         stateChangeLogger.info(s"Skipped the become-leader state change for $topicPartition with topic id $topicId " +
           s"and partition state $partitionState since it is already the leader with leader epoch $leaderEpoch. " +
@@ -2361,17 +2383,23 @@ class Partition(val topicPartition: TopicPartition,
 
   def snapshot(snapshot: PartitionSnapshot): Unit = {
     inWriteLock(leaderIsrUpdateLock) {
-      if (enableTraceLog) {
-        trace(s"apply snapshot partition $topic-$partitionId $snapshot")
+      try {
+        if (enableTraceLog) {
+          trace(s"apply snapshot partition $topic-$partitionId $snapshot")
+        }
+        leaderEpoch = snapshot.leaderEpoch
+        val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
+        log.snapshot(snapshot)
+        log.getLocalLog().appendAckThread.submit(() => {
+          // async it to avoid deadlock
+          tryCompleteDelayedRequests()
+          null
+        })
+      } catch {
+        case e: Throwable =>
+          error(s"apply snapshot fail, snapshot=$snapshot", e)
+          throw e
       }
-      leaderEpoch = snapshot.leaderEpoch
-      val log = this.log.get.asInstanceOf[ElasticUnifiedLog]
-      log.snapshot(snapshot)
-      log.getLocalLog().appendAckThread.submit(() => {
-        // async it to avoid deadlock
-        tryCompleteDelayedRequests()
-        null
-      });
     }
   }
   // AutoMQ injection end
