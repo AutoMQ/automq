@@ -59,7 +59,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.LongAdder;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -105,17 +104,9 @@ public class ConsumerService implements AutoCloseable {
 
     public void start(ConsumerCallback callback, int pollRate) {
         BlockingBucket bucket = rateLimitBucket(pollRate);
-        LongAdder counter = new LongAdder();
-        ConsumerCallback callbackWithRateLimit = (tp, p, st) -> {
-            callback.messageReceived(tp, p, st);
-            counter.increment();
-            if ((counter.sum()) % 1000 == 0) {
-                bucket.consume(1);
-            }
-        };
         CompletableFuture.allOf(
             groups.stream()
-                .map(group -> group.start(callbackWithRateLimit))
+                .map(group -> group.start(callback, bucket))
                 .toArray(CompletableFuture[]::new)
         ).join();
     }
@@ -282,8 +273,8 @@ public class ConsumerService implements AutoCloseable {
             }
         }
 
-        public CompletableFuture<Void> start(ConsumerCallback callback) {
-            consumers().forEach(consumer -> consumer.start(callback));
+        public CompletableFuture<Void> start(ConsumerCallback callback, BlockingBucket bucket) {
+            consumers().forEach(consumer -> consumer.start(callback, bucket));
 
             // wait for all consumers to join the group
             return CompletableFuture.allOf(consumers()
@@ -382,8 +373,8 @@ public class ConsumerService implements AutoCloseable {
             consumer.subscribe(List.of(topic), subscribeListener());
         }
 
-        public void start(ConsumerCallback callback) {
-            this.task = this.executor.submit(() -> pollRecords(consumer, callback));
+        public void start(ConsumerCallback callback, BlockingBucket bucket) {
+            this.task = this.executor.submit(() -> pollRecords(consumer, callback, bucket));
         }
 
         public CompletableFuture<Void> started() {
@@ -413,7 +404,7 @@ public class ConsumerService implements AutoCloseable {
             };
         }
 
-        private void pollRecords(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback) {
+        private void pollRecords(KafkaConsumer<String, byte[]> consumer, ConsumerCallback callback, BlockingBucket bucket) {
             while (!closing) {
                 try {
                     while (paused) {
@@ -425,6 +416,7 @@ public class ConsumerService implements AutoCloseable {
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
                     }
+                    bucket.consume(records.count());
                 } catch (InterruptException | InterruptedException e) {
                     // ignore, as we are closing
                 } catch (Exception e) {
