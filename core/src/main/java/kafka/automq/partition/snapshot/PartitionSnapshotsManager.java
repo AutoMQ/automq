@@ -313,6 +313,11 @@ public class PartitionSnapshotsManager {
             @Override
             public void onDeleted(TopicPartition partition) {
             }
+
+            @Override
+            public void onNewLeaderEpoch(long oldEpoch, long newEpoch) {
+                version.version.incrementRecordsVersion();
+            }
         };
     }
 
