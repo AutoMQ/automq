@@ -217,15 +217,16 @@ public class CatalogFactory {
             }
         }
 
+        // important: use putIfAbsent to let the user override all values directly in catalog configuration
         private void putDataBucketAsWarehouse(boolean s3a) {
-            if (bucketURI.endpoint() != null) {
-                options.put("s3.endpoint", bucketURI.endpoint());
+            if (StringUtils.isNotBlank(bucketURI.endpoint())) {
+                options.putIfAbsent("s3.endpoint", bucketURI.endpoint());
             }
             if (bucketURI.extensionBool(AwsObjectStorage.PATH_STYLE_KEY, false)) {
-                options.put("s3.path-style-access", "true");
+                options.putIfAbsent("s3.path-style-access", "true");
             }
-            options.put("io-impl", "org.apache.iceberg.aws.s3.S3FileIO");
-            options.put("warehouse", String.format((s3a ? "s3a" : "s3") + "://%s/iceberg", bucketURI.bucket()));
+            options.putIfAbsent("io-impl", "org.apache.iceberg.aws.s3.S3FileIO");
+            options.putIfAbsent("warehouse", String.format((s3a ? "s3a" : "s3") + "://%s/iceberg", bucketURI.bucket()));
         }
 
     }
