@@ -596,6 +596,12 @@ class ElasticLog(val metaStream: MetaStream,
         }
     }
 
+    override private[log] def truncateFullyAndStartAt(newOffset: Long): Iterable[LogSegment] = {
+        val rst = super.truncateFullyAndStartAt(newOffset)
+        _confirmOffset.set(logEndOffsetMetadata)
+        rst
+    }
+
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
         snapshot.logMeta(logSegmentManager.logMeta())
         snapshot.logEndOffset(confirmOffset)
