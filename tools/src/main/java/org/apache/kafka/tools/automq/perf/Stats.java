@@ -81,17 +81,6 @@ public class Stats {
         maxSendTimeNanos.updateAndGet(current -> Math.max(current, sendTimeNanos));
     }
 
-    public void batchMessageReceived(long numMessages, long bytes, long sendTimeNanos) {
-        long latencyMicros = TimeUnit.NANOSECONDS.toMicros(StatsCollector.currentNanos() - sendTimeNanos);
-        messagesReceived.add(numMessages);
-        bytesReceived.add(bytes);
-        endToEndLatencyMicros.recordValue(latencyMicros);
-        totalMessagesReceived.add(numMessages);
-        totalBytesReceived.add(bytes);
-        totalEndToEndLatencyMicros.recordValue(latencyMicros);
-        maxSendTimeNanos.updateAndGet(current -> Math.max(current, sendTimeNanos));
-    }
-
     /**
      * Get period stats.
      * Note: This method resets the period counters.
