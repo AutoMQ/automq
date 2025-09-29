@@ -235,12 +235,8 @@ public class ConsumerService implements AutoCloseable {
          * Called when a message is received.
          *
          * @param topicPartition the topic partition of the received message
-         * @param payload        the received message payload
-         * @param sendTimeNanos  the time in nanoseconds when the message was sent
          */
-        default void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) throws InterruptedException{};
-
-        void batchMessagesReceived(TopicPartition topicPartition);
+        void messageReceived(TopicPartition topicPartition) throws InterruptedException;
     }
 
     public static class ConsumersConfig {
@@ -426,9 +422,9 @@ public class ConsumerService implements AutoCloseable {
                     for (ConsumerRecord<String, byte[]> record : records) {
                         TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
                         bytes += record.value().length;
-                        callback.batchMessagesReceived(topicPartition);
+                        callback.messageReceived(topicPartition);
                     }
-                    stats.batchMessageReceived(numMessages, bytes, sendTimeNanos);
+                    stats.messageReceived(numMessages, bytes, sendTimeNanos);
                     bucket.consume(records.count());
                 } catch (InterruptException | InterruptedException e) {
                     // ignore, as we are closing
