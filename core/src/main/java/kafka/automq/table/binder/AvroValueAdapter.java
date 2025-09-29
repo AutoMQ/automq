@@ -118,14 +118,6 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
     @Override
     protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType) {
         Schema listSchema = sourceSchema;
-        if (listSchema.getType() == Schema.Type.UNION) {
-            listSchema = listSchema.getTypes().stream()
-                .filter(s -> s.getType() == Schema.Type.ARRAY)
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException(
-                    "UNION schema does not contain an ARRAY type: " + sourceSchema));
-        }
-
         Schema elementSchema = listSchema.getElementType();
 
         List<?> sourceList;
@@ -151,8 +143,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
             GenericData.Array<?> arrayValue = (GenericData.Array<?>) sourceValue;
             Map<Object, Object> recordMap = new HashMap<>(arrayValue.size());
 
-            Schema kvSchema = resolveUnionElement(sourceSchema.getElementType(), Schema.Type.RECORD,
-                "Map element UNION schema does not contain a RECORD type");
+            Schema kvSchema = sourceSchema.getElementType();
 
             Schema.Field keyField = kvSchema.getFields().get(0);
             Schema.Field valueField = kvSchema.getFields().get(1);
@@ -177,8 +168,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
             return recordMap;
         }
 
-        Schema mapSchema = resolveUnionElement(sourceSchema, Schema.Type.MAP,
-            "UNION schema does not contain a MAP type");
+        Schema mapSchema = sourceSchema;
 
         Map<?, ?> sourceMap = (Map<?, ?>) sourceValue;
         Map<Object, Object> adaptedMap = new HashMap<>(sourceMap.size());
@@ -194,22 +184,5 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
             adaptedMap.put(key, value);
         }
         return adaptedMap;
-    }
-
-    private Schema resolveUnionElement(Schema schema, Schema.Type expectedType, String errorMessage) {
-        Schema resolved = schema;
-        if (schema.getType() == Schema.Type.UNION) {
-            resolved = null;
-            for (Schema unionMember : schema.getTypes()) {
-                if (unionMember.getType() == expectedType) {
-                    resolved = unionMember;
-                    break;
-                }
-            }
-            if (resolved == null) {
-                throw new IllegalStateException(errorMessage + ": " + schema);
-            }
-        }
-        return resolved;
     }
 }
