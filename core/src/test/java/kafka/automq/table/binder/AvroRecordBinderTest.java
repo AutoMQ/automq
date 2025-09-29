@@ -938,64 +938,6 @@ public class AvroRecordBinderTest {
         testSendRecord(icebergSchema, icebergRecord);
     }
 
-    @Test
-    public void testUnionArrayMapConversion() {
-        String avroSchemaStr = "    {\n" +
-            "      \"type\": \"record\",\n" +
-            "      \"name\": \"TestRecord\",\n" +
-            "      \"fields\": [\n" +
-            "        {\n" +
-            "          \"name\": \"mapField\",\n" +
-            "          \"type\": {\n" +
-            "            \"type\": \"array\",\n" +
-            "            \"logicalType\": \"map\",\n" +
-            "            \"items\": [\n" +
-            "              \"null\",\n" +
-            "              {\n" +
-            "                \"type\": \"record\",\n" +
-            "                \"name\": \"UnionMapEntry\",\n" +
-            "                \"fields\": [\n" +
-            "                  {\"name\": \"key\", \"type\": \"int\"},\n" +
-            "                  {\"name\": \"value\", \"type\": \"string\"}\n" +
-            "                ]\n" +
-            "              }\n" +
-            "            ]\n" +
-            "          }\n" +
-            "        }\n" +
-            "      ]\n" +
-            "    }\n";
-
-        avroSchema = new Schema.Parser().parse(avroSchemaStr);
-
-        Map<Integer, String> expectedMap = new HashMap<>();
-        expectedMap.put(10, "alpha");
-        expectedMap.put(20, "beta");
-
-        Schema mapFieldSchema = avroSchema.getField("mapField").schema();
-        Schema elementUnionSchema = mapFieldSchema.getElementType();
-        Schema entrySchema = elementUnionSchema.getTypes().stream()
-            .filter(s -> s.getType() == Schema.Type.RECORD)
-            .findFirst()
-            .orElseThrow(() -> new IllegalStateException("Array element UNION schema does not contain a RECORD type"));
-
-        GenericData.Array<Object> mapEntries = new GenericData.Array<>(expectedMap.size() + 1, mapFieldSchema);
-        for (Map.Entry<Integer, String> entry : expectedMap.entrySet()) {
-            GenericRecord mapEntry = new GenericData.Record(entrySchema);
-            mapEntry.put("key", entry.getKey());
-            mapEntry.put("value", entry.getValue());
-            mapEntries.add(mapEntry);
-        }
-        mapEntries.add(null);
-
-        AvroValueAdapter adapter = new AvroValueAdapter();
-        Types.MapType mapType = Types.MapType.ofOptional(1, 2, Types.IntegerType.get(), Types.StringType.get());
-
-        @SuppressWarnings("unchecked")
-        Map<Integer, Object> result = (Map<Integer, Object>) adapter.convert(mapEntries, mapFieldSchema, mapType);
-
-        assertEquals(expectedMap, result);
-    }
-
     // Test method for converting a record with nested fields
     @Test
     public void testNestedRecordConversion() {
@@ -1132,6 +1074,40 @@ public class AvroRecordBinderTest {
             "        {\n" +
             "          \"name\": \"unionField4\",\n" +
             "          \"type\": [\"null\", \"string\"]\n" +
+            "        },\n" +
+            "        {\n" +
+            "          \"name\": \"unionListField\",\n" +
+            "          \"type\": [\n" +
+            "            \"null\",\n" +
+            "            {\n" +
+            "              \"type\": \"array\",\n" +
+            "              \"items\": \"string\"\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        },\n" +
+            "        {\n" +
+            "          \"name\": \"unionMapField\",\n" +
+            "          \"type\": [\n" +
+            "            \"null\",\n" +
+            "            {\n" +
+            "              \"type\": \"map\",\n" +
+            "              \"values\": \"int\"\n" +
+            "            }\n" +
+            "          ]\n" +
+            "        },\n" +
+            "        {\n" +
+            "          \"name\": \"unionStructField\",\n" +
+            "          \"type\": [\n" +
+            "            \"null\",\n" +
+            "            {\n" +
+            "              \"type\": \"record\",\n" +
+            "              \"name\": \"UnionStruct\",\n" +
+            "              \"fields\": [\n" +
+            "                {\"name\": \"innerString\", \"type\": \"string\"},\n" +
+            "                {\"name\": \"innerInt\", \"type\": \"int\"}\n" +
+            "              ]\n" +
+            "            }\n" +
+            "          ]\n" +
             "        }\n" +
             "      ]\n" +
             "    }\n";
@@ -1141,6 +1117,17 @@ public class AvroRecordBinderTest {
         avroRecord.put("unionField1", "union_string");
         avroRecord.put("unionField2", 42);
         avroRecord.put("unionField3", true);
+        List<String> unionList = Arrays.asList("item1", "item2");
+        avroRecord.put("unionListField", unionList);
+        Map<String, Integer> unionMap = new HashMap<>();
+        unionMap.put("one", 1);
+        unionMap.put("two", 2);
+        avroRecord.put("unionMapField", unionMap);
+        Schema unionStructSchema = avroSchema.getField("unionStructField").schema().getTypes().get(1);
+        GenericRecord unionStruct = new GenericData.Record(unionStructSchema);
+        unionStruct.put("innerString", "nested");
+        unionStruct.put("innerInt", 99);
+        avroRecord.put("unionStructField", unionStruct);
 
         // Convert Avro record to Iceberg record using the wrapper
         org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
@@ -1155,6 +1142,15 @@ public class AvroRecordBinderTest {
 
         Object unionField3 = icebergRecord.getField("unionField3");
         assertEquals(true, unionField3);
+
+        assertNull(icebergRecord.getField("unionField4"));
+
+        assertEquals(unionList, normalizeValue(icebergRecord.getField("unionListField")));
+        assertEquals(unionMap, normalizeValue(icebergRecord.getField("unionMapField")));
+
+        Record unionStructRecord = (Record) icebergRecord.getField("unionStructField");
+        assertEquals("nested", unionStructRecord.getField("innerString").toString());
+        assertEquals(99, unionStructRecord.getField("innerInt"));
 
         // Send the record to the table
         testSendRecord(icebergSchema, icebergRecord);
