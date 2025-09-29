@@ -137,8 +137,8 @@ public class PerfCommand implements AutoCloseable {
         }
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
-        consumerService.start(this::messageReceived, config.maxConsumeRecordRate);
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), stats);
+        consumerService.start(this::updateReadyPartitions, config.maxConsumeRecordRate);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
         LOGGER.info("Creating producers...");
@@ -224,10 +224,14 @@ public class PerfCommand implements AutoCloseable {
     }
 
     private void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) {
+        updateReadyPartitions(topicPartition);
+        stats.messageReceived(payload.length, sendTimeNanos);
+    }
+
+    private void updateReadyPartitions(TopicPartition topicPartition) {
         if (preparing && config.awaitTopicReady && (config.catchupTopicPrefix == null || config.catchupTopicPrefix.isEmpty())) {
             readyPartitions.add(topicPartition);
         }
-        stats.messageReceived(payload.length, sendTimeNanos);
     }
 
     private void waitTopicsReady(boolean hasConsumer) {

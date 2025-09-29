@@ -34,6 +34,7 @@ import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.common.KafkaFuture;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.InterruptException;
+import org.apache.kafka.common.header.Header;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.utils.ThreadUtils;
@@ -92,10 +93,10 @@ public class ConsumerService implements AutoCloseable {
      * @param config consumer configuration
      * @return the number of consumers created
      */
-    public int createConsumers(List<Topic> topics, ConsumersConfig config) {
+    public int createConsumers(List<Topic> topics, ConsumersConfig config, Stats stats) {
         int count = 0;
         for (int g = 0; g < config.groupsPerTopic; g++) {
-            Group group = new Group(g, config.consumersPerGroup, topics, config);
+            Group group = new Group(g, config.consumersPerGroup, topics, config, stats);
             groups.add(group);
             count += group.consumerCount();
         }
@@ -237,7 +238,9 @@ public class ConsumerService implements AutoCloseable {
          * @param payload        the received message payload
          * @param sendTimeNanos  the time in nanoseconds when the message was sent
          */
-        void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) throws InterruptedException;
+        default void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) throws InterruptedException{};
+
+        void batchMessagesReceived(TopicPartition topicPartition);
     }
 
     public static class ConsumersConfig {
@@ -259,14 +262,14 @@ public class ConsumerService implements AutoCloseable {
         private final int index;
         private final Map<Topic, List<Consumer>> consumers = new HashMap<>();
 
-        public Group(int index, int consumersPerGroup, List<Topic> topics, ConsumersConfig config) {
+        public Group(int index, int consumersPerGroup, List<Topic> topics, ConsumersConfig config, Stats stats) {
             this.index = index;
 
             Properties common = toProperties(config);
             for (Topic topic : topics) {
                 List<Consumer> topicConsumers = new ArrayList<>();
                 for (int c = 0; c < consumersPerGroup; c++) {
-                    Consumer consumer = newConsumer(topic, common);
+                    Consumer consumer = newConsumer(topic, common, stats);
                     topicConsumers.add(consumer);
                 }
                 consumers.put(topic, topicConsumers);
@@ -332,11 +335,11 @@ public class ConsumerService implements AutoCloseable {
             return properties;
         }
 
-        private Consumer newConsumer(Topic topic, Properties common) {
+        private Consumer newConsumer(Topic topic, Properties common, Stats stats) {
             Properties properties = new Properties();
             properties.putAll(common);
             properties.put(ConsumerConfig.GROUP_ID_CONFIG, groupId(topic));
-            return new Consumer(properties, topic.name);
+            return new Consumer(properties, topic.name, stats);
         }
 
         private Stream<Consumer> consumers() {
@@ -365,11 +368,12 @@ public class ConsumerService implements AutoCloseable {
         private final CompletableFuture<Void> started = new CompletableFuture<>();
         private boolean paused = false;
         private volatile boolean closing = false;
+        private final Stats stats;
 
-        public Consumer(Properties properties, String topic) {
+        public Consumer(Properties properties, String topic, Stats stats) {
             this.consumer = new KafkaConsumer<>(properties);
             this.executor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("perf-consumer", false));
-
+            this.stats = stats;
             consumer.subscribe(List.of(topic), subscribeListener());
         }
 
@@ -411,11 +415,20 @@ public class ConsumerService implements AutoCloseable {
                         Thread.sleep(PAUSE_INTERVAL);
                     }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
-                    for (ConsumerRecord<String, byte[]> record : records) {
-                        long sendTimeNanos = Longs.fromByteArray(record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS).value());
-                        TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
-                        callback.messageReceived(topicPartition, record.value(), sendTimeNanos);
+                    int numMessages = records.count();
+                    if (numMessages == 0) {
+                        continue;
                     }
+                    ConsumerRecord<String, byte[]> firstRecord = records.iterator().next();
+                    Header header = firstRecord.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS);
+                    long bytes = 0;
+                    long sendTimeNanos = Longs.fromByteArray(header.value());
+                    for (ConsumerRecord<String, byte[]> record : records) {
+                        TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
+                        bytes += record.value().length;
+                        callback.batchMessagesReceived(topicPartition);
+                    }
+                    stats.batchMessageReceived(numMessages, bytes, sendTimeNanos);
                     bucket.consume(records.count());
                 } catch (InterruptException | InterruptedException e) {
                     // ignore, as we are closing
