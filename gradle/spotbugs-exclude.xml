@@ -601,7 +601,8 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     <Match>
         <Or>
             <Class name="org.apache.kafka.jmh.util.ByteUtilsBenchmark$BaseBenchmarkState"/>
-            <Class name="com.automq.shell.log.LogUploader"/>
+            <Class name="com.automq.log.LogUploader"/>
+            <Class name="com.automq.log.uploader.LogUploader"/>
             <Class name="com.automq.shell.metrics.S3MetricsExporter"/>
         </Or>
         <!-- Suppress warning because JMH code is used to instantiate Random() once per Trial. This is done to ensure

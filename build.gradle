@@ -260,12 +260,12 @@ subprojects {
 
   tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
-    options.compilerArgs << "-Xlint:all"
-    // temporary exclusions until all the warnings are fixed
-    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
-      options.compilerArgs << "-Xlint:-rawtypes"
-    options.compilerArgs << "-Xlint:-serial"
-    options.compilerArgs << "-Xlint:-try"
+//    options.compilerArgs << "-Xlint:all"
+//    // temporary exclusions until all the warnings are fixed
+//    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
+//      options.compilerArgs << "-Xlint:-rawtypes"
+//    options.compilerArgs << "-Xlint:-serial"
+//    options.compilerArgs << "-Xlint:-try"
     // AutoMQ inject start
     // TODO: remove me, when upgrade to 4.x
 //    options.compilerArgs << "-Werror"
@@ -840,6 +840,13 @@ tasks.create(name: "jarConnect", dependsOn: connectPkgs.collect { it + ":jar" })
 
 tasks.create(name: "testConnect", dependsOn: connectPkgs.collect { it + ":test" }) {}
 
+// OpenTelemetry related tasks
+tasks.create(name: "jarOpenTelemetry", dependsOn: ":opentelemetry:jar") {}
+
+tasks.create(name: "testOpenTelemetry", dependsOn: ":opentelemetry:test") {}
+
+tasks.create(name: "buildOpenTelemetry", dependsOn: [":opentelemetry:jar", ":opentelemetry:test"]) {}
+
 project(':server') {
   base {
     archivesName = "kafka-server"
@@ -1251,6 +1258,8 @@ project(':core') {
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').jar) { into("libs/") }
+    from(project(':opentelemetry').jar) { into("libs/") }
+    from(project(':opentelemetry').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
@@ -2482,7 +2491,7 @@ project(':trogdor') {
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
     }
-    into "$buildDir/dependant-libs-${versions.scala}"
+    into "$buildDir/dependant-libs"
     duplicatesStrategy 'exclude'
   }
 
@@ -3451,6 +3460,8 @@ project(':connect:runtime') {
     api project(':clients')
     api project(':connect:json')
     api project(':connect:transforms')
+    api project(':opentelemetry')
+    implementation project(':automq-log-uploader')
 
     implementation libs.slf4jApi
     implementation libs.reload4j
