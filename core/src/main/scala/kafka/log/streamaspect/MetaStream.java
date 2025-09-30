@@ -196,6 +196,11 @@ public class MetaStream implements Stream {
         return innerStream.destroy();
     }
 
+    @Override
+    public CompletableFuture<AppendResult> lastAppendFuture() {
+        return innerStream.lastAppendFuture();
+    }
+
     /**
      * Replay meta stream and return a map of meta keyValues. KeyValues will be cached in metaCache.
      *
