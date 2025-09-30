@@ -388,6 +388,11 @@ public class S3StreamClient implements StreamClient {
             });
         }
 
+        @Override
+        public CompletableFuture<AppendResult> lastAppendFuture() {
+            return stream.lastAppendFuture();
+        }
+
         public boolean isClosed() {
             return stream.isClosed();
         }

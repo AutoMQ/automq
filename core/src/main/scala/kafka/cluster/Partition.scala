@@ -85,6 +85,13 @@ trait PartitionListener {
    * Called when the partition leader epoch is changed.
    */
   def onNewLeaderEpoch(oldEpoch: Long, newEpoch: Long): Unit = {}
+
+  /**
+   * Called when there is a new record append which maybe not persisted yet.
+   * @param partition
+   * @param offset the next offset.
+   */
+  def onNewAppend(partition: TopicPartition, offset: Long): Unit = {}
   // AutoMQ inject end
 
 }
@@ -364,6 +371,14 @@ class Partition(val topicPartition: TopicPartition,
     override def onNewLeaderEpoch(oldEpoch: Long, newEpoch: Long): Unit = {
       listeners.forEach { listener =>
         listener.onNewLeaderEpoch(oldEpoch, newEpoch)
+      }
+    }
+  }
+
+  private val newAppendListener = new PartitionListener {
+    override def onNewAppend(partition: TopicPartition, offset: Long): Unit = {
+      listeners.forEach { listener =>
+        listener.onNewAppend(partition, offset)
       }
     }
   }
@@ -1560,6 +1575,7 @@ class Partition(val topicPartition: TopicPartition,
 
           // AutoMQ inject start
           notifyAppendListener(records)
+          newAppendListener.onNewAppend(topicPartition, leaderLog.logEndOffset)
           // AutoMQ inject end
 
           // we may need to increment high watermark since ISR could be down to 1
