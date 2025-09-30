@@ -84,6 +84,7 @@ public class MemoryClient implements Client {
         private final AtomicLong nextOffsetAlloc = new AtomicLong();
         private NavigableMap<Long, RecordBatchWithContext> recordMap = new ConcurrentSkipListMap<>();
         private final long streamId;
+        private volatile CompletableFuture<AppendResult> lastAppendFuture;
 
         public StreamImpl(long streamId) {
             this.streamId = streamId;
@@ -127,7 +128,8 @@ public class MemoryClient implements Client {
             copy.flip();
             recordBatch = new DefaultRecordBatch(recordBatch.count(), recordBatch.baseTimestamp(), recordBatch.properties(), copy);
             recordMap.put(baseOffset, new RecordBatchWithContextWrapper(recordBatch, baseOffset));
-            return CompletableFuture.completedFuture(() -> baseOffset);
+            this.lastAppendFuture = CompletableFuture.completedFuture(() -> baseOffset);
+            return lastAppendFuture;
         }
 
         @Override
@@ -172,6 +174,11 @@ public class MemoryClient implements Client {
         public CompletableFuture<Void> destroy() {
             recordMap.clear();
             return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<AppendResult> lastAppendFuture() {
+            return lastAppendFuture;
         }
     }
 

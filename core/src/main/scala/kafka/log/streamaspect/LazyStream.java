@@ -160,6 +160,11 @@ public class LazyStream implements Stream {
     }
 
     @Override
+    public CompletableFuture<AppendResult> lastAppendFuture() {
+        return inner.lastAppendFuture();
+    }
+
+    @Override
     public String toString() {
         return "LazyStream{" + "name='" + name + '\'' + "streamId='" + inner.streamId() + '\'' + ", replicaCount=" + replicaCount + '}';
     }
@@ -236,6 +241,11 @@ public class LazyStream implements Stream {
         @Override
         public CompletableFuture<Void> destroy() {
             return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<AppendResult> lastAppendFuture() {
+            return null;
         }
     }
 }
