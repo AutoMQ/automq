@@ -109,4 +109,8 @@ public interface Stream {
      */
     CompletableFuture<Void> destroy();
 
+    /**
+     * Get last append future
+     */
+    CompletableFuture<AppendResult> lastAppendFuture();
 }

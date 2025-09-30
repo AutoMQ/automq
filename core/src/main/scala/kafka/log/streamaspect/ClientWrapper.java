@@ -300,5 +300,10 @@ public class ClientWrapper implements Client {
         public CompletableFuture<Void> destroy() {
             return failureHandle(stream.destroy().thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
         }
+
+        @Override
+        public CompletableFuture<AppendResult> lastAppendFuture() {
+            return stream.lastAppendFuture();
+        }
     }
 }
