@@ -85,8 +85,16 @@ public class ElasticLogStreamManager {
         return Collections.unmodifiableMap(streamMap);
     }
 
-    public void putStreamIfAbsent(String name, long streamId) {
-        streamMap.computeIfAbsent(name, n -> {
+    public void createIfNotExist(String name, Long streamId) {
+        LazyStream s = streamMap.get(name);
+        if (s != null && s.streamId() == streamId) {
+            // precheck to prevent create lambda.
+            return;
+        }
+        streamMap.compute(name, (n, stream) -> {
+            if (stream != null && stream.streamId() == streamId) {
+                return stream;
+            }
             try {
                 return new LazyStream(name, streamId, streamClient, replicaCount, epoch, tags, snapshotRead);
             } catch (IOException e) {
