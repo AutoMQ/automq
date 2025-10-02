@@ -120,6 +120,7 @@ class ElasticLog(val metaStream: MetaStream,
     streamManager.setListener((_, event) => {
         if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
             logSegmentManager.asyncPersistLogMeta()
+            logSegmentManager.notifySegmentUpdate();
         }
     })
 
@@ -619,7 +620,7 @@ class ElasticLog(val metaStream: MetaStream,
         val logMeta = snapshot.logMeta()
         if (logMeta != null && !logMeta.getSegmentMetas.isEmpty) {
             logMeta.getStreamMap.forEach((name, streamId) => {
-                streamManager.putStreamIfAbsent(name, streamId)
+                streamManager.createIfNotExist(name, streamId)
             })
             segments.clear()
             logMeta.getSegmentMetas.forEach(segMeta => {

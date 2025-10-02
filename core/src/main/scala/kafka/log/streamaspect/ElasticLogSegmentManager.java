@@ -223,6 +223,10 @@ public class ElasticLogSegmentManager {
         logEventListeners.add(listener);
     }
 
+    public void notifySegmentUpdate() {
+        notifyLogEventListeners(null, LogEventListener.Event.SEGMENT_UPDATE);
+    }
+
     private void notifyLogEventListeners(LogSegment segment, LogEventListener.Event event) {
         for (LogEventListener listener : logEventListeners) {
             try {
