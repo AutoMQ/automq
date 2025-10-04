@@ -45,17 +45,17 @@ public class Config {
     private int controllerRequestRetryMaxCount = Integer.MAX_VALUE;
     private long controllerRequestRetryBaseDelayMs = 500;
     private long nodeEpoch = 0L;
-    private int streamSetObjectCompactionInterval = 10;
+    private int streamSetObjectCompactionInterval = 5;
     private long streamSetObjectCompactionCacheSize = 200 * 1024 * 1024;
     private int streamSetObjectCompactionUploadConcurrency = 8;
-    private long streamSetObjectCompactionStreamSplitSize = 16 * 1024 * 1024;
+    private long streamSetObjectCompactionStreamSplitSize = 8 * 1024 * 1024;
     private int streamSetObjectCompactionForceSplitPeriod = 120;
     private int streamSetObjectCompactionMaxObjectNum = 500;
-    private int maxStreamNumPerStreamSetObject = 100000;
+    private int maxStreamNumPerStreamSetObject = 20000;
     private int maxStreamObjectNumPerCommit = 10000;
     private boolean mockEnable = false;
-    // 100MB/s
-    private long networkBaselineBandwidth = 100 * 1024 * 1024;
+    // 1GBps/s
+    private long networkBaselineBandwidth = 1024 * 1024 * 1024;
     private int refillPeriodMs = 10;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
