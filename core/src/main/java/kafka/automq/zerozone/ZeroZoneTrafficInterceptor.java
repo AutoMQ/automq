@@ -33,7 +33,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -154,6 +156,13 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public void handleProduceRequest(ProduceRequestArgs args) {
+        if (closed.get()) {
+            Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new HashMap<>(args.entriesPerPartition().size());
+            args.entriesPerPartition().forEach((tp, records) ->
+                responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER)));
+            args.responseCallback().accept(responseMap);
+            return;
+        }
         ClientIdMetadata clientId = args.clientId();
         fillRackIfMissing(clientId);
         if (version.isZeroZoneV2Supported()) {
