@@ -101,6 +101,7 @@ public class PartitionSnapshotsManager {
 
     public CompletableFuture<AutomqGetPartitionSnapshotResponse> handle(AutomqGetPartitionSnapshotRequest request) {
         Session session;
+        boolean newSession = false;
         synchronized (this) {
             AutomqGetPartitionSnapshotRequestData requestData = request.data();
             int sessionId = requestData.sessionId();
@@ -115,10 +116,11 @@ public class PartitionSnapshotsManager {
                 sessionId = nextSessionId();
                 session = new Session(sessionId);
                 sessions.put(sessionId, session);
+                newSession = true;
             }
         }
         CompletableFuture<AutomqGetPartitionSnapshotResponse> resp = session.snapshotsDelta(request.data().version());
-        CompletableFuture<Void> commitCf = request.data().requestCommit() ? confirmWAL.commit(0, false) : CompletableFuture.completedFuture(null);
+        CompletableFuture<Void> commitCf = (request.data().requestCommit() || newSession) ? confirmWAL.commit(0, false) : CompletableFuture.completedFuture(null);
         return commitCf.exceptionally(nil -> null).thenCompose(nil -> resp);
     }
 

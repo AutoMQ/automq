@@ -111,6 +111,11 @@ class SubscriberReplayer {
         }
     }
 
+    public void reset() {
+        this.loadedObjectOrderId = -1L;
+        this.loadedEndOffset = null;
+    }
+
     private List<S3ObjectMetadata> nextObjects() {
         return nextObjects0(metadataCache, node.id(), loadedObjectOrderId, value -> loadedObjectOrderId = value);
     }
