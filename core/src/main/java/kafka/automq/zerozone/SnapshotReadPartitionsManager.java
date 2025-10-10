@@ -360,6 +360,7 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             snapshotWithOperations.clear();
             waitingDataLoadedQueue.clear();
             requester.reset();
+            replayer.reset();
         }
 
         void onNewWalEndOffset(String walConfig, RecordOffset endOffset) {
