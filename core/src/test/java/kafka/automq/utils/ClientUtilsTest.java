@@ -20,18 +20,18 @@ package kafka.automq.utils;
 import kafka.cluster.EndPoint;
 import kafka.server.KafkaConfig;
 
-import org.apache.kafka.common.network.ListenerName;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.config.internals.BrokerSecurityConfigs;
 import org.apache.kafka.common.config.types.Password;
+import org.apache.kafka.common.network.ListenerName;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.network.SocketServerConfigs;
 import org.apache.kafka.server.config.ReplicationConfigs;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Locale;
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
