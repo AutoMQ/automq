@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Context;
+import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
@@ -82,7 +83,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -97,16 +97,14 @@ public class S3Storage implements Storage {
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
 
-    private static Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder = r -> {
-        throw new UnsupportedOperationException();
-    };
+    private static LinkRecordDecoder linkRecordDecoder = LinkRecordDecoder.NOOP;
 
     public static void setLinkRecordDecoder(
-        Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+        LinkRecordDecoder linkRecordDecoder) {
         S3Storage.linkRecordDecoder = linkRecordDecoder;
     }
 
-    public static Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> getLinkRecordDecoder() {
+    public static LinkRecordDecoder getLinkRecordDecoder() {
         return linkRecordDecoder;
     }
 
@@ -414,7 +412,7 @@ public class S3Storage implements Storage {
                     continue;
                 }
                 int finalI = i;
-                futures.add(linkRecordDecoder.apply(record).thenAccept(r -> {
+                futures.add(linkRecordDecoder.decode(record).thenAccept(r -> {
                     records.set(finalI, r);
                 }));
             }

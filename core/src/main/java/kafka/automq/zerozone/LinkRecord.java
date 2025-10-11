@@ -23,11 +23,14 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.TimestampType;
 
+import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
+
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 public class LinkRecord {
     private static final byte MAGIC_V0 = (byte) 0x00;
+    private static final int CHANNEL_OFFSET_OFFSET = 1 /* magic */ + 8 /* last offset */ + 4 /* timestamp type */ + 8 /* max timestamp */ + 4 /* leader epoch */;
     private final long lastOffset;
     private final TimestampType timestampType;
     private final long maxTimestamp;
@@ -109,5 +112,20 @@ public class LinkRecord {
         ByteBuf channelOffset = Unpooled.buffer(buf.readableBytes());
         buf.readBytes(channelOffset);
         return new LinkRecord(lastOffset, timestampType, maxTimestamp, partitionLeaderEpoch, ChannelOffset.of(channelOffset));
+    }
+
+    /**
+     * Get the size of the linked record.
+     */
+    public static int decodedSize(ByteBuf linkRecordBuf) {
+        ByteBuf buf = linkRecordBuf.slice();
+        byte magic = buf.getByte(0);
+        if (magic != MAGIC_V0) {
+            throw new UnsupportedOperationException("Unsupported magic: " + magic);
+        }
+        int channelOffsetSize = buf.readableBytes() - CHANNEL_OFFSET_OFFSET;
+        ByteBuf channelOffsetBuf = Unpooled.buffer(channelOffsetSize);
+        buf.getBytes(CHANNEL_OFFSET_OFFSET, channelOffsetBuf);
+        return DefaultRecordOffset.of(ChannelOffset.of(channelOffsetBuf).walRecordOffset()).size();
     }
 }
