@@ -172,9 +172,9 @@ import io.netty.buffer.Unpooled;
             subscriber.reset(String.format("switch sessionId from %s to %s", sessionId, resp.sessionId()));
             // reset immediately to the new session.
             tryReset0();
-            sessionId = resp.sessionId();
-            sessionEpoch = resp.sessionEpoch();
         }
+        sessionId = resp.sessionId();
+        sessionEpoch = resp.sessionEpoch();
         SnapshotReadPartitionsManager.OperationBatch batch = new SnapshotReadPartitionsManager.OperationBatch();
         resp.topics().forEach(topic -> topic.partitions().forEach(partition -> {
             String topicName = topicNameGetter.apply(topic.topicId());
