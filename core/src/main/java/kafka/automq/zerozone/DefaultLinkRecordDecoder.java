@@ -28,20 +28,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-public class LinkRecordDecoder implements Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LinkRecordDecoder.class);
+public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecordDecoder {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultLinkRecordDecoder.class);
     private final RouterChannelProvider channelProvider;
 
-    public LinkRecordDecoder(RouterChannelProvider channelProvider) {
+    public DefaultLinkRecordDecoder(RouterChannelProvider channelProvider) {
         this.channelProvider = channelProvider;
     }
 
     @Override
-    public CompletableFuture<StreamRecordBatch> apply(StreamRecordBatch src) {
+    public int decodedSize(ByteBuf linkRecordBuf) {
+        return LinkRecord.decodedSize(linkRecordBuf);
+    }
+
+    @Override
+    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();
