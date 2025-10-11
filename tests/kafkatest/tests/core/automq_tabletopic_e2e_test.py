@@ -17,6 +17,7 @@ import json
 
 from ducktape.mark import parametrize
 from .automq_tabletopic_base import TableTopicBase
+from kafkatest.services.security.security_config import SecurityConfig
 from kafkatest.version import DEV_BRANCH
 
 
@@ -59,11 +60,16 @@ class TableTopicE2ETest(TableTopicBase):
     def _perf_topic_name(self, prefix: str, partitions: int = 16, index: int = 0) -> str:
         return f"__automq_perf_{prefix}_{partitions:04d}_{index:07d}"
 
-    @parametrize(version=str(DEV_BRANCH))
-    def test_tabletopic_avro_e2e_flow(self, version):
+    @parametrize(version=str(DEV_BRANCH), interbroker_security_protocol=SecurityConfig.PLAINTEXT)
+    @parametrize(version=str(DEV_BRANCH), interbroker_security_protocol=SecurityConfig.SSL)
+    def test_tabletopic_avro_e2e_flow(self, version, interbroker_security_protocol):
         """
         Tests the end-to-end flow of the table topic feature with Avro messages.
         """
+        self.configure_security(
+            security_protocol=SecurityConfig.PLAINTEXT,
+            interbroker_security_protocol=interbroker_security_protocol,
+            restart_cluster=True)
         topic_name = f"{self.base_topic}_avro"
         target_msgs = 5000
 
