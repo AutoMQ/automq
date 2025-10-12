@@ -56,23 +56,6 @@ class CatalogFactoryTest {
     }
 
     @Test
-    void restWithPolarisRealmHeader() throws IOException {
-        final var restCatalog = new RestCatalogMockForPolaris();
-        try (final var autoClose = restCatalog) {
-            final var config = new KafkaConfig(merge(requiredKafkaConfigProperties, Map.of(
-                "automq.table.topic.catalog.type", "rest",
-                "automq.table.topic.catalog.uri", restCatalog.base(),
-                "automq.table.topic.catalog.header.Polaris-Realm", "PRODUCTION", // Apache Polaris realm header
-                "automq.table.topic.catalog.header.Authorization", "Bearer test-token", // Authentication header
-                "s3.data.buckets", "0@s3://my_bucket?region=us-east-1&endpoint=http://localhost:12345&pathStyle=true"
-            )));
-            final var catalog = new CatalogFactory.Builder(config).build();
-            assertInstanceOf(RESTCatalog.class, catalog).close();
-        }
-        assertEquals(List.of("GET /v1/config?warehouse=s3://my_bucket/iceberg\nPRODUCTION\nBearer test-token"), restCatalog.requests());
-    }
-
-    @Test
     void ignoreEmptyS3EndpointForRestCatalog() throws IOException {
         FakeS3IO.lastS3FileIOProperties = null;
         try (final var restCatalog = new RestCatalogMock()) {
@@ -123,57 +106,6 @@ class CatalogFactoryTest {
                     requests.add(
                         method + ' ' + ex.getRequestURI().getPath() + '?' + ex.getRequestURI().getQuery() +
                             ('\n' + String.join("", ex.getRequestHeaders().getOrDefault("x-custom", List.of()))) +
-                            ('\n' + new String(ex.getRequestBody().readAllBytes(), UTF_8)).strip());
-
-                    if (method.equals("GET") &&
-                        ex.getRequestURI().getPath().equals("/v1/config") &&
-                        "warehouse=s3%3A%2F%2Fmy_bucket%2Ficeberg".equals(ex.getRequestURI().getRawQuery())) {
-                        final var body = """
-                            {
-                              "defaults": {},
-                              "overrides": {}
-                            }
-                            """.getBytes(UTF_8);
-                        ex.getResponseHeaders().add("content-type", "application/json");
-                        ex.sendResponseHeaders(200, body.length);
-                        ex.getResponseBody().write(body);
-                        return;
-                    }
-
-                    // else we just called an unexpected endpoint, issue a HTTP 404
-                    ex.sendResponseHeaders(404, 0);
-                }
-            });
-            catalogBackend.start();
-        }
-
-        private String base() {
-            return "http://localhost:" + catalogBackend.getAddress().getPort();
-        }
-
-        private List<String> requests() {
-            return requests;
-        }
-
-        @Override
-        public void close() {
-            catalogBackend.stop(0);
-        }
-    }
-
-    private static class RestCatalogMockForPolaris implements AutoCloseable {
-        private final List<String> requests = new CopyOnWriteArrayList<>();
-        private final HttpServer catalogBackend;
-
-        private RestCatalogMockForPolaris() throws IOException {
-            catalogBackend = HttpServer.create(new InetSocketAddress("localhost", 0), 16);
-            catalogBackend.createContext("/").setHandler(ex -> {
-                try (ex) {
-                    final var method = ex.getRequestMethod();
-                    requests.add(
-                        method + ' ' + ex.getRequestURI().getPath() + '?' + ex.getRequestURI().getQuery() +
-                            ('\n' + String.join("", ex.getRequestHeaders().getOrDefault("Polaris-Realm", List.of()))) +
-                            ('\n' + String.join("", ex.getRequestHeaders().getOrDefault("Authorization", List.of()))) +
                             ('\n' + new String(ex.getRequestBody().readAllBytes(), UTF_8)).strip());
 
                     if (method.equals("GET") &&
