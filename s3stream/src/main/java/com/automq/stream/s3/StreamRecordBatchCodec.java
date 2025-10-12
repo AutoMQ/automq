@@ -75,7 +75,10 @@ public class StreamRecordBatchCodec {
      * The returned stream record batch shares the payload buffer with the input buffer.
      */
     public static StreamRecordBatch decode(ByteBuf buf, boolean retain) {
-        buf.readByte(); // magic
+        byte magic = buf.readByte(); // magic
+        if (magic != MAGIC_V0) {
+            throw new RuntimeException("Invalid magic byte " + magic);
+        }
         long streamId = buf.readLong();
         long epoch = buf.readLong();
         long baseOffset = buf.readLong();
