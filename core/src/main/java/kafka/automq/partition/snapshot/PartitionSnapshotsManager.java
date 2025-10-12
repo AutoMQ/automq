@@ -52,7 +52,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -69,7 +71,8 @@ public class PartitionSnapshotsManager {
     private final String confirmWalConfig;
     private final ConfirmWAL confirmWAL;
 
-    public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL, Supplier<AutoMQVersion> versionGetter) {
+    public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL,
+        Supplier<AutoMQVersion> versionGetter) {
         this.time = time;
         this.confirmWalConfig = config.walConfig();
         this.confirmWAL = confirmWAL;
@@ -119,9 +122,7 @@ public class PartitionSnapshotsManager {
                 newSession = true;
             }
         }
-        CompletableFuture<AutomqGetPartitionSnapshotResponse> resp = session.snapshotsDelta(request.data().version());
-        CompletableFuture<Void> commitCf = (request.data().requestCommit() || newSession) ? confirmWAL.commit(0, false) : CompletableFuture.completedFuture(null);
-        return commitCf.exceptionally(nil -> null).thenCompose(nil -> resp);
+        return session.snapshotsDelta(request.data().version(), request.data().requestCommit() || newSession);
     }
 
     private synchronized int nextSessionId() {
@@ -150,6 +151,7 @@ public class PartitionSnapshotsManager {
         private final Map<Partition, PartitionSnapshotVersion> synced = new HashMap<>();
         private final List<Partition> removed = new ArrayList<>();
         private long lastGetSnapshotsTimestamp = time.milliseconds();
+        private final Set<CompletableFuture<Void>> inflightCommitCfSet = ConcurrentHashMap.newKeySet();
 
         public Session(int sessionId) {
             this.sessionId = sessionId;
@@ -159,13 +161,50 @@ public class PartitionSnapshotsManager {
             return sessionEpoch;
         }
 
-        public synchronized CompletableFuture<AutomqGetPartitionSnapshotResponse> snapshotsDelta(short requestVersion) {
+        public synchronized CompletableFuture<AutomqGetPartitionSnapshotResponse> snapshotsDelta(short requestVersion,
+            boolean requestCommit) {
             AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
             sessionEpoch++;
+            lastGetSnapshotsTimestamp = time.milliseconds();
             resp.setSessionId(sessionId);
             resp.setSessionEpoch(sessionEpoch);
-            Map<Uuid, List<PartitionSnapshot>> topic2partitions = new HashMap<>();
+            long finalSessionEpoch = sessionEpoch;
+            CompletableFuture<Void> collectPartitionSnapshotsCf;
+            if (!requestCommit && inflightCommitCfSet.isEmpty()) {
+                collectPartitionSnapshotsCf = collectPartitionSnapshots(resp);
+            } else {
+                collectPartitionSnapshotsCf = CompletableFuture.completedFuture(null);
+            }
+            return collectPartitionSnapshotsCf
+                .thenApply(nil -> {
+                    if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
+                        if (finalSessionEpoch == 1) {
+                            // return the WAL config in the session first response
+                            resp.setConfirmWalConfig(confirmWalConfig);
+                        }
+                        resp.setConfirmWalEndOffset(confirmWAL.confirmOffset().bufferAsBytes());
+                    }
+                    if (requestCommit) {
+                        // Commit after generating the snapshots.
+                        // Then the snapshot-read partitions could read from snapshot-read cache or block cache.
+                        CompletableFuture<Void> commitCf = confirmWAL.commit(0, false);
+                        inflightCommitCfSet.add(commitCf);
+                        commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
+                    }
+                    return new AutomqGetPartitionSnapshotResponse(resp);
+                });
+        }
 
+        public synchronized void onPartitionClose(Partition partition) {
+            removed.add(partition);
+        }
+
+        public synchronized boolean expired() {
+            return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
+        }
+
+        private CompletableFuture<Void> collectPartitionSnapshots(AutomqGetPartitionSnapshotResponseData resp) {
+            Map<Uuid, List<PartitionSnapshot>> topic2partitions = new HashMap<>();
             List<CompletableFuture<Void>> completeCfList = COMPLETE_CF_LIST_LOCAL.get();
             completeCfList.clear();
             removed.forEach(partition -> {
@@ -195,29 +234,9 @@ public class PartitionSnapshotsManager {
                 topics.add(topic);
             });
             resp.setTopics(topics);
-            lastGetSnapshotsTimestamp = time.milliseconds();
-            long finalSessionEpoch = sessionEpoch;
-            CompletableFuture<AutomqGetPartitionSnapshotResponse> retCf = CompletableFuture.allOf(completeCfList.toArray(new CompletableFuture[0]))
-                .thenApply(nil -> {
-                    if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
-                        if (finalSessionEpoch == 1) {
-                            // return the WAL config in the session first response
-                            resp.setConfirmWalConfig(confirmWalConfig);
-                        }
-                        resp.setConfirmWalEndOffset(confirmWAL.confirmOffset().bufferAsBytes());
-                    }
-                    return new AutomqGetPartitionSnapshotResponse(resp);
-                });
+            CompletableFuture<Void> retCf = CompletableFuture.allOf(completeCfList.toArray(new CompletableFuture[0]));
             completeCfList.clear();
             return retCf;
-        }
-
-        public synchronized void onPartitionClose(Partition partition) {
-            removed.add(partition);
-        }
-
-        public synchronized boolean expired() {
-            return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
         }
 
         private PartitionSnapshot snapshot(Partition partition, PartitionSnapshotVersion oldVersion,

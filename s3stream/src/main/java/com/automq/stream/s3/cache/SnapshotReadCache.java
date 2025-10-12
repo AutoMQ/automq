@@ -1,5 +1,6 @@
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -66,10 +67,10 @@ public class SnapshotReadCache {
     private final StreamManager streamManager;
     private final LogCache cache;
     private final ObjectStorage objectStorage;
-    private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
+    private final LinkRecordDecoder linkRecordDecoder;
     private final Time time = Time.SYSTEM;
 
-    public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+    public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, LinkRecordDecoder linkRecordDecoder) {
         activeStreams = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.MINUTES)
             .removalListener((RemovalListener<Long, Boolean>) notification ->
@@ -219,7 +220,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.apply(walRecord));
+                        cfList.add(linkRecordDecoder.decode(walRecord));
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
