@@ -96,15 +96,17 @@ public class LogCacheTest {
         logCache.archiveCurrentBlock();
         logCache.put(new StreamRecordBatch(233L, 0L, 13L, 2, TestUtils.random(20)));
 
-        long size0 = logCache.size();
         logCache.put(new StreamRecordBatch(234L, 0L, 13L, 2, TestUtils.random(20)));
-        long size1 = logCache.size();
 
+        assertTrue(logCache.blocks.get(0).containsStream(233L));
+        assertTrue(logCache.blocks.get(1).containsStream(234L));
         logCache.clearStreamRecords(233L);
-        assertEquals(size1 - size0, logCache.size());
+        assertFalse(logCache.blocks.get(0).containsStream(233L));
+        assertTrue(logCache.blocks.get(1).containsStream(234L));
 
         logCache.clearStreamRecords(234L);
-        assertEquals(0, logCache.size());
+        assertFalse(logCache.blocks.get(0).containsStream(233L));
+        assertFalse(logCache.blocks.get(1).containsStream(234L));
     }
 
     @Test
