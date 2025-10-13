@@ -169,11 +169,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         ZoneRouterProduceRequest zoneRouterProduceRequest
     ) {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() -> {
-            try (zoneRouterProduceRequest) {
-                FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf);
-            }
-        });
+        appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() ->
+            FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
     }
 
