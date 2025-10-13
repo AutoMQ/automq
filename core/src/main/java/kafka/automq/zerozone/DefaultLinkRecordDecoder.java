@@ -22,6 +22,7 @@ package kafka.automq.zerozone;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 
+import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
@@ -62,8 +63,8 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                     recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
                     StreamRecordBatch streamRecordBatch = new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
                         -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
-                    // duplicated copy the payload
-                    streamRecordBatch.encoded();
+                    // The buf will be release after the finally block, so we need copy the data by #encoded.
+                    streamRecordBatch.encoded(SnapshotReadCache.ENCODE_ALLOC);
                     return streamRecordBatch;
                 } finally {
                     src.release();

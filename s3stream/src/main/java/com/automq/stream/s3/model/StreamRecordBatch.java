@@ -19,13 +19,17 @@
 
 package com.automq.stream.s3.model;
 
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
 
 import io.netty.buffer.ByteBuf;
 
+import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
+
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {
     private static final int OBJECT_OVERHEAD = 48 /* fields */ + 48 /* ByteBuf payload */ + 48 /* ByteBuf encoded */;
+    private static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(ENCODE_RECORD, 8);
     private final long streamId;
     private final long epoch;
     private final long baseOffset;
@@ -42,9 +46,13 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     }
 
     public ByteBuf encoded() {
+        return encoded(ENCODE_ALLOC);
+    }
+
+    public ByteBuf encoded(ByteBufSeqAlloc alloc) {
         // TODO: keep the ref count
         if (encoded == null) {
-            encoded = StreamRecordBatchCodec.encode(this);
+            encoded = StreamRecordBatchCodec.encode(this, alloc);
             ByteBuf oldPayload = payload;
             payload = encoded.slice(encoded.readerIndex() + encoded.readableBytes() - payload.readableBytes(), payload.readableBytes());
             oldPayload.release();
