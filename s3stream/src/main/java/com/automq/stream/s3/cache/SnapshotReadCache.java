@@ -1,5 +1,6 @@
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
@@ -47,7 +48,10 @@ import java.util.stream.Collectors;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
+import static com.automq.stream.s3.ByteBufAlloc.SNAPSHOT_READ_CACHE;
+
 public class SnapshotReadCache {
+    public static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 8);
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
 
@@ -232,8 +236,7 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).toList());
-                    // move to mem pool
-                    records.forEach(StreamRecordBatch::encoded);
+                    records.forEach(r -> r.encoded(ENCODE_ALLOC));
                     loadCf.complete(null);
                 });
             }).whenComplete((rst, ex) -> {
