@@ -81,7 +81,7 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private long lastUploadTime = 0L;
 
     private LocalStreamRangeIndexCache() {
-        
+
     }
 
     public static LocalStreamRangeIndexCache create() {
