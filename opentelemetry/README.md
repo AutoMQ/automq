@@ -153,7 +153,7 @@ automq.telemetry.exporter.otlp.timeout.ms=30000
 #### Remote Write Exporter
 ```properties
 # Basic Remote Write configuration
-automq.telemetry.exporter.uri=remote_write://prometheus.example.com:9090/api/v1/write
+automq.telemetry.exporter.uri=rw://prometheus.example.com:9090/api/v1/write
 automq.telemetry.exporter.interval.ms=30000
 
 # With authentication
