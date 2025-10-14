@@ -108,7 +108,6 @@ public class S3Storage implements Storage {
         return linkRecordDecoder;
     }
 
-    private final long maxDeltaWALCacheSize;
     protected final Config config;
     private final WriteAheadLog deltaWAL;
     /**
@@ -162,7 +161,6 @@ public class S3Storage implements Storage {
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler) {
         this.config = config;
-        this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
         long deltaWALCacheSize = config.walCacheSize();
@@ -395,9 +393,6 @@ public class S3Storage implements Storage {
     }
 
     private static RecoveryBlockResult decodeLinkRecord(RecoveryBlockResult recoverBlockRst) {
-        if (recoverBlockRst.exception != null) {
-            return recoverBlockRst;
-        }
         LogCache.LogCacheBlock cacheBlock = recoverBlockRst.cacheBlock;
         int size = 0;
         for (List<StreamRecordBatch> l : cacheBlock.records().values()) {
@@ -420,8 +415,9 @@ public class S3Storage implements Storage {
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
             return recoverBlockRst;
-        } catch (Throwable e) {
-            return new RecoveryBlockResult(recoverBlockRst.cacheBlock, new RuntimeException(e));
+        } catch (Throwable ex) {
+            releaseAllRecords(cacheBlock.records().values());
+            throw new RuntimeException(ex);
         }
     }
 
@@ -562,7 +558,7 @@ public class S3Storage implements Storage {
             }
             StorageOperationStats.getInstance().appendLogCacheFullStats.record(0L);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
-                LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), maxDeltaWALCacheSize);
+                LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), deltaWALCache.capacity());
                 lastLogTimestamp = System.currentTimeMillis();
             }
             return true;
@@ -613,7 +609,7 @@ public class S3Storage implements Storage {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean tryAcquirePermit() {
-        return deltaWALCache.size() < maxDeltaWALCacheSize;
+        return deltaWALCache.size() < deltaWALCache.capacity();
     }
 
     private void tryDrainBackoffRecords() {
