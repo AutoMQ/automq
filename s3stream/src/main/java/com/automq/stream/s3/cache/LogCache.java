@@ -341,6 +341,10 @@ public class LogCache {
         return size.get();
     }
 
+    public long capacity() {
+        return capacity;
+    }
+
     public void clearStreamRecords(long streamId) {
         readLock.lock();
         try {
