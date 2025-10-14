@@ -180,7 +180,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
-                CompositeByteBuf buf = Unpooled.compositeBuffer();
+                // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
+                CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
                 responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
