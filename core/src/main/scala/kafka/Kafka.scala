@@ -17,12 +17,13 @@
 
 package kafka
 
+import com.automq.log.uploader.S3RollingFileAppender
 import com.automq.shell.AutoMQApplication
-import com.automq.shell.log.{LogUploader, S3LogConfig}
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
 import kafka.autobalancer.metricsreporter.AutoBalancerMetricsReporter
 import kafka.automq.StorageUtil
+import kafka.server.log.CoreS3LogConfigProvider
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer, Server}
 import kafka.utils.Implicits._
 import kafka.utils.{Exit, Logging}
@@ -76,8 +77,7 @@ object Kafka extends Logging {
   private def enableApiForwarding(config: KafkaConfig) =
     config.migrationEnabled && config.interBrokerProtocolVersion.isApiForwardingEnabled
 
-  private def buildServer(props: Properties): Server = {
-    val config = KafkaConfig.fromProps(props, doLog = false)
+  private def buildServer(config: KafkaConfig, logConfigProvider: CoreS3LogConfigProvider): Server = {
     // AutoMQ for Kafka inject start
     // set allocator's policy as early as possible
     ByteBufAlloc.setPolicy(config.s3StreamAllocatorPolicy)
@@ -90,7 +90,7 @@ object Kafka extends Logging {
         enableForwarding = enableApiForwarding(config)
       )
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, kafkaServer, null))
+      logConfigProvider.updateRuntimeContext(kafkaServer.clusterId)
       kafkaServer
     } else {
       val kafkaRaftServer = new KafkaRaftServer(
@@ -98,8 +98,8 @@ object Kafka extends Logging {
         Time.SYSTEM,
       )
       AutoMQApplication.setClusterId(kafkaRaftServer.getSharedServer().clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
+      logConfigProvider.updateRuntimeContext(kafkaRaftServer.getSharedServer().clusterId)
       kafkaRaftServer
     }
   }
@@ -124,7 +124,10 @@ object Kafka extends Logging {
       val serverProps = getPropsFromArgs(args)
       addDefaultProps(serverProps)
       StorageUtil.formatStorage(serverProps)
-      val server = buildServer(serverProps)
+      val kafkaConfig = KafkaConfig.fromProps(serverProps, doLog = false)
+      val logConfigProvider = new CoreS3LogConfigProvider(kafkaConfig)
+      S3RollingFileAppender.setConfigProvider(logConfigProvider)
+      val server = buildServer(kafkaConfig, logConfigProvider)
       AutoMQApplication.registerSingleton(classOf[Server], server)
       // AutoMQ for Kafka inject end
 
@@ -141,7 +144,6 @@ object Kafka extends Logging {
       Exit.addShutdownHook("kafka-shutdown-hook", {
         try {
           server.shutdown()
-          LogUploader.getInstance().close()
         } catch {
           case _: Throwable =>
             fatal("Halting Kafka.")

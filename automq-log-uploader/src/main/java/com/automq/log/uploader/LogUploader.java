@@ -142,6 +142,7 @@ public class LogUploader implements LogRecorder {
         public void run() {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
+                    LOGGER.info("Log upload thread is running.");
                     long now = System.currentTimeMillis();
                     LogEvent event = queue.poll(1, TimeUnit.SECONDS);
                     if (event != null) {
@@ -188,9 +189,11 @@ public class LogUploader implements LogRecorder {
                             break;
                         }
 
+                        LOGGER.info("Log upload a thread is running.");
                         try {
                             String objectKey = getObjectKey();
                             objectStorage.write(WriteOptions.DEFAULT, objectKey, Utils.compress(uploadBuffer.slice().asReadOnly())).get();
+                            LOGGER.info("Uploaded {} bytes logs to s3:{}", uploadBuffer.readableBytes(), objectKey);
                             break;
                         } catch (Exception e) {
                             LOGGER.warn("Failed to upload logs, will retry", e);
@@ -213,10 +216,12 @@ public class LogUploader implements LogRecorder {
         public void run() {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
+                    LOGGER.info("Log cleanup thread is running.");
                     if (closed || !config.isPrimaryUploader()) {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
+                    LOGGER.info("Log cleanup thread a is running.");
                     long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
 
                     List<ObjectInfo> objects = objectStorage.list(String.format("automq/logs/%s", config.clusterId())).join();

@@ -948,6 +948,8 @@ project(':core') {
     implementation project(':storage')
     implementation project(':server')
     implementation project(':automq-shell')
+    implementation project(':opentelemetry')
+    implementation project(':automq-log-uploader')
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -989,14 +991,6 @@ project(':core') {
     // The `jcl-over-slf4j` library is used to redirect JCL logging to SLF4J.
     implementation libs.jclOverSlf4j
 
-    implementation libs.opentelemetryJava8
-    implementation libs.opentelemetryOshi
-    implementation libs.opentelemetrySdk
-    implementation libs.opentelemetrySdkMetrics
-    implementation libs.opentelemetryExporterLogging
-    implementation libs.opentelemetryExporterProm
-    implementation libs.opentelemetryExporterOTLP
-    implementation libs.opentelemetryJmx
     implementation libs.awsSdkAuth
 
     // table topic start
