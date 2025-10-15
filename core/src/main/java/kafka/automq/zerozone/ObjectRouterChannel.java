@@ -107,17 +107,21 @@ public class ObjectRouterChannel implements RouterChannel {
     public void trim(long epoch) {
         writeLock.lock();
         try {
+            RecordOffset recordOffset = null;
             for (;;) {
                 Long channelEpoch = channelEpochQueue.peek();
                 if (channelEpoch == null || channelEpoch > epoch) {
-                    return;
+                    break;
                 }
                 channelEpochQueue.poll();
-                RecordOffset recordOffset = channelEpoch2LastRecordOffset.remove(epoch);
-                if (recordOffset != null) {
-                    wal.trim(recordOffset);
-                    logger.info("trim to epoch={} offset={}", epoch, recordOffset);
+                RecordOffset removed = channelEpoch2LastRecordOffset.remove(channelEpoch);
+                if (removed != null) {
+                    recordOffset = removed;
                 }
+            }
+            if (recordOffset != null) {
+                wal.trim(recordOffset);
+                logger.info("trim to epoch={} offset={}", epoch, recordOffset);
             }
         } finally {
             writeLock.unlock();
