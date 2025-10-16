@@ -28,6 +28,8 @@ import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.metadata.BrokerRegistration;
 
+import com.automq.stream.utils.Threads;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -39,6 +41,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import software.amazon.awssdk.annotations.NotNull;
@@ -57,7 +60,7 @@ class ProxyNodeMapping {
     private final MetadataCache metadataCache;
     private final List<ProxyTopologyChangeListener> listeners = new CopyOnWriteArrayList<>();
 
-    volatile Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack = new HashMap<>();
+    volatile Map<String /* proxy rack */, Map<Integer /* main nodeId */, BrokerRegistration /* proxy */>> main2proxyByRack = new HashMap<>();
     volatile boolean inited = false;
 
     public ProxyNodeMapping(Node currentNode, String currentRack, String interBrokerListenerName,
@@ -66,6 +69,7 @@ class ProxyNodeMapping {
         this.currentNode = currentNode;
         this.currentRack = currentRack;
         this.metadataCache = metadataCache;
+        Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(() -> logMapping(main2proxyByRack), 1, 1, TimeUnit.MINUTES);
     }
 
     /**
@@ -215,6 +219,7 @@ class ProxyNodeMapping {
             });
         });
         this.main2proxyByRack = calMain2proxyByRack(rack2brokers);
+        logMapping(main2proxyByRack);
         notifyListeners(this.main2proxyByRack);
     }
 
@@ -352,6 +357,18 @@ class ProxyNodeMapping {
                 }
             }
         }
+    }
+
+
+
+    static void logMapping(Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack) {
+        StringBuilder sb = new StringBuilder();
+        main2proxyByRack.forEach((rack, main2proxy) ->
+            main2proxy.forEach((mainNodeId, proxyNode) ->
+                sb.append(" Main ").append(mainNodeId).append(" => Proxy ").append(proxyNode.id()).append("(").append(rack).append(")\n")
+            )
+        );
+        LOGGER.info("ProxyNodeMapping:\n{}", sb);
     }
 
     static class ProxyNode implements thirdparty.com.github.jaskey.consistenthash.Node, Comparable<ProxyNode> {

@@ -34,6 +34,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 public class S3StreamThreadPoolMonitor {
@@ -97,6 +98,7 @@ public class S3StreamThreadPoolMonitor {
                 ThreadUtils.createFastThreadLocalThreadFactory(name + "-%d", isDaemon) :
                 ThreadUtils.createThreadFactory(name + "-%d", isDaemon);
 
+        AtomicReference<ThreadPoolWrapper> wrapperRef = new AtomicReference<>();
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
             corePoolSize,
             maximumPoolSize,
@@ -110,16 +112,23 @@ public class S3StreamThreadPoolMonitor {
                 super.afterExecute(r, t);
                 afterExecutionHook.apply(t);
             }
+
+            @Override
+            protected void terminated() {
+                super.terminated();
+                ThreadPoolWrapper wrapper = wrapperRef.get();
+                if (wrapper != null) {
+                    MONITOR_EXECUTOR.remove(wrapper);
+                }
+            }
         };
         List<ThreadPoolStatusMonitor> printers = new ArrayList<>();
         printers.add(new ThreadPoolQueueSizeMonitor(queueCapacity));
         printers.addAll(threadPoolStatusMonitors);
 
-        MONITOR_EXECUTOR.add(ThreadPoolWrapper.builder()
-            .name(name)
-            .threadPoolExecutor(executor)
-            .statusPrinters(printers)
-            .build());
+        ThreadPoolWrapper wrapper = ThreadPoolWrapper.builder().name(name).threadPoolExecutor(executor).statusPrinters(printers).build();
+        wrapperRef.set(wrapper);
+        MONITOR_EXECUTOR.add(wrapper);
         return executor;
     }
 
