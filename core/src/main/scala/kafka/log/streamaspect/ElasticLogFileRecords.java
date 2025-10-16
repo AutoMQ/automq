@@ -21,7 +21,6 @@ package kafka.log.streamaspect;
 
 import kafka.automq.zerozone.LinkRecord;
 import kafka.automq.zerozone.ZeroZoneThreadLocalContext;
-import com.automq.opentelemetry.TelemetryConstants;
 
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -39,6 +38,7 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 
+import com.automq.opentelemetry.TelemetryConstants;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatchWithContext;
