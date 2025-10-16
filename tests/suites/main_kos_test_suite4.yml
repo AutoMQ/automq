@@ -17,3 +17,7 @@
 core_test_suite:
   included:
     - ../kafkatest/tests/core/transactions_test.py
+    - ../kafkatest/tests/core/automq_telemetry_test.py::AutoMQBrokerTelemetryTest.test_prometheus_metrics_exporter
+    - ../kafkatest/tests/core/automq_telemetry_test.py::AutoMQBrokerTelemetryTest.test_prometheus_metrics_under_load
+    - ../kafkatest/tests/core/automq_telemetry_test.py::AutoMQBrokerTelemetryTest.test_s3_metrics_exporter
+    - ../kafkatest/tests/core/automq_telemetry_test.py::AutoMQBrokerTelemetryTest.test_s3_log_uploader

@@ -104,34 +104,3 @@ checkstyle {
 javadoc {
   enabled=false
 }
-
-protobuf {
-  protoc {
-    // The artifact spec for the Protobuf Compiler
-    artifact = 'com.google.protobuf:protoc:3.25.5'
-  }
-
-  generateProtoTasks {
-    ofSourceSet('test').each { task ->
-      task.builtins {
-        java {}
-      }
-    }
-  }
-}
-
-sourceSets {
-  main {
-    java {
-      srcDirs 'build/generated/source/proto/main/java'
-    }
-  }
-  test {
-    proto {
-      srcDir 'src/test/resources/proto'
-    }
-    java {
-      srcDirs 'build/generated/source/proto/test/java'
-    }
-  }
-}
