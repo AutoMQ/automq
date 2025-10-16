@@ -101,9 +101,9 @@ public class RouterChannelEpochControlManager {
         long newCommitedEpoch = Long.MAX_VALUE;
         for (NodeMetadata nodeMetadata : nodeControlManager.getMetadata()) {
             int nodeId = nodeMetadata.getNodeId();
-            if (nodeControlManager.state(nodeId) != NodeState.ACTIVE && nodeControlManager.hasOpeningStreams(nodeId)) {
-                // there is a node need to failover.
-                return OptionalLong.empty();
+            if (nodeControlManager.state(nodeId) == NodeState.FENCED && !nodeControlManager.hasOpeningStreams(nodeId)) {
+                // We can ignore the gracefully stopped node.
+                continue;
             }
             Long nodeCommitedEpoch = node2commitedEpoch.get(nodeId);
             if (nodeCommitedEpoch == null) {

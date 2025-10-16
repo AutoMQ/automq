@@ -23,7 +23,7 @@ import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, LinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -569,7 +569,7 @@ class BrokerServer(
       routerChannelProvider = newRouterChannelProvider()
       confirmWALProvider = newConfirmWALProvider()
       if (routerChannelProvider != null) {
-        S3Storage.setLinkRecordDecoder(new LinkRecordDecoder(routerChannelProvider))
+        S3Storage.setLinkRecordDecoder(new DefaultLinkRecordDecoder(routerChannelProvider))
       }
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()

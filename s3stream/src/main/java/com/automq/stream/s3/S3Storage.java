@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Context;
+import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
@@ -82,7 +83,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -97,20 +97,17 @@ public class S3Storage implements Storage {
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
 
-    private static Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder = r -> {
-        throw new UnsupportedOperationException();
-    };
+    private static LinkRecordDecoder linkRecordDecoder = LinkRecordDecoder.NOOP;
 
     public static void setLinkRecordDecoder(
-        Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+        LinkRecordDecoder linkRecordDecoder) {
         S3Storage.linkRecordDecoder = linkRecordDecoder;
     }
 
-    public static Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> getLinkRecordDecoder() {
+    public static LinkRecordDecoder getLinkRecordDecoder() {
         return linkRecordDecoder;
     }
 
-    private final long maxDeltaWALCacheSize;
     protected final Config config;
     private final WriteAheadLog deltaWAL;
     /**
@@ -164,7 +161,6 @@ public class S3Storage implements Storage {
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler) {
         this.config = config;
-        this.maxDeltaWALCacheSize = config.walCacheSize();
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
         long deltaWALCacheSize = config.walCacheSize();
@@ -397,9 +393,6 @@ public class S3Storage implements Storage {
     }
 
     private static RecoveryBlockResult decodeLinkRecord(RecoveryBlockResult recoverBlockRst) {
-        if (recoverBlockRst.exception != null) {
-            return recoverBlockRst;
-        }
         LogCache.LogCacheBlock cacheBlock = recoverBlockRst.cacheBlock;
         int size = 0;
         for (List<StreamRecordBatch> l : cacheBlock.records().values()) {
@@ -414,7 +407,7 @@ public class S3Storage implements Storage {
                     continue;
                 }
                 int finalI = i;
-                futures.add(linkRecordDecoder.apply(record).thenAccept(r -> {
+                futures.add(linkRecordDecoder.decode(record).thenAccept(r -> {
                     records.set(finalI, r);
                 }));
             }
@@ -422,8 +415,9 @@ public class S3Storage implements Storage {
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
             return recoverBlockRst;
-        } catch (Throwable e) {
-            return new RecoveryBlockResult(recoverBlockRst.cacheBlock, new RuntimeException(e));
+        } catch (Throwable ex) {
+            releaseAllRecords(cacheBlock.records().values());
+            throw new RuntimeException(ex);
         }
     }
 
@@ -498,9 +492,12 @@ public class S3Storage implements Storage {
         throws InterruptedException, ExecutionException {
         if (cacheBlock.size() != 0) {
             logger.info("try recover from crash, recover records bytes size {}", cacheBlock.size());
-            UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
-            task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
-            releaseAllRecords(cacheBlock.records().values());
+            try {
+                UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
+                task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
+            } finally {
+                releaseAllRecords(cacheBlock.records().values());
+            }
         }
     }
 
@@ -569,7 +566,7 @@ public class S3Storage implements Storage {
             }
             StorageOperationStats.getInstance().appendLogCacheFullStats.record(0L);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
-                LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), maxDeltaWALCacheSize);
+                LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), deltaWALCache.capacity());
                 lastLogTimestamp = System.currentTimeMillis();
             }
             return true;
@@ -620,7 +617,7 @@ public class S3Storage implements Storage {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean tryAcquirePermit() {
-        return deltaWALCache.size() < maxDeltaWALCacheSize;
+        return deltaWALCache.size() < deltaWALCache.capacity();
     }
 
     private void tryDrainBackoffRecords() {

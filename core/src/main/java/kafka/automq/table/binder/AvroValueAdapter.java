@@ -47,7 +47,10 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
     @Override
     protected Object convertString(Object sourceValue, Schema sourceSchema, Type targetType) {
-        if (sourceValue instanceof Utf8 || sourceValue instanceof GenericData.EnumSymbol) {
+        if (sourceValue instanceof Utf8) {
+            return sourceValue;
+        }
+        if (sourceValue instanceof GenericData.EnumSymbol) {
             return sourceValue.toString();
         }
         return super.convertString(sourceValue, sourceSchema, targetType);
@@ -114,8 +117,18 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
     @Override
     protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType) {
-        Schema elementSchema = sourceSchema.getElementType();
-        List<?> sourceList = (List<?>) sourceValue;
+        Schema listSchema = sourceSchema;
+        Schema elementSchema = listSchema.getElementType();
+
+        List<?> sourceList;
+        if (sourceValue instanceof GenericData.Array) {
+            sourceList = (GenericData.Array<?>) sourceValue;
+        } else if (sourceValue instanceof List) {
+            sourceList = (List<?>) sourceValue;
+        } else {
+            throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to LIST");
+        }
+
         List<Object> list = new ArrayList<>(sourceList.size());
         for (Object element : sourceList) {
             Object convert = convert(element, elementSchema, targetType.elementType());
@@ -128,42 +141,48 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
     protected Map<?, ?> convertMap(Object sourceValue, Schema sourceSchema, Types.MapType targetType) {
         if (sourceValue instanceof GenericData.Array) {
             GenericData.Array<?> arrayValue = (GenericData.Array<?>) sourceValue;
-            // Handle map represented as an array of key-value records
             Map<Object, Object> recordMap = new HashMap<>(arrayValue.size());
-            Schema kvSchema = sourceSchema.getElementType();
 
-            if (kvSchema.getType() == Schema.Type.UNION) {
-                kvSchema = kvSchema.getTypes().stream()
-                    .filter(s -> s.getType() == Schema.Type.RECORD)
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException(
-                        "Map element UNION schema does not contain a RECORD type: " + sourceSchema.getElementType()));
-            }
+            Schema kvSchema = sourceSchema.getElementType();
 
             Schema.Field keyField = kvSchema.getFields().get(0);
             Schema.Field valueField = kvSchema.getFields().get(1);
+            if (keyField == null || valueField == null) {
+                throw new IllegalStateException("Map entry schema missing key/value fields: " + kvSchema);
+            }
+
+            Schema keySchema = keyField.schema();
+            Schema valueSchema = valueField.schema();
+            Type keyType = targetType.keyType();
+            Type valueType = targetType.valueType();
 
             for (Object element : arrayValue) {
                 if (element == null) {
                     continue;
                 }
                 GenericRecord record = (GenericRecord) element;
-                Object key = convert(record.get(keyField.pos()), keyField.schema(), targetType.keyType());
-                Object value = convert(record.get(valueField.pos()), valueField.schema(), targetType.valueType());
+                Object key = convert(record.get(keyField.pos()), keySchema, keyType);
+                Object value = convert(record.get(valueField.pos()), valueSchema, valueType);
                 recordMap.put(key, value);
             }
             return recordMap;
-        } else {
-            // Handle standard Java Map
-            Map<?, ?> sourceMap = (Map<?, ?>) sourceValue;
-            Map<Object, Object> adaptedMap = new HashMap<>();
-            for (Map.Entry<?, ?> entry : sourceMap.entrySet()) {
-                // Avro map keys are always strings
-                Object key = convert(entry.getKey(), STRING_SCHEMA_INSTANCE, targetType.keyType());
-                Object value = convert(entry.getValue(), sourceSchema.getValueType(), targetType.valueType());
-                adaptedMap.put(key, value);
-            }
-            return adaptedMap;
         }
+
+        Schema mapSchema = sourceSchema;
+
+        Map<?, ?> sourceMap = (Map<?, ?>) sourceValue;
+        Map<Object, Object> adaptedMap = new HashMap<>(sourceMap.size());
+
+        Schema valueSchema = mapSchema.getValueType();
+        Type keyType = targetType.keyType();
+        Type valueType = targetType.valueType();
+
+        for (Map.Entry<?, ?> entry : sourceMap.entrySet()) {
+            Object rawKey = entry.getKey();
+            Object key = convert(rawKey, STRING_SCHEMA_INSTANCE, keyType);
+            Object value = convert(entry.getValue(), valueSchema, valueType);
+            adaptedMap.put(key, value);
+        }
+        return adaptedMap;
     }
 }

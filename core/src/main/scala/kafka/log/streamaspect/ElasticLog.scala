@@ -120,6 +120,7 @@ class ElasticLog(val metaStream: MetaStream,
     streamManager.setListener((_, event) => {
         if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
             logSegmentManager.asyncPersistLogMeta()
+            logSegmentManager.notifySegmentUpdate();
         }
     })
 
@@ -594,11 +595,18 @@ class ElasticLog(val metaStream: MetaStream,
         }
     }
 
+    override private[log] def truncateFullyAndStartAt(newOffset: Long): Iterable[LogSegment] = {
+        val rst = super.truncateFullyAndStartAt(newOffset)
+        _confirmOffset.set(logEndOffsetMetadata)
+        rst
+    }
+
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
         snapshot.logMeta(logSegmentManager.logMeta())
-        snapshot.logEndOffset(confirmOffset)
+        snapshot.logEndOffset(logEndOffsetMetadata)
         logSegmentManager.streams().forEach(stream => {
-            snapshot.streamEndOffset(stream.streamId(), stream.confirmOffset())
+            snapshot.streamEndOffset(stream.streamId(), stream.nextOffset())
+            snapshot.addStreamLastAppendFuture(stream.lastAppendFuture());
         })
         val lastSegmentOpt = segments.lastSegment()
         if (lastSegmentOpt.isPresent) {
@@ -610,7 +618,7 @@ class ElasticLog(val metaStream: MetaStream,
         val logMeta = snapshot.logMeta()
         if (logMeta != null && !logMeta.getSegmentMetas.isEmpty) {
             logMeta.getStreamMap.forEach((name, streamId) => {
-                streamManager.putStreamIfAbsent(name, streamId)
+                streamManager.createIfNotExist(name, streamId)
             })
             segments.clear()
             logMeta.getSegmentMetas.forEach(segMeta => {

@@ -303,24 +303,22 @@ public class DefaultWriter implements Writer {
     }
 
     private void tryUploadBulkInWaiting() {
-        UPLOAD_EXECUTOR.submit(this::uploadBulk0);
-    }
-
-    private void uploadBulk0() {
-        Bulk bulk;
         lock.writeLock().lock();
         try {
-            if (uploadingBulks.size() >= config.maxInflightUploadCount()) {
-                return;
+            while (uploadingBulks.size() < config.maxInflightUploadCount()) {
+                Bulk bulk = waitingUploadBulks.poll();
+                if (bulk == null) {
+                    return;
+                }
+                uploadingBulks.add(bulk);
+                UPLOAD_EXECUTOR.submit(() -> uploadBulk0(bulk));
             }
-            bulk = waitingUploadBulks.poll();
-            if (bulk == null) {
-                return;
-            }
-            uploadingBulks.add(bulk);
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    private void uploadBulk0(Bulk bulk) {
         try {
             long startTime = time.nanoseconds();
             List<Record> records = bulk.records;
@@ -559,12 +557,13 @@ public class DefaultWriter implements Writer {
         public Bulk(long baseOffset) {
             this.startNanos = time.nanoseconds();
             this.baseOffset = baseOffset;
-            long forceUploadNanos = lastBulkForceUploadNanos + batchNanos;
-            long forceUploadDelayNanos = Math.max(
-                // Try batch the requests in a short time window to save the PUT API.
-                minBulkUploadIntervalNanos,
-                forceUploadNanos - startNanos
-            );
+            long forceUploadDelayNanos = Math.min(
+                Math.max(
+                    // Try batch the requests in a short time window to save the PUT API.
+                    minBulkUploadIntervalNanos,
+                    lastBulkForceUploadNanos + batchNanos - startNanos
+                ),
+                batchNanos);
             lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
             SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
         }

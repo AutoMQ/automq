@@ -22,12 +22,13 @@ package com.automq.stream.s3.metrics.wrapper;
 import org.HdrHistogram.Histogram;
 import org.HdrHistogram.Recorder;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiPredicate;
 
 public class DeltaHistogram {
-    private static final Long DEFAULT_SNAPSHOT_INTERVAL_MS = 5000L;
+    private static final Long DEFAULT_SNAPSHOT_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
     private final LongAdder cumulativeCount = new LongAdder();
     private final LongAdder cumulativeSum = new LongAdder();
     private final AtomicLong min = new AtomicLong(Long.MAX_VALUE);
@@ -132,36 +133,49 @@ public class DeltaHistogram {
         return lastSnapshot.p50;
     }
 
-    private void snapshotAndReset() {
+    public SnapshotExt snapshotAndReset() {
         synchronized (this) {
             if (lastSnapshot == null || System.currentTimeMillis() - lastSnapshotTime > snapshotInterval) {
-                this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
-
-                long snapshotMin = min.get();
-                long snapshotMax = max.get();
-
-                long newCount = cumulativeCount.sum();
-                long newSum = cumulativeSum.sum();
-
-                long snapshotCount = newCount - lastCount;
-                long snapshotSum = newSum - lastSum;
-
-                double p99 = intervalHistogram.getValueAtPercentile(0.99);
-                double p95 = intervalHistogram.getValueAtPercentile(0.95);
-                double p50 = intervalHistogram.getValueAtPercentile(0.50);
-
-                lastCount = newCount;
-                lastSum = newSum;
-
-                min.set(0);
-                max.set(0);
-                lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, p99, p95, p50);
-                lastSnapshotTime = System.currentTimeMillis();
+                snapshotAndReset0();
             }
         }
+        return lastSnapshot;
     }
 
-    static class SnapshotExt {
+    private void snapshotAndReset0() {
+        this.intervalHistogram = this.recorder.getIntervalHistogram(this.intervalHistogram);
+
+        long snapshotMin = min.get();
+        long snapshotMax = max.get();
+
+        long newCount = cumulativeCount.sum();
+        long newSum = cumulativeSum.sum();
+
+        long snapshotCount = newCount - lastCount;
+        long snapshotSum = newSum - lastSum;
+
+        double p99 = intervalHistogram.getValueAtPercentile(99);
+        double p95 = intervalHistogram.getValueAtPercentile(95);
+        double p50 = intervalHistogram.getValueAtPercentile(50);
+
+        lastCount = newCount;
+        lastSum = newSum;
+
+        min.set(0);
+        max.set(0);
+        lastSnapshot = new SnapshotExt(snapshotMin, snapshotMax, snapshotCount, snapshotSum, p99, p95, p50);
+        lastSnapshotTime = System.currentTimeMillis();
+    }
+
+    // for benchmark only
+    public SnapshotExt forceSnapshotAndReset() {
+        synchronized (this) {
+            snapshotAndReset0();
+        }
+        return lastSnapshot;
+    }
+
+    public static class SnapshotExt {
         final long min;
         final long max;
         final long count;
@@ -180,12 +194,40 @@ public class DeltaHistogram {
             this.p95 = p95;
         }
 
-        double mean() {
+        public double mean() {
             if (count == 0) {
                 return 0;
             } else {
                 return (double) sum / count;
             }
+        }
+
+        public long getMin() {
+            return min;
+        }
+
+        public long getMax() {
+            return max;
+        }
+
+        public long getCount() {
+            return count;
+        }
+
+        public long getSum() {
+            return sum;
+        }
+
+        public double getP99() {
+            return p99;
+        }
+
+        public double getP95() {
+            return p95;
+        }
+
+        public double getP50() {
+            return p50;
         }
     }
 }

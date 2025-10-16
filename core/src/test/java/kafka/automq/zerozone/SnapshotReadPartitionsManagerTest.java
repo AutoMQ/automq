@@ -21,7 +21,6 @@ package kafka.automq.zerozone;
 
 import kafka.automq.partition.snapshot.SnapshotOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.OperationBatch;
-import kafka.automq.zerozone.SnapshotReadPartitionsManager.SnapshotWithOperation;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.Subscriber;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
@@ -218,7 +217,7 @@ public class SnapshotReadPartitionsManagerTest {
     private SnapshotWithOperation snapshotWithOperation(int partitionIndex, Map<Long /* streamId */, Long /* endOffset */> offsets,
         SnapshotOperation operation) {
         // TODO: fix the test
-        PartitionSnapshot snapshot = new PartitionSnapshot(0, null, null, null, offsets, null);
+        PartitionSnapshot snapshot = new PartitionSnapshot(0, null, null, null, offsets, null, CompletableFuture.completedFuture(null));
         return new SnapshotWithOperation(new TopicIdPartition(topicId, partitionIndex, topicName), snapshot, operation);
     }
 

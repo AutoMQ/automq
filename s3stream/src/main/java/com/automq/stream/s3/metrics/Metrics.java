@@ -25,13 +25,18 @@ import java.util.List;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableDoubleGauge;
+import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
+import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 import io.opentelemetry.context.Context;
 
 public class Metrics {
@@ -56,6 +61,14 @@ public class Metrics {
 
     public LongCounter counter(Function<Meter, LongCounter> newFunc) {
         return new LazyLongCounter(newFunc);
+    }
+
+    public LongGaugeBundle longGauge(String name, String desc, String unit) {
+        return new LongGaugeBundle(name, desc, unit);
+    }
+
+    public DoubleGaugeBundle doubleGauge(String name, String desc, String unit) {
+        return new DoubleGaugeBundle(name, desc, unit);
     }
 
     private synchronized void setup0() {
@@ -185,10 +198,176 @@ public class Metrics {
                     return;
                 }
                 this.finalAttributes = Attributes.builder()
-                        .putAll(globalConfig.getBaseAttributes())
-                        .putAll(histogramAttrs)
-                        .build();
+                    .putAll(globalConfig.getBaseAttributes())
+                    .putAll(histogramAttrs)
+                    .build();
                 this.shouldRecord = level.isWithin(globalConfig.getMetricsLevel());
+                histogram.setSnapshotInterval(globalConfig.getMetricsReportIntervalMs());
+            }
+        }
+    }
+
+    public class LongGaugeBundle implements Setup {
+        private final List<LongGauge> gauges = new CopyOnWriteArrayList<>();
+        private final String name;
+        private final String desc;
+        private final String unit;
+
+        private ObservableLongGauge instrument;
+
+        @SuppressWarnings("this-escape")
+        public LongGaugeBundle(String name, String desc, String unit) {
+            this.name = name;
+            this.desc = desc;
+            this.unit = unit;
+            waitingSetups.add(this);
+            setup0();
+        }
+
+        public LongGauge register(MetricsLevel level, Attributes attributes) {
+            LongGauge gauge = new LongGauge(level, attributes);
+            gauges.add(gauge);
+            gauge.setup();
+            return gauge;
+        }
+
+        public synchronized void setup() {
+            gauges.forEach(LongGauge::setup);
+            this.instrument = meter.gaugeBuilder(name)
+                .setDescription(desc)
+                .setUnit(unit)
+                .ofLongs()
+                .buildWithCallback(measurement -> gauges.forEach(gauge -> gauge.record(measurement)));
+        }
+
+        public final class LongGauge implements AutoCloseable {
+            private final MetricsLevel level;
+            private final Attributes gaugeAttributes;
+            private final AtomicLong value = new AtomicLong();
+            private final AtomicBoolean hasValue = new AtomicBoolean(false);
+            private Attributes finalAttributes = Attributes.empty();
+            private volatile boolean shouldRecord = true;
+
+            private LongGauge(MetricsLevel level, Attributes attributes) {
+                this.level = level;
+                this.gaugeAttributes = attributes;
+                this.finalAttributes = attributes;
+            }
+
+            private void setup() {
+                if (meter != null && globalConfig != null) {
+                    this.finalAttributes = Attributes.builder()
+                        .putAll(globalConfig.getBaseAttributes())
+                        .putAll(gaugeAttributes)
+                        .build();
+                    this.shouldRecord = level.isWithin(globalConfig.getMetricsLevel());
+                } else {
+                    this.finalAttributes = gaugeAttributes;
+                    this.shouldRecord = true;
+                }
+            }
+
+            public void record(long newValue) {
+                value.set(newValue);
+                hasValue.set(true);
+            }
+
+            public void clear() {
+                hasValue.set(false);
+            }
+
+            private void record(ObservableLongMeasurement measurement) {
+                if (shouldRecord && hasValue.get()) {
+                    measurement.record(value.get(), finalAttributes);
+                }
+            }
+
+            @Override
+            public void close() {
+                gauges.remove(this);
+                hasValue.set(false);
+            }
+        }
+    }
+
+    public class DoubleGaugeBundle implements Setup {
+        private final List<DoubleGauge> gauges = new CopyOnWriteArrayList<>();
+        private final String name;
+        private final String desc;
+        private final String unit;
+
+        private ObservableDoubleGauge instrument;
+
+        @SuppressWarnings("this-escape")
+        public DoubleGaugeBundle(String name, String desc, String unit) {
+            this.name = name;
+            this.desc = desc;
+            this.unit = unit;
+            waitingSetups.add(this);
+            setup0();
+        }
+
+        public DoubleGauge register(MetricsLevel level, Attributes attributes) {
+            DoubleGauge gauge = new DoubleGauge(level, attributes);
+            gauges.add(gauge);
+            gauge.setup();
+            return gauge;
+        }
+
+        public synchronized void setup() {
+            gauges.forEach(DoubleGauge::setup);
+            this.instrument = meter.gaugeBuilder(name)
+                .setDescription(desc)
+                .setUnit(unit)
+                .buildWithCallback(measurement -> gauges.forEach(gauge -> gauge.record(measurement)));
+        }
+
+        public final class DoubleGauge implements AutoCloseable {
+            private final MetricsLevel level;
+            private final Attributes gaugeAttributes;
+            private final AtomicReference<Double> value = new AtomicReference<>(0.0);
+            private final AtomicBoolean hasValue = new AtomicBoolean(false);
+            private Attributes finalAttributes = Attributes.empty();
+            private volatile boolean shouldRecord = true;
+
+            private DoubleGauge(MetricsLevel level, Attributes attributes) {
+                this.level = level;
+                this.gaugeAttributes = attributes;
+                this.finalAttributes = attributes;
+            }
+
+            private void setup() {
+                if (meter != null && globalConfig != null) {
+                    this.finalAttributes = Attributes.builder()
+                        .putAll(globalConfig.getBaseAttributes())
+                        .putAll(gaugeAttributes)
+                        .build();
+                    this.shouldRecord = level.isWithin(globalConfig.getMetricsLevel());
+                } else {
+                    this.finalAttributes = gaugeAttributes;
+                    this.shouldRecord = true;
+                }
+            }
+
+            public void record(double newValue) {
+                value.set(newValue);
+                hasValue.set(true);
+            }
+
+            public void clear() {
+                hasValue.set(false);
+            }
+
+            private void record(ObservableDoubleMeasurement measurement) {
+                if (shouldRecord && hasValue.get()) {
+                    measurement.record(value.get(), finalAttributes);
+                }
+            }
+
+            @Override
+            public void close() {
+                gauges.remove(this);
+                hasValue.set(false);
             }
         }
     }

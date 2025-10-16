@@ -78,7 +78,8 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
-    public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+    public CompletableFuture<AppendResult> append(TraceContext context,
+        StreamRecordBatch streamRecordBatch) throws OverCapacityException {
         return writer.append(streamRecordBatch);
     }
 
@@ -122,5 +123,10 @@ public class ObjectWALService implements WriteAheadLog {
             log.error("Trim S3 WAL failed, due to unrecoverable exception.", e);
             return CompletableFuture.failedFuture(e);
         }
+    }
+
+    @Override
+    public String toString() {
+        return String.format("ObjectWALService{%s@%s-%s-%s}", config.bucketId(), config.nodeId(), config.epoch(), config.type());
     }
 }

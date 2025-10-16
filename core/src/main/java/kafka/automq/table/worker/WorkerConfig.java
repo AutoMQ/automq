@@ -22,6 +22,7 @@ package kafka.automq.table.worker;
 import kafka.cluster.Partition;
 import kafka.log.UnifiedLog;
 
+import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.server.record.ErrorsTolerance;
 import org.apache.kafka.server.record.TableTopicConvertType;
 import org.apache.kafka.server.record.TableTopicSchemaType;
@@ -64,19 +65,19 @@ public class WorkerConfig {
     }
 
     public String valueSubject() {
-        return config.valueSchemaLatestConfig.get("subjet").toString();
+        return config.getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_SUBJECT_CONFIG);
     }
 
     public String valueMessageFullName() {
-        return config.valueSchemaLatestConfig.get("message.full.name").toString();
+        return config.getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_CONFIG);
     }
 
     public String keySubject() {
-        return config.keySchemaLatestConfig.get("subjet").toString();
+        return config.getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_SUBJECT_CONFIG);
     }
 
     public String keyMessageFullName() {
-        return config.keySchemaLatestConfig.get("message.full.name").toString();
+        return config.getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_CONFIG);
     }
 
     public TableTopicTransformType transformType() {

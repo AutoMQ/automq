@@ -27,7 +27,8 @@ public interface LogEventListener {
 
     enum Event {
         SEGMENT_CREATE,
-        SEGMENT_DELETE
+        SEGMENT_DELETE,
+        SEGMENT_UPDATE
     }
 
 }

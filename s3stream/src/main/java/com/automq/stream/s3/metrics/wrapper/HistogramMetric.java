@@ -35,6 +35,7 @@ public class HistogramMetric extends ConfigurableMetric {
     public HistogramMetric(MetricsLevel currentMetricsLevel, MetricsConfig metricsConfig, Attributes extraAttributes) {
         super(metricsConfig, extraAttributes);
         this.deltaHistogram = new DeltaHistogram();
+        this.deltaHistogram.setSnapshotInterval(metricsConfig.getMetricsReportIntervalMs());
         this.currentMetricsLevel = currentMetricsLevel;
     }
 

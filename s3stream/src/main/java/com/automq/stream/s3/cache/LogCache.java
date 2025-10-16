@@ -341,11 +341,15 @@ public class LogCache {
         return size.get();
     }
 
+    public long capacity() {
+        return capacity;
+    }
+
     public void clearStreamRecords(long streamId) {
         readLock.lock();
         try {
             for (LogCacheBlock block : blocks) {
-                size.addAndGet(-block.free(streamId));
+                block.free(streamId);
             }
         } finally {
             readLock.unlock();
@@ -478,16 +482,13 @@ public class LogCache {
             }, LOGGER);
         }
 
-        public long free(long streamId) {
-            AtomicLong size = new AtomicLong();
+        public void free(long streamId) {
             suppress(() -> {
                 StreamCache streamCache = map.remove(streamId);
                 if (streamCache != null) {
-                    size.addAndGet(streamCache.free());
+                    streamCache.free();
                 }
             }, LOGGER);
-            this.size.addAndGet(-size.get());
-            return size.get();
         }
 
         public void addFreeListener(FreeListener freeListener) {
@@ -625,14 +626,9 @@ public class LogCache {
             return new StreamRange(startOffset, endOffset);
         }
 
-        synchronized long free() {
-            AtomicLong size = new AtomicLong();
-            records.forEach(record -> {
-                size.addAndGet(record.occupiedSize());
-                record.release();
-            });
+        synchronized void free() {
+            records.forEach(StreamRecordBatch::release);
             records.clear();
-            return size.get();
         }
 
         synchronized long startOffset() {

@@ -33,7 +33,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
@@ -58,6 +60,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -80,7 +83,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
     private volatile AutoMQVersion version;
-    private volatile boolean closed = false;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
     public ZeroZoneTrafficInterceptor(
         RouterChannelProvider routerChannelProvider,
@@ -135,6 +138,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.snapshotReadPartitionsManager = new SnapshotReadPartitionsManager(kafkaConfig, kafkaApis.metrics(), time, confirmWALProvider,
             (ElasticReplicaManager) kafkaApis.replicaManager(), kafkaApis.metadataCache(), replayer);
         this.snapshotReadPartitionsManager.setVersion(version);
+        kafkaApis.setSnapshotAwaitReadyProvider(this.snapshotReadPartitionsManager::nextSnapshotCf);
         replayer.setCacheEventListener(this.snapshotReadPartitionsManager.cacheEventListener());
         mapping.registerListener(snapshotReadPartitionsManager);
 
@@ -144,11 +148,21 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public void close() {
-        closed = true;
+        if (closed.compareAndSet(false, true)) {
+            committedEpochManager.close();
+            snapshotReadPartitionsManager.close();
+        }
     }
 
     @Override
     public void handleProduceRequest(ProduceRequestArgs args) {
+        if (closed.get()) {
+            Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new HashMap<>(args.entriesPerPartition().size());
+            args.entriesPerPartition().forEach((tp, records) ->
+                responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER)));
+            args.responseCallback().accept(responseMap);
+            return;
+        }
         ClientIdMetadata clientId = args.clientId();
         fillRackIfMissing(clientId);
         if (version.isZeroZoneV2Supported()) {
@@ -203,7 +217,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     @Override
     public void onMetadataUpdate(MetadataDelta delta, MetadataImage newImage, LoaderManifest manifest) {
-        if (closed) {
+        if (closed.get()) {
             return;
         }
         try {

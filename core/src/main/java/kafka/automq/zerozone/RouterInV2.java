@@ -22,6 +22,7 @@ package kafka.automq.zerozone;
 import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
+import kafka.server.KafkaRequestHandler;
 import kafka.server.RequestLocal;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
@@ -58,6 +59,13 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
+
+    static {
+        // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
+        // So the append thread isn't the KafkaRequestHandler
+        KafkaRequestHandler.setBypassThreadCheck(true);
+    }
+
     private final RouterChannelProvider channelProvider;
     private final ElasticKafkaApis kafkaApis;
     private final String rack;
@@ -133,7 +141,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
                 if (req.unpackLinkCf.isDone()) {
                     EventLoop eventLoop = appendEventLoops[Math.abs(req.channelOffset.orderHint() % appendEventLoops.length)];
                     req.unpackLinkCf.thenComposeAsync(buf -> {
-                        try (ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0)) {
+                        ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
+                        try {
                             return append0(req.channelOffset, zoneRouterProduceRequest, false);
                         } finally {
                             buf.release();
@@ -160,11 +169,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         ZoneRouterProduceRequest zoneRouterProduceRequest
     ) {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() -> {
-            try (zoneRouterProduceRequest) {
-                FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf);
-            }
-        });
+        appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() ->
+            FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
     }
 
@@ -184,6 +190,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
+        // We should release the request after append completed.
+        cf.whenComplete((resp, ex) -> zoneRouterProduceRequest.close());
         handler.handleProduceAppend(
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))

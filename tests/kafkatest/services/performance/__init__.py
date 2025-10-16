@@ -16,4 +16,5 @@
 from .performance import PerformanceService, throughput, latency, compute_aggregate_throughput
 from .end_to_end_latency import EndToEndLatencyService
 from .producer_performance import ProducerPerformanceService
+from .automq_performance import AutoMQPerformanceService
 from .consumer_performance import ConsumerPerformanceService

@@ -282,15 +282,27 @@ public class TopicConfig {
         "Supported: 'raw', 'string', 'by_schema_id', 'by_latest_schema'. " +
         "Schema Registry URL required for 'by_schema_id' and 'by_latest_schema'.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_PREFIX = "automq.table.topic.convert.value.by_latest_schema.";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_PREFIX = "automq.table.topic.convert.key.by_latest_schema.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_SUBJECT_CONFIG =
+        "automq.table.topic.convert.value.by_latest_schema.subject";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_SUBJECT_DOC =
+        "Subject name to resolve the latest value schema from Schema Registry when using convert.value.type=by_latest_schema. " +
+        "If not set, defaults to '<topic>-value'.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_CONFIG =
+        "automq.table.topic.convert.value.by_latest_schema.message.full.name";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_DOC =
+        "Fully-qualified message name for the latest value schema (if using Protobuf) when convert.value.type=by_latest_schema." +
+        "If not set, uses the first message.";
 
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_CONFIG = "automq.table.topic.convert.key.subject";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_SUBJECT_DOC = "The Schema Registry subject name for key schemas. " +
-        "Defaults to '{topic-name}-key' if not specified.";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_CONFIG = "automq.table.topic.convert.key.message.full.name";
-    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_MESSAGE_FULL_NAME_DOC = "The fully qualified message name for Protobuf key schemas. " +
-        "Used when schema contains multiple message types. Defaults to first message type.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_SUBJECT_CONFIG =
+        "automq.table.topic.convert.key.by_latest_schema.subject";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_SUBJECT_DOC =
+        "Subject name to resolve the latest key schema from Schema Registry when using convert.key.type=by_latest_schema. " +
+        "If not set, defaults to '<topic>-key'.";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_CONFIG =
+        "automq.table.topic.convert.key.by_latest_schema.message.full.name";
+    public static final String AUTOMQ_TABLE_TOPIC_CONVERT_KEY_BY_LATEST_SCHEMA_MESSAGE_FULL_NAME_DOC =
+        "Fully-qualified message name for the latest key schema (if using Protobuf) when convert.key.type=by_latest_schema. " +
+        "If not set, uses the first message.";
 
     public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG = "automq.table.topic.transform.value.type";
     public static final String AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_DOC = "Transformation to apply to the record value after conversion. " +

@@ -143,6 +143,7 @@ class RouterIn {
         Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
+        cf.whenComplete((resp, ex) -> zoneRouterProduceRequest.close());
         // TODO: parallel request for different partitions
         routerInProduceHandler.handleProduceAppend(
             ProduceRequestArgs.builder()

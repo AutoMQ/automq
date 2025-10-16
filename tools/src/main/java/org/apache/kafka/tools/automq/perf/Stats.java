@@ -70,12 +70,12 @@ public class Stats {
         totalMessagesSendFailed.increment();
     }
 
-    public void messageReceived(long bytes, long sendTimeNanos) {
+    public void messageReceived(long numMessages, long bytes, long sendTimeNanos) {
         long latencyMicros = TimeUnit.NANOSECONDS.toMicros(StatsCollector.currentNanos() - sendTimeNanos);
-        messagesReceived.increment();
+        messagesReceived.add(numMessages);
         bytesReceived.add(bytes);
         endToEndLatencyMicros.recordValue(latencyMicros);
-        totalMessagesReceived.increment();
+        totalMessagesReceived.add(numMessages);
         totalBytesReceived.add(bytes);
         totalEndToEndLatencyMicros.recordValue(latencyMicros);
         maxSendTimeNanos.updateAndGet(current -> Math.max(current, sendTimeNanos));

@@ -137,8 +137,6 @@ public class TableTopicConfigValidator {
         Matcher matcher = LIST_STRING_REGEX.matcher(value);
         if (matcher.matches()) {
             value = matcher.group(1);
-        } else {
-            throw new ConfigException("", value, String.format("Invalid list string %s", value));
         }
         return Arrays.stream(value.split(regex)).map(String::trim).collect(toList());
     }

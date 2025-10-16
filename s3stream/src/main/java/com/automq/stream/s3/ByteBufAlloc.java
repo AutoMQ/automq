@@ -60,6 +60,7 @@ public class ByteBufAlloc {
     public static final int BLOCK_CACHE = 11;
     public static final int S3_WAL = 12;
     public static final int POOLED_MEMORY_RECORDS = 13;
+    public static final int SNAPSHOT_READ_CACHE = 14;
 
     // the MAX_TYPE_NUMBER may change when new type added.
     public static final int MAX_TYPE_NUMBER = 20;
@@ -104,6 +105,7 @@ public class ByteBufAlloc {
         registerAllocType(BLOCK_CACHE, "block_cache");
         registerAllocType(S3_WAL, "s3_wal");
         registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
+        registerAllocType(SNAPSHOT_READ_CACHE, "snapshot_read_cache");
 
     }
 

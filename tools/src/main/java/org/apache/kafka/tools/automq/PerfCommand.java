@@ -34,11 +34,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.google.common.base.Strings;
 
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -133,7 +137,7 @@ public class PerfCommand implements AutoCloseable {
         }
 
         LOGGER.info("Creating consumers...");
-        int consumers = consumerService.createConsumers(topics, config.consumersConfig());
+        int consumers = consumerService.createConsumers(topics, config.consumersConfig(), stats);
         consumerService.start(this::messageReceived, config.maxConsumeRecordRate);
         LOGGER.info("Created {} consumers, took {} ms", consumers, timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
 
@@ -219,11 +223,10 @@ public class PerfCommand implements AutoCloseable {
         }
     }
 
-    private void messageReceived(TopicPartition topicPartition, byte[] payload, long sendTimeNanos) {
+    private void messageReceived(TopicPartition topicPartition) {
         if (preparing && config.awaitTopicReady && (config.catchupTopicPrefix == null || config.catchupTopicPrefix.isEmpty())) {
             readyPartitions.add(topicPartition);
         }
-        stats.messageReceived(payload.length, sendTimeNanos);
     }
 
     private void waitTopicsReady(boolean hasConsumer) {
@@ -281,7 +284,12 @@ public class PerfCommand implements AutoCloseable {
             // - schema.registry.url: http://localhost:8081
             Map<String, List<byte[]>> topic2payloads = new HashMap<>();
             topics.forEach(topic -> {
-                topic2payloads.put(topic.name(), schemaPayloads(topic.name(), config.valueSchema, config.valuesFile, config.producerConfigs));
+                if (!Strings.isNullOrEmpty(config.valuesFile)) {
+                    topic2payloads.put(topic.name(), schemaPayloads(topic.name(), config.valueSchema, config.valuesFile, config.producerConfigs));
+                } else {
+                    // Default: auto-generate random Avro values when no --values-file provided
+                    topic2payloads.put(topic.name(), schemaRandomPayloads(topic.name(), config.valueSchema, config.randomPoolSize, config.producerConfigs));
+                }
             });
             return topic2payloads::get;
         }
@@ -364,5 +372,118 @@ public class PerfCommand implements AutoCloseable {
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
+    }
+
+    private static List<byte[]> schemaRandomPayloads(String topic, String schemaJson, int count, Map<String, ?> configs) {
+        try (KafkaAvroSerializer serializer = new KafkaAvroSerializer()) {
+            List<byte[]> payloads = new ArrayList<>(count);
+            AvroSchema avroSchema = new AvroSchema(schemaJson);
+            Schema schema = avroSchema.rawSchema();
+            serializer.configure(configs, false);
+            for (int i = 0; i < count; i++) {
+                Object value = randomAvroValue(schema);
+                payloads.add(serializer.serialize(topic, value));
+            }
+            return payloads;
+        }
+    }
+
+    @SuppressWarnings("checkstyle:cyclomaticComplexity")
+    private static Object randomAvroValue(Schema schema) {
+        switch (schema.getType()) {
+            case NULL:
+                return null;
+            case BOOLEAN:
+                return ThreadLocalRandom.current().nextBoolean();
+            case INT:
+                return ThreadLocalRandom.current().nextInt();
+            case LONG:
+                return ThreadLocalRandom.current().nextLong();
+            case FLOAT:
+                return ThreadLocalRandom.current().nextFloat();
+            case DOUBLE:
+                return ThreadLocalRandom.current().nextDouble();
+            case BYTES: {
+                int len = ThreadLocalRandom.current().nextInt(1, 17);
+                byte[] b = new byte[len];
+                ThreadLocalRandom.current().nextBytes(b);
+                return ByteBuffer.wrap(b);
+            }
+            case STRING:
+                return randomString(ThreadLocalRandom.current().nextInt(3, 16));
+            case ENUM: {
+                List<String> symbols = schema.getEnumSymbols();
+                return new GenericData.EnumSymbol(schema, symbols.get(ThreadLocalRandom.current().nextInt(symbols.size())));
+            }
+            case FIXED: {
+                int size = schema.getFixedSize();
+                byte[] b = new byte[size];
+                ThreadLocalRandom.current().nextBytes(b);
+                return new GenericData.Fixed(schema, b);
+            }
+            case RECORD: {
+                GenericRecord rec = new GenericData.Record(schema);
+                for (Schema.Field f : schema.getFields()) {
+                    Schema fSchema = effectiveSchema(f.schema());
+                    rec.put(f.name(), randomAvroValue(fSchema));
+                }
+                return rec;
+            }
+            case ARRAY: {
+                int n = ThreadLocalRandom.current().nextInt(0, 4);
+                List<Object> arr = new ArrayList<>(n);
+                Schema elemSchema = effectiveSchema(schema.getElementType());
+                for (int i = 0; i < n; i++) {
+                    arr.add(randomAvroValue(elemSchema));
+                }
+                return arr;
+            }
+            case MAP: {
+                int n = ThreadLocalRandom.current().nextInt(0, 4);
+                Map<String, Object> map = new HashMap<>(n);
+                Schema valSchema = effectiveSchema(schema.getValueType());
+                for (int i = 0; i < n; i++) {
+                    map.put("k" + i, randomAvroValue(valSchema).toString());
+                }
+                return map;
+            }
+            case UNION: {
+                // Prefer a non-null type if present
+                List<Schema> types = schema.getTypes();
+                List<Schema> nonNull = new ArrayList<>();
+                for (Schema s : types) {
+                    if (s.getType() != Schema.Type.NULL) nonNull.add(s);
+                }
+                Schema chosen;
+                if (!nonNull.isEmpty()) {
+                    chosen = nonNull.get(ThreadLocalRandom.current().nextInt(nonNull.size()));
+                } else {
+                    chosen = types.get(ThreadLocalRandom.current().nextInt(types.size()));
+                }
+                return randomAvroValue(chosen);
+            }
+            default:
+                // Fallback to string for unhandled types
+                return randomString(8);
+        }
+    }
+
+    private static Schema effectiveSchema(Schema schema) {
+        if (schema.getType() == Schema.Type.UNION) {
+            for (Schema s : schema.getTypes()) {
+                if (s.getType() != Schema.Type.NULL) return s;
+            }
+        }
+        return schema;
+    }
+
+    private static String randomString(int length) {
+        final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        Random r = ThreadLocalRandom.current();
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            sb.append(characters.charAt(r.nextInt(characters.length())));
+        }
+        return sb.toString();
     }
 }

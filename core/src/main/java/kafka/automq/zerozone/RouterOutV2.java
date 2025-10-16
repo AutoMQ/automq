@@ -34,9 +34,6 @@ import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
-import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -71,7 +68,6 @@ public class RouterOutV2 {
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
-    private final NetworkBandwidthLimiter inboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, AsyncSender asyncSender, Time time) {
@@ -230,25 +226,32 @@ public class RouterOutV2 {
             );
             return asyncSender.sendRequest(node, builder).thenAccept(clientResponse -> {
                 if (!clientResponse.hasResponse()) {
-                    LOGGER.error("[ROUTER_OUT],[NO_RESPONSE],response={}", clientResponse);
-                    requests.forEach(ProxyRequest::completeWithUnknownError);
+                    LOGGER.error("[ROUTER_OUT],[NO_RESPONSE],node={},response={}", node, clientResponse);
+                    // Make the producer retry send.
+                    requests.forEach(r -> r.completeWithError(Errors.LEADER_NOT_AVAILABLE));
                     return;
                 }
                 if (LOGGER.isTraceEnabled()) {
-                    LOGGER.trace("[ROUTER_OUT],[RESPONSE],response={}", clientResponse);
+                    LOGGER.trace("[ROUTER_OUT],[RESPONSE],node={},response={}", node, clientResponse);
                 }
                 AutomqZoneRouterResponse zoneRouterResponse = (AutomqZoneRouterResponse) clientResponse.responseBody();
                 handleRouterResponse(zoneRouterResponse, requests);
             }).exceptionally(ex -> {
-                LOGGER.error("[ROUTER_OUT],[REQUEST_FAIL]", ex);
-                requests.forEach(ProxyRequest::completeWithUnknownError);
+                LOGGER.error("[ROUTER_OUT],[REQUEST_FAIL],node={}", node, ex);
+                requests.forEach(r -> r.completeWithError(Errors.LEADER_NOT_AVAILABLE));
                 return null;
             });
         }
 
         private void handleRouterResponse(AutomqZoneRouterResponse zoneRouterResponse, List<ProxyRequest> requests) {
-            if (zoneRouterResponse.data().errorCode() != Errors.NONE.code()) {
-                Errors error = Errors.forCode(zoneRouterResponse.data().errorCode());
+            short errorCode = zoneRouterResponse.data().errorCode();
+            if (errorCode == Errors.UNKNOWN_SERVER_ERROR.code()) {
+                // We could find the detail error log in the rpc server side.
+                // Set the error to LEADER_NOT_AVAILABLE to make the producer retry sending.
+                errorCode = Errors.LEADER_NOT_AVAILABLE.code();
+            }
+            if (errorCode != Errors.NONE.code()) {
+                Errors error = Errors.forCode(errorCode);
                 requests.forEach(r -> r.completeWithError(error));
                 return;
             }
@@ -312,7 +315,8 @@ public class RouterOutV2 {
         final long timeoutMillis;
         final CompletableFuture<ProduceResponse.PartitionResponse> cf = new CompletableFuture<>();
 
-        public ProxyRequest(TopicPartition topicPartition, long epoch, ByteBuf channelOffset, ZoneRouterProduceRequest zoneRouterProduceRequest, int recordSize, long timeoutMillis) {
+        public ProxyRequest(TopicPartition topicPartition, long epoch, ByteBuf channelOffset,
+            ZoneRouterProduceRequest zoneRouterProduceRequest, int recordSize, long timeoutMillis) {
             this.topicPartition = topicPartition;
             this.epoch = epoch;
             this.channelOffset = channelOffset;
@@ -331,7 +335,8 @@ public class RouterOutV2 {
         }
     }
 
-    private static ZoneRouterProduceRequest zoneRouterProduceRequest(ProduceRequestArgs args, short flag, TopicPartition tp,
+    private static ZoneRouterProduceRequest zoneRouterProduceRequest(ProduceRequestArgs args, short flag,
+        TopicPartition tp,
         MemoryRecords records) {
         ProduceRequestData data = new ProduceRequestData();
         data.setTransactionalId(args.transactionId());

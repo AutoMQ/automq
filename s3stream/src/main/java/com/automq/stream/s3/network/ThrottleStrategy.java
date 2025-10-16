@@ -23,7 +23,8 @@ public enum ThrottleStrategy {
     BYPASS(0, "bypass"),
     COMPACTION(1, "compaction"),
     TAIL(2, "tail"),
-    CATCH_UP(3, "catchup");
+    CATCH_UP(3, "catchup"),
+    ICEBERG_WRITE(4, "iceberg_write");
 
     private final int priority;
     private final String name;

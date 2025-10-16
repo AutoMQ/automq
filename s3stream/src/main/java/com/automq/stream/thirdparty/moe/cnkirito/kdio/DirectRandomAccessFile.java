@@ -54,6 +54,10 @@ public class DirectRandomAccessFile implements Closeable {
         this.channel = DirectChannelImpl.getChannel(file, readOnly);
     }
 
+    public DirectRandomAccessFile(DirectChannel channel) {
+        this.channel = channel;
+    }
+
     @Override
     public void close() throws IOException {
         channel.close();

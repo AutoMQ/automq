@@ -34,6 +34,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.apache.avro.Schema.Type.NULL;
+
 /**
  * A factory that creates lazy-evaluation Record views of Avro GenericRecords.
  * Field values are converted only when accessed, avoiding upfront conversion overhead.
@@ -154,7 +156,24 @@ public class RecordBinder {
             nestedSchema = icebergType.asStructType().asSchema();
             nestedSchemaId = icebergType.toString();
         }
+        if (Type.TypeID.MAP.equals(icebergType.typeId()) || Type.TypeID.LIST.equals(icebergType.typeId())) {
+            avroType = resolveUnionElement(avroType);
+        }
         return new FieldMapping(avroPosition, avroFieldName, icebergType, icebergType.typeId(), avroType, nestedSchema, nestedSchemaId);
+    }
+
+    private Schema resolveUnionElement(Schema schema) {
+        Schema resolved = schema;
+        if (schema.getType() == Schema.Type.UNION) {
+            resolved = null;
+            for (Schema unionMember : schema.getTypes()) {
+                if (unionMember.getType() != NULL) {
+                    resolved = unionMember;
+                    break;
+                }
+            }
+        }
+        return resolved;
     }
 
 
@@ -217,7 +236,7 @@ public class RecordBinder {
             }
 
             FieldMapping mapping = fieldMappings[pos];
-            if (mapping == null || !avroRecord.hasField(mapping.avroKey())) {
+            if (mapping == null) {
                 return null;
             }
 
@@ -258,7 +277,7 @@ public class RecordBinder {
 
             switch (icebergType.typeId()) {
                 case STRING:
-                    return FieldMetric.count((String) value);
+                    return FieldMetric.count((CharSequence) value);
                 case BINARY:
                     return FieldMetric.count((ByteBuffer) value);
                 case FIXED:
@@ -298,8 +317,12 @@ public class RecordBinder {
 
             long total = 1;
             if (map instanceof Map) {
-                for (Map.Entry<?, ?> entry : ((Map<?, ?>) map).entrySet()) {
-                    total += FieldMetric.count(entry.getKey().toString());
+                Map<?, ?> typedMap = (Map<?, ?>) map;
+                if (typedMap.isEmpty()) {
+                    return total;
+                }
+                for (Map.Entry<?, ?> entry : typedMap.entrySet()) {
+                    total += calculateFieldCount(entry.getKey(), mapType.keyType());
                     total += calculateFieldCount(entry.getValue(), mapType.valueType());
                 }
             }

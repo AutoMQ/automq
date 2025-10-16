@@ -29,7 +29,7 @@ import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
-import org.apache.kafka.common.utils.{ThreadUtils, Time}
+import org.apache.kafka.common.utils.{ThreadUtils, Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -215,11 +215,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             flush(true)
             elasticLog.close()
         }
-        elasticLog.segments.clear()
         // graceful await append ack
         elasticLog.lastAppendAckFuture.get()
         elasticLog.isMemoryMappedBufferClosed = true
-        elasticLog.deleteEmptyDir()
+        // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
+        // The deletion here aims to clean the old directory.
+        Utils.delete(dir)
     }
 
     /**
@@ -276,29 +277,33 @@ class ElasticUnifiedLog(_logStartOffset: Long,
     }
 
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
-        snapshot.firstUnstableOffset(firstUnstableOffsetMetadata.orNull)
-        val localLog = getLocalLog()
-        localLog.snapshot(snapshot)
+        lock synchronized {
+            snapshot.firstUnstableOffset(firstUnstableOffsetMetadata.orNull)
+            val localLog = getLocalLog()
+            localLog.snapshot(snapshot)
+        }
     }
 
     def snapshot(snapshot: PartitionSnapshot): Unit = {
-        val localLog = getLocalLog()
-        localLog.snapshot(snapshot)
-        if (snapshot.firstUnstableOffset() == null) {
-            firstUnstableOffsetMetadata = None
-        } else {
-            var offset = snapshot.firstUnstableOffset()
-            val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
-            offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
-            firstUnstableOffsetMetadata = Some(offset)
+        lock synchronized {
+            val localLog = getLocalLog()
+            localLog.snapshot(snapshot)
+            if (snapshot.firstUnstableOffset() == null) {
+                firstUnstableOffsetMetadata = None
+            } else {
+                var offset = snapshot.firstUnstableOffset()
+                val segmentBaseOffset = localLog.segments.floorSegment(offset.messageOffset).get().baseOffset()
+                offset = new LogOffsetMetadata(offset.messageOffset, segmentBaseOffset, offset.relativePositionInSegment)
+                firstUnstableOffsetMetadata = Some(offset)
+            }
+            if (snapshot.logMeta() != null) {
+                val opt = localLog.segments.firstSegmentBaseOffset()
+                opt.ifPresent(baseOffset => {
+                    updateLogStartOffset(baseOffset)
+                })
+            }
+            highWatermarkMetadata = localLog.logEndOffsetMetadata
         }
-        if (snapshot.logMeta() != null) {
-            val opt = localLog.segments.firstSegmentBaseOffset()
-            opt.ifPresent(baseOffset => {
-                updateLogStartOffset(baseOffset)
-            })
-        }
-        highWatermarkMetadata = localLog.logEndOffsetMetadata
     }
 
 }

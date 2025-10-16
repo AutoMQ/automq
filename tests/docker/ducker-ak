@@ -293,14 +293,23 @@ docker_run() {
     if [[ -n ${port_mapping} ]]; then
         expose_ports="${expose_ports} -p ${port_mapping}:${port_mapping}"
     fi
-
-    # Invoke docker-run. We need privileged mode to be able to run iptables
-    # and mount FUSE filesystems inside the container.  We also need it to
-    # run iptables inside the container.
-    must_do -v docker run --privileged \
-        -d -t -h "${node}" --network ducknet "${expose_ports}" \
-        --memory=${docker_run_memory_limit} --memory-swappiness=1 \
-        -v "${kafka_dir}:/opt/kafka-dev" --name "${node}" -- "${image_name}"
+# AutoMQ inject start
+    if [[ "${node}" == "ducker01" ]]; then
+        must_do -v docker run --privileged \
+            -d -t -h "${node}" --network ducknet "${expose_ports}" \
+            --memory=${docker_run_memory_limit} --memory-swappiness=1 \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "${kafka_dir}:/opt/kafka-dev" --name "${node}" -- "${image_name}"
+    else
+# AutoMQ inject end
+        # Invoke docker-run. We need privileged mode to be able to run iptables
+        # and mount FUSE filesystems inside the container.  We also need it to
+        # run iptables inside the container.
+        must_do -v docker run --privileged \
+            -d -t -h "${node}" --network ducknet "${expose_ports}" \
+            --memory=${docker_run_memory_limit} --memory-swappiness=1 \
+            -v "${kafka_dir}:/opt/kafka-dev" --name "${node}" -- "${image_name}"
+    fi
 }
 
 setup_custom_ducktape() {

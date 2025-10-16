@@ -1,27 +1,9 @@
-/*
- * Copyright 2025, AutoMQ HK Limited.
- *
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.automq.stream.s3.wal.util;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.exception.WALCapacityMismatchException;
 import com.automq.stream.utils.CommandResult;
 import com.automq.stream.utils.CommandUtils;
 
@@ -124,11 +106,15 @@ public class WALUtil {
         return offset % BLOCK_SIZE == 0;
     }
 
+    public static RandomAccessFile createFile(String path, long length) throws IOException {
+        return createFile(path, length, "rw");
+    }
+
     /**
      * Create a file with the given path and length.
      * Note {@code path} must NOT exist.
      */
-    public static void createFile(String path, long length) throws IOException {
+    public static RandomAccessFile createFile(String path, long length, String openMode) throws IOException {
         File file = new File(path);
         assert !file.exists();
 
@@ -136,20 +122,16 @@ public class WALUtil {
         if (null != parent && !parent.exists() && !parent.mkdirs()) {
             throw new IOException("mkdirs " + parent + " fail");
         }
-        if (!file.createNewFile()) {
-            throw new IOException("create " + path + " fail");
-        }
-        if (!file.setReadable(true)) {
-            throw new IOException("set " + path + " readable fail");
-        }
-        if (!file.setWritable(true)) {
-            throw new IOException("set " + path + " writable fail");
-        }
-
-        // set length
-        try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
+        RandomAccessFile raf = new RandomAccessFile(file, openMode);
+        long realLength = raf.length();
+        if (realLength == 0) {
+            // set length
             raf.setLength(length);
+        } else if (realLength != length) {
+            // the file exists but not the same size as requested
+            throw new WALCapacityMismatchException(path, length, realLength);
         }
+        return raf;
     }
 
     /**

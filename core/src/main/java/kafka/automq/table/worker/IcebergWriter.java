@@ -30,11 +30,17 @@ import kafka.automq.table.process.exception.RecordProcessorException;
 import org.apache.kafka.server.record.ErrorsTolerance;
 
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogSuppressor;
 
 import org.apache.avro.generic.GenericRecord;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.DeleteFile;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
@@ -59,7 +65,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -87,6 +95,8 @@ public class IcebergWriter implements Writer {
     private final boolean deltaWrite;
     private RecordBinder binder;
     private String lastSchemaIdentity;
+    private final NetworkBandwidthLimiter outboundLimiter;
+
 
     public IcebergWriter(IcebergTableManager icebergTableManager, RecordProcessor processor, WorkerConfig config) {
         this.tableId = icebergTableManager.tableId();
@@ -94,6 +104,7 @@ public class IcebergWriter implements Writer {
         this.processor = processor;
         this.config = config;
         this.deltaWrite = StringUtils.isNoneBlank(config.cdcField()) || config.upsertEnable();
+        this.outboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
     }
 
     @Override
@@ -130,7 +141,7 @@ public class IcebergWriter implements Writer {
     }
 
     protected boolean write0(int partition,
-        org.apache.kafka.common.record.Record kafkaRecord) throws IOException, RecordProcessorException {
+                             org.apache.kafka.common.record.Record kafkaRecord) throws IOException, RecordProcessorException {
         ProcessingResult result = processor.process(partition, kafkaRecord);
 
         if (!result.isSuccess()) {
@@ -175,7 +186,11 @@ public class IcebergWriter implements Writer {
 
         recordMetric(partition, kafkaRecord.timestamp());
 
+        waitForNetworkPermit(1);
+
         TaskWriter<Record> writer = getWriter(record.struct());
+
+
         if (deltaWrite) {
             writer.write(new RecordWrapper(record, config.cdcField(), config.upsertEnable()));
         } else {
@@ -422,7 +437,9 @@ public class IcebergWriter implements Writer {
                 return false;
             }
             // Complete writer first, then collect statistics only if successful
-            results.add(this.writer.complete());
+            WriteResult writeResult = this.writer.complete();
+            results.add(writeResult);
+            recordNetworkCost(writeResult);
 
             // Collect field count statistics from the binder after successful completion
             if (binder != null) {
@@ -439,6 +456,50 @@ public class IcebergWriter implements Writer {
         }
     }
 
+    private void recordNetworkCost(WriteResult writeResult) {
+        final long totalBytes = calculateWriteResultBytes(writeResult);
+        if (totalBytes <= 0) {
+            LOGGER.warn("[NETWORK_LIMITER_RECORD_INVALID_BYTES],{},bytes={}", this, totalBytes);
+            return;
+        }
+        try {
+            waitForNetworkPermit(totalBytes);
+        } catch (IOException e) {
+            LOGGER.warn("[NETWORK_LIMITER_RECORD_FAIL],{},bytes={}", this, totalBytes, e);
+        }
+    }
+
+    private long calculateWriteResultBytes(WriteResult writeResult) {
+        long bytes = 0L;
+        for (DataFile file : writeResult.dataFiles()) {
+            bytes += Math.max(file.fileSizeInBytes(), 0L);
+        }
+        for (DeleteFile file : writeResult.deleteFiles()) {
+            bytes += Math.max(file.fileSizeInBytes(), 0L);
+        }
+        return bytes;
+    }
+
+    private void waitForNetworkPermit(long size) throws IOException {
+        try {
+            outboundLimiter.consumeBlocking(ThrottleStrategy.ICEBERG_WRITE, size);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_FAIL],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_ERROR],{}", this, cause);
+            throw new IOException("Failed to acquire outbound network permit", cause);
+        } catch (CancellationException e) {
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_ERROR],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
+        } catch (RuntimeException e) {
+            LOGGER.warn("[NETWORK_LIMITER_PERMIT_FAIL],{}", this, e);
+            throw new IOException("Failed to acquire outbound network permit", e);
+        }
+    }
+
     private void recordMetric(int partition, long timestamp) {
         Metric metric = metrics.get(partition);
         if (metric.watermark < timestamp) {
@@ -451,10 +512,10 @@ public class IcebergWriter implements Writer {
      */
     private String buildRecordContext(int partition, org.apache.kafka.common.record.Record kafkaRecord) {
         return String.format("topic=%s, partition=%d, offset=%d, timestamp=%d",
-                           tableId.name(),
-                           partition,
-                           kafkaRecord.offset(),
-                           kafkaRecord.timestamp());
+            tableId.name(),
+            partition,
+            kafkaRecord.offset(),
+            kafkaRecord.timestamp());
     }
 
     static class Metric {
