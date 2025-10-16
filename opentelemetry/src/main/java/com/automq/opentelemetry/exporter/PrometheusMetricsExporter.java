@@ -1,6 +1,7 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConstants;
+
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

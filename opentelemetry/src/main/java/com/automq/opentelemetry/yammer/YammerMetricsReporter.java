@@ -4,12 +4,14 @@ import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.core.MetricsRegistryListener;
-import io.opentelemetry.api.metrics.Meter;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.Closeable;
 import java.io.IOException;
+
+import io.opentelemetry.api.metrics.Meter;
 
 /**
  * A listener that bridges Yammer Histogram metrics to OpenTelemetry.

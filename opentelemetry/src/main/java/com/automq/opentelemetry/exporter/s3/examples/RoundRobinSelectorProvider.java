@@ -21,6 +21,7 @@ package com.automq.opentelemetry.exporter.s3.examples;
 
 import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
 import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

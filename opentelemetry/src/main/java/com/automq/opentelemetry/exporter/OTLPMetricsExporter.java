@@ -2,6 +2,7 @@ package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.common.OTLPCompressionType;
 import com.automq.opentelemetry.common.OTLPProtocol;
+
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

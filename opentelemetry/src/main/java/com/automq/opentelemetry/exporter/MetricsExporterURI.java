@@ -2,6 +2,7 @@ package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
 import com.automq.stream.s3.operator.BucketURI;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;

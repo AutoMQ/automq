@@ -1,8 +1,5 @@
 package com.automq.opentelemetry.exporter.s3.kafka;
 
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.CreateTopicsOptions;
@@ -16,6 +13,11 @@ import org.apache.kafka.common.config.TopicConfig;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
+
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
