@@ -1,7 +1,6 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
-import com.automq.opentelemetry.exporter.remotewrite.RemoteWriteMetricsExporter;
 import com.automq.stream.s3.operator.BucketURI;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
@@ -15,12 +14,24 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.ServiceLoader;
 
 /**
  * Parses the exporter URI and creates the corresponding MetricsExporter instances.
  */
 public class MetricsExporterURI {
     private static final Logger LOGGER = LoggerFactory.getLogger(MetricsExporterURI.class);
+
+    private static final List<MetricsExporterProvider> PROVIDERS;
+
+    static {
+        List<MetricsExporterProvider> providers = new ArrayList<>();
+        ServiceLoader.load(MetricsExporterProvider.class).forEach(providers::add);
+        PROVIDERS = Collections.unmodifiableList(providers);
+        if (!PROVIDERS.isEmpty()) {
+            LOGGER.info("Loaded {} telemetry exporter providers", PROVIDERS.size());
+        }
+    }
 
     private final List<MetricsExporter> metricsExporters;
 
@@ -78,24 +89,32 @@ public class MetricsExporterURI {
 
     public static MetricsExporter parseExporter(TelemetryConfig config, String type,
                                               Map<String, List<String>> queries, URI uri) {
-        MetricsExporterType exporterType = MetricsExporterType.fromString(type);
-        switch (exporterType) {
-            case PROMETHEUS:
-                return buildPrometheusExporter(config, queries, uri);
-            case OTLP:
-                return buildOtlpExporter(config, queries, uri);
-            case S3:
-                return buildS3MetricsExporter(config, queries, uri);
-            case REMOTE_WRITE:
-                return buildRemoteWriteExporter(config.getExporterIntervalMs(), uri.toString());
-            default:
-                LOGGER.warn("Unsupported metrics exporter type: {}", type);
-                return null;
+        try {
+            MetricsExporterType exporterType = MetricsExporterType.fromString(type);
+            switch (exporterType) {
+                case PROMETHEUS:
+                    return buildPrometheusExporter(config, queries, uri);
+                case OTLP:
+                    return buildOtlpExporter(config, queries, uri);
+                case S3:
+                    return buildS3MetricsExporter(config, queries, uri);
+                default:
+                    break;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // fall through to provider lookup
         }
-    }
 
-    public static MetricsExporter buildRemoteWriteExporter(long intervalMs, String uriStr) {
-        return new RemoteWriteMetricsExporter(intervalMs, uriStr);
+        MetricsExporterProvider provider = findProvider(type);
+        if (provider != null) {
+            MetricsExporter exporter = provider.create(config, uri, queries);
+            if (exporter != null) {
+                return exporter;
+            }
+        }
+
+        LOGGER.warn("Unsupported metrics exporter type: {}", type);
+        return null;
     }
 
     private static MetricsExporter buildPrometheusExporter(TelemetryConfig config,
@@ -175,6 +194,19 @@ public class MetricsExporterURI {
             return values.get(0);
         }
         return defaultValue;
+    }
+
+    private static MetricsExporterProvider findProvider(String scheme) {
+        for (MetricsExporterProvider provider : PROVIDERS) {
+            try {
+                if (provider.supports(scheme)) {
+                    return provider;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Telemetry exporter provider {} failed to evaluate support for scheme {}", provider.getClass().getName(), scheme, e);
+            }
+        }
+        return null;
     }
     
     private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config,

@@ -45,7 +45,6 @@ dependencies {
     exclude(group: 'com.bucket4j', module: '*')
     exclude(group: 'com.yammer.metrics', module: '*')
     exclude(group: 'com.github.spotbugs', module: '*')
-    exclude(group: 'software.amazon.awssdk', module: '*')
     exclude(group: 'org.apache.kafka.shaded', module: '*')
   }
   implementation libs.nettyBuffer
@@ -67,21 +66,6 @@ dependencies {
   implementation('com.google.protobuf:protobuf-java:3.25.5')
   implementation('org.xerial.snappy:snappy-java:1.1.10.5')
 
-  implementation('com.squareup.okhttp3:okhttp:4.12.0')
-  implementation('software.amazon.awssdk:http-auth-aws:2.29.26')
-  implementation('software.amazon.awssdk:sts:2.29.26')
-
-  //---- azure ----
-  implementation platform('com.azure:azure-sdk-bom:1.2.30')
-  implementation('com.azure:azure-identity')
-  implementation('com.azure:azure-core')
-  implementation('com.azure.resourcemanager:azure-resourcemanager-compute:2.48.0')
-  implementation('com.azure.resourcemanager:azure-resourcemanager-resources:2.48.0')
-  implementation('com.azure:azure-storage-blob')
-  implementation('com.azure:azure-storage-blob-batch')
-  implementation('com.azure:azure-security-keyvault-certificates')
-  implementation('com.azure:azure-security-keyvault-keys')
-  implementation('com.azure:azure-security-keyvault-secrets')
 }
 
 task createVersionFile() {

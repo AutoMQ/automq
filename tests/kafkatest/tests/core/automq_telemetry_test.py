@@ -145,6 +145,40 @@ class AutoMQBrokerTelemetryTest(Test):
         if ret != 0:
             self.logger.info("Ignoring cleanup error for prefix %s: %s", prefix, out)
 
+    def _check_port_listening(self, node, port):
+        """Check if a port is listening on the given node."""
+        try:
+            result = list(node.account.ssh_capture(f"netstat -ln | grep :{port}", allow_fail=True))
+            return len(result) > 0
+        except Exception:
+            return False
+
+    def _verify_remote_write_requests(self, node, log_file):
+        """Verify that remote write requests were captured by the mock server."""
+        try:
+            result = list(node.account.ssh_capture(f"cat {log_file}", allow_fail=True))
+            log_content = "".join(result)
+            if "Received" in log_content:
+                self.logger.info("Remote write server captured payloads: %s", log_content)
+                return True
+            self.logger.warning("No remote write payload entries detected in %s", log_file)
+            return False
+        except Exception as e:
+            self.logger.warning("Failed to read remote write log %s: %s", log_file, e)
+            return False
+
+    def _extract_metric_samples(self, metrics_output, metric_name):
+        samples = []
+        for line in metrics_output.splitlines():
+            if line.startswith(metric_name):
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        samples.append(float(parts[-1]))
+                    except ValueError:
+                        continue
+        return samples
+
     # ------------------------------------------------------------------
     # Tests
     # ------------------------------------------------------------------
@@ -176,6 +210,132 @@ class AutoMQBrokerTelemetryTest(Test):
         finally:
             self._stop_kafka()
 
+    @cluster(num_nodes=5)
+    def test_remote_write_metrics_exporter(self):
+        """Verify remote write exporter integration using a mock HTTP endpoint."""
+        cluster_id = f"core-remote-write-{int(time.time())}"
+        remote_write_port = 19090
+        log_file = f"/tmp/automq_remote_write_{int(time.time())}.log"
+        script_path = f"/tmp/automq_remote_write_server_{int(time.time())}.py"
+
+        server_overrides = [
+            ["automq.telemetry.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=1000000"],
+            ["automq.telemetry.exporter.interval.ms", "15000"],
+            ["service.name", cluster_id],
+            ["service.instance.id", "broker-remote-write"],
+        ]
+
+        remote_write_node = None
+        mock_pid = None
+
+        self._start_kafka(server_overrides=server_overrides)
+
+        try:
+            remote_write_node = self.kafka.nodes[0]
+            remote_write_node.account.ssh(f"rm -f {log_file}", allow_fail=True)
+
+            remote_write_script = """import http.server
+import socketserver
+import sys
+import time
+import gzip
+
+PORT = int(sys.argv[1])
+LOG_FILE = sys.argv[2]
+
+
+class RemoteWriteHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = int(self.headers.get('Content-Length', 0))
+        payload = self.rfile.read(length)
+        if self.headers.get('Content-Encoding', '') == 'gzip':
+            try:
+                payload = gzip.decompress(payload)
+            except Exception:
+                pass
+        with open(LOG_FILE, 'a') as out:
+            out.write(f"{time.time()} Received remote write payload: {len(payload)} bytes\n")
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
+
+    def log_message(self, format, *args):
+        return
+
+
+with socketserver.TCPServer(('', PORT), RemoteWriteHandler) as httpd:
+    httpd.serve_forever()
+"""
+
+            remote_write_node.account.ssh(
+                f"cat <<'PY' > {script_path}\n{remote_write_script}\nPY",
+                allow_fail=False,
+            )
+
+            pid_cmd = f"nohup python3 {script_path} {remote_write_port} {log_file} >/tmp/automq_remote_write.out 2>&1 & echo $!"
+            pid_result = list(remote_write_node.account.ssh_capture(pid_cmd))
+            mock_pid = pid_result[0].strip() if pid_result else None
+
+            wait_until(
+                lambda: self._check_port_listening(remote_write_node, remote_write_port),
+                timeout_sec=30,
+                backoff_sec=2,
+                err_msg="Mock remote write server failed to start",
+            )
+
+            self._produce_messages(max_messages=400, throughput=800)
+
+            # Allow multiple export intervals
+            time.sleep(120)
+
+            assert self._verify_remote_write_requests(remote_write_node, log_file), \
+                "Did not observe remote write payloads at the mock endpoint"
+        finally:
+            if remote_write_node is not None and mock_pid:
+                remote_write_node.account.ssh(f"kill {mock_pid}", allow_fail=True)
+            if remote_write_node is not None:
+                remote_write_node.account.ssh(f"rm -f {script_path}", allow_fail=True)
+                remote_write_node.account.ssh(f"rm -f {log_file}", allow_fail=True)
+            self._stop_kafka()
+
+    @cluster(num_nodes=4)
+    def test_prometheus_metrics_under_load(self):
+        """Ensure Prometheus exporter reflects broker load increases."""
+        cluster_label = f"kafka-core-prom-load-{int(time.time())}"
+        server_overrides = [
+            ["automq.telemetry.exporter.uri", "prometheus://0.0.0.0:9464"],
+            ["automq.telemetry.exporter.interval.ms", "10000"],
+            ["service.name", cluster_label],
+            ["service.instance.id", "broker-telemetry-load"],
+        ]
+
+        self._start_kafka(server_overrides=server_overrides)
+
+        try:
+            # Generate sustained traffic
+            for _ in range(3):
+                self._produce_messages(max_messages=500, throughput=1000)
+
+            self._wait_for_metrics_available()
+            metrics_output = self._fetch_metrics(self.kafka.nodes[0])
+
+            metric_candidates = [
+                "kafka_server_broker_topic_metrics_messages_in_total",
+                "kafka_server_broker_topic_metrics_messages_in",
+                "kafka_server_brokertopicmetrics_messages_in_total",
+            ]
+
+            observed = False
+            for metric_name in metric_candidates:
+                samples = self._extract_metric_samples(metrics_output, metric_name)
+                if samples and max(samples) > 0:
+                    observed = True
+                    break
+
+            assert observed, "Expected broker message ingress metrics to increase under load"
+        finally:
+            self._stop_kafka()
+
     @cluster(num_nodes=4)
     def test_s3_metrics_exporter(self):
         """Verify that broker metrics are exported to S3 via the AutoMQ telemetry module."""
@@ -191,6 +351,9 @@ class AutoMQBrokerTelemetryTest(Test):
             ["automq.telemetry.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
             ["automq.telemetry.s3.cluster.id", cluster_id],
             ["automq.telemetry.s3.node.id", "1"],
+            ["automq.telemetry.exporter.s3.selector.type", "kafka"],
+            ["automq.telemetry.exporter.s3.selector.kafka.topic", f"__automq_telemetry_s3_leader_{cluster_id}"],
+            ["automq.telemetry.exporter.s3.selector.kafka.group.id", f"automq-telemetry-s3-{cluster_id}"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-s3-metrics"],
         ]
@@ -229,6 +392,9 @@ class AutoMQBrokerTelemetryTest(Test):
             ["log.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
             ["log.s3.cluster.id", cluster_id],
             ["log.s3.node.id", "1"],
+            ["log.s3.selector.type", "kafka"],
+            ["log.s3.selector.kafka.topic", f"__automq_log_uploader_leader_{cluster_id}"],
+            ["log.s3.selector.kafka.group.id", f"automq-log-uploader-{cluster_id}"],
         ]
 
         extra_env = [

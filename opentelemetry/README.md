@@ -5,7 +5,6 @@
 │   ├── MetricsExporterURI.java    # URI parser
 │   ├── OTLPMetricsExporter.java   # OTLP exporter implementation
 │   ├── PrometheusMetricsExporter.java # Prometheus exporter implementation
-│   ├── remotewrite/               # Remote Write exporter implementation
 │   │   ├── PromConsts.java        # Prometheus constants
 │   │   ├── PromLabels.java        # Label management for Prometheus format
 │   │   ├── PromTimeSeries.java    # Time series data structures
@@ -42,7 +41,6 @@ The AutoMQ OpenTelemetry module is a telemetry data collection and export compon
 ### 2. Multiple Exporter Support
 - **Prometheus**: Expose metrics in Prometheus format through HTTP server
 - **OTLP**: Support both gRPC and HTTP/Protobuf protocols for exporting to OTLP backends
-- **Remote Write**: Support Prometheus Remote Write protocol for direct integration with time-series databases
 - **S3**: Export metrics to S3-compatible object storage systems
 
 ### 3. Flexible Configuration
@@ -148,26 +146,6 @@ automq.telemetry.exporter.interval.ms=60000
 automq.telemetry.exporter.otlp.protocol=grpc
 automq.telemetry.exporter.otlp.compression=gzip
 automq.telemetry.exporter.otlp.timeout.ms=30000
-```
-
-#### Remote Write Exporter
-```properties
-# Basic Remote Write configuration
-automq.telemetry.exporter.uri=rw://prometheus.example.com:9090/api/v1/write
-automq.telemetry.exporter.interval.ms=30000
-
-# With authentication
-# Basic Auth:
-automq.telemetry.exporter.uri=rw://username:password@prometheus.example.com:9090/api/v1/write
-
-# Bearer Token:
-automq.telemetry.exporter.uri=rw://token@prometheus.example.com:9090/api/v1/write?authType=bearer
-
-# AWS SigV4 (for Amazon Managed Prometheus):
-automq.telemetry.exporter.uri=rw://ACCESS_KEY:SECRET_KEY@aps-workspaces.us-west-2.amazonaws.com/workspaces/ws-xxx/api/v1/remote_write?authType=aws&region=us-west-2
-
-# Azure AD:
-automq.telemetry.exporter.uri=rw://CLIENT_ID:CLIENT_SECRET@prometheus.monitor.azure.com/api/v1/write?authType=azure&tenantId=TENANT_ID&cloud=azure_public
 ```
 
 #### S3 Metrics Exporter
