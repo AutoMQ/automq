@@ -33,7 +33,7 @@ public interface RouterChannel {
 
     void trim(long epoch);
 
-    void close();
+    CompletableFuture<Void> close();
 
     class AppendResult {
         private final long epoch;

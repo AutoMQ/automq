@@ -21,8 +21,10 @@ package kafka.automq.zerozone;
 
 import com.automq.stream.s3.wal.WriteAheadLog;
 
+import java.util.concurrent.CompletableFuture;
+
 public interface ConfirmWALProvider {
 
-    WriteAheadLog readOnly(String walConfig, int nodeId);
+    CompletableFuture<WriteAheadLog> readOnly(String walConfig, int nodeId);
 
 }
