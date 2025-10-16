@@ -31,9 +31,12 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.Time;
 
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 
 public class DefaultConfirmWALProvider implements ConfirmWALProvider {
+    private static final ExecutorService START_EXECUTOR = java.util.concurrent.Executors.newCachedThreadPool();
     private final Map<Short, ObjectStorage> objectStorages = new ConcurrentHashMap<>();
     private final String clusterId;
     private final Time time = Time.SYSTEM;
@@ -43,7 +46,7 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
     }
 
     @Override
-    public WriteAheadLog readOnly(String walConfig, int nodeId) {
+    public CompletableFuture<WriteAheadLog> readOnly(String walConfig, int nodeId) {
         BucketURI bucketURI = BucketURI.parse(walConfig);
         ObjectStorage objectStorage = objectStorages.computeIfAbsent(bucketURI.bucketId(), id -> {
                 try {
@@ -64,6 +67,13 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
             .withNodeId(nodeId)
             .withOpenMode(OpenMode.READ_ONLY)
             .build();
-        return new ObjectWALService(time, objectStorage, objectWALConfig);
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, objectWALConfig);
+        return CompletableFuture.runAsync(() -> {
+            try {
+                wal.start();
+            } catch (Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }, START_EXECUTOR).thenApply(v -> wal);
     }
 }

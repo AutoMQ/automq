@@ -40,6 +40,7 @@ import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -262,10 +263,12 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         public Subscriber(Node node, AutoMQVersion version) {
             this.node = node;
             this.version = version;
-            this.requester = new SubscriberRequester(this, node, version, asyncSender, SnapshotReadPartitionsManager.this::getTopicName, eventLoop, time);
             this.replayer = new SubscriberReplayer(confirmWALProvider, SnapshotReadPartitionsManager.this.replayer, node, metadataCache);
-            LOGGER.info("[SNAPSHOT_READ_SUBSCRIBE],node={}", node);
+            this.requester = new SubscriberRequester(this, node, version, asyncSender, SnapshotReadPartitionsManager.this::getTopicName, eventLoop, time);
+            // start the tasks after initialized.
+            this.requester.start();
             run();
+            LOGGER.info("[SNAPSHOT_READ_SUBSCRIBE],node={}", node);
         }
 
         // only for test
@@ -314,9 +317,9 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
                     partitions.forEach(SnapshotReadPartitionsManager.this::removePartition);
                     partitions.clear();
                     snapshotWithOperations.clear();
-                    replayer.close();
+                    CompletableFuture<Void> replayerCloseCf = replayer.close();
                     requester.nextSnapshotCf().complete(null);
-                    cf.complete(null);
+                    FutureUtil.propagate(replayerCloseCf, cf);
                 } catch (Throwable e) {
                     cf.completeExceptionally(e);
                 }
