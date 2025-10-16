@@ -20,13 +20,14 @@
 package com.automq.log.uploader.util;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import io.netty.buffer.ByteBuf;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
+
+import io.netty.buffer.ByteBuf;
 
 public class Utils {
 
