@@ -37,7 +37,6 @@ import com.automq.stream.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -84,11 +83,6 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
                     .withType(WAL_TYPE)
                     .build();
                 ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage(), config);
-                try {
-                    wal.start();
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
                 RouterChannel routerChannel = new ObjectRouterChannel(this.nodeId, channelId, wal);
                 routerChannel.nextEpoch(epoch.getCurrent());
                 routerChannel.trim(epoch.getCommitted());
@@ -106,11 +100,6 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         return routerChannels.computeIfAbsent(node, nodeId -> {
             ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(node).withOpenMode(OpenMode.READ_ONLY).withType(WAL_TYPE).build();
             ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage(), config);
-            try {
-                wal.start();
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
             return new ObjectRouterChannel(nodeId, channelId, wal);
         });
     }
@@ -127,8 +116,8 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
 
     @Override
     public void close() {
-        FutureUtil.suppress(() -> routerChannel.close(), LOGGER);
-        routerChannels.forEach((nodeId, channel) -> FutureUtil.suppress(channel::close, LOGGER));
+        FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
+        routerChannels.forEach((nodeId, channel) -> FutureUtil.suppress(() -> channel.close().get(), LOGGER));
     }
 
     @Override

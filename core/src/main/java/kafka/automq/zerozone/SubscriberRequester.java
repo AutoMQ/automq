@@ -81,6 +81,9 @@ import io.netty.buffer.Unpooled;
         this.topicNameGetter = topicNameGetter;
         this.eventLoop = eventLoop;
         this.time = time;
+    }
+
+    public void start() {
         request();
     }
 
@@ -126,7 +129,11 @@ import io.netty.buffer.Unpooled;
         AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
         asyncSender.sendRequest(node, builder)
             .thenAcceptAsync(rst -> {
-                handleResponse(rst, snapshotCf);
+                try {
+                    handleResponse(rst, snapshotCf);
+                } catch (Exception e) {
+                    subscriber.reset("Exception when handle snapshot response: " + e.getMessage());
+                }
                 subscriber.unsafeRun();
             }, eventLoop)
             .exceptionally(ex -> {
