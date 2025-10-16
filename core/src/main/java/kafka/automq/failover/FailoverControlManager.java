@@ -265,22 +265,6 @@ public class FailoverControlManager implements AutoCloseable {
             .filter(NodeRuntimeMetadata::shouldFailover)
             .map(DefaultFailedWal::from)
             .collect(Collectors.toCollection(ArrayList::new));
-        maybeRemoveControllerNode(allNodes, result);
         return result;
-    }
-
-    private static void maybeRemoveControllerNode(List<NodeRuntimeMetadata> allNodes, List<FailedWal> failedWALList) {
-        long inactiveControllerCount = allNodes.stream()
-            .filter(NodeRuntimeMetadata::isController)
-            .filter(node -> !node.isActive())
-            .count();
-        if (inactiveControllerCount > 1) {
-            LOGGER.warn("{} controller nodes is inactive, will not failover any controller node", inactiveControllerCount);
-            Set<Integer> controllerNodeIds = allNodes.stream()
-                .filter(NodeRuntimeMetadata::isController)
-                .map(NodeRuntimeMetadata::id)
-                .collect(Collectors.toSet());
-            failedWALList.removeIf(wal -> controllerNodeIds.contains(wal.nodeId()));
-        }
     }
 }
