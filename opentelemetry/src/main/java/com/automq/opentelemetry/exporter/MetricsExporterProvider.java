@@ -1,6 +1,7 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
+
 import java.net.URI;
 import java.util.List;
 import java.util.Map;

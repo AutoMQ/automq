@@ -1,6 +1,7 @@
 package com.automq.opentelemetry;
 
 import com.automq.stream.s3.operator.BucketURI;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 
