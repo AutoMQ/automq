@@ -1,7 +1,6 @@
 plugins {
   id 'application'
   id 'checkstyle'
-  id('com.google.protobuf') version '0.9.4'
 }
 
 project(':opentelemetry') {
