@@ -244,8 +244,14 @@ public class RouterOutV2 {
         }
 
         private void handleRouterResponse(AutomqZoneRouterResponse zoneRouterResponse, List<ProxyRequest> requests) {
-            if (zoneRouterResponse.data().errorCode() != Errors.NONE.code()) {
-                Errors error = Errors.forCode(zoneRouterResponse.data().errorCode());
+            short errorCode = zoneRouterResponse.data().errorCode();
+            if (errorCode == Errors.UNKNOWN_SERVER_ERROR.code()) {
+                // We could find the detail error log in the rpc server side.
+                // Set the error to LEADER_NOT_AVAILABLE to make the producer retry sending.
+                errorCode = Errors.LEADER_NOT_AVAILABLE.code();
+            }
+            if (errorCode != Errors.NONE.code()) {
+                Errors error = Errors.forCode(errorCode);
                 requests.forEach(r -> r.completeWithError(error));
                 return;
             }
