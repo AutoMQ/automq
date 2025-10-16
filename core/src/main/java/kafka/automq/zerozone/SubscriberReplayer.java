@@ -38,14 +38,17 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.LongConsumer;
 import java.util.stream.Collectors;
 
 class SubscriberReplayer {
     private static final Logger LOGGER = LoggerFactory.getLogger(SubscriberReplayer.class);
+    private static final ExecutorService CLOSE_EXECUTOR = Executors.newCachedThreadPool();
     private long loadedObjectOrderId = -1L;
     private CompletableFuture<Void> lastDataLoadCf = CompletableFuture.completedFuture(null);
-    private WriteAheadLog wal;
+    private CompletableFuture<WriteAheadLog> wal;
     private RecordOffset loadedEndOffset = null;
 
     private final Replayer replayer;
@@ -53,7 +56,8 @@ class SubscriberReplayer {
     private final MetadataCache metadataCache;
     private final ConfirmWALProvider confirmWALProvider;
 
-    public SubscriberReplayer(ConfirmWALProvider confirmWALProvider, Replayer replayer, Node node, MetadataCache metadataCache) {
+    public SubscriberReplayer(ConfirmWALProvider confirmWALProvider, Replayer replayer, Node node,
+        MetadataCache metadataCache) {
         this.confirmWALProvider = confirmWALProvider;
         this.replayer = replayer;
         this.node = node;
@@ -73,11 +77,11 @@ class SubscriberReplayer {
             return;
         }
         // The replayer will ensure the order of replay
-        this.lastDataLoadCf = replayer.replay(wal, startOffset, endOffset).thenAccept(nil -> {
+        this.lastDataLoadCf = wal.thenCompose(w -> replayer.replay(w, startOffset, endOffset).thenAccept(nil -> {
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("replay {} confirm wal [{}, {})", node, startOffset, endOffset);
             }
-        });
+        }));
     }
 
     public CompletableFuture<Void> relayObject() {
@@ -104,11 +108,12 @@ class SubscriberReplayer {
         return lastDataLoadCf;
     }
 
-    public void close() {
-        WriteAheadLog wal = this.wal;
+    public CompletableFuture<Void> close() {
+        CompletableFuture<WriteAheadLog> wal = this.wal;
         if (wal != null) {
-            FutureUtil.suppress(wal::shutdownGracefully, LOGGER);
+            return CompletableFuture.runAsync(() -> FutureUtil.suppress(() -> wal.get().shutdownGracefully(), LOGGER), CLOSE_EXECUTOR);
         }
+        return CompletableFuture.completedFuture(null);
     }
 
     public void reset() {
