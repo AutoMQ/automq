@@ -75,6 +75,15 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         Properties effective = new Properties();
         workerProps.forEach((k, v) -> effective.put(String.valueOf(k), String.valueOf(v)));
 
+        copyConnectPropertiesToLogConfig(workerProps, effective);
+        setDefaultClusterAndNodeId(workerProps, effective);
+        setSelectorDefaults(workerProps, effective);
+        mapSelectorOverrides(workerProps, effective);
+
+        return effective;
+    }
+
+    private void copyConnectPropertiesToLogConfig(Properties workerProps, Properties effective) {
         copyIfPresent(workerProps, "automq.log.s3.bucket", effective, LogConfigConstants.LOG_S3_BUCKET_KEY);
         copyIfPresent(workerProps, "automq.log.s3.enable", effective, LogConfigConstants.LOG_S3_ENABLE_KEY);
         copyIfPresent(workerProps, "automq.log.s3.region", effective, LogConfigConstants.LOG_S3_REGION_KEY);
@@ -84,7 +93,9 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         copyIfPresent(workerProps, "automq.log.s3.primary.node", effective, LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY);
         copyIfPresent(workerProps, "automq.log.s3.selector.type", effective, LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY);
         copyIfPresent(workerProps, "automq.log.s3.selector.primary.node.id", effective, LogConfigConstants.LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY);
+    }
 
+    private void setDefaultClusterAndNodeId(Properties workerProps, Properties effective) {
         // Default cluster ID
         if (!effective.containsKey(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY)) {
             String groupId = workerProps.getProperty("group.id", LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID);
@@ -96,13 +107,19 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
             String nodeId = resolveNodeId(workerProps);
             effective.setProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY, nodeId);
         }
+    }
 
+    private void setSelectorDefaults(Properties workerProps, Properties effective) {
         // Selector defaults
         if (!effective.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
             effective.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "kafka");
         }
 
         String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
+        setKafkaSelectorDefaults(workerProps, effective, selectorPrefix);
+    }
+
+    private void setKafkaSelectorDefaults(Properties workerProps, Properties effective, String selectorPrefix) {
         String bootstrapKey = selectorPrefix + "kafka.bootstrap.servers";
         if (!effective.containsKey(bootstrapKey)) {
             String bootstrap = workerProps.getProperty("automq.log.s3.selector.kafka.bootstrap.servers",
@@ -113,6 +130,14 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         }
 
         String clusterId = effective.getProperty(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY, "connect");
+        setKafkaGroupAndTopicDefaults(effective, selectorPrefix, clusterId);
+        setKafkaClientDefaults(effective, selectorPrefix);
+        
+        String autoCreateKey = selectorPrefix + "kafka.auto.create.topic";
+        effective.putIfAbsent(autoCreateKey, "true");
+    }
+
+    private void setKafkaGroupAndTopicDefaults(Properties effective, String selectorPrefix, String clusterId) {
         String groupKey = selectorPrefix + "kafka.group.id";
         if (!effective.containsKey(groupKey)) {
             effective.setProperty(groupKey, "automq-log-uploader-" + clusterId);
@@ -122,23 +147,23 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         if (!effective.containsKey(topicKey)) {
             effective.setProperty(topicKey, "__automq_connect_log_leader_" + clusterId.replaceAll("[^A-Za-z0-9_-]", ""));
         }
+    }
 
+    private void setKafkaClientDefaults(Properties effective, String selectorPrefix) {
         String clientKey = selectorPrefix + "kafka.client.id";
         if (!effective.containsKey(clientKey)) {
             effective.setProperty(clientKey, "automq-log-uploader-client-" + effective.getProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY));
         }
+    }
 
-        String autoCreateKey = selectorPrefix + "kafka.auto.create.topic";
-        effective.putIfAbsent(autoCreateKey, "true");
-
+    private void mapSelectorOverrides(Properties workerProps, Properties effective) {
+        String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
         // Map any existing selector.* overrides from worker props
         for (String name : workerProps.stringPropertyNames()) {
             if (name.startsWith(selectorPrefix)) {
                 effective.setProperty(name, workerProps.getProperty(name));
             }
         }
-
-        return effective;
     }
 
     private void copyIfPresent(Properties src, String srcKey, Properties dest, String destKey) {
@@ -165,7 +190,7 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
                 host = System.getenv().getOrDefault("HOSTNAME", "0");
             }
         }
-        return Integer.toString(Math.abs(host.hashCode()));
+        return Integer.toString(host.hashCode() & Integer.MAX_VALUE);
     }
 
     private boolean isBlank(String value) {

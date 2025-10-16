@@ -216,7 +216,7 @@ public class MetricsExporterURI {
         // Get S3 configuration from config and query parameters
         String clusterId = config.getS3ClusterId();
         int nodeId = config.getS3NodeId();
-        int intervalMs = (int)config.getExporterIntervalMs();
+        int intervalMs = (int) config.getExporterIntervalMs();
         BucketURI metricsBucket = config.getMetricsBucket();
         
         if (metricsBucket == null) {

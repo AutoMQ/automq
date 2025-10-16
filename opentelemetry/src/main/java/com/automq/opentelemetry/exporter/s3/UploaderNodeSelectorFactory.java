@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.ServiceLoader;
 import java.util.stream.Stream;
@@ -42,7 +43,7 @@ public class UploaderNodeSelectorFactory {
         for (UploaderNodeSelectorProvider provider : serviceLoader) {
             String type = provider.getType();
             LOGGER.info("Loaded UploaderNodeSelectorProvider for type: {}", type);
-            PROVIDERS.put(type.toLowerCase(), provider);
+            PROVIDERS.put(type.toLowerCase(Locale.ROOT), provider);
         }
     }
     
@@ -79,7 +80,7 @@ public class UploaderNodeSelectorFactory {
                 
             case CUSTOM:
                 // For custom types, try to find an SPI provider
-                UploaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase());
+                UploaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase(Locale.ROOT));
                 if (provider != null) {
                     try {
                         return provider.createSelector(clusterId, nodeId, config);
@@ -115,7 +116,7 @@ public class UploaderNodeSelectorFactory {
         }
         
         // Then check custom SPI providers
-        return PROVIDERS.containsKey(typeString.toLowerCase());
+        return PROVIDERS.containsKey(typeString.toLowerCase(Locale.ROOT));
     }
     
     /**

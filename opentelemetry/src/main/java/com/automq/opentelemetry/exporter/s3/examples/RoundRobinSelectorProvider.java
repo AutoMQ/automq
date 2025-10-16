@@ -97,7 +97,7 @@ public class RoundRobinSelectorProvider implements UploaderNodeSelectorProvider 
             
             // Calculate the current primary node based on time
             long elapsedMs = System.currentTimeMillis() - startTimeMs;
-            int rotations = (int)(elapsedMs / rotationIntervalMs);
+            int rotations = (int) (elapsedMs / rotationIntervalMs);
             int currentPrimary = rotations % totalNodes;
             
             return nodeId == currentPrimary;

@@ -32,6 +32,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
@@ -248,12 +249,12 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         
         // Add group if present
         if (metricName.group() != null && !metricName.group().isEmpty()) {
-            sb.append(metricName.group().replace("-", "_").toLowerCase());
+            sb.append(metricName.group().replace("-", "_").toLowerCase(Locale.ROOT));
             sb.append(".");
         }
         
         // Add name
-        sb.append(metricName.name().replace("-", "_").toLowerCase());
+        sb.append(metricName.name().replace("-", "_").toLowerCase(Locale.ROOT));
         
         return sb.toString();
     }
@@ -283,7 +284,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     
     private String sanitizeAttributeKey(String key) {
         // Replace invalid characters for attribute keys
-        return key.replace("-", "_").replace(".", "_").toLowerCase();
+        return key.replace("-", "_").replace(".", "_").toLowerCase(Locale.ROOT);
     }
     
     private String buildDescription(MetricName metricName) {
@@ -300,7 +301,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
     
     private String determineUnit(MetricName metricName) {
-        String name = metricName.name().toLowerCase();
+        String name = metricName.name().toLowerCase(Locale.ROOT);
         
         if (name.contains("time") || name.contains("latency") || name.contains("duration")) {
             if (name.contains("ms") || name.contains("millisecond")) {
@@ -324,8 +325,8 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
     
     private boolean isCounterMetric(MetricName metricName) {
-        String name = metricName.name().toLowerCase();
-        String group = metricName.group() != null ? metricName.group().toLowerCase() : "";
+        String name = metricName.name().toLowerCase(Locale.ROOT);
+        String group = metricName.group() != null ? metricName.group().toLowerCase(Locale.ROOT) : "";
         
         // Identify counter-like metrics
         return name.contains("total") || 

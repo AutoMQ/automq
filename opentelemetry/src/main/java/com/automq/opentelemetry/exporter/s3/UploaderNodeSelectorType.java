@@ -20,6 +20,7 @@
 package com.automq.opentelemetry.exporter.s3;
 
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -82,7 +83,7 @@ public enum UploaderNodeSelectorType {
             return STATIC; // Default
         }
         
-        return TYPE_MAP.getOrDefault(typeString.toLowerCase(), CUSTOM);
+        return TYPE_MAP.getOrDefault(typeString.toLowerCase(Locale.ROOT), CUSTOM);
     }
     
     /**

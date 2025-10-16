@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -59,9 +60,12 @@ public final class LogUploaderNodeSelectors {
     }
 
     private static boolean attemptToClaimLeadership(Path leaderFilePath, int nodeId, long leaderTimeoutMs) throws IOException {
-        Files.createDirectories(leaderFilePath.getParent());
+        Path parentDir = leaderFilePath.getParent();
+        if (parentDir != null) {
+            Files.createDirectories(parentDir);
+        }
         if (Files.exists(leaderFilePath)) {
-            List<String> lines = Files.readAllLines(leaderFilePath);
+            List<String> lines = Files.readAllLines(leaderFilePath, StandardCharsets.UTF_8);
             if (!lines.isEmpty()) {
                 String[] parts = lines.get(0).split(":");
                 if (parts.length == 2) {
@@ -74,8 +78,8 @@ public final class LogUploaderNodeSelectors {
             }
         }
         String content = nodeId + ":" + System.currentTimeMillis();
-        Files.write(leaderFilePath, content.getBytes());
-        List<String> lines = Files.readAllLines(leaderFilePath);
+        Files.write(leaderFilePath, content.getBytes(StandardCharsets.UTF_8));
+        List<String> lines = Files.readAllLines(leaderFilePath, StandardCharsets.UTF_8);
         if (!lines.isEmpty()) {
             String[] parts = lines.get(0).split(":");
             return parts.length == 2 && Integer.parseInt(parts[0]) == nodeId;

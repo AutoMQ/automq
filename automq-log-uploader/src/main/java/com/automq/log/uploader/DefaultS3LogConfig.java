@@ -35,7 +35,24 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
-import static com.automq.log.uploader.LogConfigConstants.*;
+import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_ACTIVE_CONTROLLER;
+import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID;
+import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_ENABLE;
+import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_NODE_ID;
+import static com.automq.log.uploader.LogConfigConstants.LOG_PROPERTIES_FILE;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ACCESS_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ACTIVE_CONTROLLER_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_BUCKET_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_CLUSTER_ID_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENABLE_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENDPOINT_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_NODE_ID_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_REGION_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SECRET_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY;
+import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY;
 
 public class DefaultS3LogConfig implements S3LogConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3LogConfig.class);

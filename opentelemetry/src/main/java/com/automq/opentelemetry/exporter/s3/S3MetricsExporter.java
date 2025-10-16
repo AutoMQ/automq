@@ -74,9 +74,9 @@ public class S3MetricsExporter implements MetricExporter {
     private final Map<String, String> defaultTagMap = new HashMap<>();
 
     private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
-    private final Random random = new Random();
+    private static final Random RANDOM = new Random();
     private volatile long lastUploadTimestamp = System.currentTimeMillis();
-    private volatile long nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
+    private volatile long nextUploadInterval = UPLOAD_INTERVAL + RANDOM.nextInt(MAX_JITTER_INTERVAL);
 
     private final ObjectStorage objectStorage;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -272,7 +272,7 @@ public class S3MetricsExporter implements MetricExporter {
                     return CompletableResultCode.ofFailure();
                 } finally {
                     lastUploadTimestamp = System.currentTimeMillis();
-                    nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
+                    nextUploadInterval = UPLOAD_INTERVAL + RANDOM.nextInt(MAX_JITTER_INTERVAL);
                     uploadBuffer.clear();
                 }
             }

@@ -46,7 +46,7 @@ public class AutoMQTelemetryManager {
     
     // Singleton instance support
     private static volatile AutoMQTelemetryManager instance;
-    private static final Object lock = new Object();
+    private static final Object LOCK = new Object();
 
     private final TelemetryConfig config;
     private final List<MetricReader> metricReaders = new ArrayList<>();
@@ -86,10 +86,11 @@ public class AutoMQTelemetryManager {
      */
     public static AutoMQTelemetryManager initializeInstance(Properties props) {
         if (instance == null) {
-            synchronized (lock) {
+            synchronized (LOCK) {
                 if (instance == null) {
-                    instance = new AutoMQTelemetryManager(props);
-                    instance.init();
+                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(props);
+                    newInstance.init();
+                    instance = newInstance;
                     LOGGER.info("AutoMQTelemetryManager singleton instance initialized");
                 }
             }
@@ -102,7 +103,7 @@ public class AutoMQTelemetryManager {
      */
     public static void shutdownInstance() {
         if (instance != null) {
-            synchronized (lock) {
+            synchronized (LOCK) {
                 if (instance != null) {
                     instance.shutdown();
                     instance = null;
@@ -172,6 +173,7 @@ public class AutoMQTelemetryManager {
         LOGGER.info("JVM metrics registered.");
     }
 
+    @SuppressWarnings({"NP_LOAD_OF_KNOWN_NULL_VALUE", "RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"})
     private void registerJmxMetrics(OpenTelemetry openTelemetry) {
         List<String> jmxConfigPaths = config.getJmxConfigPaths();
         if (jmxConfigPaths.isEmpty()) {

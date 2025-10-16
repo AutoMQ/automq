@@ -23,15 +23,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 /**
@@ -128,12 +125,15 @@ public class UploaderNodeSelectors {
     private static boolean attemptToClaimLeadership(Path leaderFilePath, int nodeId, long leaderTimeoutMs) throws IOException {
         try {
             // Try to create directory if it doesn't exist
-            Files.createDirectories(leaderFilePath.getParent());
+            Path parentDir = leaderFilePath.getParent();
+            if (parentDir != null) {
+                Files.createDirectories(parentDir);
+            }
             
             // Check if file exists
             if (Files.exists(leaderFilePath)) {
                 // Read the current leader info
-                List<String> lines = Files.readAllLines(leaderFilePath);
+                List<String> lines = Files.readAllLines(leaderFilePath, StandardCharsets.UTF_8);
                 if (!lines.isEmpty()) {
                     String[] parts = lines.get(0).split(":");
                     if (parts.length == 2) {
@@ -151,10 +151,10 @@ public class UploaderNodeSelectors {
             
             // No leader or leader timed out, try to claim leadership
             String content = nodeId + ":" + System.currentTimeMillis();
-            Files.write(leaderFilePath, content.getBytes());
+            Files.write(leaderFilePath, content.getBytes(StandardCharsets.UTF_8));
             
             // Verify leadership was claimed by this node
-            List<String> lines = Files.readAllLines(leaderFilePath);
+            List<String> lines = Files.readAllLines(leaderFilePath, StandardCharsets.UTF_8);
             if (!lines.isEmpty()) {
                 String[] parts = lines.get(0).split(":");
                 if (parts.length == 2) {
