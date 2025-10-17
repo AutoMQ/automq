@@ -196,7 +196,8 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))
                 .timeout(data.timeoutMs())
-                .requiredAcks(data.acks())
+                // The CommittedEpochManager requires the data to be persisted prior to bumping the committed epoch.
+                .requiredAcks((short) -1)
                 .internalTopicsAllowed(flag.internalTopicsAllowed())
                 .transactionId(data.transactionalId())
                 .entriesPerPartition(realEntriesPerPartition)
