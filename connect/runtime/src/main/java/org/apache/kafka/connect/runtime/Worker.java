@@ -78,6 +78,7 @@ import org.apache.kafka.connect.sink.SinkTask;
 import org.apache.kafka.connect.source.SourceConnector;
 import org.apache.kafka.connect.source.SourceRecord;
 import org.apache.kafka.connect.source.SourceTask;
+import org.apache.kafka.connect.automq.AzAwareClientConfigurator;
 import org.apache.kafka.connect.storage.CloseableOffsetStorageReader;
 import org.apache.kafka.connect.storage.ClusterConfigState;
 import org.apache.kafka.connect.storage.ConnectorOffsetBackingStore;
@@ -841,6 +842,8 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         producerProps.putAll(producerOverrides);
 
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, defaultClientId, defaultClientId);
+
         return producerProps;
     }
 
@@ -909,6 +912,8 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         consumerProps.putAll(consumerOverrides);
 
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, defaultClientId, defaultClientId);
+
         return consumerProps;
     }
 
@@ -937,6 +942,8 @@ public class Worker {
 
         // Admin client-specific overrides in the worker config
         adminProps.putAll(config.originalsWithPrefix("admin."));
+
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, defaultClientId, defaultClientId);
 
         // Connector-specified overrides
         Map<String, Object> adminOverrides =

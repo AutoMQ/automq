@@ -3464,6 +3464,7 @@ project(':connect:runtime') {
     implementation libs.jacksonJaxrsJsonProvider
     implementation libs.jerseyContainerServlet
     implementation libs.jerseyHk2
+    implementation libs.jaxrsApi
     implementation libs.jaxbApi // Jersey dependency that was available in the JDK before Java 9
     implementation libs.activation // Jersey dependency that was available in the JDK before Java 9
     implementation libs.jettyServer
