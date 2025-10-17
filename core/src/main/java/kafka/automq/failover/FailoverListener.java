@@ -81,13 +81,12 @@ public class FailoverListener implements MetadataPublisher, AutoCloseable {
             .map(this::decodeContexts);
     }
     
-        private FailoverContext[] decodeContexts(ByteBuffer byteBuffer) {
+    private FailoverContext[] decodeContexts(ByteBuffer byteBuffer) {
         ByteBuffer slice = byteBuffer.slice();
         byte[] data = new byte[slice.remaining()];
         slice.get(data);
         return JsonUtils.decode(new String(data, StandardCharsets.UTF_8), FailoverContext[].class);
     }
-
 
     private void onContextsChange(FailoverContext[] contexts) {
         Set<FailedNode> oldFailedNodes = recovering.keySet();
