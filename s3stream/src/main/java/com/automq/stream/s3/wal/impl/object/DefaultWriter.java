@@ -125,7 +125,7 @@ public class DefaultWriter implements Writer {
         this.batchNanos = TimeUnit.MILLISECONDS.toNanos(config.batchInterval());
         this.minBulkUploadIntervalNanos = Math.min(TimeUnit.MILLISECONDS.toNanos(10), batchNanos);
         this.lastBulkForceUploadNanos = time.nanoseconds();
-        if (!(config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER)) {
+        if (!(config.openMode() == OpenMode.read_write || config.openMode() == OpenMode.FAILOVER)) {
             throw new IllegalArgumentException("The open mode must be READ_WRITE or FAILOVER, but got " + config.openMode());
         }
     }
@@ -319,6 +319,8 @@ public class DefaultWriter implements Writer {
     }
 
     private void uploadBulk0(Bulk bulk) {
+        CompositeByteBuf dataBuffer = null;
+        CompositeByteBuf objectBuffer = null;
         try {
             long startTime = time.nanoseconds();
             List<Record> records = bulk.records;
@@ -337,7 +339,7 @@ public class DefaultWriter implements Writer {
             long firstOffset = bulk.baseOffset;
             long nextOffset = firstOffset;
             long lastRecordOffset = nextOffset;
-            CompositeByteBuf dataBuffer = ByteBufAlloc.compositeByteBuffer();
+            dataBuffer = ByteBufAlloc.compositeByteBuffer();
             for (Record record : records) {
                 record.offset = nextOffset;
                 lastRecordOffset = record.offset;
@@ -354,7 +356,7 @@ public class DefaultWriter implements Writer {
             nextOffset = ObjectUtils.ceilAlignOffset(nextOffset);
             long endOffset = nextOffset;
 
-            CompositeByteBuf objectBuffer = ByteBufAlloc.compositeByteBuffer();
+            objectBuffer = ByteBufAlloc.compositeByteBuffer();
             WALObjectHeader header = new WALObjectHeader(firstOffset, dataLength, 0, config.nodeId(), config.epoch(), trimOffset.get());
             objectBuffer.addComponent(true, header.marshal());
             objectBuffer.addComponent(true, dataBuffer);
@@ -379,6 +381,36 @@ public class DefaultWriter implements Writer {
                 callback();
             }, callbackExecutor);
         } catch (Throwable ex) {
+            // Critical fix: Properly cleanup allocated ByteBuf objects to prevent memory leak
+            LOGGER.error("Exception occurred during bulk upload preparation, performing cleanup", ex);
+            
+            // Cleanup dataBuffer and all its components
+            if (dataBuffer != null) {
+                try {
+                    // Release all components in the composite buffer
+                    if (dataBuffer.numComponents() > 0) {
+                        LOGGER.debug("Releasing dataBuffer with {} components", dataBuffer.numComponents());
+                    }
+                    dataBuffer.release();
+                } catch (Exception releaseEx) {
+                    LOGGER.error("Failed to release dataBuffer during exception cleanup", releaseEx);
+                }
+            }
+            
+            // Cleanup objectBuffer and all its components
+            if (objectBuffer != null) {
+                try {
+                    // Release all components in the composite buffer
+                    if (objectBuffer.numComponents() > 0) {
+                        LOGGER.debug("Releasing objectBuffer with {} components", objectBuffer.numComponents());
+                    }
+                    objectBuffer.release();
+                } catch (Exception releaseEx) {
+                    LOGGER.error("Failed to release objectBuffer during exception cleanup", releaseEx);
+                }
+            }
+            
+            // Complete the bulk operation with the original exception
             bulk.uploadCf.completeExceptionally(ex);
         }
     }
