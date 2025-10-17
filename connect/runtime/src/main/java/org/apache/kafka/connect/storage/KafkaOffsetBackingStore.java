@@ -38,6 +38,7 @@ import org.apache.kafka.connect.util.ConnectUtils;
 import org.apache.kafka.connect.util.ConvertingFutureCallback;
 import org.apache.kafka.connect.util.KafkaBasedLog;
 import org.apache.kafka.connect.util.TopicAdmin;
+import org.apache.kafka.connect.automq.AzAwareClientConfigurator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -192,12 +193,14 @@ public class KafkaOffsetBackingStore extends KafkaTopicBasedBackingStore impleme
         // gets approved and scheduled for release.
         producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "false");
         producerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, clientId, "offset-log");
         ConnectUtils.addMetricsContextProperties(producerProps, config, clusterId);
 
         Map<String, Object> consumerProps = new HashMap<>(originals);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, clientId, "offset-log");
         ConnectUtils.addMetricsContextProperties(consumerProps, config, clusterId);
         if (config.exactlyOnceSourceEnabled()) {
             ConnectUtils.ensureProperty(
@@ -209,6 +212,7 @@ public class KafkaOffsetBackingStore extends KafkaTopicBasedBackingStore impleme
 
         Map<String, Object> adminProps = new HashMap<>(originals);
         adminProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, clientId, "offset-log");
         ConnectUtils.addMetricsContextProperties(adminProps, config, clusterId);
         NewTopic topicDescription = newTopicDescription(topic, config);
 

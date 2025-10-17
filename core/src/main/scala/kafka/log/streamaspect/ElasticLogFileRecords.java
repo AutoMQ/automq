@@ -21,8 +21,6 @@ package kafka.log.streamaspect;
 
 import kafka.automq.zerozone.LinkRecord;
 import kafka.automq.zerozone.ZeroZoneThreadLocalContext;
-import kafka.log.stream.s3.telemetry.ContextUtils;
-import kafka.log.stream.s3.telemetry.TelemetryConstants;
 
 import org.apache.kafka.common.network.TransferableChannel;
 import org.apache.kafka.common.record.AbstractRecords;
@@ -40,6 +38,7 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 
+import com.automq.opentelemetry.TelemetryConstants;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatchWithContext;
@@ -66,6 +65,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
@@ -73,6 +73,7 @@ import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
+    private static final AttributeKey<Long> MAX_FETCH_BYTES_KEY = AttributeKey.longKey("maxBytes");
 
     protected final AtomicInteger size;
     // only used for recover
@@ -123,12 +124,12 @@ public class ElasticLogFileRecords implements AutoCloseable {
         }
         if (ReadHint.isReadAll()) {
             ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).pooledBuf(true).build();
-            FetchContext fetchContext = ContextUtils.creaetFetchContext();
+            FetchContext fetchContext = new FetchContext();
             fetchContext.setReadOptions(readOptions);
             Attributes attributes = Attributes.builder()
-                    .put(TelemetryConstants.START_OFFSET_NAME, startOffset)
-                    .put(TelemetryConstants.END_OFFSET_NAME, maxOffset)
-                    .put(TelemetryConstants.MAX_BYTES_NAME, maxSize)
+                    .put(TelemetryConstants.START_OFFSET_KEY, startOffset)
+                    .put(TelemetryConstants.END_OFFSET_KEY, maxOffset)
+                    .put(MAX_FETCH_BYTES_KEY, (long) maxSize)
                     .build();
             try {
                 return TraceUtils.runWithSpanAsync(fetchContext, attributes, "ElasticLogFileRecords::read",
@@ -218,7 +219,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
         // Note that the calculation of count requires strong consistency between nextOffset and the baseOffset of records.
         int count = (int) (lastOffset - nextOffset());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
-        AppendContext context = ContextUtils.createAppendContext();
+        AppendContext context = new AppendContext();
         ZeroZoneThreadLocalContext.WriteContext writeContext = ZeroZoneThreadLocalContext.writeContext();
         ByteBuf linkRecord = LinkRecord.encode(writeContext.channelOffset(), records);
         if (linkRecord != null) {

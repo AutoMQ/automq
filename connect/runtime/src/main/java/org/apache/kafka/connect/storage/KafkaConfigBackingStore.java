@@ -54,6 +54,7 @@ import org.apache.kafka.connect.util.ConnectUtils;
 import org.apache.kafka.connect.util.ConnectorTaskId;
 import org.apache.kafka.connect.util.KafkaBasedLog;
 import org.apache.kafka.connect.util.TopicAdmin;
+import org.apache.kafka.connect.automq.AzAwareClientConfigurator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -440,6 +441,7 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
         Map<String, Object> result = new HashMap<>(baseProducerProps(workerConfig));
 
         result.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId + "-leader");
+        AzAwareClientConfigurator.maybeApplyProducerAz(result, clientId + "-leader", "config-log-leader");
         // Always require producer acks to all to ensure durable writes
         result.put(ProducerConfig.ACKS_CONFIG, "all");
         // We can set this to 5 instead of 1 without risking reordering because we are using an idempotent producer
@@ -773,11 +775,13 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
 
         Map<String, Object> producerProps = new HashMap<>(baseProducerProps);
         producerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, clientId, "config-log");
 
         Map<String, Object> consumerProps = new HashMap<>(originals);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, clientId, "config-log");
         ConnectUtils.addMetricsContextProperties(consumerProps, config, clusterId);
         if (config.exactlyOnceSourceEnabled()) {
             ConnectUtils.ensureProperty(
@@ -790,6 +794,7 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
         Map<String, Object> adminProps = new HashMap<>(originals);
         ConnectUtils.addMetricsContextProperties(adminProps, config, clusterId);
         adminProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, clientId, "config-log");
 
         Map<String, Object> topicSettings = config instanceof DistributedConfig
                                             ? ((DistributedConfig) config).configStorageTopicSettings()

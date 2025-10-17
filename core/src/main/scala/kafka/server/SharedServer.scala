@@ -17,7 +17,6 @@
 
 package kafka.server
 
-import kafka.log.stream.s3.telemetry.TelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
@@ -40,6 +39,8 @@ import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, ProcessTerminatingFaultHandler}
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
+import kafka.server.telemetry.TelemetrySupport
+import com.automq.opentelemetry.AutoMQTelemetryManager
 
 import java.net.InetSocketAddress
 import java.util.Arrays
@@ -113,7 +114,7 @@ class SharedServer(
 
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
-  @volatile var telemetryManager: TelemetryManager = _
+  @volatile var telemetryManager: AutoMQTelemetryManager = _
   // AutoMQ for Kafka injection end
   
   @volatile var metrics: Metrics = _metrics
@@ -129,10 +130,6 @@ class SharedServer(
   def clusterId: String = metaPropsEnsemble.clusterId().get()
 
   def nodeId: Int = metaPropsEnsemble.nodeId().getAsInt
-
-  protected def buildTelemetryManager(config: KafkaConfig, clusterId: String): TelemetryManager = {
-    new TelemetryManager(config, clusterId)
-  }
 
   private def isUsed(): Boolean = synchronized {
     usedByController || usedByBroker
@@ -286,8 +283,7 @@ class SharedServer(
         }
         
         // AutoMQ inject start
-        telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
-        telemetryManager.init()
+        telemetryManager = TelemetrySupport.start(sharedServerConfig, clusterId)
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
