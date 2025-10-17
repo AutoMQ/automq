@@ -23,6 +23,7 @@ import kafka.cluster.EndPoint;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.network.ListenerName;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
 
 import java.util.List;
 import java.util.Map;
@@ -34,19 +35,53 @@ import static scala.jdk.javaapi.CollectionConverters.asJava;
 public class ClientUtils {
     public static Properties clusterClientBaseConfig(KafkaConfig kafkaConfig) {
         ListenerName listenerName = kafkaConfig.interBrokerListenerName();
+
         List<EndPoint> endpoints = asJava(kafkaConfig.effectiveAdvertisedBrokerListeners());
         Optional<EndPoint> endpointOpt = endpoints.stream().filter(e -> listenerName.equals(e.listenerName())).findFirst();
         if (endpointOpt.isEmpty()) {
             throw new IllegalArgumentException("Cannot find " + listenerName + " in endpoints " + endpoints);
         }
+
         EndPoint endpoint = endpointOpt.get();
-        Map<String, ?> securityConfig = kafkaConfig.originalsWithPrefix(listenerName.saslMechanismConfigPrefix(kafkaConfig.saslMechanismInterBrokerProtocol()));
+        SecurityProtocol securityProtocol = kafkaConfig.interBrokerSecurityProtocol();
+        Map<String, Object> parsedConfigs = kafkaConfig.valuesWithPrefixOverride(listenerName.configPrefix());
+
+        // mirror ChannelBuilders#channelBuilderConfigs
+        kafkaConfig.originals().entrySet().stream()
+            .filter(entry -> !parsedConfigs.containsKey(entry.getKey()))
+            // exclude already parsed listener prefix configs
+            .filter(entry -> !(entry.getKey().startsWith(listenerName.configPrefix())
+                && parsedConfigs.containsKey(entry.getKey().substring(listenerName.configPrefix().length()))))
+            // exclude keys like `{mechanism}.some.prop` if "listener.name." prefix is present and key `some.prop` exists in parsed configs.
+            .filter(entry -> !parsedConfigs.containsKey(entry.getKey().substring(entry.getKey().indexOf('.') + 1)))
+            .forEach(entry -> parsedConfigs.put(entry.getKey(), entry.getValue()));
+
         Properties clientConfig = new Properties();
-        clientConfig.putAll(securityConfig);
-        clientConfig.put("security.protocol", kafkaConfig.interBrokerSecurityProtocol().toString());
-        clientConfig.put("sasl.mechanism", kafkaConfig.saslMechanismInterBrokerProtocol());
+        parsedConfigs.entrySet().stream()
+            .filter(entry -> entry.getValue() != null)
+            .filter(entry -> isSecurityKey(entry.getKey(), listenerName))
+            .forEach(entry -> clientConfig.put(entry.getKey(), entry.getValue()));
+
+        String interBrokerSaslMechanism = kafkaConfig.saslMechanismInterBrokerProtocol();
+        if (interBrokerSaslMechanism != null && !interBrokerSaslMechanism.isEmpty()) {
+            kafkaConfig.originalsWithPrefix(listenerName.saslMechanismConfigPrefix(interBrokerSaslMechanism)).entrySet().stream()
+                .filter(entry -> entry.getValue() != null)
+                .forEach(entry -> clientConfig.put(entry.getKey(), entry.getValue()));
+            clientConfig.putIfAbsent("sasl.mechanism", interBrokerSaslMechanism);
+        }
+
+        clientConfig.put("security.protocol", securityProtocol.toString());
         clientConfig.put("bootstrap.servers", String.format("%s:%d", endpoint.host(), endpoint.port()));
         return clientConfig;
+    }
+
+    // Filter out non-security broker options (e.g. compression.type, log.retention.hours) so internal clients
+    // only inherit listener-specific SSL/SASL settings.
+    private static boolean isSecurityKey(String key, ListenerName listenerName) {
+        return key.startsWith("ssl.")
+            || key.startsWith("sasl.")
+            || key.startsWith("security.")
+            || key.startsWith(listenerName.configPrefix());
     }
 
 }

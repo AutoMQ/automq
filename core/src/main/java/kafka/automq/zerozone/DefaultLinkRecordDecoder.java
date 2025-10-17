@@ -22,26 +22,32 @@ package kafka.automq.zerozone;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 
+import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.CompletableFuture;
-import java.util.function.Function;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
-public class LinkRecordDecoder implements Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LinkRecordDecoder.class);
+public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecordDecoder {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultLinkRecordDecoder.class);
     private final RouterChannelProvider channelProvider;
 
-    public LinkRecordDecoder(RouterChannelProvider channelProvider) {
+    public DefaultLinkRecordDecoder(RouterChannelProvider channelProvider) {
         this.channelProvider = channelProvider;
     }
 
     @Override
-    public CompletableFuture<StreamRecordBatch> apply(StreamRecordBatch src) {
+    public int decodedSize(ByteBuf linkRecordBuf) {
+        return LinkRecord.decodedSize(linkRecordBuf);
+    }
+
+    @Override
+    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();
@@ -57,8 +63,8 @@ public class LinkRecordDecoder implements Function<StreamRecordBatch, Completabl
                     recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
                     StreamRecordBatch streamRecordBatch = new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
                         -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
-                    // duplicated copy the payload
-                    streamRecordBatch.encoded();
+                    // The buf will be release after the finally block, so we need copy the data by #encoded.
+                    streamRecordBatch.encoded(SnapshotReadCache.ENCODE_ALLOC);
                     return streamRecordBatch;
                 } finally {
                     src.release();

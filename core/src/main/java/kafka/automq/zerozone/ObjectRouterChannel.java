@@ -25,6 +25,7 @@ import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 
 import org.slf4j.Logger;
@@ -34,12 +35,15 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import io.netty.buffer.ByteBuf;
 
 public class ObjectRouterChannel implements RouterChannel {
+    private static final ExecutorService ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private final Logger logger;
     private final AtomicLong mockOffset = new AtomicLong(0);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -54,15 +58,29 @@ public class ObjectRouterChannel implements RouterChannel {
     private final Queue<Long> channelEpochQueue = new LinkedList<>();
     private final Map<Long, RecordOffset> channelEpoch2LastRecordOffset = new HashMap<>();
 
+    private final CompletableFuture<Void> startCf;
+
     public ObjectRouterChannel(int nodeId, short channelId, ObjectWALService wal) {
         this.logger = new LogContext(String.format("[OBJECT_ROUTER_CHANNEL-%s-%s] ", channelId, nodeId)).logger(ObjectRouterChannel.class);
         this.nodeId = nodeId;
         this.channelId = channelId;
         this.wal = wal;
+        this.startCf = CompletableFuture.runAsync(() -> {
+            try {
+                wal.start();
+            } catch (Throwable e) {
+                logger.error("start object router channel failed.", e);
+                throw new RuntimeException(e);
+            }
+        }, ASYNC_EXECUTOR);
     }
 
     @Override
     public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data) {
+        return startCf.thenCompose(nil -> append0(targetNodeId, orderHint, data));
+    }
+
+    CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data) {
         StreamRecordBatch record = new StreamRecordBatch(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data);
         try {
             return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
@@ -83,6 +101,10 @@ public class ObjectRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<ByteBuf> get(ByteBuf channelOffset) {
+        return startCf.thenCompose(nil -> get0(channelOffset));
+    }
+
+    CompletableFuture<ByteBuf> get0(ByteBuf channelOffset) {
         return wal.get(DefaultRecordOffset.of(ChannelOffset.of(channelOffset).walRecordOffset())).thenApply(streamRecordBatch -> {
             ByteBuf payload = streamRecordBatch.getPayload().retainedSlice();
             streamRecordBatch.release();
@@ -107,17 +129,21 @@ public class ObjectRouterChannel implements RouterChannel {
     public void trim(long epoch) {
         writeLock.lock();
         try {
-            for (;;) {
+            RecordOffset recordOffset = null;
+            for (; ; ) {
                 Long channelEpoch = channelEpochQueue.peek();
                 if (channelEpoch == null || channelEpoch > epoch) {
-                    return;
+                    break;
                 }
                 channelEpochQueue.poll();
-                RecordOffset recordOffset = channelEpoch2LastRecordOffset.remove(epoch);
-                if (recordOffset != null) {
-                    wal.trim(recordOffset);
-                    logger.info("trim to epoch={} offset={}", epoch, recordOffset);
+                RecordOffset removed = channelEpoch2LastRecordOffset.remove(channelEpoch);
+                if (removed != null) {
+                    recordOffset = removed;
                 }
+            }
+            if (recordOffset != null) {
+                wal.trim(recordOffset);
+                logger.info("trim to epoch={} offset={}", epoch, recordOffset);
             }
         } finally {
             writeLock.unlock();
@@ -125,7 +151,7 @@ public class ObjectRouterChannel implements RouterChannel {
     }
 
     @Override
-    public void close() {
-        wal.shutdownGracefully();
+    public CompletableFuture<Void> close() {
+        return startCf.thenAcceptAsync(nil -> FutureUtil.suppress(wal::shutdownGracefully, logger), ASYNC_EXECUTOR);
     }
 }

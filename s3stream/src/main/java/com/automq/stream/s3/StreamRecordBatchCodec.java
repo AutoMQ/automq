@@ -24,8 +24,6 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 
 import io.netty.buffer.ByteBuf;
 
-import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
-
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
     public static final int HEADER_SIZE =
@@ -35,12 +33,11 @@ public class StreamRecordBatchCodec {
             + 8 // baseOffset
             + 4 // lastOffsetDelta
             + 4; // payload length
-    private static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(ENCODE_RECORD, 8);
 
-    public static ByteBuf encode(StreamRecordBatch streamRecord) {
+    public static ByteBuf encode(StreamRecordBatch streamRecord, ByteBufSeqAlloc alloc) {
         int totalLength = HEADER_SIZE + streamRecord.size(); // payload
         // use sequential allocator to avoid memory fragmentation
-        ByteBuf buf = ENCODE_ALLOC.byteBuffer(totalLength);
+        ByteBuf buf = alloc.byteBuffer(totalLength);
         buf.writeByte(MAGIC_V0);
         buf.writeLong(streamRecord.getStreamId());
         buf.writeLong(streamRecord.getEpoch());
@@ -75,7 +72,10 @@ public class StreamRecordBatchCodec {
      * The returned stream record batch shares the payload buffer with the input buffer.
      */
     public static StreamRecordBatch decode(ByteBuf buf, boolean retain) {
-        buf.readByte(); // magic
+        byte magic = buf.readByte(); // magic
+        if (magic != MAGIC_V0) {
+            throw new RuntimeException("Invalid magic byte " + magic);
+        }
         long streamId = buf.readLong();
         long epoch = buf.readLong();
         long baseOffset = buf.readLong();

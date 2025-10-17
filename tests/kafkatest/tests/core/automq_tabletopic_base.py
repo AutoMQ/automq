@@ -25,6 +25,7 @@ from ducktape.utils.util import wait_until
 from kafkatest.services.external_services import DockerComposeService
 from kafkatest.services.kafka import KafkaService
 from kafkatest.services.performance import AutoMQPerformanceService
+from kafkatest.services.security.security_config import SecurityConfig
 
 
 # Static IP configuration from ducknet
@@ -52,10 +53,15 @@ class TableTopicBase(Test):
         self.iceberg_catalog_service = None
         self.schema_registry_service = None
 
+        self.security_protocol = SecurityConfig.PLAINTEXT
+        self.interbroker_security_protocol = SecurityConfig.PLAINTEXT
+
         self.kafka = KafkaService(
             test_context,
             num_nodes=3,
             zk=None,
+            security_protocol=self.security_protocol,
+            interbroker_security_protocol=self.interbroker_security_protocol,
             server_prop_overrides=[
                 ["automq.table.topic.catalog.type", "rest"],
                 ["automq.table.topic.catalog.uri", ICEBERG_CATALOG_URL],
@@ -69,6 +75,8 @@ class TableTopicBase(Test):
         self.iceberg_catalog_service = DockerComposeService(ICEBERG_CATALOG_COMPOSE_PATH, self.logger)
         self.iceberg_catalog_service.start()
 
+        # Apply any security overrides configured by subclasses prior to starting Kafka
+        self.configure_security(self.security_protocol, self.interbroker_security_protocol, restart_cluster=False)
         self.kafka.start()
         bootstrap_servers = self.kafka.bootstrap_servers()
         schema_registry_env = {"KAFKA_BOOTSTRAP_SERVERS": bootstrap_servers}
@@ -98,6 +106,27 @@ class TableTopicBase(Test):
 
     def _perf_topic_name(self, prefix: str, partitions: int = 16, index: int = 0) -> str:
         return f"__automq_perf_{prefix}_{partitions:04d}_{index:07d}"
+
+    def configure_security(self, security_protocol=None, interbroker_security_protocol=None, restart_cluster=False):
+        changed = False
+        if security_protocol is not None and security_protocol != self.kafka.security_protocol:
+            self.kafka.security_protocol = security_protocol
+            self.kafka.open_port(self.kafka.security_protocol)
+            changed = True
+        if interbroker_security_protocol is not None and interbroker_security_protocol != self.kafka.interbroker_security_protocol:
+            use_separate = interbroker_security_protocol != self.kafka.security_protocol
+            self.kafka.setup_interbroker_listener(interbroker_security_protocol, use_separate_listener=use_separate)
+            self.kafka.open_port(self.kafka.interbroker_listener.name)
+            self.kafka.interbroker_listener.open = True
+            changed = True
+        if changed:
+            self.kafka._security_config = None
+        if restart_cluster and changed:
+            if any(self.kafka.alive(node) for node in self.kafka.nodes):
+                self.kafka.restart_cluster()
+            else:
+                self.logger.info("Kafka not started; skipping restart after security change")
+        return changed
 
     def _sum_kafka_end_offsets(self, topic: str) -> int:
         output = self.kafka.get_offset_shell(time='-1', topic=topic)

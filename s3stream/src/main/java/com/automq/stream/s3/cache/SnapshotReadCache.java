@@ -1,5 +1,7 @@
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -46,7 +48,10 @@ import java.util.stream.Collectors;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
+import static com.automq.stream.s3.ByteBufAlloc.SNAPSHOT_READ_CACHE;
+
 public class SnapshotReadCache {
+    public static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 8);
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
 
@@ -66,10 +71,10 @@ public class SnapshotReadCache {
     private final StreamManager streamManager;
     private final LogCache cache;
     private final ObjectStorage objectStorage;
-    private final Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder;
+    private final LinkRecordDecoder linkRecordDecoder;
     private final Time time = Time.SYSTEM;
 
-    public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, Function<StreamRecordBatch, CompletableFuture<StreamRecordBatch>> linkRecordDecoder) {
+    public SnapshotReadCache(StreamManager streamManager, LogCache cache, ObjectStorage objectStorage, LinkRecordDecoder linkRecordDecoder) {
         activeStreams = CacheBuilder.newBuilder()
             .expireAfterAccess(10, TimeUnit.MINUTES)
             .removalListener((RemovalListener<Long, Boolean>) notification ->
@@ -219,7 +224,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.apply(walRecord));
+                        cfList.add(linkRecordDecoder.decode(walRecord));
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
@@ -231,8 +236,7 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).toList());
-                    // move to mem pool
-                    records.forEach(StreamRecordBatch::encoded);
+                    records.forEach(r -> r.encoded(ENCODE_ALLOC));
                     loadCf.complete(null);
                 });
             }).whenComplete((rst, ex) -> {

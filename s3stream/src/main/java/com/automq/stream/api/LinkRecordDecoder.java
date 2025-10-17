@@ -17,14 +17,35 @@
  * limitations under the License.
  */
 
-package kafka.automq.zerozone;
+package com.automq.stream.api;
 
-import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
 
-public interface ConfirmWALProvider {
+import io.netty.buffer.ByteBuf;
 
-    CompletableFuture<WriteAheadLog> readOnly(String walConfig, int nodeId);
+public interface LinkRecordDecoder {
+    LinkRecordDecoder NOOP = new Noop();
 
+    /**
+     * Get the decoded record size
+     */
+    int decodedSize(ByteBuf linkRecordBuf);
+
+    CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src);
+
+
+    class Noop implements LinkRecordDecoder {
+
+        @Override
+        public int decodedSize(ByteBuf linkRecordBuf) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
+            return CompletableFuture.failedFuture(new UnsupportedOperationException());
+        }
+    }
 }
