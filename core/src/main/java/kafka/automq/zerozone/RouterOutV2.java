@@ -85,6 +85,7 @@ public class RouterOutV2 {
         Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> cfList = new ArrayList<>(args.entriesPerPartition().size());
         long startNanos = time.nanoseconds();
+        boolean acks0 = args.requiredAcks() == (short) 0;
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
             MemoryRecords records = entry.getValue();
@@ -103,14 +104,16 @@ public class RouterOutV2 {
                 ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), zoneRouterProduceRequest, recordSize, timeoutMillis);
                 sendProxyRequest(node, proxyRequest);
                 return proxyRequest.cf.thenAccept(response -> {
-                    responseMap.put(tp, response);
+                    if (!acks0) {
+                        responseMap.put(tp, response);
+                    }
                     ZeroZoneMetricsManager.PROXY_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
                 });
             });
             cfList.add(proxyCf);
         }
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
-        if (args.requiredAcks() == (short) 0) {
+        if (acks0) {
             // When acks=0 is set, invoke the callback directly without waiting for data persistence to complete.
             args.entriesPerPartition().forEach((tp, records) ->
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NONE)));
