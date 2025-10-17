@@ -32,6 +32,33 @@ class ConnectRemoteWriteTest(Test):
     """
 
     TOPIC = "remote-write-test"
+    FILE_SOURCE_CONNECTOR = 'org.apache.kafka.connect.file.FileStreamSourceConnector'
+    FILE_SINK_CONNECTOR = 'org.apache.kafka.connect.file.FileStreamSinkConnector'
+
+    INPUT_FILE = "/mnt/connect.input"
+    OUTPUT_FILE = "/mnt/connect.output"
+
+    TOPIC = "test"
+    OFFSETS_TOPIC = "connect-offsets"
+    OFFSETS_REPLICATION_FACTOR = "1"
+    OFFSETS_PARTITIONS = "1"
+    CONFIG_TOPIC = "connect-configs"
+    CONFIG_REPLICATION_FACTOR = "1"
+    STATUS_TOPIC = "connect-status"
+    STATUS_REPLICATION_FACTOR = "1"
+    STATUS_PARTITIONS = "1"
+    EXACTLY_ONCE_SOURCE_SUPPORT = "disabled"
+    SCHEDULED_REBALANCE_MAX_DELAY_MS = "60000"
+    CONNECT_PROTOCOL="sessioned"
+
+    # Since tasks can be assigned to any node and we're testing with files, we need to make sure the content is the same
+    # across all nodes.
+    FIRST_INPUT_LIST = ["foo", "bar", "baz"]
+    FIRST_INPUTS = "\n".join(FIRST_INPUT_LIST) + "\n"
+    SECOND_INPUT_LIST = ["razz", "ma", "tazz"]
+    SECOND_INPUTS = "\n".join(SECOND_INPUT_LIST) + "\n"
+
+    SCHEMA = { "type": "string", "optional": False }
 
     def __init__(self, test_context):
         super(ConnectRemoteWriteTest, self).__init__(test_context)
