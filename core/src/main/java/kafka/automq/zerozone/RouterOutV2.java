@@ -85,6 +85,7 @@ public class RouterOutV2 {
         Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> cfList = new ArrayList<>(args.entriesPerPartition().size());
         long startNanos = time.nanoseconds();
+        boolean acks0 = args.requiredAcks() == (short) 0;
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
             MemoryRecords records = entry.getValue();
@@ -103,18 +104,27 @@ public class RouterOutV2 {
                 ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), zoneRouterProduceRequest, recordSize, timeoutMillis);
                 sendProxyRequest(node, proxyRequest);
                 return proxyRequest.cf.thenAccept(response -> {
-                    responseMap.put(tp, response);
+                    if (!acks0) {
+                        responseMap.put(tp, response);
+                    }
                     ZeroZoneMetricsManager.PROXY_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
                 });
             });
             cfList.add(proxyCf);
         }
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
-        CompletableFuture<Void> cf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
-        cf.thenAccept(nil -> responseCallback.accept(responseMap)).exceptionally(ex -> {
-            LOGGER.error("[UNEXPECTED],[ROUTE_FAIL]", ex);
-            return null;
-        });
+        if (acks0) {
+            // When acks=0 is set, invoke the callback directly without waiting for data persistence to complete.
+            args.entriesPerPartition().forEach((tp, records) ->
+                responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NONE)));
+            responseCallback.accept(responseMap);
+        } else {
+            CompletableFuture<Void> cf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
+            cf.thenAccept(nil -> responseCallback.accept(responseMap)).exceptionally(ex -> {
+                LOGGER.error("[UNEXPECTED],[ROUTE_FAIL]", ex);
+                return null;
+            });
+        }
     }
 
     private static short orderHint(TopicPartition tp, String connectionId) {
@@ -160,6 +170,7 @@ public class RouterOutV2 {
 
     class RemoteProxy implements Proxy {
         private static final int MAX_INFLIGHT_SIZE = 64;
+        private static final long LINGER_NANOS = TimeUnit.MICROSECONDS.toNanos(100);
         private final Node node;
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
         private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
@@ -173,8 +184,8 @@ public class RouterOutV2 {
             ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
             synchronized (this) {
                 if (requestBatch == null) {
-                    requestBatch = new RequestBatch(time, 1, 8192);
-                    Threads.COMMON_SCHEDULER.schedule(() -> trySendRequestBatch(requestBatch), 1, TimeUnit.MILLISECONDS);
+                    requestBatch = new RequestBatch(time, LINGER_NANOS, 8192);
+                    Threads.COMMON_SCHEDULER.schedule(() -> trySendRequestBatch(requestBatch), LINGER_NANOS, TimeUnit.NANOSECONDS);
                 }
                 if (requestBatch.add(request)) {
                     requestBatchQueue.add(requestBatch);
@@ -279,9 +290,9 @@ public class RouterOutV2 {
         private final long batchSize;
         private final Map<Long, List<ProxyRequest>> requests = new TreeMap<>();
 
-        public RequestBatch(Time time, long lingerMs, int batchSize) {
+        public RequestBatch(Time time, long lingerNanos, int batchSize) {
             this.time = time;
-            this.lingerNanos = TimeUnit.MILLISECONDS.toNanos(lingerMs);
+            this.lingerNanos = lingerNanos;
             this.batchSize = batchSize;
             this.batchStartNanos = System.nanoTime();
         }
