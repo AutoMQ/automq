@@ -24,7 +24,7 @@ public final class AzAwareClientConfigurator {
         ADMIN
     }
 
-    public static void maybeApplyAz(Map<String, Object> props, String defaultClientId, ClientFamily family, String roleDescriptor) {
+    public static void maybeApplyAz(Map<String, Object> props, ClientFamily family, String roleDescriptor) {
         Optional<String> azOpt = AzMetadataProviderHolder.provider().availabilityZoneId();
         LOGGER.info("AZ-aware client.id configuration for role {}: resolved availability zone id '{}'",
             roleDescriptor, azOpt.orElse("unknown"));
@@ -45,13 +45,7 @@ public final class AzAwareClientConfigurator {
                 roleDescriptor, currentId.getClass().getName());
             return;
         }
-        if (!currentIdStr.equals(defaultClientId)) {
-            LOGGER.warn("client.id for role {} is not the same as the default client", roleDescriptor);
-            // User has overridden the client.id; respect it.
-            return;
-        }
 
-        String encodedClientId = URLEncoder.encode(defaultClientId, StandardCharsets.UTF_8);
         String encodedAz = URLEncoder.encode(az, StandardCharsets.UTF_8);
         String type = switch (family) {
             case PRODUCER -> "producer";
@@ -61,8 +55,8 @@ public final class AzAwareClientConfigurator {
         String encodedRole = URLEncoder.encode(roleDescriptor.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8);
         String automqClientId = "automq_type=" + type
             + "&automq_role=" + encodedRole
-            + "&automq_client_id=" + encodedClientId
-            + "&automq_az=" + encodedAz;
+            + "&automq_az=" + encodedAz
+            + "&" + currentIdStr;
         props.put(CommonClientConfigs.CLIENT_ID_CONFIG, automqClientId);
         LOGGER.info("Applied AZ-aware client.id for role {} -> {}", roleDescriptor, automqClientId);
 
@@ -75,15 +69,15 @@ public final class AzAwareClientConfigurator {
         }
     }
 
-    public static void maybeApplyProducerAz(Map<String, Object> props, String defaultClientId, String roleDescriptor) {
-        maybeApplyAz(props, defaultClientId, ClientFamily.PRODUCER, roleDescriptor);
+    public static void maybeApplyProducerAz(Map<String, Object> props, String roleDescriptor) {
+        maybeApplyAz(props, ClientFamily.PRODUCER, roleDescriptor);
     }
 
-    public static void maybeApplyConsumerAz(Map<String, Object> props, String defaultClientId, String roleDescriptor) {
-        maybeApplyAz(props, defaultClientId, ClientFamily.CONSUMER, roleDescriptor);
+    public static void maybeApplyConsumerAz(Map<String, Object> props, String roleDescriptor) {
+        maybeApplyAz(props, ClientFamily.CONSUMER, roleDescriptor);
     }
 
-    public static void maybeApplyAdminAz(Map<String, Object> props, String defaultClientId, String roleDescriptor) {
-        maybeApplyAz(props, defaultClientId, ClientFamily.ADMIN, roleDescriptor);
+    public static void maybeApplyAdminAz(Map<String, Object> props, String roleDescriptor) {
+        maybeApplyAz(props, ClientFamily.ADMIN, roleDescriptor);
     }
 }

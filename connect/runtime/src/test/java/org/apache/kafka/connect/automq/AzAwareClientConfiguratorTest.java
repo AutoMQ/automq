@@ -27,21 +27,22 @@ class AzAwareClientConfiguratorTest {
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "producer-1");
 
-        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1", "producer-1");
+        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1");
 
-        assertEquals("automq_type=producer&automq_role=producer-1&automq_client_id=producer-1&automq_az=us-east-1a",
+        assertEquals("automq_type=producer&automq_role=producer-1&automq_az=us-east-1a&producer-1",
             props.get(ProducerConfig.CLIENT_ID_CONFIG));
     }
 
     @Test
-    void shouldSkipWhenClientIdOverridden() {
+    void shouldPreserveCustomClientIdInAzConfig() {
         AzMetadataProviderHolder.setProviderForTest(new FixedAzProvider("us-east-1a"));
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "custom-id");
 
-        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1", "producer-1");
+        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1");
 
-        assertEquals("custom-id", props.get(ProducerConfig.CLIENT_ID_CONFIG));
+        assertEquals("automq_type=producer&automq_role=producer-1&automq_az=us-east-1a&custom-id",
+            props.get(ProducerConfig.CLIENT_ID_CONFIG));
     }
 
     @Test
@@ -50,7 +51,7 @@ class AzAwareClientConfiguratorTest {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.CLIENT_ID_CONFIG, "consumer-1");
 
-        AzAwareClientConfigurator.maybeApplyConsumerAz(props, "consumer-1", "consumer-1");
+        AzAwareClientConfigurator.maybeApplyConsumerAz(props, "consumer-1");
 
         assertEquals("us-west-2c", props.get(ConsumerConfig.CLIENT_RACK_CONFIG));
     }
@@ -61,9 +62,9 @@ class AzAwareClientConfiguratorTest {
         Map<String, Object> props = new HashMap<>();
         props.put(AdminClientConfig.CLIENT_ID_CONFIG, "admin-1");
 
-        AzAwareClientConfigurator.maybeApplyAdminAz(props, "admin-1", "admin-1");
+        AzAwareClientConfigurator.maybeApplyAdminAz(props, "admin-1");
 
-        assertEquals("automq_type=admin&automq_role=admin-1&automq_client_id=admin-1&automq_az=eu-west-1b",
+        assertEquals("automq_type=admin&automq_role=admin-1&automq_az=eu-west-1b&admin-1",
             props.get(AdminClientConfig.CLIENT_ID_CONFIG));
     }
 
@@ -78,10 +79,22 @@ class AzAwareClientConfiguratorTest {
         Map<String, Object> props = new HashMap<>();
         props.put(ProducerConfig.CLIENT_ID_CONFIG, "producer-1");
 
-        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1", "producer-1");
+        AzAwareClientConfigurator.maybeApplyProducerAz(props, "producer-1");
 
         assertEquals("producer-1", props.get(ProducerConfig.CLIENT_ID_CONFIG));
         assertFalse(props.containsKey(ConsumerConfig.CLIENT_RACK_CONFIG));
+    }
+
+    @Test
+    void shouldEncodeSpecialCharactersInClientId() {
+        AzMetadataProviderHolder.setProviderForTest(new FixedAzProvider("us-east-1a"));
+        Map<String, Object> props = new HashMap<>();
+        props.put(ProducerConfig.CLIENT_ID_CONFIG, "client-with-spaces & symbols");
+
+        AzAwareClientConfigurator.maybeApplyProducerAz(props, "test-role");
+
+        assertEquals("automq_type=producer&automq_role=test-role&automq_az=us-east-1a&client-with-spaces & symbols",
+            props.get(ProducerConfig.CLIENT_ID_CONFIG));
     }
 
     private static final class FixedAzProvider implements AzMetadataProvider {

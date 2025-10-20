@@ -842,7 +842,7 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         producerProps.putAll(producerOverrides);
 
-        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, defaultClientId, defaultClientId);
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, defaultClientId);
 
         return producerProps;
     }
@@ -912,7 +912,7 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         consumerProps.putAll(consumerOverrides);
 
-        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, defaultClientId, defaultClientId);
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, defaultClientId);
 
         return consumerProps;
     }
@@ -943,7 +943,7 @@ public class Worker {
         // Admin client-specific overrides in the worker config
         adminProps.putAll(config.originalsWithPrefix("admin."));
 
-        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, defaultClientId, defaultClientId);
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, defaultClientId);
 
         // Connector-specified overrides
         Map<String, Object> adminOverrides =
