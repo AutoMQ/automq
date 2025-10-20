@@ -16,7 +16,7 @@
 import re
 import textwrap
 
-from ducktape.mark import cluster
+from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from kafkatest.tests.kafka_test import KafkaTest
@@ -28,7 +28,6 @@ class ConnectAzMetadataTest(KafkaTest):
 
     AZ_CONFIG_KEY = "automq.test.az.id"
     EXPECTED_AZ = "test-az-1"
-    PLUGIN_INSTALL_DIR = "/mnt/connect-az-plugin"
     TOPIC = "az-aware-connect"
     FILE_SOURCE_CONNECTOR = 'org.apache.kafka.connect.file.FileStreamSourceConnector'
     FILE_SINK_CONNECTOR = 'org.apache.kafka.connect.file.FileStreamSinkConnector'
@@ -59,8 +58,8 @@ class ConnectAzMetadataTest(KafkaTest):
 
     def __init__(self, test_context):
         super(ConnectAzMetadataTest, self).__init__(test_context, num_zk=1, num_brokers=1)
-        # Single worker is sufficient; include plugin directory so it gets cleaned between runs
-        self.cc = ConnectDistributedService(test_context, 1, self.kafka, [self.PLUGIN_INSTALL_DIR])
+        # Single worker is sufficient for testing AZ metadata provider
+        self.cc = ConnectDistributedService(test_context, 1, self.kafka, [])
         self.source = None
         self.sink = None
         self._last_describe_output = ""
@@ -72,7 +71,6 @@ class ConnectAzMetadataTest(KafkaTest):
         self.kafka.start()
 
         self.cc.clean()
-        self.PLUGIN_PATH = self.PLUGIN_INSTALL_DIR
         self._install_az_provider_plugin()
 
         self.cc.set_configs(lambda node: self._render_worker_config(node))
@@ -99,7 +97,7 @@ class ConnectAzMetadataTest(KafkaTest):
             wait_until(az_metadata_present, timeout_sec=60,
                        err_msg="Consumer group metadata never reflected AZ-aware client settings")
 
-            assert self._consumer_group_has_expected_metadata(self._last_describe_output), \
+            assert self.q(self._last_describe_output), \
                 "Final consumer group output did not contain expected AZ metadata: %s" % self._last_describe_output
         finally:
             if self.sink is not None:
@@ -114,49 +112,82 @@ class ConnectAzMetadataTest(KafkaTest):
         return base_config + "\n%s=%s\n" % (self.AZ_CONFIG_KEY, self.EXPECTED_AZ)
 
     def _install_az_provider_plugin(self):
-        java_source = textwrap.dedent(f"""
+        # Create a simple mock AzMetadataProvider implementation directly in the Connect runtime classpath
+        java_source = textwrap.dedent("""
             package org.apache.kafka.connect.automq.test;
 
             import java.util.Map;
             import java.util.Optional;
             import org.apache.kafka.connect.automq.AzMetadataProvider;
 
-            public class FixedAzMetadataProvider implements AzMetadataProvider {
-                private String az;
+            public class FixedAzMetadataProvider implements AzMetadataProvider {{
+                private volatile Optional<String> availabilityZoneId = Optional.empty();
 
                 @Override
-                public void configure(Map<String, String> workerProps) {
-                    this.az = workerProps.getOrDefault("{self.AZ_CONFIG_KEY}", null);
-                    if (this.az != null && this.az.isBlank()) {
-                        this.az = null;
-                    }
-                }
+                public void configure(Map<String, String> workerProps) {{
+                    System.out.println("FixedAzMetadataProvider.configure() called with worker properties: " + workerProps.keySet());
+                    
+                    String az = workerProps.get("{}");
+                    System.out.println("AZ config value for key '{}': " + az);
+                    
+                    if (az == null || az.isBlank()) {{
+                        availabilityZoneId = Optional.empty();
+                        System.out.println("FixedAzMetadataProvider: No AZ configured, setting to empty");
+                    }} else {{
+                        availabilityZoneId = Optional.of(az);
+                        System.out.println("FixedAzMetadataProvider: Setting AZ to: " + az);
+                    }}
+                }}
 
                 @Override
-                public Optional<String> availabilityZoneId() {
-                    return Optional.ofNullable(this.az);
-                }
-            }
-        """)
+                public Optional<String> availabilityZoneId() {{
+                    System.out.println("FixedAzMetadataProvider.availabilityZoneId() called, returning: " + availabilityZoneId.orElse("empty"));
+                    return availabilityZoneId;
+                }}
+            }}
+        """.format(self.AZ_CONFIG_KEY, self.AZ_CONFIG_KEY))
+        
         service_definition = "org.apache.kafka.connect.automq.test.FixedAzMetadataProvider\n"
-        classpath = "%s/libs/*" % self.cc.path.home()
-
+        
         for node in self.cc.nodes:
-            node.account.ssh("rm -rf {dir} && mkdir -p {dir}/org/apache/kafka/connect/automq/test".format(
-                dir=self.PLUGIN_INSTALL_DIR
-            ))
-            node.account.ssh("mkdir -p {dir}/META-INF/services".format(dir=self.PLUGIN_INSTALL_DIR))
-            java_path = "{dir}/org/apache/kafka/connect/automq/test/FixedAzMetadataProvider.java".format(
-                dir=self.PLUGIN_INSTALL_DIR)
-            service_path = "{dir}/META-INF/services/org.apache.kafka.connect.automq.AzMetadataProvider".format(
-                dir=self.PLUGIN_INSTALL_DIR)
+            # Get the Connect runtime classes directory where ServiceLoader will find our class
+            kafka_home = self.cc.path.home()
+            runtime_classes_dir = f"{kafka_home}/connect/runtime/build/classes/java/main"
+            
+            # Create the package directory structure in the runtime classes
+            test_package_dir = f"{runtime_classes_dir}/org/apache/kafka/connect/automq/test"
+            node.account.ssh(f"mkdir -p {test_package_dir}")
+            node.account.ssh(f"mkdir -p {runtime_classes_dir}/META-INF/services")
+            
+            # Write the Java source file to a temporary location
+            temp_src_dir = f"/tmp/az-provider-src/org/apache/kafka/connect/automq/test"
+            node.account.ssh(f"mkdir -p {temp_src_dir}")
+            java_path = f"{temp_src_dir}/FixedAzMetadataProvider.java"
             node.account.create_file(java_path, java_source)
+            
+            # Create the ServiceLoader service definition in the runtime classes
+            service_path = f"{runtime_classes_dir}/META-INF/services/org.apache.kafka.connect.automq.AzMetadataProvider"
             node.account.create_file(service_path, service_definition)
-            compile_cmd = "cd {dir} && javac -cp \"{cp}\" org/apache/kafka/connect/automq/test/FixedAzMetadataProvider.java".format(
-                dir=self.PLUGIN_INSTALL_DIR, cp=classpath)
-            node.account.ssh(compile_cmd)
-            jar_cmd = "cd {dir} && jar cf az-provider.jar org META-INF".format(dir=self.PLUGIN_INSTALL_DIR)
-            node.account.ssh(jar_cmd)
+            
+            # Compile the Java file directly to the runtime classes directory
+            classpath = f"{kafka_home}/connect/runtime/build/libs/*:{kafka_home}/connect/runtime/build/dependant-libs/*:{kafka_home}/clients/build/libs/*"
+            compile_cmd = f"javac -cp \"{classpath}\" -d {runtime_classes_dir} {java_path}"
+            print(f"Compiling with command: {compile_cmd}")
+            result = node.account.ssh(compile_cmd, allow_fail=False)
+            print(f"Compilation result: {result}")
+            
+            # Verify the compiled class exists in the runtime classes directory
+            class_path = f"{test_package_dir}/FixedAzMetadataProvider.class"
+            verify_cmd = f"ls -la {class_path}"
+            verify_result = node.account.ssh(verify_cmd, allow_fail=True)
+            print(f"Class file verification: {verify_result}")
+            
+            # Also verify the service definition exists
+            service_verify_cmd = f"cat {service_path}"
+            service_verify_result = node.account.ssh(service_verify_cmd, allow_fail=True)
+            print(f"Service definition verification: {service_verify_result}")
+            
+            print(f"AZ metadata provider plugin installed in runtime classpath for node {node.account.hostname}")
 
     def _consumer_group_has_expected_metadata(self, describe_output):
         lines = [line.strip() for line in describe_output.splitlines() if line.strip()]
@@ -176,7 +207,7 @@ class ConnectAzMetadataTest(KafkaTest):
             if "CLIENT-ID" not in header_index or header_index["CLIENT-ID"] >= len(tokens):
                 continue
             client_id = tokens[header_index["CLIENT-ID"]]
-            if f"automq_az={self.EXPECTED_AZ}" not in client_id:
+            if "automq_az={}".format(self.EXPECTED_AZ) not in client_id:
                 continue
             if "CLIENT-RACK" not in header_index or header_index["CLIENT-RACK"] >= len(tokens):
                 continue

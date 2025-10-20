@@ -1,14 +1,16 @@
 package org.apache.kafka.connect.automq;
 
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public final class AzAwareClientConfigurator {
     private static final Logger LOGGER = LoggerFactory.getLogger(AzAwareClientConfigurator.class);
@@ -24,19 +26,27 @@ public final class AzAwareClientConfigurator {
 
     public static void maybeApplyAz(Map<String, Object> props, String defaultClientId, ClientFamily family, String roleDescriptor) {
         Optional<String> azOpt = AzMetadataProviderHolder.provider().availabilityZoneId();
+        LOGGER.info("AZ-aware client.id configuration for role {}: resolved availability zone id '{}'",
+            roleDescriptor, azOpt.orElse("unknown"));
         if (azOpt.isEmpty()) {
+            LOGGER.info("Skipping AZ-aware client.id configuration for role {} as no availability zone id is available",
+                roleDescriptor);
             return;
         }
 
         String az = azOpt.get();
         if (!props.containsKey(CommonClientConfigs.CLIENT_ID_CONFIG)) {
+            LOGGER.info("No client.id configured for role {}; skipping AZ-aware configuration", roleDescriptor);
             return;
         }
         Object currentId = props.get(CommonClientConfigs.CLIENT_ID_CONFIG);
         if (!(currentId instanceof String currentIdStr)) {
+            LOGGER.warn("client.id for role {} is not a string ({}); skipping AZ-aware configuration",
+                roleDescriptor, currentId.getClass().getName());
             return;
         }
         if (!currentIdStr.equals(defaultClientId)) {
+            LOGGER.warn("client.id for role {} is not the same as the default client", roleDescriptor);
             // User has overridden the client.id; respect it.
             return;
         }
@@ -54,9 +64,10 @@ public final class AzAwareClientConfigurator {
             + "&automq_client_id=" + encodedClientId
             + "&automq_az=" + encodedAz;
         props.put(CommonClientConfigs.CLIENT_ID_CONFIG, automqClientId);
-        LOGGER.debug("Applied AZ-aware client.id for role {} -> {}", roleDescriptor, automqClientId);
+        LOGGER.info("Applied AZ-aware client.id for role {} -> {}", roleDescriptor, automqClientId);
 
         if (family == ClientFamily.CONSUMER) {
+            LOGGER.info("Applying client.rack configuration for consumer role {} -> {}", roleDescriptor, az);
             Object rackValue = props.get(ConsumerConfig.CLIENT_RACK_CONFIG);
             if (rackValue == null || String.valueOf(rackValue).isBlank()) {
                 props.put(ConsumerConfig.CLIENT_RACK_CONFIG, az);

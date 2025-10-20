@@ -1,9 +1,10 @@
 package org.apache.kafka.connect.automq;
 
-import java.util.Map;
-import java.util.ServiceLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.ServiceLoader;
 
 public final class AzMetadataProviderHolder {
     private static final Logger LOGGER = LoggerFactory.getLogger(AzMetadataProviderHolder.class);
