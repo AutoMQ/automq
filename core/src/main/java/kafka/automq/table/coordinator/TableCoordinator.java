@@ -388,11 +388,16 @@ public class TableCoordinator implements Closeable {
                         deleteFiles.forEach(delta::addDeletes);
                         delta.commit();
                     }
-                    transaction.expireSnapshots()
-                        .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1))
-                        .retainLast(1)
-                        .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
-                        .commit();
+                    try {
+                        transaction.expireSnapshots()
+                            .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1))
+                            .retainLast(1)
+                            .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
+                            .commit();
+                    } catch (Exception exception) {
+                        // skip expire snapshot failure
+                        LOGGER.error("[EXPIRE_SNAPSHOT_FAIL],{}", getTable().name(), exception);
+                    }
                 }
 
                 recordMetrics();
