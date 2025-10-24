@@ -117,7 +117,9 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
             unpackLinkQueue.add(partitionProduceRequest);
             partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                size.addAndGet(rst.readableBytes());
+                if (ex != null) {
+                    size.addAndGet(rst.readableBytes());
+                }
                 handleUnpackLink();
                 ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
             });
@@ -191,7 +193,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
         // We should release the request after append completed.
-        cf.whenComplete((resp, ex) -> zoneRouterProduceRequest.close());
+        cf.whenComplete((resp, ex) -> FutureUtil.suppress(zoneRouterProduceRequest::close, LOGGER));
         handler.handleProduceAppend(
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))
