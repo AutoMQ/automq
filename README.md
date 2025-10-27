@@ -29,9 +29,26 @@
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
     <img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="19%" />
 </a> 
+
+<a href="https://www.automq.com/customer" target="_blank">
+    <img alt="Avia" src="https://github.com/user-attachments/assets/d2845e1c-caf4-444a-93f0-97b13c9c8490" width="19%" />
+</a>
+<a href="https://www.automq.com/customer" target="_blank">
+    <img alt="Tencent" src="https://github.com/user-attachments/assets/2bdd205f-38c1-4110-9af1-d4c782db3395" width="19%" />
+</a>
+<a href="https://www.automq.com/customer" target="_blank">
+    <img alt="Honda" src="https://github.com/user-attachments/assets/ee65af29-8ee3-404b-bf81-a004fe0c327c" width="19%" />
+</a>
+<a href="https://www.automq.com/customer" target="_blank">
+    <img alt="Trip" src="https://github.com/user-attachments/assets/0cb4ae63-6dc1-43dc-9416-625a08dca2e5" width="19%" />
+</a>
+<a href="https://www.automq.com/customer" target="_blank">
+    <img alt="LG" src="https://github.com/user-attachments/assets/ed9e0f87-abc6-4552-977c-f342ecb105a0" width="19%" />
+</a>
 <a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank">
     <img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="19%" />
 </a> 
+
 <a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank">
     <img alt="Geely" src="https://github.com/user-attachments/assets/d61f7c51-0d80-4290-a428-a941441c7ec9" width="19%" />
 </a>
