@@ -180,6 +180,11 @@ public class BootstrapWalV1 implements WriteAheadLog {
         return wal.trim(offset);
     }
 
+    @Override
+    public CompletableFuture<Void> truncateTail(RecordOffset offset) {
+        return wal.truncateTail(offset);
+    }
+
     private CompletableFuture<? extends WriteAheadLog> buildRecoverWal(String kraftWalConfigs, long oldNodeEpoch) {
         IdURI uri = IdURI.parse(kraftWalConfigs);
         CompletableFuture<Void> cf = walHandle

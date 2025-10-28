@@ -58,6 +58,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -153,14 +154,15 @@ public class S3StorageTest {
         Mockito.doAnswer(invocation -> commitCfList.get(commitCfIndex.getAndIncrement())).when(objectManager).commitStreamSetObject(any());
 
         LogCache.LogCacheBlock logCacheBlock1 = new LogCache.LogCacheBlock(1024);
-        logCacheBlock1.put(newRecord(233L, 10L));
-        logCacheBlock1.put(newRecord(234L, 10L));
+        AtomicLong walOffsetGen = new AtomicLong();
+        logCacheBlock1.put(newRecord(233L, 10L), DefaultRecordOffset.of(0, walOffsetGen.getAndIncrement(), 0));
+        logCacheBlock1.put(newRecord(234L, 10L), DefaultRecordOffset.of(0, walOffsetGen.getAndIncrement(), 0));
         logCacheBlock1.lastRecordOffset(DefaultRecordOffset.of(0, 10L, 0));
         CompletableFuture<Void> cf1 = storage.uploadDeltaWAL(logCacheBlock1);
 
         LogCache.LogCacheBlock logCacheBlock2 = new LogCache.LogCacheBlock(1024);
-        logCacheBlock2.put(newRecord(233L, 20L));
-        logCacheBlock2.put(newRecord(234L, 20L));
+        logCacheBlock2.put(newRecord(233L, 20L), DefaultRecordOffset.of(0, walOffsetGen.getAndIncrement(), 0));
+        logCacheBlock2.put(newRecord(234L, 20L), DefaultRecordOffset.of(0, walOffsetGen.getAndIncrement(), 0));
         logCacheBlock2.lastRecordOffset(DefaultRecordOffset.of(0, 20L, 0));
         CompletableFuture<Void> cf2 = storage.uploadDeltaWAL(logCacheBlock2);
 
@@ -331,7 +333,7 @@ public class S3StorageTest {
 
         @Override
         public RecordOffset recordOffset() {
-            return DefaultRecordOffset.of(0, 0, 0);
+            return DefaultRecordOffset.of(0, record.getBaseOffset(), 0);
         }
     }
 }

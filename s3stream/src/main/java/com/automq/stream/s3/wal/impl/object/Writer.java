@@ -42,5 +42,7 @@ public interface Writer {
 
     CompletableFuture<Void> trim(RecordOffset recordOffset) throws WALFencedException;
 
+    CompletableFuture<Void> truncateTail(RecordOffset recordOffset) throws WALFencedException;
+
     Iterator<RecoverResult> recover();
 }

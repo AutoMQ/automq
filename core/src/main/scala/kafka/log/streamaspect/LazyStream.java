@@ -145,6 +145,11 @@ public class LazyStream implements Stream {
     }
 
     @Override
+    public CompletableFuture<Void> truncateTail(long newNextOffset) {
+        return inner.truncateTail(newNextOffset);
+    }
+
+    @Override
     public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
         return inner.fetch(context, startOffset, endOffset, maxBytesHint);
     }
@@ -225,6 +230,11 @@ public class LazyStream implements Stream {
 
         @Override
         public CompletableFuture<Void> trim(long newStartOffset) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<Void> truncateTail(long newNextOffset) {
             return CompletableFuture.completedFuture(null);
         }
 

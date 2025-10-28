@@ -57,4 +57,13 @@ public interface Storage {
      * Force stream record in WAL upload to s3
      */
     CompletableFuture<Void> forceUpload(long streamId);
+
+    /**
+     * Rollback the tail of a stream so that subsequent appends start from {@code newNextOffset}.
+     *
+     * @param streamId stream identifier
+     * @param newNextOffset new next offset after rollback
+     * @return future complete when rollback finished
+     */
+    CompletableFuture<Void> truncateTail(long streamId, long newNextOffset);
 }

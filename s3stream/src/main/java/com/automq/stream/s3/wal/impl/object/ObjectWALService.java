@@ -126,6 +126,17 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
+    public CompletableFuture<Void> truncateTail(RecordOffset offset) {
+        log.info("Truncate tail of S3 WAL to offset: {}", offset);
+        try {
+            return writer.truncateTail(offset);
+        } catch (Throwable e) {
+            log.error("Truncate tail of S3 WAL failed, due to unrecoverable exception.", e);
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    @Override
     public String toString() {
         return String.format("ObjectWALService{%s@%s-%s-%s}", config.bucketId(), config.nodeId(), config.epoch(), config.type());
     }

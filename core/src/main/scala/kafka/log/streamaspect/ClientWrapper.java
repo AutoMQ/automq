@@ -293,6 +293,11 @@ public class ClientWrapper implements Client {
         }
 
         @Override
+        public CompletableFuture<Void> truncateTail(long newNextOffset) {
+            return failureHandle(stream.truncateTail(newNextOffset).thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
+        }
+
+        @Override
         public CompletableFuture<Void> close() {
             return failureHandle(stream.close().thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
         }

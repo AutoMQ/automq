@@ -55,6 +55,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.TimeUnit;
@@ -363,6 +364,78 @@ public class S3Stream implements Stream, StreamMetadataListener {
             }
         });
         return trimCf;
+    }
+
+    @Override
+    public CompletableFuture<Void> truncateTail(long newNextOffset) {
+        if (snapshotRead()) {
+            return FutureUtil.failedFuture(new IllegalStateException("truncateTail is not support for readonly stream"));
+        }
+        try {
+            truncateTailSync(newNextOffset);
+            return CompletableFuture.completedFuture(null);
+        } catch (RuntimeException e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    private void truncateTailSync(long newNextOffset) {
+        writeLock.lock();
+        try {
+            ensureTruncateTailAllowed(newNextOffset);
+            waitForInFlightOperations();
+            invokeStorageTruncate(newNextOffset);
+            nextOffset.updateAndGet(old -> Math.min(old, newNextOffset));
+            confirmOffset.updateAndGet(old -> Math.min(old, newNextOffset));
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private void ensureTruncateTailAllowed(long newNextOffset) {
+        if (!status.isWritable()) {
+            throw new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + "stream is not writable");
+        }
+        if (newNextOffset < startOffset()) {
+            throw new IllegalArgumentException("newNextOffset " + newNextOffset + " is less than start offset " + startOffset());
+        }
+        long currentNext = nextOffset.get();
+        if (newNextOffset > currentNext) {
+            throw new IllegalArgumentException("newNextOffset " + newNextOffset + " is greater than current next offset " + currentNext);
+        }
+    }
+
+    private void waitForInFlightOperations() {
+        List<CompletableFuture<?>> waits = new ArrayList<>(pendingAppends);
+        waits.addAll(pendingFetches);
+        if (lastAppendFuture != null) {
+            waits.add(lastAppendFuture);
+        }
+        if (waits.isEmpty()) {
+            return;
+        }
+        CompletableFuture<?>[] array = waits.toArray(new CompletableFuture[0]);
+        try {
+            CompletableFuture.allOf(array).join();
+        } catch (CompletionException e) {
+            throw wrapCompletionException(e);
+        }
+    }
+
+    private void invokeStorageTruncate(long newNextOffset) {
+        try {
+            storage.truncateTail(streamId, newNextOffset).join();
+        } catch (CompletionException e) {
+            throw wrapCompletionException(e);
+        }
+    }
+
+    private RuntimeException wrapCompletionException(CompletionException exception) {
+        Throwable cause = FutureUtil.cause(exception);
+        if (cause instanceof RuntimeException) {
+            return (RuntimeException) cause;
+        }
+        return new RuntimeException(cause);
     }
 
     @Override

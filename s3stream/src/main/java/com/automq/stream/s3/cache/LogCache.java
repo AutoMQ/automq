@@ -24,6 +24,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 
 import org.slf4j.Logger;
@@ -36,6 +37,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -92,14 +94,14 @@ public class LogCache {
      * Put a record batch into the cache.
      * record batched in the same stream should be put in order.
      */
-    public boolean put(StreamRecordBatch recordBatch) {
+    public boolean put(StreamRecordBatch recordBatch, RecordOffset walOffset) {
         long startTime = System.nanoTime();
         tryRealFree();
         size.addAndGet(recordBatch.occupiedSize());
         readLock.lock();
         boolean full;
         try {
-            full = activeBlock.put(recordBatch);
+            full = activeBlock.put(recordBatch, walOffset);
         } finally {
             readLock.unlock();
         }
@@ -356,6 +358,37 @@ public class LogCache {
         }
     }
 
+    public Optional<TruncateResult> truncateStreamRecords(long streamId, long newNextOffset) {
+        if (streamId == MATCH_ALL_STREAMS) {
+            throw new IllegalArgumentException("streamId must not be MATCH_ALL_STREAMS");
+        }
+        List<TruncateResult> results = new ArrayList<>();
+        readLock.lock();
+        try {
+            for (LogCacheBlock block : blocks) {
+                TruncateResult result = block.truncateStream(streamId, newNextOffset);
+                if (result != null) {
+                    results.add(result);
+                }
+            }
+        } finally {
+            readLock.unlock();
+        }
+        if (results.isEmpty()) {
+            return Optional.empty();
+        }
+        long freedBytes = results.stream().mapToLong(r -> r.freedBytes).sum();
+        if (freedBytes > 0) {
+            size.addAndGet(-freedBytes);
+        }
+        RecordOffset earliest = results.stream()
+            .map(r -> r.firstRemovedWalOffset)
+            .filter(Objects::nonNull)
+            .min((a, b) -> Long.compare(DefaultRecordOffset.of(a).offset(), DefaultRecordOffset.of(b).offset()))
+            .orElse(null);
+        return Optional.of(new TruncateResult(freedBytes, earliest));
+    }
+
     static boolean isDiscontinuous(LogCacheBlock left, LogCacheBlock right) {
         for (Map.Entry<Long, StreamCache> entry : left.map.entrySet()) {
             Long streamId = entry.getKey();
@@ -382,6 +415,7 @@ public class LogCache {
                 StreamCache rightStreamCache = right.map.get(streamId);
                 if (rightStreamCache != null) {
                     leftStreamCache.records.addAll(rightStreamCache.records);
+                    leftStreamCache.walOffsets.addAll(rightStreamCache.walOffsets);
                     leftStreamCache.endOffset(rightStreamCache.endOffset());
                 }
             });
@@ -390,6 +424,16 @@ public class LogCache {
                     left.map.put(streamId, rightStreamCache);
                 }
             });
+        }
+    }
+
+    public static class TruncateResult {
+        public final long freedBytes;
+        public final RecordOffset firstRemovedWalOffset;
+
+        public TruncateResult(long freedBytes, RecordOffset firstRemovedWalOffset) {
+            this.freedBytes = freedBytes;
+            this.firstRemovedWalOffset = firstRemovedWalOffset;
         }
     }
 
@@ -423,12 +467,12 @@ public class LogCache {
             return size.get() >= maxSize || map.size() >= maxStreamCount;
         }
 
-        public boolean put(StreamRecordBatch recordBatch) {
+        public boolean put(StreamRecordBatch recordBatch, RecordOffset walOffset) {
             map.compute(recordBatch.getStreamId(), (id, cache) -> {
                 if (cache == null) {
                     cache = new StreamCache();
                 }
-                cache.add(recordBatch);
+                cache.add(recordBatch, walOffset);
                 return cache;
             });
             size.addAndGet(recordBatch.occupiedSize());
@@ -450,6 +494,22 @@ public class LogCache {
             } else {
                 return streamCache.range();
             }
+        }
+
+        TruncateResult truncateStream(long streamId, long newNextOffset) {
+            StreamCache cache = map.get(streamId);
+            if (cache == null) {
+                return null;
+            }
+            TruncateResult result = cache.truncate(newNextOffset);
+            if (result == null) {
+                return null;
+            }
+            size.addAndGet(-result.freedBytes);
+            if (cache.isEmpty()) {
+                map.remove(streamId);
+            }
+            return result;
         }
 
         public Map<Long, List<StreamRecordBatch>> records() {
@@ -549,17 +609,19 @@ public class LogCache {
 
     static class StreamCache {
         List<StreamRecordBatch> records = new ArrayList<>();
+        List<RecordOffset> walOffsets = new ArrayList<>();
         long startOffset = NOOP_OFFSET;
         long endOffset = NOOP_OFFSET;
         Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
 
-        synchronized void add(StreamRecordBatch recordBatch) {
+        synchronized void add(StreamRecordBatch recordBatch, RecordOffset walOffset) {
             if (recordBatch.getBaseOffset() != endOffset && endOffset != NOOP_OFFSET) {
                 RuntimeException ex = new IllegalArgumentException(String.format("streamId=%s record batch base offset mismatch, expect %s, actual %s",
                     recordBatch.getStreamId(), endOffset, recordBatch.getBaseOffset()));
                 LOGGER.error("[FATAL]", ex);
             }
             records.add(recordBatch);
+            walOffsets.add(walOffset);
             if (startOffset == NOOP_OFFSET) {
                 startOffset = recordBatch.getBaseOffset();
             }
@@ -591,6 +653,44 @@ public class LogCache {
                 map(rstEndOffset, endIndex);
             }
             return new ArrayList<>(records.subList(startIndex, endIndex));
+        }
+
+        synchronized TruncateResult truncate(long newNextOffset) {
+            if (records.isEmpty()) {
+                return null;
+            }
+            int removeFrom = -1;
+            for (int i = 0; i < records.size(); i++) {
+                StreamRecordBatch record = records.get(i);
+                if (record.getLastOffset() >= newNextOffset) {
+                    removeFrom = i;
+                    break;
+                }
+            }
+            if (removeFrom == -1) {
+                return null;
+            }
+            RecordOffset firstRemoved = walOffsets.get(removeFrom);
+            long freed = 0L;
+            for (int i = records.size() - 1; i >= removeFrom; i--) {
+                StreamRecordBatch record = records.remove(i);
+                freed += record.occupiedSize();
+                record.release();
+                walOffsets.remove(i);
+            }
+            Iterator<Map.Entry<Long, IndexAndCount>> iterator = offsetIndexMap.entrySet().iterator();
+            while (iterator.hasNext()) {
+                if (iterator.next().getKey() >= newNextOffset) {
+                    iterator.remove();
+                }
+            }
+            if (records.isEmpty()) {
+                startOffset = endOffset = NOOP_OFFSET;
+            } else {
+                startOffset = records.get(0).getBaseOffset();
+                endOffset = records.get(records.size() - 1).getLastOffset();
+            }
+            return new TruncateResult(freed, firstRemoved);
         }
 
         int searchStartIndex(long startOffset) {
@@ -629,6 +729,11 @@ public class LogCache {
         synchronized void free() {
             records.forEach(StreamRecordBatch::release);
             records.clear();
+            walOffsets.clear();
+        }
+
+        synchronized boolean isEmpty() {
+            return records.isEmpty();
         }
 
         synchronized long startOffset() {

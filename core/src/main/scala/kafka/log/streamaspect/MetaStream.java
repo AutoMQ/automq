@@ -175,6 +175,12 @@ public class MetaStream implements Stream {
     }
 
     @Override
+    public CompletableFuture<Void> truncateTail(long newNextOffset) {
+        metaCache.entrySet().removeIf(entry -> entry.getValue().offset >= newNextOffset);
+        return innerStream.truncateTail(newNextOffset);
+    }
+
+    @Override
     public CompletableFuture<Void> close() {
         if (compactionFuture != null) {
             compactionFuture.cancel(true);

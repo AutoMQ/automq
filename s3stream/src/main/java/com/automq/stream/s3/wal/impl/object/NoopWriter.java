@@ -63,6 +63,11 @@ public class NoopWriter implements Writer {
     }
 
     @Override
+    public CompletableFuture<Void> truncateTail(RecordOffset recordOffset) throws WALFencedException {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("truncateTail is not supported"));
+    }
+
+    @Override
     public Iterator<RecoverResult> recover() {
         throw new UnsupportedOperationException("recover is not supported");
     }

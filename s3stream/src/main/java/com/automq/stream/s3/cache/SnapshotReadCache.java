@@ -33,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -112,7 +113,7 @@ public class SnapshotReadCache {
                     // The LogCacheBlock doesn't accept discontinuous record batches.
                     cache.clearStreamRecords(streamId);
                 }
-                if (cache.put(batch)) {
+                if (cache.put(batch, null)) {
                     // the block is full
                     LogCache.LogCacheBlock cacheBlock = cache.archiveCurrentBlock();
                     cacheBlock.addFreeListener(cacheFreeListener);
@@ -136,6 +137,13 @@ public class SnapshotReadCache {
 
     public void addEventListener(EventListener eventListener) {
         cacheFreeListener.addListener(eventListener);
+    }
+
+    public Optional<LogCache.TruncateResult> truncateStreamRecords(long streamId, long newNextOffset) {
+        if (cache == null) {
+            return Optional.empty();
+        }
+        return cache.truncateStreamRecords(streamId, newNextOffset);
     }
 
     @EventLoopSafe
