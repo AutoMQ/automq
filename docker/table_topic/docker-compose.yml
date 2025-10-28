@@ -4,7 +4,7 @@ services:
   spark-iceberg:
     image: automqinc/spark-iceberg:latest
     container_name: spark-iceberg
-    build: spark/
+    build: spark_iceberg/
     networks:
       iceberg_net:
     depends_on:
@@ -78,7 +78,7 @@ services:
       "
   automq:
     container_name: "automq"
-    image: automqinc/automq:1.6.0-rc2
+    image: automqinc/automq:1.6.0
     stop_grace_period: 1m
     networks:
       iceberg_net:
