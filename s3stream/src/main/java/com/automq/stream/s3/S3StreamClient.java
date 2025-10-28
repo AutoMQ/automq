@@ -352,6 +352,11 @@ public class S3StreamClient implements StreamClient {
         }
 
         @Override
+        public CompletableFuture<Void> truncateTail(long newNextOffset) {
+            return stream.truncateTail(newNextOffset);
+        }
+
+        @Override
         public CompletableFuture<Void> close() {
             return close(false);
         }

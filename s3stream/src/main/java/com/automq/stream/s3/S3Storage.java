@@ -236,7 +236,7 @@ public class S3Storage implements Storage {
     ) {
         RecordOffset logEndOffset = null;
         Map<Long, Long> streamNextOffsets = new HashMap<>();
-        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
+        Map<Long, Queue<RecoverRecord>> streamDiscontinuousRecords = new HashMap<>();
         LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(maxCacheSize);
 
         boolean first = true;
@@ -249,11 +249,11 @@ public class S3Storage implements Storage {
                     first = false;
                 }
                 StreamRecordBatch streamRecordBatch = recoverResult.record();
-                processRecoveredRecord(streamRecordBatch, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
+                processRecoveredRecord(streamRecordBatch, recoverResult.recordOffset(), openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
             }
         } catch (Throwable e) {
             // {@link RuntimeIOException} may be thrown by {@code it.next()}
-            releaseAllRecords(streamDiscontinuousRecords.values());
+            releaseRecoverRecords(streamDiscontinuousRecords.values());
             releaseAllRecords(cacheBlock.records().values());
             throw e;
         }
@@ -278,8 +278,9 @@ public class S3Storage implements Storage {
      */
     private static void processRecoveredRecord(
         StreamRecordBatch streamRecordBatch,
+        RecordOffset recordOffset,
         Map<Long, Long> openingStreamEndOffsets,
-        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+        Map<Long, Queue<RecoverRecord>> streamDiscontinuousRecords,
         LogCache.LogCacheBlock cacheBlock,
         Map<Long, Long> streamNextOffsets,
         Logger logger
@@ -294,19 +295,19 @@ public class S3Storage implements Storage {
         }
 
         Long expectedNextOffset = streamNextOffsets.get(streamId);
-        Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
+        Queue<RecoverRecord> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
         boolean isContinuous = expectedNextOffset == null || expectedNextOffset == streamRecordBatch.getBaseOffset();
         if (!isContinuous) {
             // unexpected record, put it into discontinuous records queue.
             if (discontinuousRecords == null) {
-                discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(StreamRecordBatch::getBaseOffset));
+                discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(r -> r.record.getBaseOffset()));
                 streamDiscontinuousRecords.put(streamId, discontinuousRecords);
             }
-            discontinuousRecords.add(streamRecordBatch);
+            discontinuousRecords.add(new RecoverRecord(streamRecordBatch, recordOffset));
             return;
         }
         // continuous record, put it into cache, and check if there is any historical discontinuous records can be polled.
-        cacheBlock.put(streamRecordBatch);
+        cacheBlock.put(streamRecordBatch, recordOffset);
         expectedNextOffset = maybePollDiscontinuousRecords(streamRecordBatch, cacheBlock, discontinuousRecords, logger);
         streamNextOffsets.put(streamId, expectedNextOffset);
     }
@@ -314,7 +315,7 @@ public class S3Storage implements Storage {
     private static long maybePollDiscontinuousRecords(
         StreamRecordBatch streamRecordBatch,
         LogCache.LogCacheBlock cacheBlock,
-        Queue<StreamRecordBatch> discontinuousRecords,
+        Queue<RecoverRecord> discontinuousRecords,
         Logger logger
     ) {
         long expectedNextOffset = streamRecordBatch.getLastOffset();
@@ -323,25 +324,28 @@ public class S3Storage implements Storage {
         }
         // check and poll historical discontinuous records.
         while (!discontinuousRecords.isEmpty()) {
-            StreamRecordBatch peek = discontinuousRecords.peek();
-            if (peek.getBaseOffset() != expectedNextOffset) {
+            RecoverRecord peek = discontinuousRecords.peek();
+            if (peek.record.getBaseOffset() != expectedNextOffset) {
                 break;
             }
             // should never happen, log it.
-            logger.error("[BUG] recover an out of order record, streamId={}, expectedNextOffset={}, record={}", streamRecordBatch.getStreamId(), expectedNextOffset, peek);
+            logger.error("[BUG] recover an out of order record, streamId={}, expectedNextOffset={}, record={}", streamRecordBatch.getStreamId(), expectedNextOffset, peek.record);
             discontinuousRecords.poll();
-            cacheBlock.put(peek);
-            expectedNextOffset = peek.getLastOffset();
+            cacheBlock.put(peek.record, peek.walOffset);
+            expectedNextOffset = peek.record.getLastOffset();
         }
         return expectedNextOffset;
     }
 
-    private static void releaseDiscontinuousRecords(Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
+    private static void releaseDiscontinuousRecords(Map<Long, Queue<RecoverRecord>> streamDiscontinuousRecords,
         Logger logger) {
         streamDiscontinuousRecords.values().stream()
             .filter(q -> !q.isEmpty())
             .peek(q -> logger.info("drop discontinuous records, records={}", q))
-            .forEach(S3Storage::releaseRecords);
+            .forEach(queue -> {
+                queue.forEach(record -> record.record.release());
+                queue.clear();
+            });
     }
 
     /**
@@ -375,7 +379,7 @@ public class S3Storage implements Storage {
         LogCache.LogCacheBlock newCacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
         cacheBlock.records().forEach((streamId, records) -> {
             if (!invalidStreams.contains(streamId)) {
-                records.forEach(newCacheBlock::put);
+                records.forEach(record -> newCacheBlock.put(record, null));
             } else {
                 // release invalid records.
                 releaseRecords(records);
@@ -386,6 +390,13 @@ public class S3Storage implements Storage {
 
     private static void releaseAllRecords(Collection<? extends Collection<StreamRecordBatch>> allRecords) {
         allRecords.forEach(S3Storage::releaseRecords);
+    }
+
+    private static void releaseRecoverRecords(Collection<Queue<RecoverRecord>> allRecords) {
+        allRecords.forEach(queue -> {
+            queue.forEach(record -> record.record.release());
+            queue.clear();
+        });
     }
 
     private static void releaseRecords(Collection<StreamRecordBatch> records) {
@@ -648,6 +659,78 @@ public class S3Storage implements Storage {
         return snapshotReadCache;
     }
 
+    @Override
+    public CompletableFuture<Void> truncateTail(long streamId, long newNextOffset) {
+        if (streamId < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("streamId must be non-negative"));
+        }
+        if (newNextOffset < 0) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("newNextOffset must be non-negative"));
+        }
+        try {
+            RecordOffset walOffset = prepareTruncateTail(streamId, newNextOffset);
+            if (walOffset == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return deltaWAL.truncateTail(walOffset);
+        } catch (Exception e) {
+            return CompletableFuture.failedFuture(e);
+        }
+    }
+
+    private RecordOffset prepareTruncateTail(long streamId, long newNextOffset) {
+        synchronized (this) {
+            validateTruncateTailState(streamId);
+            cancelBackoffRecords(streamId, newNextOffset);
+            RecordOffset walOffset = selectFirstRemovedWalOffset(streamId, newNextOffset);
+            if (walOffset != null) {
+                deltaWALCache.setLastRecordOffset(walOffset);
+            }
+            return walOffset;
+        }
+    }
+
+    private void validateTruncateTailState(long streamId) {
+        if (!walPrepareQueue.isEmpty() || !walCommitQueue.isEmpty()) {
+            throw new IllegalStateException("Cannot truncate tail when WAL upload tasks are pending");
+        }
+        boolean hasInflight = inflightWALUploadTasks.stream().anyMatch(ctx -> ctx.cache.containsStream(streamId));
+        if (hasInflight) {
+            throw new IllegalStateException("Cannot truncate tail while stream has inflight WAL uploads");
+        }
+    }
+
+    private void cancelBackoffRecords(long streamId, long newNextOffset) {
+        Iterator<WalWriteRequest> iterator = backoffRecords.iterator();
+        while (iterator.hasNext()) {
+            WalWriteRequest request = iterator.next();
+            StreamRecordBatch record = request.record;
+            if (record.getStreamId() >= 0 && record.getStreamId() == streamId && record.getBaseOffset() >= newNextOffset) {
+                iterator.remove();
+                request.cf.completeExceptionally(new IllegalStateException("Append cancelled due to truncate"));
+                record.release();
+            }
+        }
+    }
+
+    private RecordOffset selectFirstRemovedWalOffset(long streamId, long newNextOffset) {
+        Optional<LogCache.TruncateResult> deltaResult = deltaWALCache.truncateStreamRecords(streamId, newNextOffset);
+        Optional<LogCache.TruncateResult> snapshotResult = snapshotReadCache == null
+            ? Optional.empty()
+            : snapshotReadCache.truncateStreamRecords(streamId, newNextOffset);
+        RecordOffset walOffset = deltaResult
+            .map(r -> r.firstRemovedWalOffset)
+            .filter(Objects::nonNull)
+            .orElse(null);
+        if (walOffset == null) {
+            walOffset = snapshotResult
+                .map(r -> r.firstRemovedWalOffset)
+                .filter(Objects::nonNull)
+                .orElse(null);
+        }
+        return walOffset;
+    }
+
     @SuppressWarnings({"checkstyle:npathcomplexity"})
     @WithSpan
     private CompletableFuture<ReadDataBlock> read0(FetchContext context,
@@ -806,7 +889,7 @@ public class S3Storage implements Storage {
     private void handleAppendCallback0(WalWriteRequest request) {
         final long startTime = System.nanoTime();
         request.record.retain();
-        boolean full = deltaWALCache.put(request.record);
+        boolean full = deltaWALCache.put(request.record, request.offset);
         deltaWALCache.setLastRecordOffset(request.offset);
         if (full) {
             // cache block is full, trigger WAL upload.
@@ -1059,6 +1142,16 @@ public class S3Storage implements Storage {
         public RecoveryBlockResult(LogCache.LogCacheBlock cacheBlock, RuntimeException exception) {
             this.cacheBlock = cacheBlock;
             this.exception = exception;
+        }
+    }
+
+    static class RecoverRecord {
+        final StreamRecordBatch record;
+        final RecordOffset walOffset;
+
+        RecoverRecord(StreamRecordBatch record, RecordOffset walOffset) {
+            this.record = record;
+            this.walOffset = walOffset;
         }
     }
 

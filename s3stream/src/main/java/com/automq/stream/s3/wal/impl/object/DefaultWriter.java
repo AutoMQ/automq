@@ -47,8 +47,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
@@ -441,6 +443,112 @@ public class DefaultWriter implements Writer {
     public CompletableFuture<Void> trim(RecordOffset recordOffset) throws WALFencedException {
         long newStartOffset = ((DefaultRecordOffset) recordOffset).offset();
         return trim0(newStartOffset);
+    }
+
+    @Override
+    public CompletableFuture<Void> truncateTail(RecordOffset recordOffset) throws WALFencedException {
+        try {
+            TailTruncatePlan plan = prepareTruncatePlan(DefaultRecordOffset.of(recordOffset).offset());
+            if (plan.noop || plan.deleteObjects.isEmpty()) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return objectStorage.delete(plan.deleteObjects).whenComplete((nil, throwable) -> {
+                if (throwable != null) {
+                    LOGGER.error("Failed to delete WAL objects when truncating tail: {}", plan.deleteObjects, throwable);
+                }
+            });
+        } catch (Throwable t) {
+            return CompletableFuture.failedFuture(t);
+        }
+    }
+
+    private TailTruncatePlan prepareTruncatePlan(long targetOffset) throws WALFencedException {
+        checkStatus();
+        if (targetOffset < 0) {
+            throw new IllegalArgumentException("targetOffset must be non-negative");
+        }
+        lock.writeLock().lock();
+        try {
+            if (targetOffset > nextOffset.get()) {
+                throw new IllegalArgumentException("targetOffset " + targetOffset + " is greater than current nextOffset " + nextOffset.get());
+            }
+            if (targetOffset == nextOffset.get()) {
+                return TailTruncatePlan.noop();
+            }
+            if (targetOffset < trimOffset.get()) {
+                throw new IllegalArgumentException("targetOffset " + targetOffset + " is less than trimmed offset " + trimOffset.get());
+            }
+            if (activeBulk != null || !waitingUploadBulks.isEmpty() || !uploadingBulks.isEmpty()) {
+                throw new IllegalStateException("Cannot truncate tail while there are pending bulks");
+            }
+
+            List<ObjectStorage.ObjectPath> deleteObjects = new ArrayList<>();
+            long deletedBytes = collectTailObjects(targetOffset, deleteObjects);
+            deletedBytes += collectHistoricalObjects(targetOffset, deleteObjects);
+
+            objectDataBytes.addAndGet(-deletedBytes);
+            long alignedTarget = ObjectUtils.ceilAlignOffset(targetOffset);
+            nextOffset.set(alignedTarget);
+            flushedOffset.updateAndGet(current -> Math.min(current, alignedTarget));
+            return new TailTruncatePlan(deleteObjects.isEmpty(), deleteObjects);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private long collectTailObjects(long targetOffset, List<ObjectStorage.ObjectPath> deleteObjects) {
+        long deletedSize = 0L;
+        List<Long> keysToRemove = new ArrayList<>();
+        for (Map.Entry<Long, WALObject> entry : lastRecordOffset2object.tailMap(targetOffset, true).entrySet()) {
+            WALObject object = entry.getValue();
+            ensureNotWithinObject(targetOffset, object);
+            if (object.startOffset() >= targetOffset) {
+                deleteObjects.add(new ObjectStorage.ObjectPath(object.bucketId(), object.path()));
+                deletedSize += object.length();
+                keysToRemove.add(entry.getKey());
+            }
+        }
+        keysToRemove.forEach(lastRecordOffset2object::remove);
+        return deletedSize;
+    }
+
+    private long collectHistoricalObjects(long targetOffset, List<ObjectStorage.ObjectPath> deleteObjects) {
+        if (previousObjects.isEmpty()) {
+            return 0L;
+        }
+        long deletedSize = 0L;
+        List<WALObject> retained = new ArrayList<>(previousObjects.size());
+        for (WALObject object : previousObjects) {
+            ensureNotWithinObject(targetOffset, object);
+            if (object.startOffset() >= targetOffset) {
+                deleteObjects.add(new ObjectStorage.ObjectPath(object.bucketId(), object.path()));
+                deletedSize += object.length();
+            } else {
+                retained.add(object);
+            }
+        }
+        previousObjects = retained;
+        return deletedSize;
+    }
+
+    private static class TailTruncatePlan {
+        final boolean noop;
+        final List<ObjectStorage.ObjectPath> deleteObjects;
+
+        TailTruncatePlan(boolean noop, List<ObjectStorage.ObjectPath> deleteObjects) {
+            this.noop = noop;
+            this.deleteObjects = deleteObjects;
+        }
+
+        static TailTruncatePlan noop() {
+            return new TailTruncatePlan(true, Collections.emptyList());
+        }
+    }
+
+    private void ensureNotWithinObject(long targetOffset, WALObject object) {
+        if (targetOffset > object.startOffset() && targetOffset < object.endOffset()) {
+            throw new IllegalArgumentException("targetOffset " + targetOffset + " falls inside WAL object " + object);
+        }
     }
 
     @Override

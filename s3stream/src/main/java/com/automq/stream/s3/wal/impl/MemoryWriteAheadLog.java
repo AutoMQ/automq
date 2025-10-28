@@ -135,4 +135,16 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
             });
         return CompletableFuture.completedFuture(null);
     }
+
+    @Override
+    public CompletableFuture<Void> truncateTail(RecordOffset offset) {
+        long targetOffset = DefaultRecordOffset.of(offset).offset();
+        dataMap.tailMap(targetOffset, true)
+            .forEach((key, value) -> {
+                dataMap.remove(key);
+                value.release();
+            });
+        offsetAlloc.updateAndGet(current -> Math.min(current, targetOffset));
+        return CompletableFuture.completedFuture(null);
+    }
 }
