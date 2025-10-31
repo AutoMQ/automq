@@ -57,38 +57,42 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
 
         switch (targetType.typeId()) {
             case BOOLEAN:
-                return convertBoolean(sourceValue, sourceSchema, targetType);
+                return convertBoolean(sourceValue, unwrapSchema(sourceSchema), targetType);
             case INTEGER:
-                return convertInteger(sourceValue, sourceSchema, targetType);
+                return convertInteger(sourceValue, unwrapSchema(sourceSchema), targetType);
             case LONG:
-                return convertLong(sourceValue, sourceSchema, targetType);
+                return convertLong(sourceValue, unwrapSchema(sourceSchema), targetType);
             case FLOAT:
-                return convertFloat(sourceValue, sourceSchema, targetType);
+                return convertFloat(sourceValue, unwrapSchema(sourceSchema), targetType);
             case DOUBLE:
-                return convertDouble(sourceValue, sourceSchema, targetType);
+                return convertDouble(sourceValue, unwrapSchema(sourceSchema), targetType);
             case STRING:
-                return convertString(sourceValue, sourceSchema, targetType);
+                return convertString(sourceValue, unwrapSchema(sourceSchema), targetType);
             case BINARY:
-                return convertBinary(sourceValue, sourceSchema, targetType);
+                return convertBinary(sourceValue, unwrapSchema(sourceSchema), targetType);
             case FIXED:
-                return convertFixed(sourceValue, sourceSchema, targetType);
+                return convertFixed(sourceValue, unwrapSchema(sourceSchema), targetType);
             case UUID:
-                return convertUUID(sourceValue, sourceSchema, targetType);
+                return convertUUID(sourceValue, unwrapSchema(sourceSchema), targetType);
             case DECIMAL:
-                return convertDecimal(sourceValue, sourceSchema, (Types.DecimalType) targetType);
+                return convertDecimal(sourceValue, unwrapSchema(sourceSchema), (Types.DecimalType) targetType);
             case DATE:
-                return convertDate(sourceValue, sourceSchema, targetType);
+                return convertDate(sourceValue, unwrapSchema(sourceSchema), targetType);
             case TIME:
-                return convertTime(sourceValue, sourceSchema, targetType);
+                return convertTime(sourceValue, unwrapSchema(sourceSchema), targetType);
             case TIMESTAMP:
-                return convertTimestamp(sourceValue, sourceSchema, (Types.TimestampType) targetType);
+                return convertTimestamp(sourceValue, unwrapSchema(sourceSchema), (Types.TimestampType) targetType);
             case LIST:
-                return convertList(sourceValue, sourceSchema, (Types.ListType) targetType);
+                return convertList(sourceValue, unwrapSchema(sourceSchema), (Types.ListType) targetType);
             case MAP:
-                return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType);
+                return convertMap(sourceValue, unwrapSchema(sourceSchema), (Types.MapType) targetType);
             default:
                 return sourceValue;
         }
+    }
+
+    protected S unwrapSchema(S sourceSchema) {
+        return sourceSchema;
     }
 
     protected Object convertBoolean(Object sourceValue, S ignoredSourceSchema, Type targetType) {

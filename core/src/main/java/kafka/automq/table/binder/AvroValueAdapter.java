@@ -46,6 +46,19 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
     private static final org.apache.avro.Schema STRING_SCHEMA_INSTANCE = org.apache.avro.Schema.create(org.apache.avro.Schema.Type.STRING);
 
     @Override
+    protected Schema unwrapSchema(final Schema sourceSchema) {
+        if (sourceSchema.isUnion()) {
+            for (final var it : sourceSchema.getTypes()) {
+                if (it.getType() != Schema.Type.NULL) {
+                    return it;
+                }
+            }
+            return sourceSchema;
+        }
+        return super.unwrapSchema(sourceSchema);
+    }
+
+    @Override
     protected Object convertString(Object sourceValue, Schema sourceSchema, Type targetType) {
         if (sourceValue instanceof Utf8) {
             return sourceValue;
