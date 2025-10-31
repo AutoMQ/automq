@@ -46,7 +46,6 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
 | `log.s3.selector.type` | Leader election strategy (`static`, `nodeid`, `file`, `kafka`, `controller`, `connect-leader`, or custom).
 | `log.s3.primary.node` | Used with `static` strategy to indicate whether the current node is the primary node.
 | `log.s3.selector.kafka.*` | Additional configuration required for Kafka leader election, such as `bootstrap.servers`, `group.id`, etc.
-| `log.s3.active.controller` | **Deprecated**, please use `log.s3.selector.type=static` + `log.s3.primary.node=true`.
 
 The upload schedule can be overridden by environment variables:
 

@@ -41,14 +41,6 @@ public class LogConfigConstants {
     public static final String LOG_S3_NODE_ID_KEY = "log.s3.node.id";
     public static final int DEFAULT_LOG_S3_NODE_ID = 0;
 
-    /**
-     * @deprecated Use selector configuration instead.
-     */
-    @Deprecated
-    public static final String LOG_S3_ACTIVE_CONTROLLER_KEY = "log.s3.active.controller";
-    @Deprecated
-    public static final boolean DEFAULT_LOG_S3_ACTIVE_CONTROLLER = true;
-
     public static final String LOG_S3_PRIMARY_NODE_KEY = "log.s3.primary.node";
     public static final String LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY = "log.s3.selector.primary.node.id";
     public static final String LOG_S3_SELECTOR_TYPE_KEY = "log.s3.selector.type";
