@@ -1,3 +1,2 @@
-com.automq.opentelemetry.exporter.s3.kafka.KafkaLeaderSelectorProvider
 com.automq.opentelemetry.exporter.s3.runtime.ControllerLeaderSelectorProvider
 com.automq.opentelemetry.exporter.s3.runtime.ConnectLeaderSelectorProvider

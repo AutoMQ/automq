@@ -148,7 +148,7 @@ public class DefaultS3LogConfig implements S3LogConfig {
     }
 
     private void initializeNodeSelector() {
-        String selectorType = props.getProperty(LOG_S3_SELECTOR_TYPE_KEY, "static");
+        String selectorType = props.getProperty(LOG_S3_SELECTOR_TYPE_KEY, "controller");
         Map<String, String> selectorConfig = new HashMap<>();
         Map<String, String> rawConfig = getPropertiesWithPrefix(LOG_S3_SELECTOR_PREFIX);
         String normalizedType = selectorType == null ? "" : selectorType.toLowerCase(Locale.ROOT);

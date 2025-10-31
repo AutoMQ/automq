@@ -1321,7 +1321,6 @@ class ConnectDistributedTest(Test):
             self.logger.info(f"Node {node.account.hostname} load test metrics validation passed")
 
     @cluster(num_nodes=5)
-    @parametrize(selector_type="kafka")
     @parametrize(selector_type="connect-leader")
     def test_opentelemetry_s3_metrics_exporter(self, selector_type):
         """Test OpenTelemetry S3 Metrics exporter functionality"""
@@ -1344,15 +1343,7 @@ class ConnectDistributedTest(Test):
             config += f"automq.telemetry.s3.bucket=0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1\n"
             config += f"automq.telemetry.s3.cluster.id={cluster_id}\n"
             config += f"automq.telemetry.s3.node.id={self.cc.nodes.index(node) + 1}\n"
-
-            if selector_type == "kafka":
-                bootstrap = self.kafka.bootstrap_servers()
-                config += "automq.telemetry.s3.selector.type=kafka\n"
-                config += f"automq.telemetry.s3.selector.kafka.bootstrap.servers={bootstrap}\n"
-                config += f"automq.telemetry.s3.selector.kafka.topic=__automq_telemetry_s3_leader_{cluster_id}\n"
-                config += f"automq.telemetry.s3.selector.kafka.group.id=automq-telemetry-s3-{cluster_id}\n"
-            else:
-                config += "automq.telemetry.s3.selector.type=connect-leader\n"
+            config += "automq.telemetry.s3.selector.type=connect-leader\n"
 
             return config
 
@@ -1367,41 +1358,22 @@ class ConnectDistributedTest(Test):
             self.logger.info("Starting Connect cluster with S3 exporter...")
             self.cc.start()
 
-            if selector_type == "kafka":
-                def _kafka_leader_nodes():
-                    leaders = []
-                    pattern = "Kafka selector elected node"
-                    for connect_node in self.cc.nodes:
-                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
-                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
-                        matches = [line for line in output.splitlines() if f"cluster {cluster_id}" in line]
-                        if matches:
-                            leaders.append(connect_node.account.hostname)
-                    return leaders
+            def _connect_leader_nodes():
+                leaders = []
+                pattern = "Node became telemetry leader for key connect-leader"
+                for connect_node in self.cc.nodes:
+                    cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                    output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                    if pattern in output:
+                        leaders.append(connect_node.account.hostname)
+                return leaders
 
-                wait_until(
-                    lambda: len(_kafka_leader_nodes()) == 1,
-                    timeout_sec=120,
-                    backoff_sec=5,
-                    err_msg="Kafka-based telemetry leadership in Connect cluster did not converge"
-                )
-            else:
-                def _connect_leader_nodes():
-                    leaders = []
-                    pattern = "Node became telemetry leader for key connect-leader"
-                    for connect_node in self.cc.nodes:
-                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
-                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
-                        if pattern in output:
-                            leaders.append(connect_node.account.hostname)
-                    return leaders
-
-                wait_until(
-                    lambda: len(_connect_leader_nodes()) == 1,
-                    timeout_sec=120,
-                    backoff_sec=5,
-                    err_msg="Telemetry leadership in Connect cluster did not converge"
-                )
+            wait_until(
+                lambda: len(_connect_leader_nodes()) == 1,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="Telemetry leadership in Connect cluster did not converge"
+            )
 
             # Create connector to generate metrics
             self.source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=15)
@@ -1439,7 +1411,6 @@ class ConnectDistributedTest(Test):
                 self.logger.warning(f"Cleanup error: {e}")
 
     @cluster(num_nodes=5)
-    @parametrize(selector_type="kafka")
     @parametrize(selector_type="connect-leader")
     def test_s3_log_uploader(self, selector_type):
         """Verify that Connect workers upload logs to S3 using the AutoMQ log uploader."""
@@ -1455,13 +1426,7 @@ class ConnectDistributedTest(Test):
             config += f"log.s3.bucket=0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1\n"
             config += f"log.s3.cluster.id={cluster_id}\n"
             config += f"log.s3.node.id={self.cc.nodes.index(node) + 1}\n"
-
-            if selector_type == "kafka":
-                config += "log.s3.selector.type=kafka\n"
-                config += f"log.s3.selector.kafka.topic=__automq_log_uploader_leader_{cluster_id}\n"
-                config += f"log.s3.selector.kafka.group.id=automq-log-uploader-{cluster_id}\n"
-            else:
-                config += "log.s3.selector.type=connect-leader\n"
+            config += "log.s3.selector.type=connect-leader\n"
 
             return config
 
@@ -1480,41 +1445,22 @@ class ConnectDistributedTest(Test):
             self.logger.info("Starting Connect cluster with S3 log uploader enabled ...")
             self.cc.start()
 
-            if selector_type == "kafka":
-                def _kafka_log_leader_nodes():
-                    leaders = []
-                    pattern = "became primary log uploader"
-                    for connect_node in self.cc.nodes:
-                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
-                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
-                        matches = [line for line in output.splitlines() if f"cluster {cluster_id}" in line]
-                        if matches:
-                            leaders.append(connect_node.account.hostname)
-                    return leaders
+            def _connect_leader_nodes():
+                leaders = []
+                pattern = "Node became log uploader leader for key connect-leader"
+                for connect_node in self.cc.nodes:
+                    cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                    output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                    if pattern in output:
+                        leaders.append(connect_node.account.hostname)
+                return leaders
 
-                wait_until(
-                    lambda: len(_kafka_log_leader_nodes()) == 1,
-                    timeout_sec=120,
-                    backoff_sec=5,
-                    err_msg="Kafka-based log uploader leadership in Connect cluster did not converge"
-                )
-            else:
-                def _connect_leader_nodes():
-                    leaders = []
-                    pattern = "Node became log uploader leader for key connect-leader"
-                    for connect_node in self.cc.nodes:
-                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
-                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
-                        if pattern in output:
-                            leaders.append(connect_node.account.hostname)
-                    return leaders
-
-                wait_until(
-                    lambda: len(_connect_leader_nodes()) == 1,
-                    timeout_sec=120,
-                    backoff_sec=5,
-                    err_msg="Log uploader leadership in Connect cluster did not converge"
-                )
+            wait_until(
+                lambda: len(_connect_leader_nodes()) == 1,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="Log uploader leadership in Connect cluster did not converge"
+            )
 
             source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=10)
             source.start()

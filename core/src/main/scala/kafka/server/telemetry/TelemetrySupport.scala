@@ -12,11 +12,9 @@ import org.slf4j.LoggerFactory
 
 import io.opentelemetry.api.common.Attributes
 
-import java.net.InetAddress
 import java.util.{Locale, Properties}
 import scala.collection.mutable.ListBuffer
 import scala.jdk.CollectionConverters._
-import scala.util.Try
 
 /**
  * Helper used by the core module to bootstrap AutoMQ telemetry using the
@@ -156,47 +154,6 @@ object TelemetrySupport {
     val selectorTypeKey = s"${TelemetryConstants.S3_SELECTOR_TYPE_KEY}"
     if (!props.containsKey(selectorTypeKey)) {
       props.setProperty(selectorTypeKey, "controller")
-    }
-
-    val selectorType = props.getProperty(selectorTypeKey, "controller").toLowerCase(Locale.ROOT)
-    if (selectorType == "kafka") {
-      val bootstrapKey = s"automq.telemetry.s3.selector.kafka.bootstrap.servers"
-      if (!props.containsKey(bootstrapKey)) {
-        bootstrapServers(config).foreach(servers => props.setProperty(bootstrapKey, servers))
-      }
-
-      val normalizedCluster = Option(clusterId).filter(StringUtils.isNotBlank).getOrElse("default")
-      val topicKey = s"automq.telemetry.s3.selector.kafka.topic"
-      if (!props.containsKey(topicKey)) {
-        props.setProperty(topicKey, s"__automq_telemetry_s3_leader_$normalizedCluster")
-      }
-
-      val groupKey = s"automq.telemetry.s3.selector.kafka.group.id"
-      if (!props.containsKey(groupKey)) {
-        props.setProperty(groupKey, s"automq-telemetry-s3-$normalizedCluster")
-      }
-    }
-  }
-
-  private def bootstrapServers(config: KafkaConfig): Option[String] = {
-    val endpoints = {
-      val advertised = config.effectiveAdvertisedBrokerListeners
-      if (advertised.nonEmpty) advertised else config.listeners
-    }
-
-    val hosts = endpoints
-      .map(ep => s"${resolveHost(ep.host)}:${ep.port}")
-      .filter(_.nonEmpty)
-
-    if (hosts.nonEmpty) Some(hosts.mkString(",")) else None
-  }
-
-  private def resolveHost(host: String): String = {
-    val value = Option(host).filter(_.nonEmpty).getOrElse("localhost")
-    if (value == "0.0.0.0") {
-      Try(InetAddress.getLocalHost.getHostAddress).getOrElse("127.0.0.1")
-    } else {
-      value
     }
   }
 }

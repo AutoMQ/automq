@@ -65,19 +65,6 @@ public class UploaderNodeSelectorFactory {
         
         // Handle built-in selectors based on the enum type
         switch (type) {
-            case STATIC:
-                boolean isPrimaryUploader = Boolean.parseBoolean(config.getOrDefault("isPrimaryUploader", "false"));
-                return UploaderNodeSelectors.staticSelector(isPrimaryUploader);
-                
-            case NODE_ID:
-                int primaryNodeId = Integer.parseInt(config.getOrDefault("primaryNodeId", "0"));
-                return UploaderNodeSelectors.nodeIdSelector(nodeId, primaryNodeId);
-                
-            case FILE:
-                String leaderFile = config.getOrDefault("leaderFile", "/tmp/s3-metrics-leader");
-                long timeoutMs = Long.parseLong(config.getOrDefault("leaderTimeoutMs", "60000"));
-                return UploaderNodeSelectors.fileLeaderElectionSelector(leaderFile, nodeId, timeoutMs);
-                
             case CUSTOM:
                 // For custom types, try to find an SPI provider
                 UploaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase(Locale.ROOT));
@@ -90,12 +77,12 @@ public class UploaderNodeSelectorFactory {
                     }
                 }
                 
-                LOGGER.warn("Unsupported UploaderNodeSelector type: {}. Using static selector with isPrimaryUploader=false", typeString);
-                return UploaderNodeSelectors.staticSelector(false);
+                LOGGER.warn("Unsupported UploaderNodeSelector type: {}. Using supplier selector with static false value", typeString);
+                return () -> false;
         }
         
         // Should never reach here because all enum values are covered
-        return UploaderNodeSelectors.staticSelector(false);
+        return () -> false;
     }
     
     /**

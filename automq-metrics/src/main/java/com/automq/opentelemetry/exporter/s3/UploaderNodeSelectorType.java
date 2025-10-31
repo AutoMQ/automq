@@ -29,21 +29,6 @@ import java.util.Map;
  */
 public enum UploaderNodeSelectorType {
     /**
-     * Static selector - uses a fixed configuration value.
-     */
-    STATIC("static"),
-    
-    /**
-     * Node ID based selector - selects based on node ID matching.
-     */
-    NODE_ID("nodeid"),
-    
-    /**
-     * File-based leader election selector - uses a file for leader election.
-     */
-    FILE("file"),
-    
-    /**
      * Custom selector type - used for SPI-provided selectors.
      */
     CUSTOM(null);
@@ -80,7 +65,7 @@ public enum UploaderNodeSelectorType {
      */
     public static UploaderNodeSelectorType fromString(String typeString) {
         if (typeString == null) {
-            return STATIC; // Default
+            return CUSTOM; // Default to custom for SPI implementations
         }
         
         return TYPE_MAP.getOrDefault(typeString.toLowerCase(Locale.ROOT), CUSTOM);

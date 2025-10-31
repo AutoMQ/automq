@@ -27,9 +27,6 @@ import java.util.Map;
  * Supported selector types.
  */
 public enum LogUploaderNodeSelectorType {
-    STATIC("static"),
-    NODE_ID("nodeid"),
-    FILE("file"),
     CUSTOM(null);
 
     private static final Map<String, LogUploaderNodeSelectorType> LOOKUP = new HashMap<>();
@@ -54,7 +51,7 @@ public enum LogUploaderNodeSelectorType {
 
     public static LogUploaderNodeSelectorType fromString(String type) {
         if (type == null) {
-            return STATIC;
+            return CUSTOM;
         }
         return LOOKUP.getOrDefault(type.toLowerCase(Locale.ROOT), CUSTOM);
     }

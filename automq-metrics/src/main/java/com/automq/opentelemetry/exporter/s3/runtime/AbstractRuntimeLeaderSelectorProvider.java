@@ -21,7 +21,6 @@ package com.automq.opentelemetry.exporter.s3.runtime;
 
 import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
 import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,7 +38,7 @@ abstract class AbstractRuntimeLeaderSelectorProvider implements UploaderNodeSele
         final AtomicBoolean missingLogged = new AtomicBoolean(false);
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);
 
-        return UploaderNodeSelectors.supplierSelector(() -> {
+        return () -> {
             BooleanSupplier current = RuntimeLeaderRegistry.supplier(key);
             if (current == null) {
                 if (missingLogged.compareAndSet(false, true)) {
@@ -75,7 +74,7 @@ abstract class AbstractRuntimeLeaderSelectorProvider implements UploaderNodeSele
                 LOGGER.warn("Telemetry leader supplier for key {} threw exception. Treating as follower.", key, e);
                 return false;
             }
-        });
+        };
     }
 
     protected abstract String registryKey();

@@ -5,10 +5,8 @@ import kafka.server.KafkaConfig
 import org.apache.commons.lang3.StringUtils
 import org.slf4j.LoggerFactory
 
-import java.net.InetAddress
-import java.util.{Locale, Properties}
+import java.util.Properties
 import scala.jdk.CollectionConverters._
-import scala.util.Try
 
 /**
  * Bridges Kafka configuration to the automq-log-uploader module by providing
@@ -115,36 +113,6 @@ class CoreS3LogConfigProvider(kafkaConfig: KafkaConfig) extends S3LogConfigProvi
   private def ensureSelectorProps(props: Properties, clusterId: String): Unit = {
     if (!props.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
       props.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "controller")
-    }
-
-    val selectorType = props.getProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "controller").toLowerCase(Locale.ROOT)
-    if (selectorType == "kafka") {
-      val bootstrapKey = s"${LogConfigConstants.LOG_S3_SELECTOR_PREFIX}kafka.bootstrap.servers"
-      if (!props.containsKey(bootstrapKey)) {
-        bootstrapServers(kafkaConfig).foreach(servers => props.setProperty(bootstrapKey, servers))
-      }
-    }
-  }
-
-  private def bootstrapServers(config: KafkaConfig): Option[String] = {
-    val endpoints = {
-      val advertised = config.effectiveAdvertisedBrokerListeners
-      if (advertised.nonEmpty) advertised else config.listeners
-    }
-
-    val hosts = endpoints
-      .map(ep => s"${resolveHost(ep.host)}:${ep.port}")
-      .filter(_.nonEmpty)
-
-    if (hosts.nonEmpty) Some(hosts.mkString(",")) else None
-  }
-
-  private def resolveHost(host: String): String = {
-    val value = Option(host).filter(_.nonEmpty).getOrElse("localhost")
-    if (value == "0.0.0.0") {
-      Try(InetAddress.getLocalHost.getHostAddress).getOrElse("127.0.0.1")
-    } else {
-      value
     }
   }
 }

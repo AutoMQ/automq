@@ -54,16 +54,6 @@ public final class LogUploaderNodeSelectorFactory {
                                                          Map<String, String> config) {
         LogUploaderNodeSelectorType type = LogUploaderNodeSelectorType.fromString(typeString);
         switch (type) {
-            case STATIC:
-                boolean isPrimary = Boolean.parseBoolean(config.getOrDefault("isPrimaryUploader", "false"));
-                return LogUploaderNodeSelectors.staticSelector(isPrimary);
-            case NODE_ID:
-                int primaryNodeId = Integer.parseInt(config.getOrDefault("primaryNodeId", "0"));
-                return LogUploaderNodeSelectors.nodeIdSelector(nodeId, primaryNodeId);
-            case FILE:
-                String leaderFile = config.getOrDefault("leaderFile", "/tmp/log-uploader-leader");
-                long timeoutMs = Long.parseLong(config.getOrDefault("leaderTimeoutMs", "60000"));
-                return LogUploaderNodeSelectors.fileLeaderElectionSelector(leaderFile, nodeId, timeoutMs);
             case CUSTOM:
                 LogUploaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase(Locale.ROOT));
                 if (provider != null) {
@@ -73,10 +63,10 @@ public final class LogUploaderNodeSelectorFactory {
                         LOGGER.error("Failed to create selector of type {}", typeString, e);
                     }
                 }
-                LOGGER.warn("Unsupported log uploader selector type {}, falling back to static=false", typeString);
-                return LogUploaderNodeSelector.staticSelector(false);
+                LOGGER.warn("Unsupported log uploader selector type {}, falling back to supplier with static false", typeString);
+                return () -> false;
             default:
-                return LogUploaderNodeSelector.staticSelector(false);
+                return () -> false;
         }
     }
 

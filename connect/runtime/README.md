@@ -43,7 +43,7 @@ automq.telemetry.metric.cardinality.limit=10000
 
 ## S3 Log Upload
 
-Kafka Connect bundles the AutoMQ log uploader so that worker logs can be streamed to S3 together with in-cluster cleanup. The uploader reuses the same leader election mechanism as the metrics, using Kafka by default, and requires no additional configuration.
+Kafka Connect bundles the AutoMQ log uploader so that worker logs can be streamed to S3 together with in-cluster cleanup. The uploader uses the connect-leader election mechanism by default and requires no additional configuration.
 
 ### Worker Configuration
 
@@ -55,21 +55,13 @@ log.s3.enable=true
 log.s3.bucket=0@s3://your-log-bucket?region=us-east-1
 
 # Optional overrides (defaults shown)
-log.s3.selector.type=kafka
-log.s3.selector.kafka.bootstrap.servers=${bootstrap.servers}
-log.s3.selector.kafka.topic=__automq_connect_log_leader_${group.id}
-log.s3.selector.kafka.group.id=automq-log-uploader-${group.id}
+log.s3.selector.type=connect-leader
 # Provide credentials if the bucket URI does not embed them
 # log.s3.access.key=...
 # log.s3.secret.key=...
 ```
 
-`log.s3.node.id` defaults to a hash of the pod hostname if not provided, ensuring objects are partitioned per worker. For `static` or `nodeid` leader election, you can explicitly set:
-
-```properties
-log.s3.selector.type=static
-log.s3.primary.node=true   # Set true only on the primary node, false on others
-```
+`log.s3.node.id` defaults to a hash of the pod hostname if not provided, ensuring objects are partitioned per worker.
 
 ### Log4j Integration
 

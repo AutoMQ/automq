@@ -21,7 +21,6 @@ package com.automq.log.uploader.selector.runtime;
 
 import com.automq.log.uploader.selector.LogUploaderNodeSelector;
 import com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider;
-import com.automq.log.uploader.selector.LogUploaderNodeSelectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,7 +41,7 @@ abstract class AbstractRuntimeLeaderSelectorProvider implements LogUploaderNodeS
         final AtomicBoolean missingLogged = new AtomicBoolean(false);
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);
 
-        return LogUploaderNodeSelectors.supplierSelector(() -> {
+        return () -> {
             BooleanSupplier supplier = RuntimeLeaderRegistry.supplier(key);
             if (supplier == null) {
                 if (missingLogged.compareAndSet(false, true)) {
@@ -78,7 +77,7 @@ abstract class AbstractRuntimeLeaderSelectorProvider implements LogUploaderNodeS
                 LOGGER.warn("Log uploader leader supplier {} threw an exception; treating as follower", key, e);
                 return false;
             }
-        });
+        };
     }
 
     protected abstract String registryKey();

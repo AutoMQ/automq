@@ -15,7 +15,6 @@
 
 import subprocess
 import time
-import re
 
 from ducktape.mark.resource import cluster
 from ducktape.mark import parametrize
@@ -199,7 +198,6 @@ class AutoMQBrokerTelemetryTest(Test):
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    @parametrize(selector_type="kafka")
     @parametrize(selector_type="controller")
     def test_s3_metrics_exporter(self, selector_type):
         """Verify that broker metrics are exported to S3 via the AutoMQ telemetry module."""
@@ -226,31 +224,15 @@ class AutoMQBrokerTelemetryTest(Test):
             for idx in range(1, node_count + 1)
         }
 
-        if selector_type == "kafka":
-            server_overrides.extend([
-                ["automq.telemetry.s3.selector.type", "kafka"],
-                ["automq.telemetry.s3.selector.kafka.topic", f"__automq_telemetry_s3_leader_{cluster_id}"],
-                ["automq.telemetry.s3.selector.kafka.group.id", f"automq-telemetry-s3-{cluster_id}"],
-            ])
-        else:
-            server_overrides.append(["automq.telemetry.s3.selector.type", "controller"])
-
-        promote_regex = re.compile(rf"Kafka selector elected node (\d+) as primary uploader for cluster.*")
+        server_overrides.append(["automq.telemetry.s3.selector.type", "controller"])
 
         def telemetry_leader_nodes():
             leaders = []
             for node in self.kafka.nodes:
-                if selector_type == "controller":
-                    cmd = f"grep -a 'Node became telemetry leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                    if "Node became telemetry leader for key controller" in output:
-                        leaders.append(str(self.kafka.idx(node)))
-                else:
-                    cmd = f"grep -a 'Kafka selector elected node' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                    match = promote_regex.search(output)
-                    if match:
-                        leaders.append(match.group(1))
+                cmd = f"grep -a 'Node became telemetry leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                if "Node became telemetry leader for key controller" in output:
+                    leaders.append(str(self.kafka.idx(node)))
             return leaders
 
         try:
@@ -283,7 +265,6 @@ class AutoMQBrokerTelemetryTest(Test):
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    @parametrize(selector_type="kafka")
     @parametrize(selector_type="controller")
     def test_s3_log_uploader(self, selector_type):
         """Verify that broker logs are uploaded to S3 via the AutoMQ log uploader module."""
@@ -299,14 +280,7 @@ class AutoMQBrokerTelemetryTest(Test):
             ["log.s3.cluster.id", cluster_id],
         ]
 
-        if selector_type == "kafka":
-            server_overrides.extend([
-                ["log.s3.selector.type", "kafka"],
-                ["log.s3.selector.kafka.topic", f"__automq_log_uploader_leader_{cluster_id}"],
-                ["log.s3.selector.kafka.group.id", f"automq-log-uploader-{cluster_id}"],
-            ])
-        else:
-            server_overrides.append(["log.s3.selector.type", "controller"])
+        server_overrides.append(["log.s3.selector.type", "controller"])
 
         extra_env = [
             "AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL=15000",
@@ -321,22 +295,13 @@ class AutoMQBrokerTelemetryTest(Test):
             for idx in range(1, node_count + 1)
         }
 
-        log_promote_regex = re.compile(rf"Node (\d+) became primary log uploader for cluster.*")
-
         def log_leader_nodes():
             leaders = []
             for node in self.kafka.nodes:
-                if selector_type == "controller":
-                    cmd = f"grep -a 'Node became log uploader leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                    if "Node became log uploader leader for key controller" in output:
-                        leaders.append(str(self.kafka.idx(node)))
-                else:
-                    cmd = f"grep -a 'became primary log uploader' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                    match = log_promote_regex.search(output)
-                    if match:
-                        leaders.append(match.group(1))
+                cmd = f"grep -a 'Node became log uploader leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                if "Node became log uploader leader for key controller" in output:
+                    leaders.append(str(self.kafka.idx(node)))
             return leaders
 
         try:

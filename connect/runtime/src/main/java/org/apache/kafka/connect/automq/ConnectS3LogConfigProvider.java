@@ -9,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -115,50 +114,6 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         // Selector defaults
         if (!effective.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
             effective.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "connect-leader");
-        }
-
-        String selectorType = effective.getProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "connect-leader")
-            .toLowerCase(Locale.ROOT);
-        if ("kafka".equals(selectorType)) {
-            String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
-            setKafkaSelectorDefaults(workerProps, effective, selectorPrefix);
-        }
-    }
-
-    private void setKafkaSelectorDefaults(Properties workerProps, Properties effective, String selectorPrefix) {
-        String bootstrapKey = selectorPrefix + "kafka.bootstrap.servers";
-        if (!effective.containsKey(bootstrapKey)) {
-            String bootstrap = workerProps.getProperty("automq.log.s3.selector.kafka.bootstrap.servers",
-                workerProps.getProperty("bootstrap.servers"));
-            if (!isBlank(bootstrap)) {
-                effective.setProperty(bootstrapKey, bootstrap);
-            }
-        }
-
-        String clusterId = effective.getProperty(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY, "connect");
-        setKafkaGroupAndTopicDefaults(effective, selectorPrefix, clusterId);
-        setKafkaClientDefaults(effective, selectorPrefix);
-        
-        String autoCreateKey = selectorPrefix + "kafka.auto.create.topic";
-        effective.putIfAbsent(autoCreateKey, "true");
-    }
-
-    private void setKafkaGroupAndTopicDefaults(Properties effective, String selectorPrefix, String clusterId) {
-        String groupKey = selectorPrefix + "kafka.group.id";
-        if (!effective.containsKey(groupKey)) {
-            effective.setProperty(groupKey, "automq-log-uploader-" + clusterId);
-        }
-
-        String topicKey = selectorPrefix + "kafka.topic";
-        if (!effective.containsKey(topicKey)) {
-            effective.setProperty(topicKey, "__automq_connect_log_leader_" + clusterId.replaceAll("[^A-Za-z0-9_-]", ""));
-        }
-    }
-
-    private void setKafkaClientDefaults(Properties effective, String selectorPrefix) {
-        String clientKey = selectorPrefix + "kafka.client.id";
-        if (!effective.containsKey(clientKey)) {
-            effective.setProperty(clientKey, "automq-log-uploader-client-" + effective.getProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY));
         }
     }
 

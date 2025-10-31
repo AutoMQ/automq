@@ -32,17 +32,17 @@ class TelemetryConfigTest {
     @Test
     void getPropertiesWithPrefixStripsPrefixAndIgnoresOthers() {
         Properties properties = new Properties();
-        properties.setProperty("automq.telemetry.s3.selector.type", "kafka");
-        properties.setProperty("automq.telemetry.s3.selector.kafka.bootstrap.servers", "localhost:9092");
-        properties.setProperty("automq.telemetry.s3.selector.kafka.security.protocol", "SASL_PLAINTEXT");
+        properties.setProperty("automq.telemetry.s3.selector.type", "controller");
+        properties.setProperty("automq.telemetry.s3.selector.controller.endpoint", "http://localhost:9093");
+        properties.setProperty("automq.telemetry.s3.selector.controller.path", "/raft/metadata");
         properties.setProperty("unrelated.key", "value");
 
         TelemetryConfig config = new TelemetryConfig(properties);
         Map<String, String> result = config.getPropertiesWithPrefix("automq.telemetry.s3.selector.");
 
-        assertEquals("kafka", result.get("type"));
-        assertEquals("localhost:9092", result.get("kafka.bootstrap.servers"));
-        assertEquals("SASL_PLAINTEXT", result.get("kafka.security.protocol"));
+        assertEquals("controller", result.get("type"));
+        assertEquals("http://localhost:9093", result.get("controller.endpoint"));
+        assertEquals("/raft/metadata", result.get("controller.path"));
         assertFalse(result.containsKey("unrelated.key"));
     }
 }

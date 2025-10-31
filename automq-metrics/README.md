@@ -214,81 +214,26 @@ Examples:
 | `automq.telemetry.s3.cluster.id` | Cluster identifier | `automq-cluster` |
 | `automq.telemetry.s3.node.id` | Node identifier | `0` |
 | `automq.telemetry.s3.primary.node` | Whether this node is the primary uploader | `false` |
-| `automq.telemetry.s3.selector.type` | Node selection strategy type | `static` |
+| `automq.telemetry.s3.selector.type` | Node selection strategy type | `controller` |
 | `automq.telemetry.s3.bucket` | S3 bucket URI | None |
 
 #### Node Selection Strategies
 
 In a multi-node cluster, typically only one node should upload metrics to S3 to avoid duplication. The S3 Metrics Exporter provides several built-in node selection strategies through the `UploaderNodeSelector` interface:
 
-1. **Static Selection** (`static`)
+1. **Controller Runtime Leadership** (`controller`)
 
-   Uses a static configuration to determine which node uploads metrics.
+   Defers to the Kafka KRaft controller's leadership. When the AutoMQ broker runtime registers its supplier the exporter will automatically start uploading from the active controller node—no extra configuration required.
 
-   ```properties
-   automq.telemetry.s3.selector.type=static
-   automq.telemetry.s3.primary.node=true
-   ```
+2. **Kafka Connect Runtime Leadership** (`connect-leader`)
 
-2. **Node ID Based Selection** (`nodeid`)
-
-   Selects the node with a specific node ID as the primary uploader.
-
-   ```properties
-   automq.telemetry.s3.selector.type=nodeid
-   # Additional parameters
-   # primaryNodeId=1  # Can be specified in URI query parameters if needed
-   ```
-
-3. **File-Based Leader Election** (`file`)
-
-   Uses a file on a shared filesystem to implement simple leader election.
-
-   ```properties
-   automq.telemetry.s3.selector.type=file
-   # Additional parameters (can be specified in URI query parameters)
-   # leaderFile=/path/to/leader-file
-   # leaderTimeoutMs=60000
-   ```
-
-4. **Controller Runtime Leadership** (`controller`)
-
-   Defers to the Kafka KRaft controller’s leadership. When the AutoMQ broker runtime registers its supplier the exporter will automatically start uploading from the active controller node—no extra configuration required.
-
-5. **Kafka Connect Runtime Leadership** (`connect-leader`)
-
-   Uses the Kafka Connect distributed herder leadership. AutoMQ’s Connect runtime registers the supplier once the worker joins the cluster, ensuring only the elected leader uploads metrics.
-
-6. **Kafka-based Leader Election** (`kafka`)
-
-   Leverages Kafka consumer group partition assignment. All nodes join the same consumer group and subscribe to a single-partition topic; the node that holds the partition becomes the primary uploader while others stay on standby.
+   Uses the Kafka Connect distributed herder leadership. AutoMQ's Connect runtime registers the supplier once the worker joins the cluster, ensuring only the elected leader uploads metrics.
 
 > **Note**
 >
 > Runtime-backed selectors (`controller`, `connect-leader`) poll the registry on every decision. Once the hosting runtime publishes or updates its supplier, the exporter immediately reflects the new leadership without restarting the telemetry pipeline.
 
-   ```properties
-   automq.telemetry.s3.selector.type=kafka
-   # Recommended to configure using the automq.telemetry.s3.selector.kafka. prefix
-   automq.telemetry.s3.selector.kafka.bootstrap.servers=PLAINTEXT://kafka:9092
-   automq.telemetry.s3.selector.kafka.topic=__automq_telemetry_s3_leader_connect
-   automq.telemetry.s3.selector.kafka.group.id=automq-telemetry-s3-connect
-   automq.telemetry.s3.selector.kafka.topic.replication.factor=3
-   automq.telemetry.s3.selector.kafka.security.protocol=SASL_PLAINTEXT
-   automq.telemetry.s3.selector.kafka.sasl.mechanism=SCRAM-SHA-512
-   automq.telemetry.s3.selector.kafka.sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="connect" password="change-me";
-   ```
-
-   **Key points**
-
-   - `bootstrap.servers` (required): Kafka cluster endpoints used for election.
-   - `topic`, `group.id`, `client.id` (optional): default to values derived from `clusterId`/`nodeId` if omitted.
-   - Topic management parameters such as `topic.replication.factor`, `topic.partitions`, and `topic.retention.ms` can be overridden with the same prefix.
-   - Any additional Kafka client settings (security protocol, SASL/SSL options, timeouts, etc.) can be supplied via `automq.telemetry.s3.selector.kafka.<property>`.
-
-   The selector automatically creates the election topic (1 partition by default) and keeps a background consumer alive. When the leader stops, Kafka triggers a rebalance and another node immediately takes over without requiring shared storage.
-
-7. **Custom SPI-based Selectors**
+1. **Custom SPI-based Selectors**
 
    The system supports custom node selection strategies through Java's ServiceLoader SPI mechanism.
 
@@ -354,38 +299,11 @@ automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=h
 automq.telemetry.s3.cluster.id=my-cluster
 automq.telemetry.s3.node.id=1
 automq.telemetry.s3.primary.node=true
-automq.telemetry.s3.selector.type=static
+automq.telemetry.s3.selector.type=controller
 ```
 
-#### Multi-Node Cluster with Node ID Selection
 
 ```properties
-# Configuration for all nodes
-automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
-automq.telemetry.s3.cluster.id=my-cluster
-automq.telemetry.s3.selector.type=nodeid
-
-# Node 1 (primary uploader)
-automq.telemetry.s3.node.id=1
-# Node-specific URI parameters
-# ?primaryNodeId=1
-
-# Node 2 
-automq.telemetry.s3.node.id=2
-```
-
-#### Multi-Node Cluster with File-Based Leader Election
-
-```properties
-# All nodes have the same configuration
-automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com&leaderFile=/path/to/shared/leader-file
-automq.telemetry.s3.cluster.id=my-cluster
-automq.telemetry.s3.selector.type=file
-# Each node has a unique ID
-# Node 1
-automq.telemetry.s3.node.id=1
-# Node 2
-# automq.telemetry.s3.node.id=2
 ```
 
 ### Advanced Configuration
