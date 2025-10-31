@@ -260,12 +260,12 @@ subprojects {
 
   tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
-//    options.compilerArgs << "-Xlint:all"
-//    // temporary exclusions until all the warnings are fixed
-//    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
-//      options.compilerArgs << "-Xlint:-rawtypes"
-//    options.compilerArgs << "-Xlint:-serial"
-//    options.compilerArgs << "-Xlint:-try"
+    options.compilerArgs << "-Xlint:all"
+    // temporary exclusions until all the warnings are fixed
+    if (!project.path.startsWith(":connect") && !project.path.startsWith(":storage"))
+      options.compilerArgs << "-Xlint:-rawtypes"
+    options.compilerArgs << "-Xlint:-serial"
+    options.compilerArgs << "-Xlint:-try"
     // AutoMQ inject start
     // TODO: remove me, when upgrade to 4.x
 //    options.compilerArgs << "-Werror"
@@ -948,7 +948,7 @@ project(':core') {
     implementation project(':storage')
     implementation project(':server')
     implementation project(':automq-shell')
-    implementation project(':opentelemetry')
+    implementation project(':automq-metrics')
     implementation project(':automq-log-uploader')
 
     implementation libs.argparse4j
@@ -1252,9 +1252,11 @@ project(':core') {
     from(project(':trogdor').jar) { into("libs/") }
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').jar) { into("libs/") }
-    from(project(':opentelemetry').jar) { into("libs/") }
-    from(project(':opentelemetry').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-metrics').jar) { into("libs/") }
+    from(project(':automq-metrics').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-log-uploader').jar) { into("libs/") }
+    from(project(':automq-log-uploader').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
@@ -2485,7 +2487,7 @@ project(':trogdor') {
     from (configurations.runtimeClasspath) {
       exclude('kafka-clients*')
     }
-    into "$buildDir/dependant-libs"
+    into "$buildDir/dependant-libs-${versions.scala}"
     duplicatesStrategy 'exclude'
   }
 
@@ -3454,7 +3456,7 @@ project(':connect:runtime') {
     api project(':clients')
     api project(':connect:json')
     api project(':connect:transforms')
-    api project(':opentelemetry')
+    api project(':automq-metrics')
     implementation project(':automq-log-uploader')
 
     implementation libs.slf4jApi

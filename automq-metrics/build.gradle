@@ -3,8 +3,8 @@ plugins {
   id 'checkstyle'
 }
 
-project(':opentelemetry') {
-  archivesBaseName="opentelemetry"
+project(':automq-metrics') {
+  archivesBaseName="automq-metrics"
 }
 
 repositories {

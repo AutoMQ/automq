@@ -1,4 +1,4 @@
-# AutoMQ OpenTelemetry Module
+# AutoMQ automq-metrics Module
 
 ##├── exporter/
 │   ├── MetricsExporter.java       # Exporter interface

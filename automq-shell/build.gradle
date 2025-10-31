@@ -18,7 +18,7 @@ dependencies {
     compileOnly libs.awsSdkAuth
     implementation libs.reload4j
     implementation libs.nettyBuffer
-    implementation project(':opentelemetry')
+    implementation project(':automq-metrics')
     implementation project(':automq-log-uploader')
     implementation libs.jacksonDatabind
     implementation libs.jacksonYaml
