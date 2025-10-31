@@ -20,7 +20,7 @@ import scala.util.Try
 
 /**
  * Helper used by the core module to bootstrap AutoMQ telemetry using the
- * shared {{@link AutoMQTelemetryManager}} implementation.
+ * shared {@link com.automq.opentelemetry.AutoMQTelemetryManager} implementation.
  */
 object TelemetrySupport {
   private val logger = LoggerFactory.getLogger(TelemetrySupport.getClass)
@@ -74,7 +74,7 @@ object TelemetrySupport {
       bucket.foreach(value => props.setProperty(TelemetryConstants.S3_BUCKET, value))
     }
 
-    ensureKafkaSelectorProps(props, config, clusterId)
+    ensureSelectorProps(props, config, clusterId)
     props
   }
 
@@ -147,7 +147,7 @@ object TelemetrySupport {
     }
   }
 
-  private def ensureKafkaSelectorProps(props: Properties, config: KafkaConfig, clusterId: String): Unit = {
+  private def ensureSelectorProps(props: Properties, config: KafkaConfig, clusterId: String): Unit = {
     val bucket = props.getProperty(TelemetryConstants.S3_BUCKET)
     if (StringUtils.isBlank(bucket)) {
       return
@@ -155,23 +155,26 @@ object TelemetrySupport {
 
     val selectorTypeKey = s"${TelemetryConstants.S3_SELECTOR_TYPE_KEY}"
     if (!props.containsKey(selectorTypeKey)) {
-      props.setProperty(selectorTypeKey, "kafka")
+      props.setProperty(selectorTypeKey, "controller")
     }
 
-    val bootstrapKey = s"automq.telemetry.s3.selector.kafka.bootstrap.servers"
-    if (!props.containsKey(bootstrapKey)) {
-      bootstrapServers(config).foreach(servers => props.setProperty(bootstrapKey, servers))
-    }
+    val selectorType = props.getProperty(selectorTypeKey, "controller").toLowerCase(Locale.ROOT)
+    if (selectorType == "kafka") {
+      val bootstrapKey = s"automq.telemetry.s3.selector.kafka.bootstrap.servers"
+      if (!props.containsKey(bootstrapKey)) {
+        bootstrapServers(config).foreach(servers => props.setProperty(bootstrapKey, servers))
+      }
 
-    val normalizedCluster = Option(clusterId).filter(StringUtils.isNotBlank).getOrElse("default")
-    val topicKey = s"automq.telemetry.s3.selector.kafka.topic"
-    if (!props.containsKey(topicKey)) {
-      props.setProperty(topicKey, s"__automq_telemetry_s3_leader_$normalizedCluster")
-    }
+      val normalizedCluster = Option(clusterId).filter(StringUtils.isNotBlank).getOrElse("default")
+      val topicKey = s"automq.telemetry.s3.selector.kafka.topic"
+      if (!props.containsKey(topicKey)) {
+        props.setProperty(topicKey, s"__automq_telemetry_s3_leader_$normalizedCluster")
+      }
 
-    val groupKey = s"automq.telemetry.s3.selector.kafka.group.id"
-    if (!props.containsKey(groupKey)) {
-      props.setProperty(groupKey, s"automq-telemetry-s3-$normalizedCluster")
+      val groupKey = s"automq.telemetry.s3.selector.kafka.group.id"
+      if (!props.containsKey(groupKey)) {
+        props.setProperty(groupKey, s"automq-telemetry-s3-$normalizedCluster")
+      }
     }
   }
 

@@ -43,7 +43,7 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
 | `log.s3.enable` | Whether to enable S3 upload function.
 | `log.s3.bucket` | It is recommended to use AutoMQ Bucket URI (e.g. `0@s3://bucket?region=us-east-1&pathStyle=true`). If using a shorthand bucket name, additional fields such as `log.s3.region` need to be provided.
 | `log.s3.cluster.id` / `log.s3.node.id` | Used to construct the object storage path `automq/logs/{cluster}/{node}/{hour}/{uuid}`.
-| `log.s3.selector.type` | Leader election strategy (`static`, `nodeid`, `file`, `kafka`, or custom).
+| `log.s3.selector.type` | Leader election strategy (`static`, `nodeid`, `file`, `kafka`, `controller`, `connect-leader`, or custom).
 | `log.s3.primary.node` | Used with `static` strategy to indicate whether the current node is the primary node.
 | `log.s3.selector.kafka.*` | Additional configuration required for Kafka leader election, such as `bootstrap.servers`, `group.id`, etc.
 | `log.s3.active.controller` | **Deprecated**, please use `log.s3.selector.type=static` + `log.s3.primary.node=true`.
@@ -60,7 +60,9 @@ To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploa
 1. **static**: Specify which node is the leader using `log.s3.primary.node=true|false`.
 2. **nodeid**: Becomes the leader node when `log.s3.node.id` equals `primaryNodeId`, which can be set in the URL or properties with `log.s3.selector.primary.node.id`.
 3. **file**: Uses a shared file for preemptive leader election, configure `log.s3.selector.file.leaderFile=/shared/leader`, `log.s3.selector.file.leaderTimeoutMs=60000`.
-4. **kafka**: Default strategy. All nodes join the same consumer group of a single-partition topic, the node holding the partition becomes the leader. Necessary configuration:
+4. **controller** *(default for brokers)*: Defers to the Kafka KRaft controller leadership that AutoMQ exposes at runtime. No additional configuration is required—the broker registers a supplier and the uploader continuously checks it.
+5. **connect-leader** *(default for Kafka Connect clusters)*: Mirrors the distributed herder leader election. Works out of the box when running inside AutoMQ’s Connect runtime.
+6. **kafka**: All nodes join the same consumer group of a single-partition topic, the node holding the partition becomes the leader. Necessary configuration:
    ```properties
    log.s3.selector.type=kafka
    log.s3.selector.kafka.bootstrap.servers=PLAINTEXT://kafka:9092
@@ -68,7 +70,11 @@ To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploa
    log.s3.selector.kafka.group.id=automq-log-uploader-cluster1
    ```
    Advanced parameters such as security (SASL/SSL), timeout, etc. can be provided through `log.s3.selector.kafka.*`.
-5. **custom**: Implement `com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
+7. **custom**: Implement `com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
+
+> **Note**
+>
+> Runtime-backed selectors (`controller`, `connect-leader`) no longer require the S3 uploader to be initialized after leadership registration. The selector re-evaluates the registry on every invocation, so once the hosting runtime publishes its leader supplier the uploader automatically adopts it.
 
 ## Extension
 

@@ -15,8 +15,10 @@
 
 import subprocess
 import time
+import re
 
 from ducktape.mark.resource import cluster
+from ducktape.mark import parametrize
 from ducktape.tests.test import Test
 from ducktape.utils.util import wait_until
 
@@ -197,9 +199,11 @@ class AutoMQBrokerTelemetryTest(Test):
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    def test_s3_metrics_exporter(self):
+    @parametrize(selector_type="kafka")
+    @parametrize(selector_type="controller")
+    def test_s3_metrics_exporter(self, selector_type):
         """Verify that broker metrics are exported to S3 via the AutoMQ telemetry module."""
-        cluster_id = f"core-metrics-{int(time.time())}"
+        cluster_id = f"core-metrics-{selector_type}-{int(time.time())}"
         bucket_name = "ko3"
         metrics_prefix = f"automq/metrics/{cluster_id}"
 
@@ -210,17 +214,55 @@ class AutoMQBrokerTelemetryTest(Test):
             ["automq.telemetry.exporter.interval.ms", "10000"],
             ["automq.telemetry.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
             ["automq.telemetry.s3.cluster.id", cluster_id],
-            ["automq.telemetry.s3.node.id", "1"],
-            ["automq.telemetry.exporter.s3.selector.type", "kafka"],
-            ["automq.telemetry.exporter.s3.selector.kafka.topic", f"__automq_telemetry_s3_leader_{cluster_id}"],
-            ["automq.telemetry.exporter.s3.selector.kafka.group.id", f"automq-telemetry-s3-{cluster_id}"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-s3-metrics"],
         ]
 
-        self._start_kafka(server_overrides=server_overrides)
+        original_num_brokers = self.num_brokers
+        node_count = max(2, self.num_brokers)
+        self.num_brokers = node_count
+        per_node_overrides = {
+            idx: [("automq.telemetry.s3.node.id", str(idx))]
+            for idx in range(1, node_count + 1)
+        }
+
+        if selector_type == "kafka":
+            server_overrides.extend([
+                ["automq.telemetry.s3.selector.type", "kafka"],
+                ["automq.telemetry.s3.selector.kafka.topic", f"__automq_telemetry_s3_leader_{cluster_id}"],
+                ["automq.telemetry.s3.selector.kafka.group.id", f"automq-telemetry-s3-{cluster_id}"],
+            ])
+        else:
+            server_overrides.append(["automq.telemetry.s3.selector.type", "controller"])
+
+        promote_regex = re.compile(rf"Kafka selector elected node (\d+) as primary uploader for cluster.*")
+
+        def telemetry_leader_nodes():
+            leaders = []
+            for node in self.kafka.nodes:
+                if selector_type == "controller":
+                    cmd = f"grep -a 'Node became telemetry leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                    if "Node became telemetry leader for key controller" in output:
+                        leaders.append(str(self.kafka.idx(node)))
+                else:
+                    cmd = f"grep -a 'Kafka selector elected node' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                    match = promote_regex.search(output)
+                    if match:
+                        leaders.append(match.group(1))
+            return leaders
 
         try:
+            self._start_kafka(server_overrides=server_overrides, per_node_overrides=per_node_overrides)
+
+            wait_until(
+                lambda: len(telemetry_leader_nodes()) == 1,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="Telemetry leader election did not converge to a single node"
+            )
+
             self._produce_messages(max_messages=200)
 
             def _metrics_uploaded():
@@ -235,13 +277,17 @@ class AutoMQBrokerTelemetryTest(Test):
                 backoff_sec=10,
                 err_msg="Timed out waiting for S3 metrics export"
             )
+
         finally:
+            self.num_brokers = original_num_brokers
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    def test_s3_log_uploader(self):
+    @parametrize(selector_type="kafka")
+    @parametrize(selector_type="controller")
+    def test_s3_log_uploader(self, selector_type):
         """Verify that broker logs are uploaded to S3 via the AutoMQ log uploader module."""
-        cluster_id = f"core-logs-{int(time.time())}"
+        cluster_id = f"core-logs-{selector_type}-{int(time.time())}"
         bucket_name = "ko3"
         logs_prefix = f"automq/logs/{cluster_id}"
         
@@ -251,20 +297,58 @@ class AutoMQBrokerTelemetryTest(Test):
             ["log.s3.enable", "true"],
             ["log.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
             ["log.s3.cluster.id", cluster_id],
-            ["log.s3.node.id", "1"],
-            ["log.s3.selector.type", "kafka"],
-            ["log.s3.selector.kafka.topic", f"__automq_log_uploader_leader_{cluster_id}"],
-            ["log.s3.selector.kafka.group.id", f"automq-log-uploader-{cluster_id}"],
         ]
+
+        if selector_type == "kafka":
+            server_overrides.extend([
+                ["log.s3.selector.type", "kafka"],
+                ["log.s3.selector.kafka.topic", f"__automq_log_uploader_leader_{cluster_id}"],
+                ["log.s3.selector.kafka.group.id", f"automq-log-uploader-{cluster_id}"],
+            ])
+        else:
+            server_overrides.append(["log.s3.selector.type", "controller"])
 
         extra_env = [
             "AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL=15000",
             "AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL=60000"
         ]
 
-        self._start_kafka(server_overrides=server_overrides, extra_env=extra_env)
+        original_num_brokers = self.num_brokers
+        node_count = max(2, self.num_brokers)
+        self.num_brokers = node_count
+        per_node_overrides = {
+            idx: [("log.s3.node.id", str(idx))]
+            for idx in range(1, node_count + 1)
+        }
+
+        log_promote_regex = re.compile(rf"Node (\d+) became primary log uploader for cluster.*")
+
+        def log_leader_nodes():
+            leaders = []
+            for node in self.kafka.nodes:
+                if selector_type == "controller":
+                    cmd = f"grep -a 'Node became log uploader leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                    if "Node became log uploader leader for key controller" in output:
+                        leaders.append(str(self.kafka.idx(node)))
+                else:
+                    cmd = f"grep -a 'became primary log uploader' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                    output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
+                    match = log_promote_regex.search(output)
+                    if match:
+                        leaders.append(match.group(1))
+            return leaders
 
         try:
+            self._start_kafka(server_overrides=server_overrides, per_node_overrides=per_node_overrides, extra_env=extra_env)
+
+            wait_until(
+                lambda: len(log_leader_nodes()) == 1,
+                timeout_sec=120,
+                backoff_sec=5,
+                err_msg="Log uploader leader election did not converge to a single node"
+            )
+
             self._produce_messages(max_messages=300)
 
             def _logs_uploaded():
@@ -279,5 +363,7 @@ class AutoMQBrokerTelemetryTest(Test):
                 backoff_sec=15,
                 err_msg="Timed out waiting for S3 log upload"
             )
+
         finally:
+            self.num_brokers = original_num_brokers
             self._stop_kafka()

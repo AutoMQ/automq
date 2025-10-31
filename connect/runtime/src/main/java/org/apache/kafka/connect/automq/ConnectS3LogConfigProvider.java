@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.InetAddress;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -113,11 +114,15 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
     private void setSelectorDefaults(Properties workerProps, Properties effective) {
         // Selector defaults
         if (!effective.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
-            effective.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "kafka");
+            effective.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "connect-leader");
         }
 
-        String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
-        setKafkaSelectorDefaults(workerProps, effective, selectorPrefix);
+        String selectorType = effective.getProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "connect-leader")
+            .toLowerCase(Locale.ROOT);
+        if ("kafka".equals(selectorType)) {
+            String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
+            setKafkaSelectorDefaults(workerProps, effective, selectorPrefix);
+        }
     }
 
     private void setKafkaSelectorDefaults(Properties workerProps, Properties effective, String selectorPrefix) {

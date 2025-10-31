@@ -324,7 +324,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
             return "1";
         }
         
-        return "1"; // Default unit
+        return "1";
     }
     
     private boolean isCounterMetric(MetricName metricName) {

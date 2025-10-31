@@ -1,0 +1,63 @@
+package com.automq.opentelemetry.exporter.s3.runtime;
+
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
+import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectors;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
+
+abstract class AbstractRuntimeLeaderSelectorProvider implements UploaderNodeSelectorProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractRuntimeLeaderSelectorProvider.class);
+
+    @Override
+    public UploaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
+        String key = registryKey();
+        final AtomicBoolean missingLogged = new AtomicBoolean(false);
+        final AtomicBoolean leaderLogged = new AtomicBoolean(false);
+
+        return UploaderNodeSelectors.supplierSelector(() -> {
+            BooleanSupplier current = RuntimeLeaderRegistry.supplier(key);
+            if (current == null) {
+                if (missingLogged.compareAndSet(false, true)) {
+                    LOGGER.warn("Telemetry leader supplier for key {} not yet available; treating node as follower until registration happens.", key);
+                }
+                if (leaderLogged.getAndSet(false)) {
+                    LOGGER.info("Node stepped down from telemetry leadership for key {} because supplier is unavailable.", key);
+                }
+                return false;
+            }
+
+            if (missingLogged.get()) {
+                missingLogged.set(false);
+                LOGGER.info("Telemetry leader supplier for key {} is now available.", key);
+            }
+
+            try {
+                boolean leader = current.getAsBoolean();
+                if (leader) {
+                    if (!leaderLogged.getAndSet(true)) {
+                        LOGGER.info("Node became telemetry leader for key {}", key);
+                    }
+                } else {
+                    if (leaderLogged.getAndSet(false)) {
+                        LOGGER.info("Node stepped down from telemetry leadership for key {}", key);
+                    }
+                }
+                return leader;
+            } catch (RuntimeException e) {
+                if (leaderLogged.getAndSet(false)) {
+                    LOGGER.info("Node stepped down from telemetry leadership for key {} due to supplier exception.", key);
+                }
+                LOGGER.warn("Telemetry leader supplier for key {} threw exception. Treating as follower.", key, e);
+                return false;
+            }
+        });
+    }
+
+    protected abstract String registryKey();
+}

@@ -22,6 +22,7 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.automq.AzMetadataProviderHolder;
 import org.apache.kafka.connect.automq.ConnectLogUploader;
 import org.apache.kafka.connect.automq.OpenTelemetryMetricsReporter;
+import com.automq.opentelemetry.TelemetryConstants;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.Herder;
@@ -97,15 +98,18 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             Map<String, String> workerProps = !workerPropsFile.isEmpty() ?
                     Utils.propsToStringMap(Utils.loadProps(workerPropsFile)) : Collections.emptyMap();
             String[] extraArgs = Arrays.copyOfRange(args, 1, args.length);
-            
+
+            // AutoMQ inject start
             // Initialize S3 log uploader and OpenTelemetry with worker properties
             ConnectLogUploader.initialize(workerProps);
             AzMetadataProviderHolder.initialize(workerProps);
 
             Properties telemetryProps = new Properties();
             telemetryProps.putAll(workerProps);
+            telemetryProps.putIfAbsent(TelemetryConstants.S3_SELECTOR_TYPE_KEY, "connect-leader");
             OpenTelemetryMetricsReporter.initializeTelemetry(telemetryProps);
-            
+            // AutoMQ inject end
+
             Connect<H> connect = startConnect(workerProps);
             processExtraArgs(connect, extraArgs);
 

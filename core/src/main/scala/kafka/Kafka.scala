@@ -126,7 +126,6 @@ object Kafka extends Logging {
       StorageUtil.formatStorage(serverProps)
       val kafkaConfig = KafkaConfig.fromProps(serverProps, doLog = false)
       val logConfigProvider = new CoreS3LogConfigProvider(kafkaConfig)
-      S3RollingFileAppender.setConfigProvider(logConfigProvider)
       val server = buildServer(kafkaConfig, logConfigProvider)
       AutoMQApplication.registerSingleton(classOf[Server], server)
       // AutoMQ for Kafka inject end
@@ -159,7 +158,9 @@ object Kafka extends Logging {
           fatal("Exiting Kafka due to fatal exception during startup.", e)
           Exit.exit(1)
       }
-
+      // AutoMQ for Kafka inject start
+      S3RollingFileAppender.setConfigProvider(logConfigProvider)
+      // AutoMQ for Kafka inject end
       server.awaitShutdown()
     }
     catch {

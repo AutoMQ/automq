@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Supplier;
 
 /**
  * Utility methods providing built-in selector implementations.
@@ -26,6 +28,11 @@ public final class LogUploaderNodeSelectors {
 
     public static LogUploaderNodeSelector nodeIdSelector(int currentNodeId, int primaryNodeId) {
         return () -> currentNodeId == primaryNodeId;
+    }
+
+    public static LogUploaderNodeSelector supplierSelector(Supplier<Boolean> supplier) {
+        Objects.requireNonNull(supplier, "supplier");
+        return () -> Boolean.TRUE.equals(supplier.get());
     }
 
     public static LogUploaderNodeSelector fileLeaderElectionSelector(String leaderFilePath,

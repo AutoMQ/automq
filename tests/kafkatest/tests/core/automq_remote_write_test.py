@@ -127,7 +127,7 @@ class AutoMQRemoteWriteTest(Test):
     def _start_mock_remote_write_server(self, node, port=9090, log_file="/tmp/mock_remote_write.log",
                                         script_file="/tmp/mock_remote_write.py"):
         """Start mock remote write HTTP server robustly"""
-        # 写入脚本文件（heredoc 避免转义问题）
+        # Write script file (heredoc to avoid escaping issues)
         write_cmd = f"""cat > {script_file} <<'PY'
 import http.server
 import socketserver
@@ -166,20 +166,20 @@ with socketserver.TCPServer(('', {port}), MockRemoteWriteHandler) as httpd:
 PY"""
         node.account.ssh(write_cmd)
 
-        # 选择 python 解释器
+        # Choose python interpreter
         which_py = "PYBIN=$(command -v python3 || command -v python || echo python3)"
-        # 后台启动并记录 PID
+        # Start in background and record PID
         start_cmd = f"{which_py}; nohup $PYBIN {script_file} > {log_file} 2>&1 & echo $!"
         pid_out = list(node.account.ssh_capture(start_cmd))
         pid = pid_out[0].strip() if pid_out else None
         if not pid:
             raise RuntimeError("Failed to start mock remote write server (no PID)")
 
-        # 等待端口监听
+        # Wait for port to be listening
         def listening():
             if self._check_port_listening(node, port):
                 return True
-            # 如果没监听，顺便把最近的日志打出来便于定位
+            # If not listening, print recent logs for troubleshooting
             try:
                 tail = "".join(list(node.account.ssh_capture(f"tail -n 20 {log_file}", allow_fail=True)))
                 self.logger.info(f"Mock server tail log: {tail}")

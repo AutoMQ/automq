@@ -6,7 +6,7 @@ import org.apache.commons.lang3.StringUtils
 import org.slf4j.LoggerFactory
 
 import java.net.InetAddress
-import java.util.Properties
+import java.util.{Locale, Properties}
 import scala.jdk.CollectionConverters._
 import scala.util.Try
 
@@ -81,14 +81,7 @@ class CoreS3LogConfigProvider(kafkaConfig: KafkaConfig) extends S3LogConfigProvi
     }
     props.setProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY, kafkaConfig.nodeId.toString)
 
-//    if (!props.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
-//      props.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "static")
-//    }
-//    if (!props.containsKey(LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY)) {
-//      props.setProperty(LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY, "false")
-//    }
-
-    ensureKafkaSelectorProps(props, currentClusterId)
+    ensureSelectorProps(props, currentClusterId)
     Some(new DefaultS3LogConfig(props))
   }
 
@@ -119,14 +112,17 @@ class CoreS3LogConfigProvider(kafkaConfig: KafkaConfig) extends S3LogConfigProvi
     props
   }
 
-  private def ensureKafkaSelectorProps(props: Properties, clusterId: String): Unit = {
+  private def ensureSelectorProps(props: Properties, clusterId: String): Unit = {
     if (!props.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
-      props.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "kafka")
+      props.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "controller")
     }
 
-    val bootstrapKey = s"${LogConfigConstants.LOG_S3_SELECTOR_PREFIX}kafka.bootstrap.servers"
-    if (!props.containsKey(bootstrapKey)) {
-      bootstrapServers(kafkaConfig).foreach(servers => props.setProperty(bootstrapKey, servers))
+    val selectorType = props.getProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "controller").toLowerCase(Locale.ROOT)
+    if (selectorType == "kafka") {
+      val bootstrapKey = s"${LogConfigConstants.LOG_S3_SELECTOR_PREFIX}kafka.bootstrap.servers"
+      if (!props.containsKey(bootstrapKey)) {
+        bootstrapServers(kafkaConfig).foreach(servers => props.setProperty(bootstrapKey, servers))
+      }
     }
   }
 

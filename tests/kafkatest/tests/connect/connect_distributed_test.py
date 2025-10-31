@@ -1321,60 +1321,87 @@ class ConnectDistributedTest(Test):
             self.logger.info(f"Node {node.account.hostname} load test metrics validation passed")
 
     @cluster(num_nodes=5)
-    def test_opentelemetry_s3_metrics_exporter(self):
+    @parametrize(selector_type="kafka")
+    @parametrize(selector_type="connect-leader")
+    def test_opentelemetry_s3_metrics_exporter(self, selector_type):
         """Test OpenTelemetry S3 Metrics exporter functionality"""
         # Setup mock S3 server using localstack
         self.setup_services(num_workers=2)
 
-        # Create a temporary directory to simulate S3 bucket
-        s3_mock_dir = "/tmp/mock-s3-bucket"
-        bucket_name = "test-metrics-bucket"
+        bucket_name = "ko3"
+        cluster_id = f"connect-metrics-{selector_type}-{int(time.time())}"
+        metrics_prefix = f"automq/metrics/{cluster_id}"
 
         def s3_config(node):
             config = self.render("connect-distributed.properties", node=node)
             # Replace prometheus exporter with S3 exporter
             config = config.replace(
                 "automq.telemetry.exporter.uri=prometheus://0.0.0.0:9464",
-                "automq.telemetry.exporter.uri=s3://my-bucket-name"
+                f"automq.telemetry.exporter.uri=s3://{bucket_name}"
             )
             # Add S3 specific configurations
-            config += "\nautomq.telemetry.exporter.interval.ms=30000\n"
-            config += "automq.telemetry.exporter.s3.cluster.id=test-cluster\n"
-            config += f"automq.telemetry.exporter.s3.node.id={self.cc.nodes.index(node) + 1}\n"
-
-            # Set primary node for the first worker only
-            is_primary = self.cc.nodes.index(node) == 0
-            config += f"automq.telemetry.exporter.s3.primary.node={str(is_primary).lower()}\n"
-            config += "automq.telemetry.exporter.s3.selector.type=static\n"
-
-            # Configure S3 bucket properly for localstack
-            # Use localstack endpoint (10.5.0.2:4566 from docker-compose.yaml)
+            config += "\nautomq.telemetry.exporter.interval.ms=10000\n"
             config += f"automq.telemetry.s3.bucket=0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1\n"
+            config += f"automq.telemetry.s3.cluster.id={cluster_id}\n"
+            config += f"automq.telemetry.s3.node.id={self.cc.nodes.index(node) + 1}\n"
 
-            # Add AWS credentials for localstack (localstack accepts any credentials)
+            if selector_type == "kafka":
+                bootstrap = self.kafka.bootstrap_servers()
+                config += "automq.telemetry.s3.selector.type=kafka\n"
+                config += f"automq.telemetry.s3.selector.kafka.bootstrap.servers={bootstrap}\n"
+                config += f"automq.telemetry.s3.selector.kafka.topic=__automq_telemetry_s3_leader_{cluster_id}\n"
+                config += f"automq.telemetry.s3.selector.kafka.group.id=automq-telemetry-s3-{cluster_id}\n"
+            else:
+                config += "automq.telemetry.s3.selector.type=connect-leader\n"
+
             return config
 
         self.cc.set_configs(s3_config)
 
-        try:
-            # Setup mock S3 directory on all nodes (as fallback)
-            for node in self.cc.nodes:
-                node.account.ssh(f"mkdir -p {s3_mock_dir}", allow_fail=False)
-                node.account.ssh(f"chmod 777 {s3_mock_dir}", allow_fail=False)
+        def _list_s3_objects(prefix):
+            """List S3 objects with given prefix using kafka service method"""
+            objects, _ = self.kafka.get_bucket_objects()
+            return [obj for obj in objects if obj["path"].startswith(prefix)]
 
+        try:
             self.logger.info("Starting Connect cluster with S3 exporter...")
             self.cc.start()
 
-            # Create the S3 bucket in localstack first
-            primary_node = self.cc.nodes[0]
+            if selector_type == "kafka":
+                def _kafka_leader_nodes():
+                    leaders = []
+                    pattern = "Kafka selector elected node"
+                    for connect_node in self.cc.nodes:
+                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                        matches = [line for line in output.splitlines() if f"cluster {cluster_id}" in line]
+                        if matches:
+                            leaders.append(connect_node.account.hostname)
+                    return leaders
 
-            create_bucket_cmd = f"aws s3api create-bucket --bucket {bucket_name} --endpoint=http://10.5.0.2:4566"
+                wait_until(
+                    lambda: len(_kafka_leader_nodes()) == 1,
+                    timeout_sec=120,
+                    backoff_sec=5,
+                    err_msg="Kafka-based telemetry leadership in Connect cluster did not converge"
+                )
+            else:
+                def _connect_leader_nodes():
+                    leaders = []
+                    pattern = "Node became telemetry leader for key connect-leader"
+                    for connect_node in self.cc.nodes:
+                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                        if pattern in output:
+                            leaders.append(connect_node.account.hostname)
+                    return leaders
 
-            ret, val = subprocess.getstatusoutput(create_bucket_cmd)
-            self.logger.info(
-                f'\n--------------objects[bucket:{bucket_name}]--------------------\n:{val}\n--------------objects--------------------\n')
-            if ret != 0:
-                raise Exception("Failed to get bucket objects size, output: %s" % val)
+                wait_until(
+                    lambda: len(_connect_leader_nodes()) == 1,
+                    timeout_sec=120,
+                    backoff_sec=5,
+                    err_msg="Telemetry leadership in Connect cluster did not converge"
+                )
 
             # Create connector to generate metrics
             self.source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=15)
@@ -1386,10 +1413,19 @@ class ConnectDistributedTest(Test):
 
             # Wait for metrics to be exported to S3
             self.logger.info("Waiting for S3 metrics export...")
-            time.sleep(60)  # Wait for at least 2 export intervals
 
-            # Verify S3 exports were created in localstack
-            self._verify_s3_metrics_export_localstack(bucket_name, primary_node)
+            def _metrics_uploaded():
+                objects = _list_s3_objects(metrics_prefix)
+                if objects:
+                    self.logger.info("Found %d metrics objects for prefix %s", len(objects), metrics_prefix)
+                return len(objects) > 0
+
+            wait_until(
+                _metrics_uploaded,
+                timeout_sec=180,
+                backoff_sec=10,
+                err_msg="Timed out waiting for Connect S3 metrics export"
+            )
 
             self.logger.info("S3 Metrics exporter test passed!")
 
@@ -1399,10 +1435,111 @@ class ConnectDistributedTest(Test):
                 if hasattr(self, 'source'):
                     self.source.stop()
                 self.cc.stop()
-                # Clean up mock S3 directory
-                for node in self.cc.nodes:
-                    self.logger.info("Cleaning up S3 mock directory...")
-                    # node.account.ssh(f"rm -rf {s3_mock_dir}", allow_fail=True)
+            except Exception as e:
+                self.logger.warning(f"Cleanup error: {e}")
+
+    @cluster(num_nodes=5)
+    @parametrize(selector_type="kafka")
+    @parametrize(selector_type="connect-leader")
+    def test_s3_log_uploader(self, selector_type):
+        """Verify that Connect workers upload logs to S3 using the AutoMQ log uploader."""
+        self.setup_services(num_workers=2)
+
+        bucket_name = "ko3"
+        cluster_id = f"connect-logs-{selector_type}-{int(time.time())}"
+        logs_prefix = f"automq/logs/{cluster_id}"
+
+        def s3_log_config(node):
+            config = self.render("connect-distributed.properties", node=node)
+            config += "\nlog.s3.enable=true\n"
+            config += f"log.s3.bucket=0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1\n"
+            config += f"log.s3.cluster.id={cluster_id}\n"
+            config += f"log.s3.node.id={self.cc.nodes.index(node) + 1}\n"
+
+            if selector_type == "kafka":
+                config += "log.s3.selector.type=kafka\n"
+                config += f"log.s3.selector.kafka.topic=__automq_log_uploader_leader_{cluster_id}\n"
+                config += f"log.s3.selector.kafka.group.id=automq-log-uploader-{cluster_id}\n"
+            else:
+                config += "log.s3.selector.type=connect-leader\n"
+
+            return config
+
+        self.cc.set_configs(s3_log_config)
+        self.cc.environment['AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL'] = '15000'
+        self.cc.environment['AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL'] = '60000'
+
+        def _list_s3_objects(prefix):
+            """List S3 objects with given prefix using kafka service method"""
+            objects, _ = self.kafka.get_bucket_objects()
+            return [obj for obj in objects if obj["path"].startswith(prefix)]
+
+        source = None
+
+        try:
+            self.logger.info("Starting Connect cluster with S3 log uploader enabled ...")
+            self.cc.start()
+
+            if selector_type == "kafka":
+                def _kafka_log_leader_nodes():
+                    leaders = []
+                    pattern = "became primary log uploader"
+                    for connect_node in self.cc.nodes:
+                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                        matches = [line for line in output.splitlines() if f"cluster {cluster_id}" in line]
+                        if matches:
+                            leaders.append(connect_node.account.hostname)
+                    return leaders
+
+                wait_until(
+                    lambda: len(_kafka_log_leader_nodes()) == 1,
+                    timeout_sec=120,
+                    backoff_sec=5,
+                    err_msg="Kafka-based log uploader leadership in Connect cluster did not converge"
+                )
+            else:
+                def _connect_leader_nodes():
+                    leaders = []
+                    pattern = "Node became log uploader leader for key connect-leader"
+                    for connect_node in self.cc.nodes:
+                        cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
+                        output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))
+                        if pattern in output:
+                            leaders.append(connect_node.account.hostname)
+                    return leaders
+
+                wait_until(
+                    lambda: len(_connect_leader_nodes()) == 1,
+                    timeout_sec=120,
+                    backoff_sec=5,
+                    err_msg="Log uploader leadership in Connect cluster did not converge"
+                )
+
+            source = VerifiableSource(self.cc, topic=self.TOPIC, throughput=10)
+            source.start()
+
+            wait_until(lambda: self.is_running(source), timeout_sec=30,
+                       err_msg="VerifiableSource connector failed to start")
+
+            def _logs_uploaded():
+                objects = _list_s3_objects(logs_prefix)
+                if objects:
+                    self.logger.info("Found %d log objects for prefix %s", len(objects), logs_prefix)
+                return len(objects) > 0
+
+            wait_until(_logs_uploaded, timeout_sec=240, backoff_sec=15,
+                       err_msg="Timed out waiting for Connect S3 log upload")
+
+            # Verify objects are actually present
+            objects = _list_s3_objects(logs_prefix)
+            assert objects, "Expected log objects to be present after successful upload"
+
+        finally:
+            try:
+                if source:
+                    source.stop()
+                self.cc.stop()
             except Exception as e:
                 self.logger.warning(f"Cleanup error: {e}")
 
@@ -1441,10 +1578,10 @@ class ConnectDistributedTest(Test):
             # Don't fail the test if we can't verify the log, as the server might be working
             return True
 
-    def _verify_s3_metrics_export_localstack(self, bucket_name, node):
+    def _verify_s3_metrics_export_localstack(self, bucket_name, node, selector_type):
         """Verify that metrics were exported to S3 via localstack"""
         try:
-            # 递归列出 S3 bucket 中的所有对象文件（而不是目录）
+            # Recursively list all object files (not directories) in S3 bucket
             list_cmd = f"aws s3 ls s3://{bucket_name}/ --recursive --endpoint=http://10.5.0.2:4566"
 
             ret, val = subprocess.getstatusoutput(list_cmd)
@@ -1452,19 +1589,19 @@ class ConnectDistributedTest(Test):
                 f'\n--------------recursive objects[bucket:{bucket_name}]--------------------\n{val}\n--------------recursive objects end--------------------\n')
             if ret != 0:
                 self.logger.warning(f"Failed to list bucket objects recursively, return code: {ret}, output: {val}")
-                # 尝试非递归列出目录结构
+                # Try non-recursive listing of directory structure
                 list_dir_cmd = f"aws s3 ls s3://{bucket_name}/ --endpoint=http://10.5.0.2:4566"
                 ret2, val2 = subprocess.getstatusoutput(list_dir_cmd)
                 self.logger.info(f"Directory listing: {val2}")
 
-                # 如果非递归也失败，说明bucket可能不存在或没有权限
+                # If non-recursive also fails, the bucket may not exist or lack permissions
                 if ret2 != 0:
                     raise Exception(f"Failed to list bucket contents, output: {val}")
                 else:
-                    # 看到了目录但没有文件，说明可能还没有上传完成
+                    # Found directories but no files, upload may not be complete yet
                     self.logger.info("Found directories but no files yet, checking subdirectories...")
 
-                    # 尝试列出 automq/metrics/ 下的内容
+                    # Try to list contents under automq/metrics/
                     automq_cmd = f"aws s3 ls s3://{bucket_name}/automq/metrics/ --recursive --endpoint=http://10.5.0.2:4566"
                     ret3, val3 = subprocess.getstatusoutput(automq_cmd)
                     self.logger.info(f"AutoMQ metrics directory contents: {val3}")
@@ -1479,12 +1616,12 @@ class ConnectDistributedTest(Test):
             self.logger.info(f"S3 bucket {bucket_name} file contents (total {len(s3_objects)} files): {s3_objects}")
 
             if s3_objects:
-                # 过滤掉目录行，只保留文件行（文件行通常有size信息）
+                # Filter out directory lines, keep only file lines (file lines usually have size info)
                 file_objects = []
                 for obj_line in s3_objects:
                     parts = obj_line.split()
-                    # 文件行格式: 2025-01-01 12:00:00 size_in_bytes filename
-                    # 目录行格式: PRE directory_name/ 或者只有目录名
+                    # File line format: 2025-01-01 12:00:00 size_in_bytes filename
+                    # Directory line format: PRE directory_name/ or just directory name
                     if len(parts) >= 4 and not obj_line.strip().startswith('PRE') and 'automq/metrics/' in obj_line:
                         file_objects.append(obj_line)
 
@@ -1495,24 +1632,24 @@ class ConnectDistributedTest(Test):
                 if file_objects:
                     self.logger.info(f"S3 metrics export verified via localstack: found {len(file_objects)} metric files")
 
-                    # 尝试下载并检查第一个文件的内容
+                    # Try to download and check the first file's content
                     try:
                         first_file_parts = file_objects[0].split()
                         if len(first_file_parts) >= 4:
-                            object_name = ' '.join(first_file_parts[3:])  # 文件名可能包含空格
+                            object_name = ' '.join(first_file_parts[3:])  # File name may contain spaces
 
-                            # 下载并检查内容
+                            # Download and check content
                             download_cmd = f"aws s3 cp s3://{bucket_name}/{object_name} /tmp/sample_metrics.json --endpoint=http://10.5.0.2:4566"
                             ret, download_output = subprocess.getstatusoutput(download_cmd)
                             if ret == 0:
                                 self.logger.info(f"Successfully downloaded sample metrics file: {download_output}")
 
-                                # 检查文件内容
+                                # Check file content
                                 cat_cmd = "head -n 3 /tmp/sample_metrics.json"
                                 ret2, content = subprocess.getstatusoutput(cat_cmd)
                                 if ret2 == 0:
                                     self.logger.info(f"Sample metrics content: {content}")
-                                    # 验证内容格式是正确（应该包含JSON格式的指标数据）
+                                    # Verify content format is correct (should contain JSON formatted metric data)
                                     if any(keyword in content for keyword in ['timestamp', 'name', 'kind', 'tags']):
                                         self.logger.info("Metrics content format verification passed")
                                     else:
@@ -1527,7 +1664,7 @@ class ConnectDistributedTest(Test):
                     self.logger.warning("Found S3 objects but none appear to be metric files")
                     return False
             else:
-                # 检查bucket是否存在但为空
+                # Check if bucket exists but is empty
                 bucket_check_cmd = f"aws s3api head-bucket --bucket {bucket_name} --endpoint-url http://10.5.0.2:4566"
                 ret, bucket_output = subprocess.getstatusoutput(bucket_check_cmd)
                 if ret == 0:
@@ -1540,4 +1677,3 @@ class ConnectDistributedTest(Test):
         except Exception as e:
             self.logger.warning(f"Error verifying S3 metrics export via localstack: {e}")
             return False
-

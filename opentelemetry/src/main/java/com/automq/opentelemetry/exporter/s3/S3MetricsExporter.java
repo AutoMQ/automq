@@ -172,16 +172,11 @@ public class S3MetricsExporter implements MetricExporter {
                             CompletableFuture.allOf(deleteFutures).join();
                         }
                     }
-                    if (Threads.sleep(Duration.ofMinutes(1).toMillis())) {
-                        break;
-                    }
+                    Threads.sleep(Duration.ofMinutes(1).toMillis());
                 } catch (InterruptedException e) {
                     break;
                 } catch (Exception e) {
                     LOGGER.error("Cleanup s3 metrics failed", e);
-                    if (Threads.sleep(Duration.ofMinutes(1).toMillis())) {
-                        break;
-                    }
                 }
             }
         }

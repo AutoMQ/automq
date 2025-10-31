@@ -251,9 +251,21 @@ In a multi-node cluster, typically only one node should upload metrics to S3 to 
    # leaderTimeoutMs=60000
    ```
 
-4. **Kafka-based Leader Election** (`kafka`)
+4. **Controller Runtime Leadership** (`controller`)
+
+   Defers to the Kafka KRaft controller’s leadership. When the AutoMQ broker runtime registers its supplier the exporter will automatically start uploading from the active controller node—no extra configuration required.
+
+5. **Kafka Connect Runtime Leadership** (`connect-leader`)
+
+   Uses the Kafka Connect distributed herder leadership. AutoMQ’s Connect runtime registers the supplier once the worker joins the cluster, ensuring only the elected leader uploads metrics.
+
+6. **Kafka-based Leader Election** (`kafka`)
 
    Leverages Kafka consumer group partition assignment. All nodes join the same consumer group and subscribe to a single-partition topic; the node that holds the partition becomes the primary uploader while others stay on standby.
+
+> **Note**
+>
+> Runtime-backed selectors (`controller`, `connect-leader`) poll the registry on every decision. Once the hosting runtime publishes or updates its supplier, the exporter immediately reflects the new leadership without restarting the telemetry pipeline.
 
    ```properties
    automq.telemetry.s3.selector.type=kafka
@@ -276,7 +288,7 @@ In a multi-node cluster, typically only one node should upload metrics to S3 to 
 
    The selector automatically creates the election topic (1 partition by default) and keeps a background consumer alive. When the leader stops, Kafka triggers a rebalance and another node immediately takes over without requiring shared storage.
 
-5. **Custom SPI-based Selectors**
+7. **Custom SPI-based Selectors**
 
    The system supports custom node selection strategies through Java's ServiceLoader SPI mechanism.
 
@@ -329,7 +341,7 @@ You can implement custom node selection strategies by implementing the `Uploader
 3. **Configure the Custom Selector**
 
    ```properties
-   automq.telemetry.exporter.s3.selector.type=custom-type
+   automq.telemetry.s3.selector.type=custom-type
    # Any additional parameters your custom selector needs
    ```
 
@@ -339,10 +351,10 @@ You can implement custom node selection strategies by implementing the `Uploader
 
 ```properties
 automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
-automq.telemetry.exporter.s3.cluster.id=my-cluster
-automq.telemetry.exporter.s3.node.id=1
-automq.telemetry.exporter.s3.primary.node=true
-automq.telemetry.exporter.s3.selector.type=static
+automq.telemetry.s3.cluster.id=my-cluster
+automq.telemetry.s3.node.id=1
+automq.telemetry.s3.primary.node=true
+automq.telemetry.s3.selector.type=static
 ```
 
 #### Multi-Node Cluster with Node ID Selection
@@ -350,16 +362,16 @@ automq.telemetry.exporter.s3.selector.type=static
 ```properties
 # Configuration for all nodes
 automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
-automq.telemetry.exporter.s3.cluster.id=my-cluster
-automq.telemetry.exporter.s3.selector.type=nodeid
+automq.telemetry.s3.cluster.id=my-cluster
+automq.telemetry.s3.selector.type=nodeid
 
 # Node 1 (primary uploader)
-automq.telemetry.exporter.s3.node.id=1
+automq.telemetry.s3.node.id=1
 # Node-specific URI parameters
 # ?primaryNodeId=1
 
 # Node 2 
-automq.telemetry.exporter.s3.node.id=2
+automq.telemetry.s3.node.id=2
 ```
 
 #### Multi-Node Cluster with File-Based Leader Election
@@ -367,13 +379,13 @@ automq.telemetry.exporter.s3.node.id=2
 ```properties
 # All nodes have the same configuration
 automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com&leaderFile=/path/to/shared/leader-file
-automq.telemetry.exporter.s3.cluster.id=my-cluster
-automq.telemetry.exporter.s3.selector.type=file
+automq.telemetry.s3.cluster.id=my-cluster
+automq.telemetry.s3.selector.type=file
 # Each node has a unique ID
 # Node 1
-automq.telemetry.exporter.s3.node.id=1
+automq.telemetry.s3.node.id=1
 # Node 2
-# automq.telemetry.exporter.s3.node.id=2
+# automq.telemetry.s3.node.id=2
 ```
 
 ### Advanced Configuration
