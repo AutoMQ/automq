@@ -104,7 +104,9 @@ include 'clients',
     'transaction-coordinator',
     'trogdor',
     's3stream',
-    'automq-shell'
+    'automq-shell',
+    'automq-log-uploader',
+    'automq-metrics'
 
 project(":storage:api").name = "storage-api"
 rootProject.name = 'kafka'

@@ -32,6 +32,8 @@ import scala.collection.immutable
 import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
 import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
+import com.automq.log.uploader.selector.runtime.{RuntimeLeaderRegistry => LogUploaderLeaderRegistry}
+import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.common.network.ListenerName
@@ -64,6 +66,7 @@ import java.util
 import java.util.{Optional, OptionalLong, Random}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
+import java.util.function.BooleanSupplier
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
 
@@ -299,6 +302,11 @@ class ControllerServer(
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
+      val controllerLeaderSupplier = new BooleanSupplier {
+        override def getAsBoolean: Boolean = controller.isActive
+      }
+      LogUploaderLeaderRegistry.register("controller", controllerLeaderSupplier)
+      TelemetryLeaderRegistry.register("controller", controllerLeaderSupplier)
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.
@@ -538,8 +546,11 @@ class ControllerServer(
       if (socketServer != null)
         CoreUtils.swallow(socketServer.stopProcessingRequests(), this)
       migrationSupport.foreach(_.shutdown(this))
-      if (controller != null)
+      if (controller != null) {
         controller.beginShutdown()
+        LogUploaderLeaderRegistry.clear("controller")
+        TelemetryLeaderRegistry.clear("controller")
+      }
       if (socketServer != null)
         CoreUtils.swallow(socketServer.shutdown(), this)
       if (controllerApisHandlerPool != null)

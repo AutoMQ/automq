@@ -17,10 +17,13 @@
 
 package kafka.server
 
-import kafka.log.stream.s3.telemetry.TelemetryManager
+import com.automq.log.uploader.selector.runtime.{RuntimeLeaderRegistry => LogUploaderLeaderRegistry}
+import com.automq.opentelemetry.AutoMQTelemetryManager
+import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
+import kafka.server.telemetry.TelemetrySupport
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
@@ -32,8 +35,7 @@ import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.image.loader.metrics.MetadataLoaderMetrics
 import org.apache.kafka.image.publisher.metrics.SnapshotEmitterMetrics
 import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
-import org.apache.kafka.metadata.ListenerInfo
-import org.apache.kafka.metadata.MetadataRecordSerde
+import org.apache.kafka.metadata.{ListenerInfo, MetadataRecordSerde}
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble
 import org.apache.kafka.raft.Endpoints
 import org.apache.kafka.server.ProcessRole
@@ -42,12 +44,9 @@ import org.apache.kafka.server.fault.{FaultHandler, LoggingFaultHandler, Process
 import org.apache.kafka.server.metrics.KafkaYammerMetrics
 
 import java.net.InetSocketAddress
-import java.util.Arrays
-import java.util.Optional
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{CompletableFuture, TimeUnit}
-import java.util.{Collection => JCollection}
-import java.util.{Map => JMap}
+import java.util.{Arrays, Optional, Collection => JCollection, Map => JMap}
 import scala.jdk.CollectionConverters._
 
 /**
@@ -113,7 +112,7 @@ class SharedServer(
 
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
-  @volatile var telemetryManager: TelemetryManager = _
+  @volatile var telemetryManager: AutoMQTelemetryManager = _
   // AutoMQ for Kafka injection end
   
   @volatile var metrics: Metrics = _metrics
@@ -129,10 +128,6 @@ class SharedServer(
   def clusterId: String = metaPropsEnsemble.clusterId().get()
 
   def nodeId: Int = metaPropsEnsemble.nodeId().getAsInt
-
-  protected def buildTelemetryManager(config: KafkaConfig, clusterId: String): TelemetryManager = {
-    new TelemetryManager(config, clusterId)
-  }
 
   private def isUsed(): Boolean = synchronized {
     usedByController || usedByBroker
@@ -286,8 +281,7 @@ class SharedServer(
         }
         
         // AutoMQ inject start
-        telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
-        telemetryManager.init()
+        telemetryManager = TelemetrySupport.start(sharedServerConfig, clusterId)
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
@@ -415,6 +409,10 @@ class SharedServer(
         CoreUtils.swallow(telemetryManager.shutdown(), this)
         telemetryManager = null
       }
+      // AutoMQ for Kafka inject start
+      LogUploaderLeaderRegistry.clear("controller")
+      TelemetryLeaderRegistry.clear("controller")
+      // AutoMQ for Kafka inject end
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false
     }

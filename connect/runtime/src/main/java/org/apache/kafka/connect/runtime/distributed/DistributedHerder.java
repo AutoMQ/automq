@@ -1735,6 +1735,10 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
         configBackingStore.putLoggerLevel(namespace, level);
     }
 
+    public boolean isLeaderInstance() {
+        return isLeader();
+    }
+
     // Should only be called from work thread, so synchronization should not be needed
     protected boolean isLeader() {
         return assignment != null && member.memberId().equals(assignment.leader());

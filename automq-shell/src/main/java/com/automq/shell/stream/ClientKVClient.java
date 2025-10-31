@@ -37,7 +37,6 @@ import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.utils.Time;
 
-import com.automq.shell.metrics.S3MetricsExporter;
 import com.automq.stream.api.KeyValue;
 
 import org.slf4j.Logger;
@@ -48,7 +47,7 @@ import java.util.List;
 import java.util.Objects;
 
 public class ClientKVClient {
-    private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporter.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClientKVClient.class);
 
     private final NetworkClient networkClient;
     private final Node bootstrapServer;

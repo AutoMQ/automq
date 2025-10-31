@@ -79,6 +79,7 @@ class ConnectServiceBase(KafkaPathResolverMixin, Service):
         self.startup_timeout_sec = startup_timeout_sec
         self.environment = {}
         self.external_config_template_func = None
+        self.connector_config_templates = []
         self.include_filestream_connectors = include_filestream_connectors
         self.logger.debug("include_filestream_connectors % s", include_filestream_connectors)
 
