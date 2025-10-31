@@ -46,7 +46,6 @@ import static com.automq.log.uploader.LogConfigConstants.LOG_S3_CLUSTER_ID_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENABLE_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENDPOINT_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_NODE_ID_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_REGION_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SECRET_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_PREFIX;

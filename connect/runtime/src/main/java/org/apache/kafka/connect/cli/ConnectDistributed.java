@@ -35,6 +35,7 @@ import org.apache.kafka.connect.storage.KafkaStatusBackingStore;
 import org.apache.kafka.connect.storage.StatusBackingStore;
 import org.apache.kafka.connect.util.ConnectUtils;
 import org.apache.kafka.connect.util.SharedTopicAdmin;
+
 import com.automq.log.uploader.selector.runtime.RuntimeLeaderRegistry;
 
 import java.util.Collections;

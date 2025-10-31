@@ -22,7 +22,6 @@ import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.connect.automq.AzMetadataProviderHolder;
 import org.apache.kafka.connect.automq.ConnectLogUploader;
 import org.apache.kafka.connect.automq.OpenTelemetryMetricsReporter;
-import com.automq.opentelemetry.TelemetryConstants;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.Herder;
@@ -32,6 +31,8 @@ import org.apache.kafka.connect.runtime.isolation.Plugins;
 import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestClient;
 import org.apache.kafka.connect.runtime.rest.RestServer;
+
+import com.automq.opentelemetry.TelemetryConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
