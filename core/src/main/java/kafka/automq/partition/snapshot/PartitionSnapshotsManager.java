@@ -171,7 +171,7 @@ public class PartitionSnapshotsManager {
             long finalSessionEpoch = sessionEpoch;
             CompletableFuture<Void> collectPartitionSnapshotsCf;
             if (!requestCommit && inflightCommitCfSet.isEmpty()) {
-                collectPartitionSnapshotsCf = collectPartitionSnapshots(resp);
+                collectPartitionSnapshotsCf = collectPartitionSnapshots(requestVersion, resp);
             } else {
                 collectPartitionSnapshotsCf = CompletableFuture.completedFuture(null);
             }
@@ -203,7 +203,7 @@ public class PartitionSnapshotsManager {
             return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
         }
 
-        private CompletableFuture<Void> collectPartitionSnapshots(AutomqGetPartitionSnapshotResponseData resp) {
+        private CompletableFuture<Void> collectPartitionSnapshots(short requestVersion, AutomqGetPartitionSnapshotResponseData resp) {
             Map<Uuid, List<PartitionSnapshot>> topic2partitions = new HashMap<>();
             List<CompletableFuture<Void>> completeCfList = COMPLETE_CF_LIST_LOCAL.get();
             completeCfList.clear();
@@ -211,7 +211,7 @@ public class PartitionSnapshotsManager {
                 PartitionSnapshotVersion version = synced.remove(partition);
                 if (version != null) {
                     List<PartitionSnapshot> partitionSnapshots = topic2partitions.computeIfAbsent(partition.topicId().get(), topic -> new ArrayList<>());
-                    partitionSnapshots.add(snapshot(partition, version, null, completeCfList));
+                    partitionSnapshots.add(snapshot(requestVersion, partition, version, null, completeCfList));
                 }
             });
             removed.clear();
@@ -221,7 +221,7 @@ public class PartitionSnapshotsManager {
                 if (!Objects.equals(p.version, oldVersion)) {
                     List<PartitionSnapshot> partitionSnapshots = topic2partitions.computeIfAbsent(p.partition.topicId().get(), topic -> new ArrayList<>());
                     PartitionSnapshotVersion newVersion = p.version.copy();
-                    PartitionSnapshot partitionSnapshot = snapshot(p.partition, oldVersion, newVersion, completeCfList);
+                    PartitionSnapshot partitionSnapshot = snapshot(requestVersion, p.partition, oldVersion, newVersion, completeCfList);
                     partitionSnapshots.add(partitionSnapshot);
                     synced.put(p.partition, newVersion);
                 }
@@ -239,7 +239,7 @@ public class PartitionSnapshotsManager {
             return retCf;
         }
 
-        private PartitionSnapshot snapshot(Partition partition, PartitionSnapshotVersion oldVersion,
+        private PartitionSnapshot snapshot(short requestVersion, Partition partition, PartitionSnapshotVersion oldVersion,
             PartitionSnapshotVersion newVersion, List<CompletableFuture<Void>> completeCfList) {
             if (newVersion == null) {
                 // partition is closed
@@ -268,7 +268,9 @@ public class PartitionSnapshotsManager {
                 if (includeSegments) {
                     snapshot.setLogMetadata(logMetadata(src.logMeta()));
                 }
-                snapshot.setLastTimestampOffset(timestampOffset(src.lastTimestampOffset()));
+                if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
+                    snapshot.setLastTimestampOffset(timestampOffset(src.lastTimestampOffset()));
+                }
                 return snapshot;
             });
         }
