@@ -156,7 +156,10 @@ public class RecordBinder {
             nestedSchema = icebergType.asStructType().asSchema();
             nestedSchemaId = icebergType.toString();
         }
-        if (Type.TypeID.MAP.equals(icebergType.typeId()) || Type.TypeID.LIST.equals(icebergType.typeId())) {
+        if (Type.TypeID.TIMESTAMP.equals(icebergType.typeId())
+            || Type.TypeID.TIME.equals(icebergType.typeId())
+            || Type.TypeID.MAP.equals(icebergType.typeId())
+            || Type.TypeID.LIST.equals(icebergType.typeId())) {
             avroType = resolveUnionElement(avroType);
         }
         return new FieldMapping(avroPosition, avroFieldName, icebergType, icebergType.typeId(), avroType, nestedSchema, nestedSchemaId);
