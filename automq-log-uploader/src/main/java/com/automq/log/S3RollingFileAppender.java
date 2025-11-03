@@ -17,7 +17,13 @@
  * limitations under the License.
  */
 
-package com.automq.log.uploader;
+package com.automq.log;
+
+import com.automq.log.uploader.LogRecorder;
+import com.automq.log.uploader.LogUploader;
+import com.automq.log.uploader.PropertiesS3LogConfigProvider;
+import com.automq.log.uploader.S3LogConfig;
+import com.automq.log.uploader.S3LogConfigProvider;
 
 import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.RollingFileAppender;

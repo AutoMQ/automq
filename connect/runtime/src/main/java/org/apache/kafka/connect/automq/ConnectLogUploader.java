@@ -27,7 +27,7 @@ public final class ConnectLogUploader {
             });
         }
         ConnectS3LogConfigProvider.initialize(props);
-        com.automq.log.uploader.S3RollingFileAppender.triggerInitialization();
+        com.automq.log.S3RollingFileAppender.triggerInitialization();
         getLogger().info("Initialized Connect S3 log uploader context");
     }
 }

@@ -1,6 +1,7 @@
 package kafka.server.log
 
-import com.automq.log.uploader.{DefaultS3LogConfig, LogConfigConstants, S3LogConfig, S3LogConfigProvider, S3RollingFileAppender}
+import com.automq.log.S3RollingFileAppender
+import com.automq.log.uploader.{DefaultS3LogConfig, LogConfigConstants, S3LogConfig, S3LogConfigProvider}
 import kafka.server.KafkaConfig
 import org.apache.commons.lang3.StringUtils
 import org.slf4j.LoggerFactory

@@ -2,7 +2,7 @@
 
 This module provides asynchronous S3 log upload capability based on Log4j 1.x. Other submodules only need to depend on this module and configure it simply to synchronize logs to object storage. Core components:
 
-- `com.automq.log.uploader.S3RollingFileAppender`: Extends `RollingFileAppender`, pushes log events to the uploader while writing to local files.
+- `com.automq.log.S3RollingFileAppender`: Extends `RollingFileAppender`, pushes log events to the uploader while writing to local files.
 - `com.automq.log.uploader.LogUploader`: Asynchronously buffers, compresses, and uploads logs; supports configuration switches and periodic cleanup.
 - `com.automq.log.uploader.S3LogConfig`/`S3LogConfigProvider`: Abstracts the configuration required for uploading. The default implementation `PropertiesS3LogConfigProvider` reads from `automq-log.properties`.
 
@@ -22,7 +22,7 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
    ```
 3. Reference the Appender in `log4j.properties`:
    ```properties
-   log4j.appender.s3_uploader=com.automq.log.uploader.S3RollingFileAppender
+   log4j.appender.s3_uploader=com.automq.log.S3RollingFileAppender
    log4j.appender.s3_uploader.File=logs/server.log
    log4j.appender.s3_uploader.MaxFileSize=100MB
    log4j.appender.s3_uploader.MaxBackupIndex=10
@@ -66,7 +66,7 @@ To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploa
 If the application already has its own dependency injection/configuration method, you can implement `S3LogConfigProvider` and call it at startup:
 
 ```java
-import com.automq.log.uploader.S3RollingFileAppender;
+import com.automq.log.S3RollingFileAppender;
 
 S3RollingFileAppender.setConfigProvider(new CustomConfigProvider());
 ```
