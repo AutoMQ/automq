@@ -55,7 +55,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -160,6 +159,10 @@ public class CompactionManager {
                     if (ts < minCommittedTimestamp) {
                         minCommittedTimestamp = ts;
                     }
+                }
+                if (minCommittedTimestamp == Long.MAX_VALUE) {
+                    this.compactionDelayTime = 0;
+                    return;
                 }
                 this.compactionDelayTime = System.currentTimeMillis() - minCommittedTimestamp;
             }).join(), (long) this.compactionInterval * 2, 1, TimeUnit.MINUTES);
