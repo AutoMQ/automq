@@ -154,8 +154,14 @@ public class CompactionManager {
                     this.compactionDelayTime = 0;
                     return;
                 }
-                data.sort(Comparator.comparingLong(S3ObjectMetadata::committedTimestamp));
-                this.compactionDelayTime = System.currentTimeMillis() - data.get(0).committedTimestamp();
+                long minCommittedTimestamp = Long.MAX_VALUE;
+                for (S3ObjectMetadata metadata : data) {
+                    long ts = metadata.committedTimestamp();
+                    if (ts < minCommittedTimestamp) {
+                        minCommittedTimestamp = ts;
+                    }
+                }
+                this.compactionDelayTime = System.currentTimeMillis() - minCommittedTimestamp;
             }).join(), (long) this.compactionInterval * 2, 1, TimeUnit.MINUTES);
     }
 
