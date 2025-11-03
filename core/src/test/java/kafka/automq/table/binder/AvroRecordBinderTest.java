@@ -20,6 +20,7 @@
 package kafka.automq.table.binder;
 
 import com.google.common.collect.ImmutableMap;
+
 import org.apache.avro.Conversions;
 import org.apache.avro.LogicalTypes;
 import org.apache.avro.Schema;
