@@ -115,7 +115,7 @@ import io.netty.buffer.Unpooled;
 
         tryReset0();
         lastRequestTime = time.milliseconds();
-        AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch).setVersion((short) 1);
+        AutomqGetPartitionSnapshotRequestData data = new AutomqGetPartitionSnapshotRequestData().setSessionId(sessionId).setSessionEpoch(sessionEpoch);
         if (version.isZeroZoneV2Supported()) {
             data.setVersion((short) 1);
         }
@@ -198,7 +198,10 @@ import io.netty.buffer.Unpooled;
             int c2 = o2.operation.code() == SnapshotOperation.REMOVE.code() ? 0 : 1;
             return c1 - c2;
         });
-        subscriber.onNewWalEndOffset(resp.confirmWalConfig(), DefaultRecordOffset.of(Unpooled.wrappedBuffer(resp.confirmWalEndOffset())));
+        if (resp.confirmWalEndOffset() != null && resp.confirmWalEndOffset().length > 0) {
+            // zerozone v2
+            subscriber.onNewWalEndOffset(resp.confirmWalConfig(), DefaultRecordOffset.of(Unpooled.wrappedBuffer(resp.confirmWalEndOffset())));
+        }
         batch.operations.add(SnapshotWithOperation.snapshotMark(snapshotCf));
         subscriber.onNewOperationBatch(batch);
     }
