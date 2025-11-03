@@ -118,7 +118,7 @@ public interface AsyncSender {
                 brokerConfig.connectionSetupTimeoutMs(),
                 brokerConfig.connectionSetupTimeoutMaxMs(),
                 time,
-                false,
+                true,
                 new ApiVersions(),
                 logContext,
                 MetadataRecoveryStrategy.REBOOTSTRAP
