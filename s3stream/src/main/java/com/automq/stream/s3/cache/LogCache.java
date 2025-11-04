@@ -586,11 +586,13 @@ public class LogCache {
             if (indexAndCount != null) {
                 unmap(startOffset, indexAndCount);
                 return indexAndCount.index;
-            } else {
-                // slow path
-                StreamRecordBatchList search = new StreamRecordBatchList(records);
-                return search.search(startOffset);
             }
+            if (startOffset == this.startOffset) {
+                return 0;
+            }
+            // slow path
+            StreamRecordBatchList search = new StreamRecordBatchList(records);
+            return search.search(startOffset);
         }
 
         final void map(long offset, int index) {
