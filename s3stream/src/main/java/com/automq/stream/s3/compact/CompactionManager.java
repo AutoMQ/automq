@@ -55,7 +55,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -156,8 +155,18 @@ public class CompactionManager {
                     this.compactionDelayTime = 0;
                     return;
                 }
-                data.sort(Comparator.comparingLong(S3ObjectMetadata::committedTimestamp));
-                this.compactionDelayTime = System.currentTimeMillis() - data.get(0).committedTimestamp();
+                long minCommittedTimestamp = Long.MAX_VALUE;
+                for (S3ObjectMetadata metadata : data) {
+                    long ts = metadata.committedTimestamp();
+                    if (ts < minCommittedTimestamp) {
+                        minCommittedTimestamp = ts;
+                    }
+                }
+                if (minCommittedTimestamp == Long.MAX_VALUE) {
+                    this.compactionDelayTime = 0;
+                    return;
+                }
+                this.compactionDelayTime = System.currentTimeMillis() - minCommittedTimestamp;
             }).join(), (long) this.compactionInterval * 2, 1, TimeUnit.MINUTES);
     }
 
