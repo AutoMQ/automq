@@ -84,4 +84,14 @@ public interface WriteAheadLog {
      * @return future complete when trim done.
      */
     CompletableFuture<Void> trim(RecordOffset offset);
+
+    /**
+     * Truncate wal tail so that all records with offset greater than or equal to {@code offset}
+     * are discarded. After completion, {@link #confirmOffset()} and {@code offset} should align
+     * with the new logical end of the wal.
+     *
+     * @param offset new next offset after truncate.
+     * @return future completes when truncate is done.
+     */
+    CompletableFuture<Void> truncateTail(RecordOffset offset);
 }

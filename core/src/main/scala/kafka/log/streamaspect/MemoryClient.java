@@ -166,6 +166,13 @@ public class MemoryClient implements Client {
         }
 
         @Override
+        public synchronized CompletableFuture<Void> truncateTail(long newNextOffset) {
+            recordMap = new ConcurrentSkipListMap<>(recordMap.headMap(newNextOffset, false));
+            nextOffsetAlloc.updateAndGet(current -> Math.min(current, newNextOffset));
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
         public CompletableFuture<Void> close() {
             return CompletableFuture.completedFuture(null);
         }

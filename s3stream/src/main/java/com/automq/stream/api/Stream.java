@@ -100,6 +100,14 @@ public interface Stream {
     CompletableFuture<Void> trim(long newStartOffset);
 
     /**
+     * Truncate the tail of the stream so that subsequent appends start from {@code newNextOffset}.
+     *
+     * @param newNextOffset new next offset after truncation
+     * @return future completing when truncation finishes
+     */
+    CompletableFuture<Void> truncateTail(long newNextOffset);
+
+    /**
      * Close the stream.
      */
     CompletableFuture<Void> close();
