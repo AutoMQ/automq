@@ -75,7 +75,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private static final String INCLUDE_PATTERN_CONFIG = "opentelemetry.metrics.include.pattern";
     private static final String EXCLUDE_PATTERN_CONFIG = "opentelemetry.metrics.exclude.pattern";
     
-    private static final String DEFAULT_PREFIX = "kafka.connect";
+    private static final String DEFAULT_PREFIX = "kafka";
     
     private boolean enabled = true;
     private String metricPrefix = DEFAULT_PREFIX;

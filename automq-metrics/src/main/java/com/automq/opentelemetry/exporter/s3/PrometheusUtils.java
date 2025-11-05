@@ -94,6 +94,38 @@ public class PrometheusUtils {
                 return "";
             case "%":
                 return "percent";
+            // Rate units (per second)
+            case "1/s":
+                return "per_second";
+            case "By/s":
+                return "bytes_per_second";
+            case "KiBy/s":
+                return "kibibytes_per_second";
+            case "MiBy/s":
+                return "mebibytes_per_second";
+            case "GiBy/s":
+                return "gibibytes_per_second";
+            case "KBy/s":
+                return "kilobytes_per_second";
+            case "MBy/s":
+                return "megabytes_per_second";
+            case "GBy/s":
+                return "gigabytes_per_second";
+            // Rate units (per minute)
+            case "1/min":
+                return "per_minute";
+            case "By/min":
+                return "bytes_per_minute";
+            // Rate units (per hour)
+            case "1/h":
+                return "per_hour";
+            case "By/h":
+                return "bytes_per_hour";
+            // Rate units (per day)
+            case "1/d":
+                return "per_day";
+            case "By/d":
+                return "bytes_per_day";
             default:
                 return unit;
         }
@@ -130,9 +162,18 @@ public class PrometheusUtils {
         if (isCounter) {
             name = name + TOTAL_SUFFIX;
         }
-        // special case - gauge
+        
+        // special case - gauge with intelligent Connect metric handling
         if (unit.equals("1") && isGauge && !name.contains("ratio")) {
-            name = name + "_ratio";
+            if (isConnectMetric(name)) {
+                // For Connect metrics, use improved logic to avoid misleading _ratio suffix
+                if (shouldAddRatioSuffixForConnect(name)) {
+                    name = name + "_ratio";
+                }
+            } else {
+                // For other metrics, maintain original behavior
+                name = name + "_ratio";
+            }
         }
         return name;
     }
@@ -148,5 +189,66 @@ public class PrometheusUtils {
             return "";
         }
         return name.replaceAll("\\.", "_");
+    }
+
+    /**
+     * Check if a metric name is related to Kafka Connect.
+     *
+     * @param name The metric name to check.
+     * @return true if it's a Connect metric, false otherwise.
+     */
+    private static boolean isConnectMetric(String name) {
+        String lowerName = name.toLowerCase();
+        return lowerName.contains("kafka_connector_") || 
+               lowerName.contains("kafka_task_") || 
+               lowerName.contains("kafka_worker_") ||
+               lowerName.contains("kafka_connect_") ||
+               lowerName.contains("kafka_source_task_") ||
+               lowerName.contains("kafka_sink_task_") ||
+               lowerName.contains("connector_metrics") ||
+               lowerName.contains("task_metrics") ||
+               lowerName.contains("worker_metrics") ||
+               lowerName.contains("source_task_metrics") ||
+               lowerName.contains("sink_task_metrics");
+    }
+
+    /**
+     * Intelligently determine if a Connect metric should have a _ratio suffix.
+     * This method avoids adding misleading _ratio suffixes to count-based metrics.
+     *
+     * @param name The metric name to check.
+     * @return true if _ratio suffix should be added, false otherwise.
+     */
+    private static boolean shouldAddRatioSuffixForConnect(String name) {
+        String lowerName = name.toLowerCase();
+        
+        // Already contains ratio-related words, don't add again
+        if (lowerName.contains("ratio") || lowerName.contains("percent") || 
+            lowerName.contains("rate") || lowerName.contains("fraction")) {
+            return false;
+        }
+        
+        // Connect metrics that clearly represent counts should not have _ratio suffix
+        if (lowerName.contains("count") || lowerName.contains("num") || 
+            lowerName.contains("size") || lowerName.contains("total") ||
+            lowerName.contains("active") || lowerName.contains("current") ||
+            lowerName.contains("partition") || lowerName.contains("task") ||
+            lowerName.contains("connector") || lowerName.contains("seq_no") ||
+            lowerName.contains("seq_num") || lowerName.contains("attempts") ||
+            lowerName.contains("success") || lowerName.contains("failure") ||
+            lowerName.contains("errors") || lowerName.contains("retries") ||
+            lowerName.contains("skipped") || lowerName.contains("running") ||
+            lowerName.contains("paused") || lowerName.contains("failed") ||
+            lowerName.contains("destroyed")) {
+            return false;
+        }
+        
+        // Only add _ratio suffix for true ratio/percentage metrics
+        return lowerName.contains("utilization") || 
+               lowerName.contains("usage") ||
+               lowerName.contains("load") ||
+               lowerName.contains("efficiency") ||
+               lowerName.contains("hit_rate") ||
+               lowerName.contains("miss_rate");
     }
 }
