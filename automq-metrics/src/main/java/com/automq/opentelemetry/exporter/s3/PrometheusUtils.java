@@ -21,6 +21,8 @@ package com.automq.opentelemetry.exporter.s3;
 
 import org.apache.commons.lang3.StringUtils;
 
+import java.util.Locale;
+
 /**
  * Utility class for Prometheus metric and label naming.
  */
@@ -164,7 +166,7 @@ public class PrometheusUtils {
         }
         
         // special case - gauge with intelligent Connect metric handling
-        if (unit.equals("1") && isGauge && !name.contains("ratio")) {
+        if ("1".equals(unit) && isGauge && !name.contains("ratio")) {
             if (isConnectMetric(name)) {
                 // For Connect metrics, use improved logic to avoid misleading _ratio suffix
                 if (shouldAddRatioSuffixForConnect(name)) {
@@ -198,7 +200,7 @@ public class PrometheusUtils {
      * @return true if it's a Connect metric, false otherwise.
      */
     private static boolean isConnectMetric(String name) {
-        String lowerName = name.toLowerCase();
+        String lowerName = name.toLowerCase(Locale.ROOT);
         return lowerName.contains("kafka_connector_") || 
                lowerName.contains("kafka_task_") || 
                lowerName.contains("kafka_worker_") ||
@@ -220,30 +222,50 @@ public class PrometheusUtils {
      * @return true if _ratio suffix should be added, false otherwise.
      */
     private static boolean shouldAddRatioSuffixForConnect(String name) {
-        String lowerName = name.toLowerCase();
+        String lowerName = name.toLowerCase(Locale.ROOT);
         
-        // Already contains ratio-related words, don't add again
-        if (lowerName.contains("ratio") || lowerName.contains("percent") || 
-            lowerName.contains("rate") || lowerName.contains("fraction")) {
+        if (hasRatioRelatedWords(lowerName)) {
             return false;
         }
         
-        // Connect metrics that clearly represent counts should not have _ratio suffix
-        if (lowerName.contains("count") || lowerName.contains("num") || 
-            lowerName.contains("size") || lowerName.contains("total") ||
-            lowerName.contains("active") || lowerName.contains("current") ||
-            lowerName.contains("partition") || lowerName.contains("task") ||
-            lowerName.contains("connector") || lowerName.contains("seq_no") ||
-            lowerName.contains("seq_num") || lowerName.contains("attempts") ||
-            lowerName.contains("success") || lowerName.contains("failure") ||
-            lowerName.contains("errors") || lowerName.contains("retries") ||
-            lowerName.contains("skipped") || lowerName.contains("running") ||
-            lowerName.contains("paused") || lowerName.contains("failed") ||
-            lowerName.contains("destroyed")) {
+        if (isCountMetric(lowerName)) {
             return false;
         }
         
-        // Only add _ratio suffix for true ratio/percentage metrics
+        return isRatioMetric(lowerName);
+    }
+    
+    private static boolean hasRatioRelatedWords(String lowerName) {
+        return lowerName.contains("ratio") || lowerName.contains("percent") || 
+               lowerName.contains("rate") || lowerName.contains("fraction");
+    }
+    
+    private static boolean isCountMetric(String lowerName) {
+        return hasBasicCountKeywords(lowerName) || hasConnectCountKeywords(lowerName) ||
+               hasStatusCountKeywords(lowerName);
+    }
+    
+    private static boolean hasBasicCountKeywords(String lowerName) {
+        return lowerName.contains("count") || lowerName.contains("num") || 
+               lowerName.contains("size") || lowerName.contains("total") ||
+               lowerName.contains("active") || lowerName.contains("current");
+    }
+    
+    private static boolean hasConnectCountKeywords(String lowerName) {
+        return lowerName.contains("partition") || lowerName.contains("task") ||
+               lowerName.contains("connector") || lowerName.contains("seq_no") ||
+               lowerName.contains("seq_num") || lowerName.contains("attempts");
+    }
+    
+    private static boolean hasStatusCountKeywords(String lowerName) {
+        return lowerName.contains("success") || lowerName.contains("failure") ||
+               lowerName.contains("errors") || lowerName.contains("retries") ||
+               lowerName.contains("skipped") || lowerName.contains("running") ||
+               lowerName.contains("paused") || lowerName.contains("failed") ||
+               lowerName.contains("destroyed");
+    }
+    
+    private static boolean isRatioMetric(String lowerName) {
         return lowerName.contains("utilization") || 
                lowerName.contains("usage") ||
                lowerName.contains("load") ||

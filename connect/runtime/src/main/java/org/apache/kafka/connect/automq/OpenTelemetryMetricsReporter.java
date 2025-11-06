@@ -36,10 +36,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
+import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableDoubleCounter;
 import io.opentelemetry.api.metrics.ObservableDoubleGauge;
 import io.opentelemetry.api.metrics.ObservableLongCounter;
-import io.opentelemetry.api.metrics.Meter;
 
 /**
  * A MetricsReporter implementation that bridges Kafka Connect metrics to OpenTelemetry.
@@ -407,51 +407,144 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
             return isConnectCounterMetric(name);
         }
 
-        if (name.contains("rate") || name.contains("avg") || name.contains("mean") ||
-            name.contains("ratio") || name.contains("percent") || name.contains("pct") ||
-            name.contains("max") || name.contains("min") || name.contains("current") ||
-            name.contains("active") || name.contains("lag") || name.contains("size") ||
-            name.contains("time") && !name.contains("total")) {
+        if (isGaugeMetric(name)) {
             return false;
         }
 
+        return hasCounterKeywords(name);
+    }
+    
+    private boolean isGaugeMetric(String name) {
+        return hasRateOrAvgKeywords(name) || hasRatioOrPercentKeywords(name) ||
+               hasMinMaxOrCurrentKeywords(name) || hasActiveOrSizeKeywords(name) ||
+               hasTimeButNotTotal(name);
+    }
+    
+    private boolean hasRateOrAvgKeywords(String name) {
+        return name.contains("rate") || name.contains("avg") || name.contains("mean");
+    }
+    
+    private boolean hasRatioOrPercentKeywords(String name) {
+        return name.contains("ratio") || name.contains("percent") || name.contains("pct");
+    }
+    
+    private boolean hasMinMaxOrCurrentKeywords(String name) {
+        return name.contains("max") || name.contains("min") || name.contains("current");
+    }
+    
+    private boolean hasActiveOrSizeKeywords(String name) {
+        return name.contains("active") || name.contains("lag") || name.contains("size");
+    }
+    
+    private boolean hasTimeButNotTotal(String name) {
+        return name.contains("time") && !name.contains("total");
+    }
+    
+    private boolean hasCounterKeywords(String name) {
         String[] parts = name.split("[._-]");
         for (String part : parts) {
-            if ("total".equals(part) || "count".equals(part) || "sum".equals(part) ||
-                "attempts".equals(part) || "success".equals(part) || "failure".equals(part) ||
-                "errors".equals(part) || "retries".equals(part) || "skipped".equals(part)) {
+            if (isCounterKeyword(part)) {
                 return true;
             }
         }
-
         return false;
     }
     
+    private boolean isCounterKeyword(String part) {
+        return isBasicCounterKeyword(part) || isAdvancedCounterKeyword(part);
+    }
+    
+    private boolean isBasicCounterKeyword(String part) {
+        return "total".equals(part) || "count".equals(part) || "sum".equals(part) ||
+               "attempts".equals(part);
+    }
+    
+    private boolean isAdvancedCounterKeyword(String part) {
+        return "success".equals(part) || "failure".equals(part) ||
+               "errors".equals(part) || "retries".equals(part) || "skipped".equals(part);
+    }
+    
     private boolean isConnectCounterMetric(String name) {
-        if (name.contains("total") || name.contains("attempts") || 
-            name.contains("success") && name.contains("total") ||
-            name.contains("failure") && name.contains("total") ||
-            name.contains("errors") || name.contains("retries") ||
-            name.contains("skipped") || name.contains("requests") ||
-            name.contains("completions")) {
+        if (hasTotalBasedCounters(name)) {
             return true;
         }
         
-        if ((name.contains("record") || name.contains("records")) && 
-            (name.contains("poll-total") || name.contains("write-total") ||
-             name.contains("read-total") || name.contains("send-total"))) {
+        if (hasRecordCounters(name)) {
             return true;
         }
         
-        if (name.contains("active-count") || name.contains("partition-count") ||
-            name.contains("task-count") || name.contains("connector-count") ||
-            name.contains("running-count") || name.contains("paused-count") ||
-            name.contains("failed-count") || name.contains("seq-no") ||
-            name.contains("seq-num")) {
+        if (hasActiveCountMetrics(name)) {
             return false;
         }
         
         return false;
+    }
+    
+    private boolean hasTotalBasedCounters(String name) {
+        return hasBasicTotalCounters(name) || hasSuccessFailureCounters(name) ||
+               hasErrorRetryCounters(name) || hasRequestCompletionCounters(name);
+    }
+    
+    private boolean hasBasicTotalCounters(String name) {
+        return name.contains("total") || name.contains("attempts");
+    }
+    
+    private boolean hasSuccessFailureCounters(String name) {
+        return (name.contains("success") && name.contains("total")) ||
+               (name.contains("failure") && name.contains("total"));
+    }
+    
+    private boolean hasErrorRetryCounters(String name) {
+        return name.contains("errors") || name.contains("retries") || name.contains("skipped");
+    }
+    
+    private boolean hasRequestCompletionCounters(String name) {
+        return name.contains("requests") || name.contains("completions");
+    }
+    
+    private boolean hasRecordCounters(String name) {
+        return hasRecordKeyword(name) && hasTotalOperation(name);
+    }
+    
+    private boolean hasRecordKeyword(String name) {
+        return name.contains("record") || name.contains("records");
+    }
+    
+    private boolean hasTotalOperation(String name) {
+        return hasPollWriteTotal(name) || hasReadSendTotal(name);
+    }
+    
+    private boolean hasPollWriteTotal(String name) {
+        return name.contains("poll-total") || name.contains("write-total");
+    }
+    
+    private boolean hasReadSendTotal(String name) {
+        return name.contains("read-total") || name.contains("send-total");
+    }
+    
+    private boolean hasActiveCountMetrics(String name) {
+        return hasCountMetrics(name) || hasSequenceMetrics(name);
+    }
+    
+    private boolean hasCountMetrics(String name) {
+        return hasActiveTaskCount(name) || hasConnectorCount(name) || hasStatusCount(name);
+    }
+    
+    private boolean hasActiveTaskCount(String name) {
+        return name.contains("active-count") || name.contains("partition-count") ||
+               name.contains("task-count");
+    }
+    
+    private boolean hasConnectorCount(String name) {
+        return name.contains("connector-count") || name.contains("running-count");
+    }
+    
+    private boolean hasStatusCount(String name) {
+        return name.contains("paused-count") || name.contains("failed-count");
+    }
+    
+    private boolean hasSequenceMetrics(String name) {
+        return name.contains("seq-no") || name.contains("seq-num");
     }
     
     private boolean isKafkaConnectMetric(String group) {
@@ -460,59 +553,161 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
     
     private String determineConnectMetricUnit(String name) {
-        if (name.endsWith("-time-ms") || name.endsWith("-avg-time-ms") || 
-            name.endsWith("-max-time-ms") || name.contains("commit-time") ||
-            name.contains("batch-time") || name.contains("rebalance-time")) {
-            return "ms";
+        String timeUnit = getTimeUnit(name);
+        if (timeUnit != null) {
+            return timeUnit;
         }
         
-        if (name.contains("seq-no") || name.contains("seq-num") || 
-            name.endsWith("-count") || name.contains("task-count") ||
-            name.contains("partition-count")) {
-            return "1";
+        String countUnit = getCountUnit(name);
+        if (countUnit != null) {
+            return countUnit;
         }
         
-        if (name.contains("lag")) {
-            return "1";
-        }
-        
-        if ("status".equals(name) || name.contains("protocol") || 
-            name.contains("leader-name") || name.contains("connector-type") ||
-            name.contains("connector-class") || name.contains("connector-version")) {
-            return "1";
-        }
-        
-        if (name.contains("rate") && !name.contains("ratio")) {
-            return "1/s";
-        }
-        
-        if (name.contains("ratio") || name.contains("percentage")) {
-            return "1";
-        }
-        
-        if (name.contains("total") || name.contains("sum") || 
-            name.contains("attempts") || name.contains("success") ||
-            name.contains("failure") || name.contains("errors") ||
-            name.contains("retries") || name.contains("skipped")) {
-            return "1";
-        }
-        
-        if (name.contains("timestamp") || name.contains("epoch")) {
-            return "ms";
-        }
-        
-        if (name.contains("time-since-last") || name.contains("since-last")) {
-            return "ms";
+        String specialUnit = getSpecialUnit(name);
+        if (specialUnit != null) {
+            return specialUnit;
         }
         
         return "1";
     }
     
+    private String getTimeUnit(String name) {
+        if (isTimeBasedMetric(name)) {
+            return "ms";
+        }
+        if (isTimestampMetric(name)) {
+            return "ms";
+        }
+        if (isTimeSinceMetric(name)) {
+            return "ms";
+        }
+        return null;
+    }
+    
+    private String getCountUnit(String name) {
+        if (isSequenceOrCountMetric(name)) {
+            return "1";
+        }
+        if (isLagMetric(name)) {
+            return "1";
+        }
+        if (isTotalOrCounterMetric(name)) {
+            return "1";
+        }
+        return null;
+    }
+    
+    private String getSpecialUnit(String name) {
+        if (isStatusOrMetadataMetric(name)) {
+            return "1";
+        }
+        if (isConnectRateMetric(name)) {
+            return "1/s";
+        }
+        if (isRatioMetric(name)) {
+            return "1";
+        }
+        return null;
+    }
+    
+    private boolean isTimeBasedMetric(String name) {
+        return hasTimeMs(name) || hasCommitBatchTime(name);
+    }
+    
+    private boolean hasTimeMs(String name) {
+        return name.endsWith("-time-ms") || name.endsWith("-avg-time-ms") || 
+               name.endsWith("-max-time-ms");
+    }
+    
+    private boolean hasCommitBatchTime(String name) {
+        return name.contains("commit-time") || name.contains("batch-time") || 
+               name.contains("rebalance-time");
+    }
+    
+    private boolean isSequenceOrCountMetric(String name) {
+        return hasSequenceNumbers(name) || hasCountSuffix(name);
+    }
+    
+    private boolean hasSequenceNumbers(String name) {
+        return name.contains("seq-no") || name.contains("seq-num");
+    }
+    
+    private boolean hasCountSuffix(String name) {
+        return name.endsWith("-count") || name.contains("task-count") ||
+               name.contains("partition-count");
+    }
+    
+    private boolean isLagMetric(String name) {
+        return name.contains("lag");
+    }
+    
+    private boolean isStatusOrMetadataMetric(String name) {
+        return isStatusMetric(name) || hasProtocolLeaderMetrics(name) || 
+               hasConnectorMetrics(name);
+    }
+    
+    private boolean isStatusMetric(String name) {
+        return "status".equals(name) || name.contains("protocol");
+    }
+    
+    private boolean hasProtocolLeaderMetrics(String name) {
+        return name.contains("leader-name");
+    }
+    
+    private boolean hasConnectorMetrics(String name) {
+        return name.contains("connector-type") || name.contains("connector-class") ||
+               name.contains("connector-version");
+    }
+    
+    private boolean isRatioMetric(String name) {
+        return name.contains("ratio") || name.contains("percentage");
+    }
+    
+    private boolean isTotalOrCounterMetric(String name) {
+        return hasTotalSum(name) || hasAttempts(name) || hasSuccessFailure(name) ||
+               hasErrorsRetries(name);
+    }
+    
+    private boolean hasTotalSum(String name) {
+        return name.contains("total") || name.contains("sum");
+    }
+    
+    private boolean hasAttempts(String name) {
+        return name.contains("attempts");
+    }
+    
+    private boolean hasSuccessFailure(String name) {
+        return name.contains("success") || name.contains("failure");
+    }
+    
+    private boolean hasErrorsRetries(String name) {
+        return name.contains("errors") || name.contains("retries") || name.contains("skipped");
+    }
+    
+    private boolean isTimestampMetric(String name) {
+        return name.contains("timestamp") || name.contains("epoch");
+    }
+    
+    private boolean isConnectRateMetric(String name) {
+        return name.contains("rate") && !name.contains("ratio");
+    }
+    
+    private boolean isTimeSinceMetric(String name) {
+        return name.contains("time-since-last") || name.contains("since-last");
+    }
+    
     private boolean isTimeMetric(String name) {
-        return (name.contains("time") || name.contains("latency") || 
-                name.contains("duration")) && 
-               !name.contains("ratio") && !name.contains("rate") &&
-               !name.contains("count") && !name.contains("since-last");
+        return hasTimeKeywords(name) && !hasTimeExclusions(name);
+    }
+    
+    private boolean hasTimeKeywords(String name) {
+        return name.contains("time") || name.contains("latency") || 
+               name.contains("duration");
+    }
+    
+    private boolean hasTimeExclusions(String name) {
+        return name.contains("ratio") || name.contains("rate") ||
+               name.contains("count") || name.contains("since-last");
     }
     
     private String determineTimeUnit(String name) {
@@ -541,14 +736,28 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
     
     private boolean isRateMetric(String name) {
-        return (name.contains("rate") || name.contains("per-sec") || 
-                name.contains("persec") || name.contains("/s")) &&
-               !name.contains("byte") && !name.contains("ratio");
+        return hasRateKeywords(name) && !hasExcludedKeywords(name);
+    }
+    
+    private boolean hasRateKeywords(String name) {
+        return name.contains("rate") || name.contains("per-sec") || 
+               name.contains("persec") || name.contains("/s");
+    }
+    
+    private boolean hasExcludedKeywords(String name) {
+        return name.contains("byte") || name.contains("ratio");
     }
     
     private boolean isRatioOrPercentageMetric(String name) {
-        return name.contains("percent") || name.contains("ratio") || 
-               name.contains("pct");
+        return hasPercentKeywords(name) || hasRatioKeywords(name);
+    }
+    
+    private boolean hasPercentKeywords(String name) {
+        return name.contains("percent") || name.contains("pct");
+    }
+    
+    private boolean hasRatioKeywords(String name) {
+        return name.contains("ratio");
     }
     
     private boolean isCountMetric(String name) {
