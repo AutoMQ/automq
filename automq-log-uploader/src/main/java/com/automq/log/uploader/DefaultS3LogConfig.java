@@ -53,10 +53,6 @@ public class DefaultS3LogConfig implements S3LogConfig {
     private ObjectStorage objectStorage;
     private LogLeaderNodeSelector leaderNodeSelector;
 
-    public DefaultS3LogConfig() {
-        this(null);
-    }
-
     public DefaultS3LogConfig(Properties overrideProps) {
         this.props = new Properties();
         if (overrideProps != null) {

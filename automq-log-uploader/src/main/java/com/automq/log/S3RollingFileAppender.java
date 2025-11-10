@@ -22,7 +22,6 @@ package com.automq.log;
 import com.automq.log.uploader.LogRecorder;
 import com.automq.log.uploader.LogUploader;
 import com.automq.log.uploader.S3LogConfig;
-import com.automq.log.uploader.S3LogConfigProvider;
 
 import org.apache.log4j.RollingFileAppender;
 import org.apache.log4j.spi.LoggingEvent;
@@ -35,21 +34,10 @@ public class S3RollingFileAppender extends RollingFileAppender {
     private static final Object INIT_LOCK = new Object();
 
     private static volatile LogUploader logUploaderInstance;
-    private static volatile S3LogConfigProvider configProvider;
     private static volatile S3LogConfig s3LogConfig;
     
     public S3RollingFileAppender() {
         super();
-    }
-
-    /**
-     * Programmatically sets the configuration provider to be used by all {@link S3RollingFileAppender} instances.
-     */
-    public static void setConfigProvider(S3LogConfigProvider provider) {
-        synchronized (INIT_LOCK) {
-            configProvider = provider;
-        }
-        triggerInitialization();
     }
 
     @Override
@@ -60,7 +48,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
     
     public static void setS3Config(S3LogConfig config) {
         s3LogConfig = config;
-        triggerInitialization();
+        new S3RollingFileAppender().initializeUploader();
     }
 
     private void initializeUploader() {
@@ -98,20 +86,6 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 LOGGER.error("Failed to initialize S3RollingFileAppender", e);
             }
         }
-    }
-
-    public static void triggerInitialization() {
-        S3LogConfigProvider provider;
-        synchronized (INIT_LOCK) {
-            if (logUploaderInstance != null) {
-                return;
-            }
-            provider = configProvider;
-        }
-        if (provider == null) {
-            return;
-        }
-        new S3RollingFileAppender().initializeUploader();
     }
 
     @Override

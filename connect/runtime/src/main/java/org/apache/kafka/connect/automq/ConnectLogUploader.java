@@ -1,5 +1,7 @@
 package org.apache.kafka.connect.automq;
 
+import com.automq.log.S3RollingFileAppender;
+import com.automq.log.uploader.S3LogConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,7 +29,8 @@ public final class ConnectLogUploader {
             });
         }
         ConnectS3LogConfigProvider.initialize(props);
-        com.automq.log.S3RollingFileAppender.triggerInitialization();
+        S3LogConfig s3LogConfig = new ConnectS3LogConfigProvider().get();
+        S3RollingFileAppender.setS3Config(s3LogConfig);
         getLogger().info("Initialized Connect S3 log uploader context");
     }
 }

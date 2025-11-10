@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
@@ -27,13 +28,9 @@ import kafka.migration.MigrationPropagator
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.QuotaFactory.QuotaManagers
-
-import scala.collection.immutable
-import kafka.server.metadata.{AclPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, KRaftMetadataCachePublisher, ScramPublisher}
+import kafka.server.metadata._
 import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
-import com.automq.log.uploader.selector.runtime.{RuntimeLeaderRegistry => LogUploaderLeaderRegistry}
-import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.common.network.ListenerName
@@ -44,29 +41,30 @@ import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
 import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
-import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
 import org.apache.kafka.metadata.migration.{KRaftMigrationDriver, LegacyPropagator}
 import org.apache.kafka.metadata.placement.{ReplicaPlacer, StripedReplicaPlacer}
 import org.apache.kafka.metadata.publisher.FeaturesPublisher
+import org.apache.kafka.metadata.{KafkaConfigSchema, ListenerInfo}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.security.{CredentialProvider, PasswordEncoder}
 import org.apache.kafka.server.NodeToControllerChannelManager
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.common.ApiMessageAndVersion
 import org.apache.kafka.server.config.ConfigType
+import org.apache.kafka.server.config.ServerLogConfigs.{ALTER_CONFIG_POLICY_CLASS_NAME_CONFIG, CREATE_TOPIC_POLICY_CLASS_NAME_CONFIG}
 import org.apache.kafka.server.metrics.{KafkaMetricsGroup, KafkaYammerMetrics, LinuxIoMetricsCollector}
 import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerServerInfo}
 import org.apache.kafka.server.policy.{AlterConfigPolicy, CreateTopicPolicy}
 import org.apache.kafka.server.util.{Deadline, FutureUtils}
 
 import java.util
-import java.util.{Optional, OptionalLong, Random}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
 import java.util.function.BooleanSupplier
+import java.util.{Optional, OptionalLong, Random}
+import scala.collection.immutable
 import scala.compat.java8.OptionConverters._
 import scala.jdk.CollectionConverters._
 
@@ -305,7 +303,6 @@ class ControllerServer(
       val controllerLeaderSupplier = new BooleanSupplier {
         override def getAsBoolean: Boolean = controller.isActive
       }
-      LogUploaderLeaderRegistry.register(controllerLeaderSupplier)
       TelemetryLeaderRegistry.register("controller", controllerLeaderSupplier)
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go

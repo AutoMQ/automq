@@ -270,7 +270,7 @@ class AutoMQBrokerTelemetryTest(Test):
         """Verify that broker logs are uploaded to S3 via the AutoMQ log uploader module."""
         cluster_id = f"core-logs-{selector_type}-{int(time.time())}"
         bucket_name = "ko3"
-        logs_prefix = f"automq/logs/{cluster_id}"
+        logs_prefix = f"automq/logs"
         
         self._clear_s3_prefix(bucket_name, logs_prefix)
 
@@ -298,9 +298,9 @@ class AutoMQBrokerTelemetryTest(Test):
         def log_leader_nodes():
             leaders = []
             for node in self.kafka.nodes:
-                cmd = f"grep -a 'Node became log uploader leader' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                cmd = f"grep -a 'Starting cleanup of expired s3 logs' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
                 output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                if "Node became log uploader leader" in output:
+                if "Starting cleanup of expired s3 logs" in output:
                     leaders.append(str(self.kafka.idx(node)))
             return leaders
 

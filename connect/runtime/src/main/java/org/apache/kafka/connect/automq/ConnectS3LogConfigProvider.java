@@ -3,7 +3,6 @@ package org.apache.kafka.connect.automq;
 import com.automq.log.uploader.DefaultS3LogConfig;
 import com.automq.log.uploader.LogConfigConstants;
 import com.automq.log.uploader.S3LogConfig;
-import com.automq.log.uploader.S3LogConfigProvider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Provides S3 log uploader configuration for Kafka Connect workers.
  */
-public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
+public class ConnectS3LogConfigProvider {
     private static Logger getLogger() {
         return LoggerFactory.getLogger(ConnectS3LogConfigProvider.class);
     }
@@ -44,8 +43,7 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         }
         getLogger().info("Initializing ConnectS3LogConfigProvider");
     }
-
-    @Override
+    
     public S3LogConfig get() {
         
         try {
@@ -78,7 +76,6 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
 
         copyConnectPropertiesToLogConfig(workerProps, effective);
         setDefaultClusterAndNodeId(workerProps, effective);
-        setSelectorDefaults(workerProps, effective);
         mapSelectorOverrides(workerProps, effective);
 
         return effective;
@@ -91,8 +88,6 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         copyIfPresent(workerProps, "automq.log.s3.endpoint", effective, LogConfigConstants.LOG_S3_ENDPOINT_KEY);
         copyIfPresent(workerProps, "automq.log.s3.access.key", effective, LogConfigConstants.LOG_S3_ACCESS_KEY);
         copyIfPresent(workerProps, "automq.log.s3.secret.key", effective, LogConfigConstants.LOG_S3_SECRET_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.primary.node", effective, LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.selector.type", effective, LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY);
     }
 
     private void setDefaultClusterAndNodeId(Properties workerProps, Properties effective) {
@@ -106,13 +101,6 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         if (!effective.containsKey(LogConfigConstants.LOG_S3_NODE_ID_KEY)) {
             String nodeId = resolveNodeId(workerProps);
             effective.setProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY, nodeId);
-        }
-    }
-
-    private void setSelectorDefaults(Properties workerProps, Properties effective) {
-        // Selector defaults
-        if (!effective.containsKey(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY)) {
-            effective.setProperty(LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY, "connect-leader");
         }
     }
 
