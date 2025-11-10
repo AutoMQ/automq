@@ -59,6 +59,7 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
+    static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
     private final long capacity;
@@ -301,27 +302,49 @@ public class LogCache {
     }
 
     private void tryMerge() {
-        writeLock.lock();
-        try {
-            // merge blocks to speed up the get.
-            LogCacheBlock mergedBlock = null;
-            Iterator<LogCacheBlock> iter = blocks.iterator();
-            while (iter.hasNext()) {
-                LogCacheBlock block = iter.next();
-                if (!block.free) {
-                    break;
+        // merge blocks to speed up the get.
+        int mergeStartIndex = 0;
+        for (; ; ) {
+            LogCacheBlock left;
+            LogCacheBlock right;
+            writeLock.lock();
+            try {
+                if (blocks.size() <= MERGE_BLOCK_THRESHOLD || mergeStartIndex + 1 >= blocks.size()) {
+                    return;
                 }
-                if (mergedBlock == null
-                    || mergedBlock.size() + block.size() >= cacheBlockMaxSize
-                    || isDiscontinuous(mergedBlock, block)) {
-                    mergedBlock = block;
+                left = blocks.get(mergeStartIndex);
+                right = blocks.get(mergeStartIndex + 1);
+                if (!left.free || !right.free) {
+                    return;
+                }
+                if (left.size() + right.size() >= cacheBlockMaxSize) {
+                    mergeStartIndex++;
                     continue;
                 }
-                mergeBlock(mergedBlock, block);
-                iter.remove();
+            } finally {
+                writeLock.unlock();
             }
-        } finally {
-            writeLock.unlock();
+            // Move costly operation(isDiscontinuous, mergeBlock) out of the lock.
+            if (isDiscontinuous(left, right)) {
+                mergeStartIndex++;
+                continue;
+            }
+            LogCacheBlock newBlock = new LogCacheBlock(Integer.MAX_VALUE);
+            mergeBlock(newBlock, left);
+            mergeBlock(newBlock, right);
+            newBlock.free = true;
+            writeLock.lock();
+            try {
+                if (blocks.size() > mergeStartIndex + 1
+                    && blocks.get(mergeStartIndex) == left
+                    && blocks.get(mergeStartIndex + 1) == right
+                ) {
+                    blocks.set(mergeStartIndex, newBlock);
+                    blocks.remove(mergeStartIndex + 1);
+                }
+            } finally {
+                writeLock.unlock();
+            }
         }
     }
 

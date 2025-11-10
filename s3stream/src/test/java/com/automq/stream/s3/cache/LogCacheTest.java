@@ -161,8 +161,47 @@ public class LogCacheTest {
         assertEquals(201, stream235.endOffset());
         assertEquals(1, stream235.records.size());
         assertEquals(200, stream235.records.get(0).getBaseOffset());
+    }
 
+    @Test
+    public void testTryMergeLogic() {
+        LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
+        final long streamId = 233L;
+        final int blocksToCreate = LogCache.MERGE_BLOCK_THRESHOLD + 2;
 
+        // create multiple blocks, each containing one record for the same stream with contiguous offsets
+        for (int i = 0; i < blocksToCreate; i++) {
+            logCache.put(new StreamRecordBatch(streamId, 0L, i, 1, TestUtils.random(1)));
+            logCache.archiveCurrentBlock();
+        }
+
+        int before = logCache.blocks.size();
+        assertTrue(before > LogCache.MERGE_BLOCK_THRESHOLD, "need more than 8 blocks to exercise tryMerge");
+
+        LogCache.LogCacheBlock left = logCache.blocks.get(0);
+        LogCache.LogCacheBlock right = logCache.blocks.get(1);
+
+        // verify contiguous condition before merge: left.end == right.start
+        LogCache.StreamCache leftCache = left.map.get(streamId);
+        LogCache.StreamCache rightCache = right.map.get(streamId);
+        assertEquals(leftCache.endOffset(), rightCache.startOffset());
+
+        // mark both blocks free to trigger tryMerge (called inside markFree)
+        logCache.markFree(left);
+        logCache.markFree(right);
+
+        int after = logCache.blocks.size();
+        assertEquals(before - 1, after, "two adjacent free contiguous blocks should be merged into one");
+
+        // verify merged block contains both records and correct range
+        LogCache.LogCacheBlock merged = logCache.blocks.get(0);
+        assertTrue(merged.free);
+        LogCache.StreamCache mergedCache = merged.map.get(streamId);
+        assertEquals(2, mergedCache.records.size());
+        assertEquals(0L, mergedCache.startOffset());
+        assertEquals(2L, mergedCache.endOffset());
+        assertEquals(0L, mergedCache.records.get(0).getBaseOffset());
+        assertEquals(1L, mergedCache.records.get(1).getBaseOffset());
     }
 
 }
