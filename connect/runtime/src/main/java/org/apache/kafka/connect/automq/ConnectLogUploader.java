@@ -2,6 +2,7 @@ package org.apache.kafka.connect.automq;
 
 import com.automq.log.S3RollingFileAppender;
 import com.automq.log.uploader.S3LogConfig;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
