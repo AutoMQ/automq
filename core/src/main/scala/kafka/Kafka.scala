@@ -159,6 +159,7 @@ object Kafka extends Logging {
           Exit.exit(1)
       }
       // AutoMQ for Kafka inject start
+      
       S3RollingFileAppender.setConfigProvider(logConfigProvider)
       // AutoMQ for Kafka inject end
       server.awaitShutdown()

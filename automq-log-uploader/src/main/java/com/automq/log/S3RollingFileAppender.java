@@ -21,42 +21,25 @@ package com.automq.log;
 
 import com.automq.log.uploader.LogRecorder;
 import com.automq.log.uploader.LogUploader;
-import com.automq.log.uploader.PropertiesS3LogConfigProvider;
 import com.automq.log.uploader.S3LogConfig;
 import com.automq.log.uploader.S3LogConfigProvider;
 
-import org.apache.commons.lang3.StringUtils;
 import org.apache.log4j.RollingFileAppender;
 import org.apache.log4j.spi.LoggingEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class S3RollingFileAppender extends RollingFileAppender {
-    public static final String CONFIG_PROVIDER_PROPERTY = "automq.log.s3.config.provider";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(S3RollingFileAppender.class);
     private static final Object INIT_LOCK = new Object();
 
     private static volatile LogUploader logUploaderInstance;
     private static volatile S3LogConfigProvider configProvider;
-    private static volatile boolean initializationPending;
-
-    private String configProviderClass;
-
+    private static volatile S3LogConfig s3LogConfig;
+    
     public S3RollingFileAppender() {
         super();
-    }
-
-    /**
-     * Allows programmatic override of the LogUploader instance.
-     * Useful for testing or complex dependency injection scenarios.
-     *
-     * @param uploader The LogUploader instance to use.
-     */
-    public static void setLogUploader(LogUploader uploader) {
-        synchronized (INIT_LOCK) {
-            logUploaderInstance = uploader;
-        }
     }
 
     /**
@@ -69,17 +52,15 @@ public class S3RollingFileAppender extends RollingFileAppender {
         triggerInitialization();
     }
 
-    /**
-     * Setter used by Log4j property configuration to specify a custom {@link S3LogConfigProvider} implementation.
-     */
-    public void setConfigProviderClass(String configProviderClass) {
-        this.configProviderClass = configProviderClass;
-    }
-
     @Override
     public void activateOptions() {
         super.activateOptions();
         initializeUploader();
+    }
+    
+    public static void setS3Config(S3LogConfig config) {
+        s3LogConfig = config;
+        triggerInitialization();
     }
 
     private void initializeUploader() {
@@ -91,23 +72,18 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 return;
             }
             try {
-                S3LogConfigProvider provider = resolveProvider();
-                if (provider == null) {
-                    LOGGER.info("No S3LogConfigProvider available; S3 log upload remains disabled.");
-                    initializationPending = true;
+                if (s3LogConfig == null) {
+                    LOGGER.info("No s3LogConfig available; S3 log upload remains disabled.");
                     return;
                 }
-                S3LogConfig config = provider.get();
-                if (config == null || !config.isEnabled() || config.objectStorage() == null) {
+                if (!s3LogConfig.isEnabled() || s3LogConfig.objectStorage() == null) {
                     LOGGER.info("S3 log upload is disabled by configuration.");
-                    initializationPending = config == null;
                     return;
                 }
 
                 LogUploader uploader = new LogUploader();
-                uploader.start(config);
+                uploader.start(s3LogConfig);
                 logUploaderInstance = uploader;
-                initializationPending = false;
 
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     try {
@@ -117,11 +93,9 @@ public class S3RollingFileAppender extends RollingFileAppender {
                         LOGGER.warn("Failed to close LogUploader gracefully", e);
                     }
                 }));
-                LOGGER.info("S3RollingFileAppender initialized successfully using provider {}.",
-                    provider.getClass().getName());
+                LOGGER.info("S3RollingFileAppender initialized successfully using s3LogConfig {}.", s3LogConfig.getClass().getName());
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize S3RollingFileAppender", e);
-                initializationPending = true;
             }
         }
     }
@@ -135,58 +109,9 @@ public class S3RollingFileAppender extends RollingFileAppender {
             provider = configProvider;
         }
         if (provider == null) {
-            initializationPending = true;
             return;
         }
         new S3RollingFileAppender().initializeUploader();
-    }
-
-    private S3LogConfigProvider resolveProvider() {
-        S3LogConfigProvider provider = configProvider;
-        if (provider != null) {
-            return provider;
-        }
-
-        synchronized (INIT_LOCK) {
-            if (configProvider != null) {
-                return configProvider;
-            }
-
-            String providerClassName = configProviderClass;
-            if (StringUtils.isBlank(providerClassName)) {
-                providerClassName = System.getProperty(CONFIG_PROVIDER_PROPERTY);
-            }
-
-            if (StringUtils.isNotBlank(providerClassName)) {
-                provider = instantiateProvider(providerClassName.trim());
-                if (provider == null) {
-                    LOGGER.warn("Falling back to default configuration provider because {} could not be instantiated.",
-                        providerClassName);
-                }
-            }
-
-            if (provider == null) {
-                provider = new PropertiesS3LogConfigProvider();
-            }
-
-            configProvider = provider;
-            return provider;
-        }
-    }
-
-    private S3LogConfigProvider instantiateProvider(String providerClassName) {
-        try {
-            Class<?> clazz = Class.forName(providerClassName);
-            Object instance = clazz.getDeclaredConstructor().newInstance();
-            if (!(instance instanceof S3LogConfigProvider)) {
-                LOGGER.error("Class {} does not implement S3LogConfigProvider.", providerClassName);
-                return null;
-            }
-            return (S3LogConfigProvider) instance;
-        } catch (Exception e) {
-            LOGGER.error("Failed to instantiate S3LogConfigProvider {}", providerClassName, e);
-            return null;
-        }
     }
 
     @Override
