@@ -20,6 +20,8 @@
 package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.TelemetryConfig;
+import com.automq.opentelemetry.exporter.s3.LeaderNodeSelector;
+import com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorFactory;
 import com.automq.stream.s3.operator.BucketURI;
 
 import org.apache.commons.lang3.StringUtils;
@@ -247,7 +249,7 @@ public class MetricsExporterURI {
         List<Pair<String, String>> baseLabels = config.getBaseLabels();
         
         // Create node selector based on configuration
-        com.automq.opentelemetry.exporter.s3.UploaderNodeSelector nodeSelector;
+        LeaderNodeSelector nodeSelector;
         
         // Get the selector type from config
         String selectorTypeString = config.getS3SelectorType();
@@ -280,7 +282,7 @@ public class MetricsExporterURI {
         }
 
         // Use the factory to create a node selector with the enum-based approach
-        nodeSelector = com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorFactory
+        nodeSelector = LeaderNodeSelectorFactory
             .createSelector(selectorTypeString, clusterId, nodeId, selectorConfig);
         
         LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}, selectorType={}", 

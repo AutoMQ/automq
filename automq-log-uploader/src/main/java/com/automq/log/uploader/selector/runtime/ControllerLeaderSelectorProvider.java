@@ -19,12 +19,12 @@
 
 package com.automq.log.uploader.selector.runtime;
 
-import com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider;
+import com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider;
 
 /**
  * Selector that delegates leadership to the active controller status exposed by the core runtime.
  */
-public class ControllerLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements LogUploaderNodeSelectorProvider {
+public class ControllerLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements LogLeaderNodeSelectorProvider {
     public static final String TYPE = "controller";
     static final String REGISTRY_KEY = "controller";
 

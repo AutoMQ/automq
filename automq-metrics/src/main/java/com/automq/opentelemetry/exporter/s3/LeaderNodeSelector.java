@@ -17,25 +17,28 @@
  * limitations under the License.
  */
 
-package com.automq.log.uploader.selector;
+package com.automq.opentelemetry.exporter.s3;
 
 /**
- * Determines whether the current node should act as the primary S3 log uploader.
+ * An interface for determining which node should be responsible for uploading metrics.
+ * This abstraction allows different implementations of uploader node selection strategies.
  */
-public interface LogUploaderNodeSelector {
-
+public interface LeaderNodeSelector {
+    
     /**
-     * @return {@code true} if the current node should upload and clean up logs in S3.
+     * Determines if the current node should be responsible for uploading metrics.
+     * 
+     * @return true if the current node should upload metrics, false otherwise.
      */
-    boolean isPrimaryUploader();
-
+    boolean isLeader();
+    
     /**
-     * Creates a selector with a static boolean decision.
-     *
-     * @param primary whether this node should be primary
-     * @return selector returning the static decision
+     * Creates a default LeaderNodeSelector based on static configuration.
+     * 
+     * @param isLeader a static boolean value indicating whether this node is the primary uploader
+     * @return a LeaderNodeSelector that returns the static value
      */
-    static LogUploaderNodeSelector staticSelector(boolean primary) {
-        return () -> primary;
+    static LeaderNodeSelector staticSelector(boolean isLeader) {
+        return () -> isLeader;
     }
 }

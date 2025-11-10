@@ -30,32 +30,32 @@ import java.util.ServiceLoader;
 /**
  * Factory that resolves node selectors from configuration.
  */
-public final class LogUploaderNodeSelectorFactory {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LogUploaderNodeSelectorFactory.class);
-    private static final Map<String, LogUploaderNodeSelectorProvider> PROVIDERS = new HashMap<>();
+public final class LogLeaderNodeSelectorFactory {
+    private static final Logger LOGGER = LoggerFactory.getLogger(LogLeaderNodeSelectorFactory.class);
+    private static final Map<String, LogLeaderNodeSelectorProvider> PROVIDERS = new HashMap<>();
 
     static {
-        ServiceLoader<LogUploaderNodeSelectorProvider> loader = ServiceLoader.load(LogUploaderNodeSelectorProvider.class);
-        for (LogUploaderNodeSelectorProvider provider : loader) {
+        ServiceLoader<LogLeaderNodeSelectorProvider> loader = ServiceLoader.load(LogLeaderNodeSelectorProvider.class);
+        for (LogLeaderNodeSelectorProvider provider : loader) {
             String type = provider.getType();
             if (type != null) {
                 PROVIDERS.put(type.toLowerCase(Locale.ROOT), provider);
-                LOGGER.info("Loaded LogUploaderNodeSelectorProvider for type {}", type);
+                LOGGER.info("Loaded LeaderNodeSelectorProvider for type {}", type);
             }
         }
     }
 
-    private LogUploaderNodeSelectorFactory() {
+    private LogLeaderNodeSelectorFactory() {
     }
 
-    public static LogUploaderNodeSelector createSelector(String typeString,
-                                                         String clusterId,
-                                                         int nodeId,
-                                                         Map<String, String> config) {
-        LogUploaderNodeSelectorType type = LogUploaderNodeSelectorType.fromString(typeString);
+    public static LogLeaderNodeSelector createSelector(String typeString,
+                                                       String clusterId,
+                                                       int nodeId,
+                                                       Map<String, String> config) {
+        LogLeaderNodeSelectorType type = LogLeaderNodeSelectorType.fromString(typeString);
         switch (type) {
             case CUSTOM:
-                LogUploaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase(Locale.ROOT));
+                LogLeaderNodeSelectorProvider provider = PROVIDERS.get(typeString.toLowerCase(Locale.ROOT));
                 if (provider != null) {
                     try {
                         return provider.createSelector(clusterId, nodeId, config);
@@ -74,8 +74,8 @@ public final class LogUploaderNodeSelectorFactory {
         if (typeString == null) {
             return true;
         }
-        LogUploaderNodeSelectorType type = LogUploaderNodeSelectorType.fromString(typeString);
-        if (type != LogUploaderNodeSelectorType.CUSTOM) {
+        LogLeaderNodeSelectorType type = LogLeaderNodeSelectorType.fromString(typeString);
+        if (type != LogLeaderNodeSelectorType.CUSTOM) {
             return true;
         }
         return PROVIDERS.containsKey(typeString.toLowerCase(Locale.ROOT));

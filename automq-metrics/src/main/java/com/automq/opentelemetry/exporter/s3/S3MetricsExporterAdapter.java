@@ -46,7 +46,7 @@ public class S3MetricsExporterAdapter implements MetricsExporter {
     private final int intervalMs;
     private final BucketURI metricsBucket;
     private final List<Pair<String, String>> baseLabels;
-    private final UploaderNodeSelector nodeSelector;
+    private final LeaderNodeSelector nodeSelector;
 
     /**
      * Creates a new S3MetricsExporterAdapter.
@@ -59,7 +59,7 @@ public class S3MetricsExporterAdapter implements MetricsExporter {
      * @param nodeSelector The selector that determines if this node should upload metrics
      */
     public S3MetricsExporterAdapter(String clusterId, int nodeId, int intervalMs, BucketURI metricsBucket,
-                                    List<Pair<String, String>> baseLabels, UploaderNodeSelector nodeSelector) {
+                                    List<Pair<String, String>> baseLabels, LeaderNodeSelector nodeSelector) {
         if (metricsBucket == null) {
             throw new IllegalArgumentException("bucket URI must be provided for s3 metrics exporter");
         }
@@ -89,7 +89,7 @@ public class S3MetricsExporterAdapter implements MetricsExporter {
 
             @Override
             public boolean isPrimaryUploader() {
-                return nodeSelector.isPrimaryUploader();
+                return nodeSelector.isLeader();
             }
 
             @Override

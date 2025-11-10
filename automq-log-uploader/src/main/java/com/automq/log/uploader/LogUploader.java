@@ -214,7 +214,7 @@ public class LogUploader implements LogRecorder {
         public void run() {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    if (closed || !config.isPrimaryUploader()) {
+                    if (closed || !config.isLeader()) {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }

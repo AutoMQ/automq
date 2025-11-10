@@ -19,12 +19,12 @@
 
 package com.automq.opentelemetry.exporter.s3.runtime;
 
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
+import com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorProvider;
 
 /**
  * Supplies leadership based on the KRaft controller's active status.
  */
-public class ControllerLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements UploaderNodeSelectorProvider {
+public class ControllerLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements LeaderNodeSelectorProvider {
     public static final String TYPE = "controller";
     static final String REGISTRY_KEY = "controller";
 

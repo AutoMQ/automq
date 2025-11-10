@@ -19,12 +19,12 @@
 
 package com.automq.log.uploader.selector.runtime;
 
-import com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider;
+import com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider;
 
 /**
  * Selector that follows the Kafka Connect distributed herder leader election state.
  */
-public class ConnectLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements LogUploaderNodeSelectorProvider {
+public class ConnectLeaderSelectorProvider extends AbstractRuntimeLeaderSelectorProvider implements LogLeaderNodeSelectorProvider {
     public static final String TYPE = "connect-leader";
     static final String REGISTRY_KEY = "connect-leader";
 

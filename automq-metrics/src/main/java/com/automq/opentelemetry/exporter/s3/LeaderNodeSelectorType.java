@@ -27,24 +27,24 @@ import java.util.Map;
  * Enum representing the type of uploader node selector.
  * Provides type safety and common operations for selector types.
  */
-public enum UploaderNodeSelectorType {
+public enum LeaderNodeSelectorType {
     /**
      * Custom selector type - used for SPI-provided selectors.
      */
     CUSTOM(null);
     
     private final String type;
-    private static final Map<String, UploaderNodeSelectorType> TYPE_MAP = new HashMap<>();
+    private static final Map<String, LeaderNodeSelectorType> TYPE_MAP = new HashMap<>();
     
     static {
-        for (UploaderNodeSelectorType value : values()) {
+        for (LeaderNodeSelectorType value : values()) {
             if (value != CUSTOM) {
                 TYPE_MAP.put(value.type, value);
             }
         }
     }
     
-    UploaderNodeSelectorType(String type) {
+    LeaderNodeSelectorType(String type) {
         this.type = type;
     }
     
@@ -63,9 +63,10 @@ public enum UploaderNodeSelectorType {
      * @param typeString The type string to convert
      * @return The matching selector type or CUSTOM if no built-in match
      */
-    public static UploaderNodeSelectorType fromString(String typeString) {
+    public static LeaderNodeSelectorType fromString(String typeString) {
         if (typeString == null) {
-            return CUSTOM; // Default to custom for SPI implementations
+            // Default to custom for SPI implementations
+            return CUSTOM;
         }
         
         return TYPE_MAP.getOrDefault(typeString.toLowerCase(Locale.ROOT), CUSTOM);
@@ -77,7 +78,7 @@ public enum UploaderNodeSelectorType {
      * @param customType The custom type string
      * @return A CUSTOM type instance
      */
-    public static UploaderNodeSelectorType customType(String customType) {
+    public static LeaderNodeSelectorType customType(String customType) {
         return CUSTOM;
     }
 }

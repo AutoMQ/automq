@@ -19,8 +19,8 @@
 
 package com.automq.log.uploader;
 
-import com.automq.log.uploader.selector.LogUploaderNodeSelector;
-import com.automq.log.uploader.selector.LogUploaderNodeSelectorFactory;
+import com.automq.log.uploader.selector.LogLeaderNodeSelector;
+import com.automq.log.uploader.selector.LogLeaderNodeSelectorFactory;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
@@ -57,7 +57,7 @@ public class DefaultS3LogConfig implements S3LogConfig {
 
     private final Properties props;
     private ObjectStorage objectStorage;
-    private LogUploaderNodeSelector nodeSelector;
+    private LogLeaderNodeSelector nodeSelector;
 
     public DefaultS3LogConfig() {
         this(null);
@@ -140,7 +140,7 @@ public class DefaultS3LogConfig implements S3LogConfig {
     }
 
     @Override
-    public LogUploaderNodeSelector nodeSelector() {
+    public LogLeaderNodeSelector nodeSelector() {
         if (nodeSelector == null) {
             initializeNodeSelector();
         }
@@ -169,10 +169,10 @@ public class DefaultS3LogConfig implements S3LogConfig {
         }
 
         try {
-            this.nodeSelector = LogUploaderNodeSelectorFactory.createSelector(selectorType, clusterId(), nodeId(), selectorConfig);
+            this.nodeSelector = LogLeaderNodeSelectorFactory.createSelector(selectorType, clusterId(), nodeId(), selectorConfig);
         } catch (Exception e) {
             LOGGER.error("Failed to create log uploader selector of type {}", selectorType, e);
-            this.nodeSelector = LogUploaderNodeSelector.staticSelector(false);
+            this.nodeSelector = LogLeaderNodeSelector.staticSelector(false);
         }
     }
 

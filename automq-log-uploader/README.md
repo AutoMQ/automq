@@ -55,7 +55,7 @@ To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploa
 
 1. **controller** *(default for brokers)*: Defers to the Kafka KRaft controller leadership that AutoMQ exposes at runtime. No additional configuration is required—the broker registers a supplier and the uploader continuously checks it.
 2. **connect-leader** *(default for Kafka Connect clusters)*: Mirrors the distributed herder leader election. Works out of the box when running inside AutoMQ's Connect runtime.
-3. **custom**: Implement `com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
+3. **custom**: Implement `com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
 
 > **Note**
 >

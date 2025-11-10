@@ -68,8 +68,8 @@ com.automq.opentelemetry/
 │       ├── S3MetricsConfig.java   # Configuration interface
 │       ├── S3MetricsExporter.java # S3 metrics exporter implementation
 │       ├── S3MetricsExporterAdapter.java # Adapter to handle S3 metrics export
-│       ├── UploaderNodeSelector.java # Interface for node selection logic
-│       └── UploaderNodeSelectors.java # Factory for node selector implementations
+│       ├── LeaderNodeSelector.java # Interface for node selection logic
+│       └── LeaderNodeSelectors.java # Factory for node selector implementations
 └── yammer/
     ├── DeltaHistogram.java        # Delta histogram implementation
     ├── OTelMetricUtils.java       # OpenTelemetry metrics utilities
@@ -219,7 +219,7 @@ Examples:
 
 #### Node Selection Strategies
 
-In a multi-node cluster, typically only one node should upload metrics to S3 to avoid duplication. The S3 Metrics Exporter provides several built-in node selection strategies through the `UploaderNodeSelector` interface:
+In a multi-node cluster, typically only one node should upload metrics to S3 to avoid duplication. The S3 Metrics Exporter provides several built-in node selection strategies through the `LeaderNodeSelector` interface:
 
 1. **Controller Runtime Leadership** (`controller`)
 
@@ -244,25 +244,25 @@ In a multi-node cluster, typically only one node should upload metrics to S3 to 
 
 #### Custom Node Selection using SPI
 
-You can implement custom node selection strategies by implementing the `UploaderNodeSelectorProvider` interface and registering it using Java's ServiceLoader mechanism:
+You can implement custom node selection strategies by implementing the `LeaderNodeSelectorProvider` interface and registering it using Java's ServiceLoader mechanism:
 
 1. **Implement the Provider Interface**
 
    ```java
-   public class CustomSelectorProvider implements UploaderNodeSelectorProvider {
+   public class CustomSelectorProvider implements LeaderNodeSelectorProvider {
        @Override
        public String getType() {
            return "custom-type"; // The selector type to use in configuration
        }
        
        @Override
-       public UploaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
+       public LeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
            // Create and return your custom selector implementation
            return new CustomSelector(config);
        }
    }
    
-   public class CustomSelector implements UploaderNodeSelector {
+   public class CustomSelector implements LeaderNodeSelector {
        public CustomSelector(Map<String, String> config) {
            // Initialize your selector with the configuration
        }
@@ -277,7 +277,7 @@ You can implement custom node selection strategies by implementing the `Uploader
 
 2. **Register the Provider**
 
-   Create a file at `META-INF/services/com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider` containing the fully qualified class name of your provider:
+   Create a file at `META-INF/services/com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorProvider` containing the fully qualified class name of your provider:
 
    ```
    com.example.CustomSelectorProvider

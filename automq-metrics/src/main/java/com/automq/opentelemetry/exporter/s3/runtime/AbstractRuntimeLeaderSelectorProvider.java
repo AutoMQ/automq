@@ -19,8 +19,8 @@
 
 package com.automq.opentelemetry.exporter.s3.runtime;
 
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelector;
-import com.automq.opentelemetry.exporter.s3.UploaderNodeSelectorProvider;
+import com.automq.opentelemetry.exporter.s3.LeaderNodeSelector;
+import com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorProvider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,11 +29,11 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
-abstract class AbstractRuntimeLeaderSelectorProvider implements UploaderNodeSelectorProvider {
+abstract class AbstractRuntimeLeaderSelectorProvider implements LeaderNodeSelectorProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractRuntimeLeaderSelectorProvider.class);
 
     @Override
-    public UploaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
+    public LeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
         String key = registryKey();
         final AtomicBoolean missingLogged = new AtomicBoolean(false);
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);

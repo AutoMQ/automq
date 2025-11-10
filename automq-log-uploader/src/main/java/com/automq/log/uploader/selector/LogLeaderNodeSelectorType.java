@@ -19,26 +19,40 @@
 
 package com.automq.log.uploader.selector;
 
+import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
- * Service Provider Interface for custom log uploader node selection strategies.
+ * Supported selector types.
  */
-public interface LogUploaderNodeSelectorProvider {
+public enum LogLeaderNodeSelectorType {
+    CUSTOM(null);
 
-    /**
-     * @return the selector type identifier (case insensitive)
-     */
-    String getType();
+    private static final Map<String, LogLeaderNodeSelectorType> LOOKUP = new HashMap<>();
 
-    /**
-     * Creates a selector based on the supplied configuration.
-     *
-     * @param clusterId logical cluster identifier
-     * @param nodeId    numeric node identifier
-     * @param config    additional selector configuration
-     * @return selector instance
-     * @throws Exception if creation fails
-     */
-    LogUploaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) throws Exception;
+    static {
+        for (LogLeaderNodeSelectorType value : values()) {
+            if (value.type != null) {
+                LOOKUP.put(value.type, value);
+            }
+        }
+    }
+
+    private final String type;
+
+    LogLeaderNodeSelectorType(String type) {
+        this.type = type;
+    }
+
+    public String getType() {
+        return type;
+    }
+
+    public static LogLeaderNodeSelectorType fromString(String type) {
+        if (type == null) {
+            return CUSTOM;
+        }
+        return LOOKUP.getOrDefault(type.toLowerCase(Locale.ROOT), CUSTOM);
+    }
 }

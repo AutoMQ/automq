@@ -19,8 +19,8 @@
 
 package com.automq.log.uploader.selector.runtime;
 
-import com.automq.log.uploader.selector.LogUploaderNodeSelector;
-import com.automq.log.uploader.selector.LogUploaderNodeSelectorProvider;
+import com.automq.log.uploader.selector.LogLeaderNodeSelector;
+import com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,14 +29,14 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
-abstract class AbstractRuntimeLeaderSelectorProvider implements LogUploaderNodeSelectorProvider {
+abstract class AbstractRuntimeLeaderSelectorProvider implements LogLeaderNodeSelectorProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(AbstractRuntimeLeaderSelectorProvider.class);
 
     protected AbstractRuntimeLeaderSelectorProvider() {
     }
 
     @Override
-    public LogUploaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
+    public LogLeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
         final String key = registryKey();
         final AtomicBoolean missingLogged = new AtomicBoolean(false);
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);
