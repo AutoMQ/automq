@@ -31,10 +31,10 @@ public interface S3LogConfig {
 
     ObjectStorage objectStorage();
 
-    LogLeaderNodeSelector nodeSelector();
+    LogLeaderNodeSelector leaderSelector();
 
     default boolean isLeader() {
-        LogLeaderNodeSelector selector = nodeSelector();
+        LogLeaderNodeSelector selector = leaderSelector();
         return selector != null && selector.isLeader();
     }
 }

@@ -1,2 +1,0 @@
-com.automq.log.uploader.selector.runtime.ControllerLeaderSelectorProvider
-com.automq.log.uploader.selector.runtime.ConnectLeaderSelectorProvider

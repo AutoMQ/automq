@@ -42,7 +42,6 @@ public class LogConfigConstants {
     public static final int DEFAULT_LOG_S3_NODE_ID = 0;
 
     public static final String LOG_S3_PRIMARY_NODE_KEY = "log.s3.primary.node";
-    public static final String LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY = "log.s3.selector.primary.node.id";
     public static final String LOG_S3_SELECTOR_TYPE_KEY = "log.s3.selector.type";
     public static final String LOG_S3_SELECTOR_PREFIX = "log.s3.selector.";
 }

@@ -17,7 +17,6 @@
 
 package kafka.server
 
-import com.automq.log.uploader.selector.runtime.{RuntimeLeaderRegistry => LogUploaderLeaderRegistry}
 import com.automq.opentelemetry.AutoMQTelemetryManager
 import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import kafka.raft.KafkaRaftManager
@@ -35,8 +34,8 @@ import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.image.loader.metrics.MetadataLoaderMetrics
 import org.apache.kafka.image.publisher.metrics.SnapshotEmitterMetrics
 import org.apache.kafka.image.publisher.{SnapshotEmitter, SnapshotGenerator}
-import org.apache.kafka.metadata.{ListenerInfo, MetadataRecordSerde}
 import org.apache.kafka.metadata.properties.MetaPropertiesEnsemble
+import org.apache.kafka.metadata.{ListenerInfo, MetadataRecordSerde}
 import org.apache.kafka.raft.Endpoints
 import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.common.ApiMessageAndVersion
@@ -410,7 +409,6 @@ class SharedServer(
         telemetryManager = null
       }
       // AutoMQ for Kafka inject start
-      LogUploaderLeaderRegistry.clear("controller")
       TelemetryLeaderRegistry.clear("controller")
       // AutoMQ for Kafka inject end
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)

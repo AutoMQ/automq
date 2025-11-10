@@ -20,7 +20,7 @@
 package com.automq.log.uploader;
 
 import com.automq.log.uploader.selector.LogLeaderNodeSelector;
-import com.automq.log.uploader.selector.LogLeaderNodeSelectorFactory;
+import com.automq.log.uploader.selector.runtime.RuntimeLeaderSelectorProvider;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
@@ -31,9 +31,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.HashMap;
-import java.util.Locale;
-import java.util.Map;
 import java.util.Properties;
 
 import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID;
@@ -48,16 +45,13 @@ import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENDPOINT_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_NODE_ID_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_REGION_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SECRET_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY;
 
 public class DefaultS3LogConfig implements S3LogConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3LogConfig.class);
 
     private final Properties props;
     private ObjectStorage objectStorage;
-    private LogLeaderNodeSelector nodeSelector;
+    private LogLeaderNodeSelector leaderNodeSelector;
 
     public DefaultS3LogConfig() {
         this(null);
@@ -140,55 +134,19 @@ public class DefaultS3LogConfig implements S3LogConfig {
     }
 
     @Override
-    public LogLeaderNodeSelector nodeSelector() {
-        if (nodeSelector == null) {
+    public LogLeaderNodeSelector leaderSelector() {
+        if (leaderNodeSelector == null) {
             initializeNodeSelector();
         }
-        return nodeSelector;
+        return leaderNodeSelector;
     }
 
     private void initializeNodeSelector() {
-        String selectorType = props.getProperty(LOG_S3_SELECTOR_TYPE_KEY, "controller");
-        Map<String, String> selectorConfig = new HashMap<>();
-        Map<String, String> rawConfig = getPropertiesWithPrefix(LOG_S3_SELECTOR_PREFIX);
-        String normalizedType = selectorType == null ? "" : selectorType.toLowerCase(Locale.ROOT);
-        for (Map.Entry<String, String> entry : rawConfig.entrySet()) {
-            String key = entry.getKey();
-            if (normalizedType.length() > 0 && key.toLowerCase(Locale.ROOT).startsWith(normalizedType + ".")) {
-                key = key.substring(normalizedType.length() + 1);
-            }
-            if ("type".equalsIgnoreCase(key) || key.isEmpty()) {
-                continue;
-            }
-            selectorConfig.putIfAbsent(key, entry.getValue());
-        }
-        
-        String primaryNodeId = props.getProperty(LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY);
-        if (StringUtils.isNotBlank(primaryNodeId)) {
-            selectorConfig.putIfAbsent("primaryNodeId", primaryNodeId.trim());
-        }
-
         try {
-            this.nodeSelector = LogLeaderNodeSelectorFactory.createSelector(selectorType, clusterId(), nodeId(), selectorConfig);
+            this.leaderNodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
         } catch (Exception e) {
-            LOGGER.error("Failed to create log uploader selector of type {}", selectorType, e);
-            this.nodeSelector = LogLeaderNodeSelector.staticSelector(false);
+            LOGGER.error("Failed to create log uploader selector of type", e);
+            this.leaderNodeSelector = LogLeaderNodeSelector.staticSelector(false);
         }
-    }
-
-    private Map<String, String> getPropertiesWithPrefix(String prefix) {
-        Map<String, String> result = new HashMap<>();
-        if (prefix == null || prefix.isEmpty()) {
-            return result;
-        }
-        for (String key : props.stringPropertyNames()) {
-            if (key.startsWith(prefix)) {
-                String trimmed = key.substring(prefix.length());
-                if (!trimmed.isEmpty()) {
-                    result.put(trimmed, props.getProperty(key));
-                }
-            }
-        }
-        return result;
     }
 }

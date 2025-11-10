@@ -305,7 +305,7 @@ class ControllerServer(
       val controllerLeaderSupplier = new BooleanSupplier {
         override def getAsBoolean: Boolean = controller.isActive
       }
-      LogUploaderLeaderRegistry.register("controller", controllerLeaderSupplier)
+      LogUploaderLeaderRegistry.register(controllerLeaderSupplier)
       TelemetryLeaderRegistry.register("controller", controllerLeaderSupplier)
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
@@ -548,7 +548,6 @@ class ControllerServer(
       migrationSupport.foreach(_.shutdown(this))
       if (controller != null) {
         controller.beginShutdown()
-        LogUploaderLeaderRegistry.clear("controller")
         TelemetryLeaderRegistry.clear("controller")
       }
       if (socketServer != null)

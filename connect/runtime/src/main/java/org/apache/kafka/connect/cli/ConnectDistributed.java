@@ -101,7 +101,6 @@ public class ConnectDistributed extends AbstractConnectCli<DistributedHerder, Di
         // herder is stopped. This is easier than having to track and own the lifecycle ourselves.
         // AutoMQ for Kafka inject start
         AutoCloseable leadershipCleaner = () -> {
-            RuntimeLeaderRegistry.clear("connect-leader");
             com.automq.opentelemetry.exporter.s3.runtime.RuntimeLeaderRegistry.clear("connect-leader");
         };
         DistributedHerder herder = new DistributedHerder(config, Time.SYSTEM, worker,
@@ -110,7 +109,7 @@ public class ConnectDistributed extends AbstractConnectCli<DistributedHerder, Di
                 Collections.emptyList(), sharedAdmin, leadershipCleaner);
 
         BooleanSupplier leaderSupplier = herder::isLeaderInstance;
-        com.automq.log.uploader.selector.runtime.RuntimeLeaderRegistry.register("connect-leader", leaderSupplier);
+        com.automq.log.uploader.selector.runtime.RuntimeLeaderRegistry.register(leaderSupplier);
         com.automq.opentelemetry.exporter.s3.runtime.RuntimeLeaderRegistry.register("connect-leader", leaderSupplier);
         // AutoMQ for Kafka inject end
 

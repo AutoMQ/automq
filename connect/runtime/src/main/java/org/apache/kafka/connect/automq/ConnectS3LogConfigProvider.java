@@ -93,7 +93,6 @@ public class ConnectS3LogConfigProvider implements S3LogConfigProvider {
         copyIfPresent(workerProps, "automq.log.s3.secret.key", effective, LogConfigConstants.LOG_S3_SECRET_KEY);
         copyIfPresent(workerProps, "automq.log.s3.primary.node", effective, LogConfigConstants.LOG_S3_PRIMARY_NODE_KEY);
         copyIfPresent(workerProps, "automq.log.s3.selector.type", effective, LogConfigConstants.LOG_S3_SELECTOR_TYPE_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.selector.primary.node.id", effective, LogConfigConstants.LOG_S3_SELECTOR_PRIMARY_NODE_ID_KEY);
     }
 
     private void setDefaultClusterAndNodeId(Properties workerProps, Properties effective) {

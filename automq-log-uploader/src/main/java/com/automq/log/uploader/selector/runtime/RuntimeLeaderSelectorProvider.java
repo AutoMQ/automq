@@ -25,60 +25,53 @@ import com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BooleanSupplier;
 
-abstract class AbstractRuntimeLeaderSelectorProvider implements LogLeaderNodeSelectorProvider {
-    private static final Logger LOGGER = LoggerFactory.getLogger(AbstractRuntimeLeaderSelectorProvider.class);
-
-    protected AbstractRuntimeLeaderSelectorProvider() {
-    }
+public class RuntimeLeaderSelectorProvider implements LogLeaderNodeSelectorProvider {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeLeaderSelectorProvider.class);
 
     @Override
-    public LogLeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
-        final String key = registryKey();
+    public LogLeaderNodeSelector createSelector() {
         final AtomicBoolean missingLogged = new AtomicBoolean(false);
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);
 
         return () -> {
-            BooleanSupplier supplier = RuntimeLeaderRegistry.supplier(key);
+            BooleanSupplier supplier = RuntimeLeaderRegistry.supplier();
             if (supplier == null) {
                 if (missingLogged.compareAndSet(false, true)) {
-                    LOGGER.warn("No log uploader runtime leader supplier registered for key {} yet; treating node as follower until available.", key);
+                    LOGGER.warn("No log uploader runtime leader supplier registered yet; treating node as follower until available.");
                 }
                 if (leaderLogged.getAndSet(false)) {
-                    LOGGER.info("Node stepped down from log uploader leadership for key {} because supplier is unavailable.", key);
+                    LOGGER.info("Node stepped down from log uploader leadership because supplier is unavailable.");
                 }
                 return false;
             }
 
             if (missingLogged.get()) {
                 missingLogged.set(false);
-                LOGGER.info("Log uploader runtime leader supplier for key {} is now available.", key);
+                LOGGER.info("Log uploader runtime leader supplier for is now available.");
             }
 
             try {
                 boolean leader = supplier.getAsBoolean();
                 if (leader) {
                     if (!leaderLogged.getAndSet(true)) {
-                        LOGGER.info("Node became log uploader leader for key {}", key);
+                        LOGGER.info("Node became log uploader leader");
                     }
                 } else {
                     if (leaderLogged.getAndSet(false)) {
-                        LOGGER.info("Node stepped down from log uploader leadership for key {}", key);
+                        LOGGER.info("Node stepped down from log uploader leadership");
                     }
                 }
                 return leader;
             } catch (RuntimeException e) {
                 if (leaderLogged.getAndSet(false)) {
-                    LOGGER.info("Node stepped down from log uploader leadership for key {} due to supplier exception.", key);
+                    LOGGER.info("Node stepped down from log uploader leadership due to supplier exception.");
                 }
-                LOGGER.warn("Log uploader leader supplier {} threw an exception; treating as follower", key, e);
+                LOGGER.warn("Log uploader leader supplier threw an exception; treating as follower", e);
                 return false;
             }
         };
     }
-
-    protected abstract String registryKey();
 }
