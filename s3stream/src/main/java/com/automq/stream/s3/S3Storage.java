@@ -916,10 +916,10 @@ public class S3Storage implements Storage {
         // calculate upload rate
         long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
         double rate;
-        if (context.force || elapsed <= 100L || config.snapshotReadEnable()) {
+        if (context.force || elapsed <= 100L) {
             rate = Long.MAX_VALUE;
         } else {
-            rate = context.cache.size() * 1000.0 / Math.min(5000L, elapsed);
+            rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
             if (rate > maxDataWriteRate) {
                 maxDataWriteRate = rate;
             }
