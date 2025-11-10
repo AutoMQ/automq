@@ -29,14 +29,11 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.Properties;
 
 import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID;
 import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_ENABLE;
 import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_NODE_ID;
-import static com.automq.log.uploader.LogConfigConstants.LOG_PROPERTIES_FILE;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ACCESS_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_BUCKET_KEY;
 import static com.automq.log.uploader.LogConfigConstants.LOG_S3_CLUSTER_ID_KEY;
@@ -57,18 +54,6 @@ public class DefaultS3LogConfig implements S3LogConfig {
         this.props = new Properties();
         if (overrideProps != null) {
             this.props.putAll(overrideProps);
-        }
-        if (overrideProps == null) {
-            try (InputStream input = getClass().getClassLoader().getResourceAsStream(LOG_PROPERTIES_FILE)) {
-                if (input != null) {
-                    props.load(input);
-                    LOGGER.info("Loaded log configuration from {}", LOG_PROPERTIES_FILE);
-                } else {
-                    LOGGER.warn("Could not find {}, using default log configurations.", LOG_PROPERTIES_FILE);
-                }
-            } catch (IOException ex) {
-                LOGGER.error("Failed to load log configuration from {}.", LOG_PROPERTIES_FILE, ex);
-            }
         }
         initializeNodeSelector();
     }
