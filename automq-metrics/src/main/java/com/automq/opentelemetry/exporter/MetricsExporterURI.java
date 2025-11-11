@@ -118,7 +118,7 @@ public class MetricsExporterURI {
             case OTLP:
                 return buildOtlpExporter(config, queries, uri);
             case S3:
-                return buildS3MetricsExporter(config, queries, uri);
+                return buildS3MetricsExporter(config, uri);
             default:
                 break;
         }
@@ -227,7 +227,7 @@ public class MetricsExporterURI {
         return null;
     }
 
-    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config, Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config, URI uri) {
         LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
 
         // Get S3 configuration from config and query parameters
