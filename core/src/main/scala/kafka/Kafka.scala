@@ -142,7 +142,7 @@ object Kafka extends Logging {
       Exit.addShutdownHook("kafka-shutdown-hook", {
         try {
           server.shutdown()
-          S3RollingFileAppender.stop()
+          S3RollingFileAppender.shutdown()
         } catch {
           case _: Throwable =>
             fatal("Halting Kafka.")

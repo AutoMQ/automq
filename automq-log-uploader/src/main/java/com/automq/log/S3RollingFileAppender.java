@@ -67,7 +67,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
         }
     }
 
-    public static void stop() {
+    public static void shutdown() {
         if (logUploaderInstance != null) {
             synchronized (INIT_LOCK) {
                 if (logUploaderInstance != null) {
