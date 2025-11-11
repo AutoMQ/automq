@@ -31,14 +31,4 @@ public interface LeaderNodeSelector {
      * @return true if the current node should clean metrics, false otherwise.
      */
     boolean isLeader();
-    
-    /**
-     * Creates a default LeaderNodeSelector based on static configuration.
-     * 
-     * @param isLeader a static boolean value indicating whether this node is the leader cleaner
-     * @return a LeaderNodeSelector that returns the static value
-     */
-    static LeaderNodeSelector staticSelector(boolean isLeader) {
-        return () -> isLeader;
-    }
 }
