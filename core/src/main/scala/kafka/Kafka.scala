@@ -141,8 +141,8 @@ object Kafka extends Logging {
       // attach shutdown handler to catch terminating signals as well as normal termination
       Exit.addShutdownHook("kafka-shutdown-hook", {
         try {
-          S3RollingFileAppender.closeLogUpload()
           server.shutdown()
+          S3RollingFileAppender.closeLogUpload()
         } catch {
           case _: Throwable =>
             fatal("Halting Kafka.")

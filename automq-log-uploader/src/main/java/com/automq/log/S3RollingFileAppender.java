@@ -67,6 +67,22 @@ public class S3RollingFileAppender extends RollingFileAppender {
         }
     }
 
+    public static void closeLogUpload() {
+        if (logUploaderInstance != null) {
+            synchronized (INIT_LOCK) {
+                if (logUploaderInstance != null) {
+                    try {
+                        logUploaderInstance.close();
+                        logUploaderInstance = null;
+                        LOGGER.info("S3RollingFileAppender log uploader closed successfully.");
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to close S3RollingFileAppender log uploader", e);
+                    }
+                }
+            }
+        }
+    }
+
     @Override
     protected void subAppend(LoggingEvent event) {
         super.subAppend(event);
@@ -83,22 +99,6 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 logUploaderInstance.append(logEvent);
             } catch (IllegalArgumentException e) {
                 errorHandler.error("Failed to validate and append log event", e, 0);
-            }
-        }
-    }
-    
-    public static void closeLogUpload() {
-        if (logUploaderInstance != null) {
-            synchronized (INIT_LOCK) {
-                if (logUploaderInstance != null) {
-                    try {
-                        logUploaderInstance.close();
-                        logUploaderInstance = null;
-                        LOGGER.info("S3RollingFileAppender log uploader closed successfully.");
-                    } catch (Exception e) {
-                        LOGGER.error("Failed to close S3RollingFileAppender log uploader", e);
-                    }
-                }
             }
         }
     }
