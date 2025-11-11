@@ -47,6 +47,7 @@ import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_S
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.floorAlignOffset;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.genObjectPathV1;
 
+@SuppressWarnings("checkstyle:cyclomaticComplexity")
 @EventLoopSafe
 public class DefaultReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultReader.class);
@@ -190,7 +191,11 @@ public class DefaultReader {
                                 long nextRecordOffset = finalNextGetOffset;
                                 int lastReadableBytes = buf.readableBytes();
                                 while (buf.readableBytes() > 0 && nextRecordOffset < readTask.endOffset.offset()) {
-                                    batches.add(ObjectUtils.decodeRecordBuf(buf));
+                                    StreamRecordBatch batch = ObjectUtils.decodeRecordBuf(buf);
+                                    boolean isTriggerTrimRecord = batch.getCount() == 0 && batch.getStreamId() == -1L && batch.getEpoch() == -1L;
+                                    if (!isTriggerTrimRecord) {
+                                        batches.add(batch);
+                                    }
                                     nextRecordOffset += lastReadableBytes - buf.readableBytes();
                                     lastReadableBytes = buf.readableBytes();
                                 }
