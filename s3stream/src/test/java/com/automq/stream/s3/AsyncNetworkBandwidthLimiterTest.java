@@ -93,16 +93,21 @@ public class AsyncNetworkBandwidthLimiterTest {
 
     @Test
     public void testThrottleConsume4() {
-        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
+        AsyncNetworkBandwidthLimiter bucket = new AsyncNetworkBandwidthLimiter(
+            AsyncNetworkBandwidthLimiter.Type.INBOUND, 100, 1000);
         bucket.consume(ThrottleStrategy.BYPASS, 1000);
         Assertions.assertEquals(-100, bucket.getAvailableTokens());
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-            Assertions.assertNull(e);
-            Assertions.assertEquals(95, bucket.getAvailableTokens());
+        CompletableFuture<Boolean> firstCompleted = new CompletableFuture<>();
+        CompletableFuture<Void> cf1 = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
+        cf1 = cf1.thenApply(v -> {
+            firstCompleted.complete(true);
+            return null;
         });
-        cf.join();
+        CompletableFuture<Void> cf2 = bucket.consume(ThrottleStrategy.CATCH_UP, 10);
+        CompletableFuture<Void> result = cf2.thenAccept(v -> {
+            Assertions.assertTrue(firstCompleted.isDone(),
+                "First request should complete before second request");
+        });
         result.join();
     }
 
@@ -113,13 +118,10 @@ public class AsyncNetworkBandwidthLimiterTest {
         Assertions.assertEquals(-200, bucket.getAvailableTokens());
         Thread.sleep(500);
         bucket.consume(ThrottleStrategy.BYPASS, 500);
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-            Assertions.assertNull(e);
-            Assertions.assertTrue(bucket.getAvailableTokens() >= 0);
-        });
-        result.join();
+        bucket.consume(ThrottleStrategy.CATCH_UP, 5);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 10);
+        cf.join();
+        Assertions.assertEquals(-5, bucket.getAvailableTokens());
     }
 
     @Test

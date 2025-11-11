@@ -23,6 +23,7 @@ import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 
@@ -31,9 +32,9 @@ import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -51,7 +52,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private final Queue<BucketItem> queuedCallbacks;
     private final Type type;
     private final long tokenSize;
-    private long availableTokens;
+    private final AtomicLong availableTokens;
 
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
         this(type, tokenSize, refillIntervalMs, tokenSize);
@@ -61,11 +62,13 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
         this.type = type;
         this.tokenSize = tokenSize;
-        this.availableTokens = this.tokenSize;
+        this.availableTokens = new AtomicLong(this.tokenSize);
         this.maxTokens = maxTokens;
         this.queuedCallbacks = new PriorityQueue<>();
-        this.refillThreadPool = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"));
-        this.callbackThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("callback-thread"));
+        this.refillThreadPool =
+            Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"), LOGGER);
+        // The threads number must be larger than 1 because the #run will occupy one thread.
+        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(2, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
         S3StreamMetricsManager.registerNetworkLimiterQueueSizeSupplier(type, this::getQueueSize);
@@ -87,7 +90,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
                     }
                     long size = Math.min(head.size, MAX_TOKEN_PART_SIZE);
                     reduceToken(size);
-                    if (head.complete(size)) {
+                    if (head.complete(size, callbackThreadPool)) {
                         queuedCallbacks.poll();
                     }
                 }
@@ -102,7 +105,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private void refillToken() {
         lock.lock();
         try {
-            availableTokens = Math.min(availableTokens + this.tokenSize, this.maxTokens);
+            this.availableTokens.getAndUpdate(old -> Math.min(old + this.tokenSize, this.maxTokens));
             condition.signalAll();
         } finally {
             lock.unlock();
@@ -113,7 +116,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         if (queuedCallbacks.isEmpty()) {
             return false;
         }
-        return availableTokens > 0;
+        return availableTokens.get() > 0;
     }
 
     public void shutdown() {
@@ -126,12 +129,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     }
 
     public long getAvailableTokens() {
-        lock.lock();
-        try {
-            return availableTokens;
-        } finally {
-            lock.unlock();
-        }
+        return availableTokens.get();
     }
 
     public int getQueueSize() {
@@ -144,12 +142,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     }
 
     private void forceConsume(long size) {
-        lock.lock();
-        try {
-            reduceToken(size);
-        } finally {
-            lock.unlock();
-        }
+        reduceToken(size);
     }
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
@@ -161,7 +154,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         } else {
             lock.lock();
             try {
-                if (availableTokens <= 0 || !queuedCallbacks.isEmpty()) {
+                if (availableTokens.get() <= 0 || !queuedCallbacks.isEmpty()) {
                     queuedCallbacks.offer(new BucketItem(throttleStrategy, size, cf));
                     condition.signalAll();
                 } else {
@@ -176,7 +169,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     }
 
     private void reduceToken(long size) {
-        this.availableTokens = Math.max(-maxTokens, availableTokens - size);
+        this.availableTokens.getAndUpdate(old -> Math.max(-maxTokens, old - size));
     }
 
     public enum Type {
@@ -215,10 +208,10 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             return Long.compare(strategy.priority(), o.strategy.priority());
         }
 
-        public boolean complete(long completeSize) {
+        public boolean complete(long completeSize, ExecutorService executor) {
             size -= completeSize;
             if (size <= 0) {
-                cf.complete(null);
+                executor.submit(() -> cf.complete(null));
                 return true;
             }
             return false;
