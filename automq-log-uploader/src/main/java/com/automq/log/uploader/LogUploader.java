@@ -218,7 +218,6 @@ public class LogUploader implements LogRecorder {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
-                    LOGGER.info("Starting cleanup of expired s3 logs.");
                     long expiredTime = System.currentTimeMillis() - CLEANUP_INTERVAL;
                     List<ObjectInfo> objects = objectStorage.list(String.format("automq/logs/%s", config.clusterId())).join();
 
