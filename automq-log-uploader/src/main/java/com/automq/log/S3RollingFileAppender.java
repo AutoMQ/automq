@@ -43,7 +43,6 @@ public class S3RollingFileAppender extends RollingFileAppender {
     @Override
     public void activateOptions() {
         super.activateOptions();
-        initializeUploader();
     }
     
     public static void setS3Config(S3LogConfig config) {
@@ -106,5 +105,9 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 errorHandler.error("Failed to validate and append log event", e, 0);
             }
         }
+    }
+    
+    public static LogUploader getInstance() {
+        return logUploaderInstance;
     }
 }

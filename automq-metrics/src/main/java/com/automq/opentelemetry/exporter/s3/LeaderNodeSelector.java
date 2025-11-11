@@ -20,22 +20,22 @@
 package com.automq.opentelemetry.exporter.s3;
 
 /**
- * An interface for determining which node should be responsible for uploading metrics.
- * This abstraction allows different implementations of uploader node selection strategies.
+ * An interface for determining which node should be responsible for clean metrics.
+ * This abstraction allows different implementations of clean node selection strategies.
  */
 public interface LeaderNodeSelector {
     
     /**
-     * Determines if the current node should be responsible for uploading metrics.
+     * Determines if the current node should be responsible for clean metrics.
      * 
-     * @return true if the current node should upload metrics, false otherwise.
+     * @return true if the current node should clean metrics, false otherwise.
      */
     boolean isLeader();
     
     /**
      * Creates a default LeaderNodeSelector based on static configuration.
      * 
-     * @param isLeader a static boolean value indicating whether this node is the primary uploader
+     * @param isLeader a static boolean value indicating whether this node is the leader cleaner
      * @return a LeaderNodeSelector that returns the static value
      */
     static LeaderNodeSelector staticSelector(boolean isLeader) {

@@ -25,7 +25,7 @@ package com.automq.log.uploader.selector;
 public interface LogLeaderNodeSelector {
 
     /**
-     * @return {@code true} if the current node should upload and clean up logs in S3.
+     * @return {@code true} if the current node should clean up logs in S3.
      */
     boolean isLeader();
 
