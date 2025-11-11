@@ -120,6 +120,44 @@ public class ObjectWALServiceTest {
     }
 
     @Test
+    public void testGet_batchSkipTrim() throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withEpoch(1L)
+            .withMaxBytesInBatch(1024)
+            .withBatchInterval(1000)
+            .build();
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            appendCfList.add(wal.append(TraceContext.DEFAULT,
+                new StreamRecordBatch(233L, 10, 100L + i, 1, generateByteBuf(256))));
+            // ensure objects are flushed/uploaded
+            ((DefaultWriter) (wal.writer)).flush().join();
+            if (i == 4) {
+                // write a trim marker by trimming to the 4th record's offset (this will produce a trim record object)
+                wal.trim(appendCfList.get(3).get().recordOffset()).get();
+            }
+        }
+
+
+        // query across a range that spans objects including the trim marker
+        List<StreamRecordBatch> records = wal.get(
+            DefaultRecordOffset.of(appendCfList.get(4).get().recordOffset()),
+            DefaultRecordOffset.of(wal.confirmOffset())
+        ).get();
+
+        assertEquals(4, records.size());
+        for (int i = 0; i < records.size(); i++) {
+            assertEquals(104L + i, records.get(i).getBaseOffset());
+        }
+        wal.shutdownGracefully();
+    }
+
+
+    @Test
     public void testTrim() throws Exception {
         ObjectWALConfig config = ObjectWALConfig.builder().withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
         ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
