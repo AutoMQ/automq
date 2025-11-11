@@ -141,7 +141,7 @@ object Kafka extends Logging {
       // attach shutdown handler to catch terminating signals as well as normal termination
       Exit.addShutdownHook("kafka-shutdown-hook", {
         try {
-          S3RollingFileAppender.getLogUploaderInstance.close();
+          S3RollingFileAppender.closeLogUpload()
           server.shutdown()
         } catch {
           case _: Throwable =>
@@ -159,7 +159,7 @@ object Kafka extends Logging {
           Exit.exit(1)
       }
       // AutoMQ for Kafka inject start
-      S3RollingFileAppender.setS3Config(AutoMQApplication.getBean(classOf[S3LogConfig]))
+      S3RollingFileAppender.setup(AutoMQApplication.getBean(classOf[S3LogConfig]))
       // AutoMQ for Kafka inject end
       server.awaitShutdown()
     }
