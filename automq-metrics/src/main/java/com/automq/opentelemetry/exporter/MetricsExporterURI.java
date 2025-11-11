@@ -98,33 +98,29 @@ public class MetricsExporterURI {
             String type = uri.getScheme();
             if (StringUtils.isBlank(type)) {
                 LOGGER.error("Invalid metrics exporter URI: {}, exporter scheme is missing", uriStr);
-                return null;
+                throw new IllegalArgumentException("Invalid metrics exporter URI: " + uriStr);
             }
 
             Map<String, List<String>> queries = parseQueryParameters(uri);
             return parseExporter(config, type, queries, uri);
         } catch (Exception e) {
             LOGGER.warn("Parse metrics exporter URI {} failed", uriStr, e);
-            return null;
+            throw new IllegalArgumentException("Invalid metrics exporter URI: " + uriStr, e);
         }
     }
 
     public static MetricsExporter parseExporter(TelemetryConfig config, String type,
-                                              Map<String, List<String>> queries, URI uri) {
-        try {
-            MetricsExporterType exporterType = MetricsExporterType.fromString(type);
-            switch (exporterType) {
-                case PROMETHEUS:
-                    return buildPrometheusExporter(config, queries, uri);
-                case OTLP:
-                    return buildOtlpExporter(config, queries, uri);
-                case S3:
-                    return buildS3MetricsExporter(config, queries, uri);
-                default:
-                    break;
-            }
-        } catch (IllegalArgumentException ignored) {
-            // fall through to provider lookup
+                                                Map<String, List<String>> queries, URI uri) {
+        MetricsExporterType exporterType = MetricsExporterType.fromString(type);
+        switch (exporterType) {
+            case PROMETHEUS:
+                return buildPrometheusExporter(config, queries, uri);
+            case OTLP:
+                return buildOtlpExporter(config, queries, uri);
+            case S3:
+                return buildS3MetricsExporter(config, queries, uri);
+            default:
+                break;
         }
 
         MetricsExporterProvider provider = findProvider(type);
@@ -140,7 +136,7 @@ public class MetricsExporterURI {
     }
 
     private static MetricsExporter buildPrometheusExporter(TelemetryConfig config,
-                                                         Map<String, List<String>> queries, URI uri) {
+                                                           Map<String, List<String>> queries, URI uri) {
         // Use query parameters if available, otherwise fall back to URI authority or config defaults
         String host = getStringFromQuery(queries, "host", uri.getHost());
         if (StringUtils.isBlank(host)) {
@@ -230,63 +226,27 @@ public class MetricsExporterURI {
         }
         return null;
     }
-    
-    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config,
-                                                         Map<String, List<String>> queries, URI uri) {
+
+    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config, Map<String, List<String>> queries, URI uri) {
         LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
-        
+
         // Get S3 configuration from config and query parameters
         String clusterId = config.getS3ClusterId();
         int nodeId = config.getS3NodeId();
         int intervalMs = (int) config.getExporterIntervalMs();
         BucketURI metricsBucket = config.getMetricsBucket();
-        
+
         if (metricsBucket == null) {
             LOGGER.error("S3 bucket configuration is missing for S3 metrics exporter");
-            return null;
+            throw new IllegalArgumentException("S3 bucket configuration is missing for S3 metrics exporter");
         }
-        
+
         List<Pair<String, String>> baseLabels = config.getBaseLabels();
-        
-        // Create node selector based on configuration
-        LeaderNodeSelector nodeSelector;
-        
-        // Get the selector type from config
-        String selectorTypeString = config.getS3SelectorType();
-        
-        // Convert query parameters to a simple map for the factory
-        Map<String, String> selectorConfig = new HashMap<>();
-        for (Map.Entry<String, List<String>> entry : queries.entrySet()) {
-            if (!entry.getValue().isEmpty()) {
-                selectorConfig.put(entry.getKey(), entry.getValue().get(0));
-            }
-        }
-        
-        // Add isPrimaryUploader from config if not in query parameters
-        if (!selectorConfig.containsKey("isPrimaryUploader")) {
-            selectorConfig.put("isPrimaryUploader", String.valueOf(config.isS3PrimaryNode()));
-        }
+        LeaderNodeSelector nodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
 
-        // Merge selector-specific configuration from worker properties using prefix
-        Map<String, String> selectorProps = config.getPropertiesWithPrefix("automq.telemetry.s3.selector.");
-        String normalizedSelectorType = selectorTypeString == null ? "" : selectorTypeString.toLowerCase(Locale.ROOT);
-        for (Map.Entry<String, String> entry : selectorProps.entrySet()) {
-            String key = entry.getKey();
-            if (normalizedSelectorType.length() > 0 && key.toLowerCase(Locale.ROOT).startsWith(normalizedSelectorType + ".")) {
-                key = key.substring(normalizedSelectorType.length() + 1);
-            }
-            if (key.isEmpty() || "type".equalsIgnoreCase(key)) {
-                continue;
-            }
-            selectorConfig.putIfAbsent(key, entry.getValue());
-        }
+        LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}",
+            clusterId, nodeId, metricsBucket);
 
-        // Use the factory to create a node selector with the enum-based approach
-        nodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
-        
-        LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}, selectorType={}", 
-                   clusterId, nodeId, metricsBucket, selectorTypeString);
-        
         // Create the S3MetricsExporterAdapter with appropriate configuration
         return new com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter(
             clusterId, nodeId, intervalMs, metricsBucket, baseLabels, nodeSelector);

@@ -113,15 +113,12 @@ public class LogUploader implements LogRecorder {
     public void close() throws InterruptedException {
         closed = true;
         if (uploadThread != null) {
-            uploadThread.interrupt();
             uploadThread.join();
+            objectStorage.close();
         }
+
         if (cleanupThread != null) {
             cleanupThread.interrupt();
-            cleanupThread.join();
-        }
-        if (objectStorage != null) {
-            objectStorage.close();
         }
     }
 
