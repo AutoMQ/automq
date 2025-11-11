@@ -22,7 +22,8 @@ package com.automq.opentelemetry.exporter;
 public enum MetricsExporterType {
     OTLP("otlp"),
     PROMETHEUS("prometheus"),
-    S3("s3");
+    S3("s3"),
+    OTHER("other");
 
     private final String type;
 
@@ -40,6 +41,6 @@ public enum MetricsExporterType {
                 return exporterType;
             }
         }
-        throw new IllegalArgumentException("Invalid metrics exporter type: " + type);
+        return OTHER;
     }
 }
