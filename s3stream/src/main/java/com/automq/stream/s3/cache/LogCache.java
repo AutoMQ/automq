@@ -43,6 +43,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
@@ -58,6 +59,7 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
+    static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
     private final long capacity;
@@ -77,7 +79,7 @@ public class LogCache {
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
-        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
+        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, s -> 0);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
     }
@@ -214,7 +216,15 @@ public class LogCache {
         try {
             LogCacheBlock block = activeBlock;
             block.lastRecordOffset = lastRecordOffset;
-            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
+            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, streamId -> {
+                StreamCache previousStreamCache = block.map.get(streamId);
+                if (previousStreamCache != null) {
+                    // Let the initial capacity be 10% larger than the previous block's stream cache to avoid frequent resizing.
+                    return previousStreamCache.count() * 10 / 9;
+                } else {
+                    return 0;
+                }
+            });
             blocks.add(activeBlock);
             blockCount.set(blocks.size());
             return block;
@@ -292,27 +302,49 @@ public class LogCache {
     }
 
     private void tryMerge() {
-        writeLock.lock();
-        try {
-            // merge blocks to speed up the get.
-            LogCacheBlock mergedBlock = null;
-            Iterator<LogCacheBlock> iter = blocks.iterator();
-            while (iter.hasNext()) {
-                LogCacheBlock block = iter.next();
-                if (!block.free) {
-                    break;
+        // merge blocks to speed up the get.
+        int mergeStartIndex = 0;
+        for (; ; ) {
+            LogCacheBlock left;
+            LogCacheBlock right;
+            writeLock.lock();
+            try {
+                if (blocks.size() <= MERGE_BLOCK_THRESHOLD || mergeStartIndex + 1 >= blocks.size()) {
+                    return;
                 }
-                if (mergedBlock == null
-                    || mergedBlock.size() + block.size() >= cacheBlockMaxSize
-                    || isDiscontinuous(mergedBlock, block)) {
-                    mergedBlock = block;
+                left = blocks.get(mergeStartIndex);
+                right = blocks.get(mergeStartIndex + 1);
+                if (!left.free || !right.free) {
+                    return;
+                }
+                if (left.size() + right.size() >= cacheBlockMaxSize) {
+                    mergeStartIndex++;
                     continue;
                 }
-                mergeBlock(mergedBlock, block);
-                iter.remove();
+            } finally {
+                writeLock.unlock();
             }
-        } finally {
-            writeLock.unlock();
+            // Move costly operation(isDiscontinuous, mergeBlock) out of the lock.
+            if (isDiscontinuous(left, right)) {
+                mergeStartIndex++;
+                continue;
+            }
+            LogCacheBlock newBlock = new LogCacheBlock(Integer.MAX_VALUE);
+            mergeBlock(newBlock, left);
+            mergeBlock(newBlock, right);
+            newBlock.free = true;
+            writeLock.lock();
+            try {
+                if (blocks.size() > mergeStartIndex + 1
+                    && blocks.get(mergeStartIndex) == left
+                    && blocks.get(mergeStartIndex + 1) == right
+                ) {
+                    blocks.set(mergeStartIndex, newBlock);
+                    blocks.remove(mergeStartIndex + 1);
+                }
+            } finally {
+                writeLock.unlock();
+            }
         }
     }
 
@@ -390,17 +422,19 @@ public class LogCache {
         private final long createdTimestamp = System.currentTimeMillis();
         private final AtomicLong size = new AtomicLong();
         private final List<FreeListener> freeListeners = new ArrayList<>();
+        private final Function<Long, Integer> streamRecordsCapacityHint;
         volatile boolean free;
         private RecordOffset lastRecordOffset;
 
-        public LogCacheBlock(long maxSize, int maxStreamCount) {
+        public LogCacheBlock(long maxSize, int maxStreamCount, Function<Long, Integer> streamRecordsCapacityHint) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
             this.maxSize = maxSize;
             this.maxStreamCount = maxStreamCount;
+            this.streamRecordsCapacityHint = streamRecordsCapacityHint;
         }
 
         public LogCacheBlock(long maxSize) {
-            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT);
+            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, s -> 0);
         }
 
         public long blockId() {
@@ -414,7 +448,7 @@ public class LogCache {
         public boolean put(StreamRecordBatch recordBatch) {
             map.compute(recordBatch.getStreamId(), (id, cache) -> {
                 if (cache == null) {
-                    cache = new StreamCache();
+                    cache = new StreamCache(streamRecordsCapacityHint.apply(id));
                 }
                 cache.add(recordBatch);
                 return cache;
@@ -536,10 +570,14 @@ public class LogCache {
     }
 
     static class StreamCache {
-        List<StreamRecordBatch> records = new ArrayList<>();
+        List<StreamRecordBatch> records;
         long startOffset = NOOP_OFFSET;
         long endOffset = NOOP_OFFSET;
         Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
+
+        public StreamCache(int initialCapacity) {
+            this.records = new ArrayList<>(initialCapacity);
+        }
 
         synchronized void add(StreamRecordBatch recordBatch) {
             if (recordBatch.getBaseOffset() != endOffset && endOffset != NOOP_OFFSET) {
@@ -629,6 +667,10 @@ public class LogCache {
 
         synchronized void endOffset(long endOffset) {
             this.endOffset = endOffset;
+        }
+
+        synchronized int count() {
+            return records.size();
         }
     }
 
