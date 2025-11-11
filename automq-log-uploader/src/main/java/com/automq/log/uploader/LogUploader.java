@@ -153,6 +153,7 @@ public class LogUploader implements LogRecorder {
                             .append(event.level())
                             .append(" ")
                             .append("[").append(event.logger()).append("] ")
+                            .append(" ")
                             .append(event.message())
                             .append("\n");
 

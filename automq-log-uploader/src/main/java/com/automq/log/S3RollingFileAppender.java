@@ -71,15 +71,6 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 LogUploader uploader = new LogUploader();
                 uploader.start(s3LogConfig);
                 logUploaderInstance = uploader;
-
-                Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                    try {
-                        uploader.close();
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                        LOGGER.warn("Failed to close LogUploader gracefully", e);
-                    }
-                }));
                 LOGGER.info("S3RollingFileAppender initialized successfully using s3LogConfig {}.", s3LogConfig.getClass().getName());
             } catch (Exception e) {
                 LOGGER.error("Failed to initialize S3RollingFileAppender", e);
@@ -107,7 +98,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
         }
     }
     
-    public static LogUploader getInstance() {
+    public static LogUploader getLogUploaderInstance() {
         return logUploaderInstance;
     }
 }
