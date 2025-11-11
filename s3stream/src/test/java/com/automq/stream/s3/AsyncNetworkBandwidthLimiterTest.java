@@ -118,13 +118,10 @@ public class AsyncNetworkBandwidthLimiterTest {
         Assertions.assertEquals(-200, bucket.getAvailableTokens());
         Thread.sleep(500);
         bucket.consume(ThrottleStrategy.BYPASS, 500);
-        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 5);
-        bucket.consume(ThrottleStrategy.CATCH_UP, 10);
-        CompletableFuture<Void> result = cf.whenComplete((v, e) -> {
-            Assertions.assertNull(e);
-            Assertions.assertTrue(bucket.getAvailableTokens() >= 0);
-        });
-        result.join();
+        bucket.consume(ThrottleStrategy.CATCH_UP, 5);
+        CompletableFuture<Void> cf = bucket.consume(ThrottleStrategy.CATCH_UP, 10);
+        cf.join();
+        Assertions.assertEquals(-5, bucket.getAvailableTokens());
     }
 
     @Test
