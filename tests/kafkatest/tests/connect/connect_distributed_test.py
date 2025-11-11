@@ -1360,7 +1360,7 @@ class ConnectDistributedTest(Test):
 
             def _connect_leader_nodes():
                 leaders = []
-                pattern = "Node became telemetry leader for key connect-leader"
+                pattern = "Node became telemetry leader"
                 for connect_node in self.cc.nodes:
                     cmd = f"grep -a '{pattern}' {self.cc.LOG_FILE} || true"
                     output = "".join(connect_node.account.ssh_capture(cmd, allow_fail=True))

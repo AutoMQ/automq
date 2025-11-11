@@ -1,6 +1,5 @@
 plugins {
-  id 'application'
-  id 'checkstyle'
+  id 'java'
 }
 
 project(':automq-metrics') {

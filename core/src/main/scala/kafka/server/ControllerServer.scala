@@ -300,10 +300,12 @@ class ControllerServer(
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
+      // AutoMQ inject start
       val controllerLeaderSupplier = new BooleanSupplier {
         override def getAsBoolean: Boolean = controller.isActive
       }
-      TelemetryLeaderRegistry.register("controller", controllerLeaderSupplier)
+      TelemetryLeaderRegistry.register(controllerLeaderSupplier)
+      // AutoMQ inject end
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.
@@ -545,7 +547,6 @@ class ControllerServer(
       migrationSupport.foreach(_.shutdown(this))
       if (controller != null) {
         controller.beginShutdown()
-        TelemetryLeaderRegistry.clear("controller")
       }
       if (socketServer != null)
         CoreUtils.swallow(socketServer.shutdown(), this)

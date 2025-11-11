@@ -30,17 +30,17 @@ import java.util.function.BooleanSupplier;
  */
 public final class RuntimeLeaderRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeLeaderRegistry.class);
-    private static BooleanSupplier SUPPLIER = () -> false;
+    private static BooleanSupplier supplier = () -> false;
 
     private RuntimeLeaderRegistry() {
     }
 
     public static void register(BooleanSupplier supplier) {
-        SUPPLIER = supplier;
+        RuntimeLeaderRegistry.supplier = supplier;
         LOGGER.info("Registered runtime leader supplier for log uploader.");
     }
 
     public static BooleanSupplier supplier() {
-        return SUPPLIER;
+        return supplier;
     }
 }

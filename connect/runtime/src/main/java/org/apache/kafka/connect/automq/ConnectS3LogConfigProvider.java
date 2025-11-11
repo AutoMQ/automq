@@ -61,64 +61,12 @@ public class ConnectS3LogConfigProvider {
             getLogger().warn("S3 log upload configuration was not provided; uploader disabled.");
             return null;
         }
-
-        Properties effective = buildEffectiveProperties(source);
-        if (!Boolean.parseBoolean(effective.getProperty(LogConfigConstants.LOG_S3_ENABLE_KEY, "false"))) {
-            getLogger().info("S3 log uploader is disabled via {}", LogConfigConstants.LOG_S3_ENABLE_KEY);
-            return null;
-        }
-        return new DefaultS3LogConfig(effective);
-    }
-
-    private Properties buildEffectiveProperties(Properties workerProps) {
-        Properties effective = new Properties();
-        workerProps.forEach((k, v) -> effective.put(String.valueOf(k), String.valueOf(v)));
-
-        copyConnectPropertiesToLogConfig(workerProps, effective);
-        setDefaultClusterAndNodeId(workerProps, effective);
-        mapSelectorOverrides(workerProps, effective);
-
-        return effective;
-    }
-
-    private void copyConnectPropertiesToLogConfig(Properties workerProps, Properties effective) {
-        copyIfPresent(workerProps, "automq.log.s3.bucket", effective, LogConfigConstants.LOG_S3_BUCKET_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.enable", effective, LogConfigConstants.LOG_S3_ENABLE_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.region", effective, LogConfigConstants.LOG_S3_REGION_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.endpoint", effective, LogConfigConstants.LOG_S3_ENDPOINT_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.access.key", effective, LogConfigConstants.LOG_S3_ACCESS_KEY);
-        copyIfPresent(workerProps, "automq.log.s3.secret.key", effective, LogConfigConstants.LOG_S3_SECRET_KEY);
-    }
-
-    private void setDefaultClusterAndNodeId(Properties workerProps, Properties effective) {
-        // Default cluster ID
-        if (!effective.containsKey(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY)) {
-            String groupId = workerProps.getProperty("group.id", LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID);
-            effective.setProperty(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY, groupId);
-        }
-
-        // Default node ID
-        if (!effective.containsKey(LogConfigConstants.LOG_S3_NODE_ID_KEY)) {
-            String nodeId = resolveNodeId(workerProps);
-            effective.setProperty(LogConfigConstants.LOG_S3_NODE_ID_KEY, nodeId);
-        }
-    }
-
-    private void mapSelectorOverrides(Properties workerProps, Properties effective) {
-        String selectorPrefix = LogConfigConstants.LOG_S3_SELECTOR_PREFIX;
-        // Map any existing selector.* overrides from worker props
-        for (String name : workerProps.stringPropertyNames()) {
-            if (name.startsWith(selectorPrefix)) {
-                effective.setProperty(name, workerProps.getProperty(name));
-            }
-        }
-    }
-
-    private void copyIfPresent(Properties src, String srcKey, Properties dest, String destKey) {
-        String value = src.getProperty(srcKey);
-        if (!isBlank(value)) {
-            dest.setProperty(destKey, value.trim());
-        }
+        
+        String bucketURI = source.getProperty(LogConfigConstants.LOG_S3_BUCKET_KEY);
+        String clusterId = source.getProperty(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY);
+        String nodeIdStr = resolveNodeId(source);
+        boolean enable = Boolean.parseBoolean(source.getProperty(LogConfigConstants.LOG_S3_ENABLE_KEY, "false"));
+        return new DefaultS3LogConfig(enable, clusterId, Integer.parseInt(nodeIdStr), bucketURI);
     }
 
     private String resolveNodeId(Properties workerProps) {

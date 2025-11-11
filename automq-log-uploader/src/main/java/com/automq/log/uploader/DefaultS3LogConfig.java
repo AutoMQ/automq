@@ -29,48 +29,37 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Properties;
-
-import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_CLUSTER_ID;
-import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_ENABLE;
-import static com.automq.log.uploader.LogConfigConstants.DEFAULT_LOG_S3_NODE_ID;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ACCESS_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_BUCKET_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_CLUSTER_ID_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENABLE_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_ENDPOINT_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_NODE_ID_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_REGION_KEY;
-import static com.automq.log.uploader.LogConfigConstants.LOG_S3_SECRET_KEY;
-
 public class DefaultS3LogConfig implements S3LogConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3LogConfig.class);
 
-    private final Properties props;
+    private final boolean enable;
+    private final String clusterId;
+    private final int nodeId;
+    private final String bucketURI;
     private ObjectStorage objectStorage;
     private LogLeaderNodeSelector leaderNodeSelector;
-
-    public DefaultS3LogConfig(Properties overrideProps) {
-        this.props = new Properties();
-        if (overrideProps != null) {
-            this.props.putAll(overrideProps);
-        }
-        initializeNodeSelector();
+    
+    
+    public DefaultS3LogConfig(boolean enable, String clusterId, int nodeId, String bucketURI) {
+        this.enable = enable;
+        this.clusterId = clusterId;
+        this.nodeId = nodeId;
+        this.bucketURI = bucketURI;
     }
 
     @Override
     public boolean isEnabled() {
-        return Boolean.parseBoolean(props.getProperty(LOG_S3_ENABLE_KEY, String.valueOf(DEFAULT_LOG_S3_ENABLE)));
+        return this.enable;
     }
 
     @Override
     public String clusterId() {
-        return props.getProperty(LOG_S3_CLUSTER_ID_KEY, DEFAULT_LOG_S3_CLUSTER_ID);
+        return this.clusterId;
     }
 
     @Override
     public int nodeId() {
-        return Integer.parseInt(props.getProperty(LOG_S3_NODE_ID_KEY, String.valueOf(DEFAULT_LOG_S3_NODE_ID)));
+        return this.nodeId;
     }
 
     @Override
@@ -78,37 +67,12 @@ public class DefaultS3LogConfig implements S3LogConfig {
         if (this.objectStorage != null) {
             return this.objectStorage;
         }
-        String bucket = props.getProperty(LOG_S3_BUCKET_KEY);
-        if (StringUtils.isBlank(bucket)) {
-            LOGGER.error("Mandatory log config '{}' is not set.", LOG_S3_BUCKET_KEY);
+        if (StringUtils.isBlank(bucketURI)) {
+            LOGGER.error("Mandatory log config bucketURI is not set.");
             return null;
         }
 
-        String normalizedBucket = bucket.trim();
-        if (!normalizedBucket.contains("@")) {
-            String region = props.getProperty(LOG_S3_REGION_KEY);
-            if (StringUtils.isBlank(region)) {
-                LOGGER.error("'{}' must be provided when '{}' is not a full AutoMQ bucket URI.",
-                    LOG_S3_REGION_KEY, LOG_S3_BUCKET_KEY);
-                return null;
-            }
-            String endpoint = props.getProperty(LOG_S3_ENDPOINT_KEY);
-            String accessKey = props.getProperty(LOG_S3_ACCESS_KEY);
-            String secretKey = props.getProperty(LOG_S3_SECRET_KEY);
-
-            StringBuilder builder = new StringBuilder("0@s3://").append(normalizedBucket)
-                .append("?region=").append(region.trim());
-            if (StringUtils.isNotBlank(endpoint)) {
-                builder.append("&endpoint=").append(endpoint.trim());
-            }
-            if (StringUtils.isNotBlank(accessKey) && StringUtils.isNotBlank(secretKey)) {
-                builder.append("&authType=static")
-                    .append("&accessKey=").append(accessKey.trim())
-                    .append("&secretKey=").append(secretKey.trim());
-            }
-            normalizedBucket = builder.toString();
-        }
-
+        String normalizedBucket = bucketURI.trim();
         BucketURI logBucket = BucketURI.parse(normalizedBucket);
         this.objectStorage = ObjectStorageFactory.instance().builder(logBucket).threadPrefix("s3-log-uploader").build();
         return this.objectStorage;

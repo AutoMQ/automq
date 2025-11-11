@@ -229,9 +229,9 @@ class AutoMQBrokerTelemetryTest(Test):
         def telemetry_leader_nodes():
             leaders = []
             for node in self.kafka.nodes:
-                cmd = f"grep -a 'Node became telemetry leader for key controller' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                cmd = f"grep -a 'Node became telemetry leader' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
                 output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                if "Node became telemetry leader for key controller" in output:
+                if "Node became telemetry leader" in output:
                     leaders.append(str(self.kafka.idx(node)))
             return leaders
 
@@ -298,9 +298,9 @@ class AutoMQBrokerTelemetryTest(Test):
         def log_leader_nodes():
             leaders = []
             for node in self.kafka.nodes:
-                cmd = f"grep -a 'Starting cleanup of expired s3 logs' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
+                cmd = f"grep -a 'LogUploader started successfully' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
                 output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                if "Starting cleanup of expired s3 logs" in output:
+                if "LogUploader started successfully" in output:
                     leaders.append(str(self.kafka.idx(node)))
             return leaders
 

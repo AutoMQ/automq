@@ -88,7 +88,7 @@ public class S3MetricsExporterAdapter implements MetricsExporter {
             }
 
             @Override
-            public boolean isPrimaryUploader() {
+            public boolean isLeader() {
                 return nodeSelector.isLeader();
             }
 

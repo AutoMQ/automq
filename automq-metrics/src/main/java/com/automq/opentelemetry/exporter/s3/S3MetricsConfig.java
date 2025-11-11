@@ -40,7 +40,7 @@ public interface S3MetricsConfig {
      * Check if the current node is a primary node for metrics upload.
      * @return True if the current node should upload metrics, false otherwise.
      */
-    boolean isPrimaryUploader();
+    boolean isLeader();
 
     /**
      * Get the node ID.

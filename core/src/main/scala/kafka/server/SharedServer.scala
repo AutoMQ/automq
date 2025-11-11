@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.automq.opentelemetry.AutoMQTelemetryManager
-import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
@@ -408,9 +407,6 @@ class SharedServer(
         CoreUtils.swallow(telemetryManager.shutdown(), this)
         telemetryManager = null
       }
-      // AutoMQ for Kafka inject start
-      TelemetryLeaderRegistry.clear("controller")
-      // AutoMQ for Kafka inject end
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false
     }

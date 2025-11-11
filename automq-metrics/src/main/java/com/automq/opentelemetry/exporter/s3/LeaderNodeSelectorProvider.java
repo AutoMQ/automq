@@ -19,8 +19,6 @@
 
 package com.automq.opentelemetry.exporter.s3;
 
-import java.util.Map;
-
 /**
  * SPI interface for providing custom LeaderNodeSelector implementations.
  * Third-party libraries can implement this interface and register their implementations
@@ -29,21 +27,10 @@ import java.util.Map;
 public interface LeaderNodeSelectorProvider {
     
     /**
-     * Returns the type identifier for this selector provider.
-     * This is the string that should be used in configuration to select this provider.
-     * 
-     * @return A unique type identifier for this selector implementation
-     */
-    String getType();
-    
-    /**
      * Creates a new LeaderNodeSelector instance based on the provided configuration.
-     * 
-     * @param clusterId The cluster ID
-     * @param nodeId The node ID of the current node
-     * @param config Additional configuration parameters
+     *
      * @return A new LeaderNodeSelector instance
      * @throws Exception If the selector cannot be created
      */
-    LeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) throws Exception;
+    LeaderNodeSelector createSelector() throws Exception;
 }

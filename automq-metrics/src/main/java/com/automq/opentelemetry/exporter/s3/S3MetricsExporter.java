@@ -96,7 +96,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         defaultTagMap.put("host_name", getHostName());
         defaultTagMap.put("job", config.clusterId());
-        defaultTagMap.put("instance", String.valueOf(config.nodeId()));
+        defaultTagMap.put("node_id", String.valueOf(config.nodeId()));
         config.baseLabels().forEach(pair -> defaultTagMap.put(PrometheusUtils.mapLabelName(pair.getKey()), pair.getValue()));
 
         uploadThread = new Thread(new UploadTask());
@@ -149,7 +149,7 @@ public class S3MetricsExporter implements MetricExporter {
         public void run() {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
-                    if (closed || !config.isPrimaryUploader()) {
+                    if (closed || !config.isLeader()) {
                         Thread.sleep(Duration.ofMinutes(1).toMillis());
                         continue;
                     }
