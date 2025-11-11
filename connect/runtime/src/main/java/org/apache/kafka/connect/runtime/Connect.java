@@ -16,11 +16,12 @@
  */
 package org.apache.kafka.connect.runtime;
 
-import com.automq.log.S3RollingFileAppender;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.connect.runtime.distributed.DistributedHerder;
 import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestServer;
+
+import com.automq.log.S3RollingFileAppender;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
