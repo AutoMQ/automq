@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.connect.automq;
+package org.apache.kafka.connect.automq.az;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

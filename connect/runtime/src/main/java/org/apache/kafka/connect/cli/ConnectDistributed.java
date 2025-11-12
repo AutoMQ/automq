@@ -17,6 +17,7 @@
 package org.apache.kafka.connect.cli;
 
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.connect.automq.runtime.RuntimeLeaderRegistry;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.json.JsonConverter;
 import org.apache.kafka.connect.json.JsonConverterConfig;
@@ -97,16 +98,14 @@ public class ConnectDistributed extends AbstractConnectCli<DistributedHerder, Di
 
         // Pass the shared admin to the distributed herder as an additional AutoCloseable object that should be closed when the
         // herder is stopped. This is easier than having to track and own the lifecycle ourselves.
-        // AutoMQ for Kafka inject start
         DistributedHerder herder = new DistributedHerder(config, Time.SYSTEM, worker,
                 kafkaClusterId, statusBackingStore, configBackingStore,
                 restServer.advertisedUrl().toString(), restClient, connectorClientConfigOverridePolicy,
                 Collections.emptyList(), sharedAdmin);
-
+        // AutoMQ for Kafka connect inject start
         BooleanSupplier leaderSupplier = herder::isLeaderInstance;
-        com.automq.log.uploader.selector.runtime.RuntimeLeaderRegistry.register(leaderSupplier);
-        com.automq.opentelemetry.exporter.s3.runtime.RuntimeLeaderRegistry.register(leaderSupplier);
-        // AutoMQ for Kafka inject end
+        RuntimeLeaderRegistry.register(leaderSupplier);
+        // AutoMQ for Kafka connect inject end
 
         return herder;
     }

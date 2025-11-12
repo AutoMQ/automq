@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package com.automq.log.uploader.selector.runtime;
+package org.apache.kafka.connect.automq.runtime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -25,8 +25,8 @@ import org.slf4j.LoggerFactory;
 import java.util.function.BooleanSupplier;
 
 /**
- * Holds runtime supplied leadership callbacks so selector providers can make
- * decisions without creating hard dependencies on hosting processes.
+ * Stores runtime-provided suppliers that answer whether the current process
+ * should act as the leader.
  */
 public final class RuntimeLeaderRegistry {
     private static final Logger LOGGER = LoggerFactory.getLogger(RuntimeLeaderRegistry.class);
@@ -37,7 +37,7 @@ public final class RuntimeLeaderRegistry {
 
     public static void register(BooleanSupplier supplier) {
         RuntimeLeaderRegistry.supplier = supplier;
-        LOGGER.info("Registered runtime leader supplier for log uploader.");
+        LOGGER.info("Registered runtime leader supplier for log metrics.");
     }
 
     public static BooleanSupplier supplier() {

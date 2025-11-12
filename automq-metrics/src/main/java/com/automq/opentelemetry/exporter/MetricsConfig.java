@@ -19,29 +19,50 @@
 
 package com.automq.opentelemetry.exporter;
 
-import java.net.URI;
+import com.automq.stream.s3.operator.ObjectStorage;
+
+import org.apache.commons.lang3.tuple.Pair;
+
 import java.util.List;
-import java.util.Map;
 
 /**
- * Service Provider Interface that allows extending the available metrics exporters
- * without modifying the core AutoMQ OpenTelemetry module.
+ * Configuration interface for metrics exporter.
  */
-public interface MetricsExporterProvider {
+public interface MetricsConfig {
 
     /**
-     * @param scheme exporter scheme (e.g. "rw")
-     * @return true if this provider can create an exporter for the supplied scheme
+     * Get the cluster ID.
+     * @return The cluster ID.
      */
-    boolean supports(String scheme);
+    String clusterId();
 
     /**
-     * Creates a metrics exporter for the provided URI.
-     *
-     * @param config          metrics configuration
-     * @param uri             original exporter URI
-     * @param queryParameters parsed query parameters from the URI
-     * @return a MetricsExporter instance, or {@code null} if unable to create one
+     * Check if the current node is a primary node for metrics upload.
+     * @return True if the current node should upload metrics, false otherwise.
      */
-    MetricsExporter create(MetricsConfig config, URI uri, Map<String, List<String>> queryParameters);
+    boolean isLeader();
+
+    /**
+     * Get the node ID.
+     * @return The node ID.
+     */
+    int nodeId();
+
+    /**
+     * Get the object storage instance.
+     * @return The object storage instance.
+     */
+    ObjectStorage objectStorage();
+
+    /**
+     * Get the base labels to include in all metrics.
+     * @return The base labels.
+     */
+    List<Pair<String, String>> baseLabels();
+
+    /**
+     * Get the interval in milliseconds for metrics export.
+     * @return The interval in milliseconds.
+     */
+    int intervalMs();
 }

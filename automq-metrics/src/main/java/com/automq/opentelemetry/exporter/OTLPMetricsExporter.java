@@ -42,12 +42,11 @@ public class OTLPMetricsExporter implements MetricsExporter {
     private final String endpoint;
     private final OTLPProtocol protocol;
     private final OTLPCompressionType compression;
-    private final long timeoutMs;
     // Default timeout for OTLP exporters
     private static final long DEFAULT_EXPORTER_TIMEOUT_MS = 30000;
     
 
-    public OTLPMetricsExporter(long intervalMs, String endpoint, String protocol, String compression, long timeoutMs) {
+    public OTLPMetricsExporter(long intervalMs, String endpoint, String protocol, String compression) {
         if (StringUtils.isBlank(endpoint) || "null".equals(endpoint)) {
             throw new IllegalArgumentException("OTLP endpoint is required");
         }
@@ -55,7 +54,6 @@ public class OTLPMetricsExporter implements MetricsExporter {
         this.endpoint = endpoint;
         this.protocol = OTLPProtocol.fromString(protocol);
         this.compression = OTLPCompressionType.fromString(compression);
-        this.timeoutMs = timeoutMs > 0 ? timeoutMs : DEFAULT_EXPORTER_TIMEOUT_MS;
         LOGGER.info("OTLPMetricsExporter initialized with endpoint: {}, protocol: {}, compression: {}, intervalMs: {}",
                 endpoint, protocol, compression, intervalMs);
     }
@@ -78,25 +76,23 @@ public class OTLPMetricsExporter implements MetricsExporter {
 
     @Override
     public MetricReader asMetricReader() {
-        PeriodicMetricReaderBuilder builder;
-        switch (protocol) {
-            case GRPC:
+        PeriodicMetricReaderBuilder builder = switch (protocol) {
+            case GRPC -> {
                 OtlpGrpcMetricExporterBuilder otlpExporterBuilder = OtlpGrpcMetricExporter.builder()
-                        .setEndpoint(endpoint)
-                        .setCompression(compression.getType())
-                        .setTimeout(Duration.ofMillis(timeoutMs));
-                builder = PeriodicMetricReader.builder(otlpExporterBuilder.build());
-                break;
-            case HTTP:
+                    .setEndpoint(endpoint)
+                    .setCompression(compression.getType())
+                    .setTimeout(Duration.ofMillis(DEFAULT_EXPORTER_TIMEOUT_MS));
+                yield PeriodicMetricReader.builder(otlpExporterBuilder.build());
+            }
+            case HTTP -> {
                 OtlpHttpMetricExporterBuilder otlpHttpExporterBuilder = OtlpHttpMetricExporter.builder()
-                        .setEndpoint(endpoint)
-                        .setCompression(compression.getType())
-                        .setTimeout(Duration.ofMillis(timeoutMs));
-                builder = PeriodicMetricReader.builder(otlpHttpExporterBuilder.build());
-                break;
-            default:
-                throw new IllegalArgumentException("Unsupported OTLP protocol: " + protocol);
-        }
+                    .setEndpoint(endpoint)
+                    .setCompression(compression.getType())
+                    .setTimeout(Duration.ofMillis(DEFAULT_EXPORTER_TIMEOUT_MS));
+                yield PeriodicMetricReader.builder(otlpHttpExporterBuilder.build());
+            }
+            default -> throw new IllegalArgumentException("Unsupported OTLP protocol: " + protocol);
+        };
 
         return builder.setInterval(Duration.ofMillis(intervalMs)).build();
     }

@@ -19,7 +19,6 @@
 
 package com.automq.log.uploader;
 
-import com.automq.log.uploader.selector.LogLeaderNodeSelector;
 import com.automq.stream.s3.operator.ObjectStorage;
 
 public interface S3LogConfig {
@@ -30,11 +29,6 @@ public interface S3LogConfig {
     int nodeId();
 
     ObjectStorage objectStorage();
-
-    LogLeaderNodeSelector leaderSelector();
-
-    default boolean isLeader() {
-        LogLeaderNodeSelector selector = leaderSelector();
-        return selector != null && selector.isLeader();
-    }
+    
+    boolean isLeader();
 }

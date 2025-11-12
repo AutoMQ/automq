@@ -19,13 +19,10 @@
 
 package com.automq.opentelemetry.exporter;
 
-import com.automq.opentelemetry.TelemetryConfig;
-import com.automq.opentelemetry.exporter.s3.LeaderNodeSelector;
-import com.automq.opentelemetry.exporter.s3.runtime.RuntimeLeaderSelectorProvider;
-import com.automq.stream.s3.operator.BucketURI;
+import com.automq.opentelemetry.common.OTLPCompressionType;
+import com.automq.opentelemetry.common.OTLPProtocol;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,8 +61,7 @@ public class MetricsExporterURI {
         return metricsExporters;
     }
 
-    public static MetricsExporterURI parse(TelemetryConfig config) {
-        String uriStr = config.getExporterUri();
+    public static MetricsExporterURI parse(String uriStr, MetricsConfig config) {
         LOGGER.info("Parsing metrics exporter URI: {}", uriStr);
         if (StringUtils.isBlank(uriStr)) {
             LOGGER.info("Metrics exporter URI is not configured, no metrics will be exported.");
@@ -91,7 +87,7 @@ public class MetricsExporterURI {
         return new MetricsExporterURI(exporters);
     }
 
-    public static MetricsExporter parseExporter(TelemetryConfig config, String uriStr) {
+    public static MetricsExporter parseExporter(MetricsConfig config, String uriStr) {
         try {
             URI uri = new URI(uriStr);
             String type = uri.getScheme();
@@ -108,8 +104,7 @@ public class MetricsExporterURI {
         }
     }
 
-    public static MetricsExporter parseExporter(TelemetryConfig config, String type,
-                                                Map<String, List<String>> queries, URI uri) {
+    public static MetricsExporter parseExporter(MetricsConfig config, String type, Map<String, List<String>> queries, URI uri) {
         MetricsExporterType exporterType = MetricsExporterType.fromString(type);
         switch (exporterType) {
             case PROMETHEUS:
@@ -134,8 +129,7 @@ public class MetricsExporterURI {
         return null;
     }
 
-    private static MetricsExporter buildPrometheusExporter(TelemetryConfig config,
-                                                           Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildPrometheusExporter(MetricsConfig config, Map<String, List<String>> queries, URI uri) {
         // Use query parameters if available, otherwise fall back to URI authority or config defaults
         String host = getStringFromQuery(queries, "host", uri.getHost());
         if (StringUtils.isBlank(host)) {
@@ -157,11 +151,10 @@ public class MetricsExporterURI {
             }
         }
 
-        return new PrometheusMetricsExporter(host, port, config.getBaseLabels());
+        return new PrometheusMetricsExporter(host, port, config.baseLabels());
     }
 
-    private static MetricsExporter buildOtlpExporter(TelemetryConfig config,
-                                                     Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildOtlpExporter(MetricsConfig config, Map<String, List<String>> queries, URI uri) {
         // Get endpoint from query parameters or construct from URI
         String endpoint = getStringFromQuery(queries, "endpoint", null);
         if (StringUtils.isBlank(endpoint)) {
@@ -169,23 +162,22 @@ public class MetricsExporterURI {
         }
 
         // Get protocol from query parameters or config
-        String protocol = getStringFromQuery(queries, "protocol", config.getOtlpProtocol());
+        String protocol = getStringFromQuery(queries, "protocol", OTLPProtocol.GRPC.getProtocol());
 
         // Get compression from query parameters or config
-        String compression = getStringFromQuery(queries, "compression", config.getOtlpCompression());
+        String compression = getStringFromQuery(queries, "compression", OTLPCompressionType.NONE.getType());
 
-        // Get timeout from query parameters or config
-        long timeoutMs = config.getOtlpTimeoutMs();
-        String timeoutStr = getStringFromQuery(queries, "timeout", null);
-        if (StringUtils.isNotBlank(timeoutStr)) {
-            try {
-                timeoutMs = Long.parseLong(timeoutStr);
-            } catch (NumberFormatException e) {
-                LOGGER.warn("Invalid timeout in query parameters: {}, using config default", timeoutStr);
-            }
+        return new OTLPMetricsExporter(config.intervalMs(), endpoint, protocol, compression);
+    }
+
+    private static MetricsExporter buildS3MetricsExporter(MetricsConfig config, URI uri) {
+        LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
+        if (config.objectStorage() == null) {
+            LOGGER.warn("No object storage configured, skip s3 metrics exporter creation.");
+            return null;
         }
-
-        return new OTLPMetricsExporter(config.getExporterIntervalMs(), endpoint, protocol, compression, timeoutMs);
+        // Create the S3MetricsExporterAdapter with appropriate configuration
+        return new com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter(config);
     }
 
     private static Map<String, List<String>> parseQueryParameters(URI uri) {
@@ -224,30 +216,5 @@ public class MetricsExporterURI {
             }
         }
         return null;
-    }
-
-    private static MetricsExporter buildS3MetricsExporter(TelemetryConfig config, URI uri) {
-        LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
-
-        // Get S3 configuration from config and query parameters
-        String clusterId = config.getS3ClusterId();
-        int nodeId = config.getS3NodeId();
-        int intervalMs = (int) config.getExporterIntervalMs();
-        BucketURI metricsBucket = config.getMetricsBucket();
-
-        if (metricsBucket == null) {
-            LOGGER.error("S3 bucket configuration is missing for S3 metrics exporter");
-            throw new IllegalArgumentException("S3 bucket configuration is missing for S3 metrics exporter");
-        }
-
-        List<Pair<String, String>> baseLabels = config.getBaseLabels();
-        LeaderNodeSelector nodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
-
-        LOGGER.info("S3 metrics configuration: clusterId={}, nodeId={}, bucket={}",
-            clusterId, nodeId, metricsBucket);
-
-        // Create the S3MetricsExporterAdapter with appropriate configuration
-        return new com.automq.opentelemetry.exporter.s3.S3MetricsExporterAdapter(
-            clusterId, nodeId, intervalMs, metricsBucket, baseLabels, nodeSelector);
     }
 }

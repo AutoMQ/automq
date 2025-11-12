@@ -17,9 +17,8 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.connect.automq;
+package org.apache.kafka.connect.automq.log;
 
-import com.automq.log.uploader.DefaultS3LogConfig;
 import com.automq.log.uploader.S3LogConfig;
 
 import org.slf4j.Logger;
@@ -84,7 +83,7 @@ public class ConnectS3LogConfigProvider {
         String clusterId = source.getProperty(LogConfigConstants.LOG_S3_CLUSTER_ID_KEY);
         String nodeIdStr = resolveNodeId(source);
         boolean enable = Boolean.parseBoolean(source.getProperty(LogConfigConstants.LOG_S3_ENABLE_KEY, "false"));
-        return new DefaultS3LogConfig(enable, clusterId, Integer.parseInt(nodeIdStr), bucketURI);
+        return new ConnectS3LogConfig(enable, clusterId, Integer.parseInt(nodeIdStr), bucketURI);
     }
 
     private String resolveNodeId(Properties workerProps) {

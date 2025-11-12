@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.connect.automq;
+package org.apache.kafka.connect.automq.log;
 
 import com.automq.log.S3RollingFileAppender;
 import com.automq.log.uploader.S3LogConfig;

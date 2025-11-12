@@ -17,10 +17,12 @@
  * limitations under the License.
  */
 
-package com.automq.log.uploader;
+package org.apache.kafka.connect.automq.log;
 
-import com.automq.log.uploader.selector.LogLeaderNodeSelector;
-import com.automq.log.uploader.selector.runtime.RuntimeLeaderSelectorProvider;
+import org.apache.kafka.connect.automq.runtime.LeaderNodeSelector;
+import org.apache.kafka.connect.automq.runtime.RuntimeLeaderSelectorProvider;
+
+import com.automq.log.uploader.S3LogConfig;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
@@ -29,18 +31,18 @@ import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class DefaultS3LogConfig implements S3LogConfig {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3LogConfig.class);
+public class ConnectS3LogConfig implements S3LogConfig {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConnectS3LogConfig.class);
 
     private final boolean enable;
     private final String clusterId;
     private final int nodeId;
     private final String bucketURI;
     private ObjectStorage objectStorage;
-    private LogLeaderNodeSelector leaderNodeSelector;
+    private LeaderNodeSelector leaderNodeSelector;
     
     
-    public DefaultS3LogConfig(boolean enable, String clusterId, int nodeId, String bucketURI) {
+    public ConnectS3LogConfig(boolean enable, String clusterId, int nodeId, String bucketURI) {
         this.enable = enable;
         this.clusterId = clusterId;
         this.nodeId = nodeId;
@@ -79,19 +81,15 @@ public class DefaultS3LogConfig implements S3LogConfig {
     }
 
     @Override
-    public LogLeaderNodeSelector leaderSelector() {
+    public boolean isLeader() {
+        LeaderNodeSelector selector = leaderSelector();
+        return selector != null && selector.isLeader();
+    }
+    
+    public LeaderNodeSelector leaderSelector() {
         if (leaderNodeSelector == null) {
-            initializeNodeSelector();
+            this.leaderNodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
         }
         return leaderNodeSelector;
-    }
-
-    private void initializeNodeSelector() {
-        try {
-            this.leaderNodeSelector = new RuntimeLeaderSelectorProvider().createSelector();
-        } catch (Exception e) {
-            LOGGER.error("Failed to create log uploader selector of type", e);
-            this.leaderNodeSelector = LogLeaderNodeSelector.staticSelector(false);
-        }
     }
 }

@@ -17,10 +17,7 @@
  * limitations under the License.
  */
 
-package com.automq.opentelemetry.exporter.s3.runtime;
-
-import com.automq.opentelemetry.exporter.s3.LeaderNodeSelector;
-import com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorProvider;
+package org.apache.kafka.connect.automq.runtime;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,39 +34,39 @@ public class RuntimeLeaderSelectorProvider implements LeaderNodeSelectorProvider
         final AtomicBoolean leaderLogged = new AtomicBoolean(false);
 
         return () -> {
-            BooleanSupplier current = RuntimeLeaderRegistry.supplier();
+            BooleanSupplier current = org.apache.kafka.connect.automq.runtime.RuntimeLeaderRegistry.supplier();
             if (current == null) {
                 if (missingLogged.compareAndSet(false, true)) {
-                    LOGGER.warn("Telemetry leader supplier for key not yet available; treating node as follower until registration happens.");
+                    LOGGER.warn("leader supplier for key not yet available; treating node as follower until registration happens.");
                 }
                 if (leaderLogged.getAndSet(false)) {
-                    LOGGER.info("Node stepped down from telemetry leadership for key because supplier is unavailable.");
+                    LOGGER.info("Node stepped down from leadership because supplier is unavailable.");
                 }
                 return false;
             }
 
             if (missingLogged.get()) {
                 missingLogged.set(false);
-                LOGGER.info("Telemetry leader supplier for key is now available.");
+                LOGGER.info("leader supplier is now available.");
             }
 
             try {
                 boolean leader = current.getAsBoolean();
                 if (leader) {
                     if (!leaderLogged.getAndSet(true)) {
-                        LOGGER.info("Node became telemetry leader");
+                        LOGGER.info("Node became leader");
                     }
                 } else {
                     if (leaderLogged.getAndSet(false)) {
-                        LOGGER.info("Node stepped down from telemetry leadership");
+                        LOGGER.info("Node stepped down from leadership");
                     }
                 }
                 return leader;
             } catch (RuntimeException e) {
                 if (leaderLogged.getAndSet(false)) {
-                    LOGGER.info("Node stepped down from telemetry leadership for key due to supplier exception.");
+                    LOGGER.info("Node stepped down from leadership due to supplier exception.");
                 }
-                LOGGER.warn("Telemetry leader supplier for key threw exception. Treating as follower.", e);
+                LOGGER.warn("leader supplier threw exception. Treating as follower.", e);
                 return false;
             }
         };

@@ -12,7 +12,7 @@ Add the following to your Kafka Connect configuration file (`connect-distributed
 
 ```properties
 # Enable OpenTelemetry MetricsReporter
-metric.reporters=org.apache.kafka.connect.automq.OpenTelemetryMetricsReporter
+metric.reporters=org.apache.kafka.connect.automq.metrics.OpenTelemetryMetricsReporter
 
 # OpenTelemetry configuration
 opentelemetry.metrics.enabled=true
@@ -65,7 +65,7 @@ log.s3.selector.type=connect-leader
 
 ### Log4j Integration
 
-`config/connect-log4j.properties` has switched `connectAppender` to `com.automq.log.S3RollingFileAppender` and specifies `org.apache.kafka.connect.automq.ConnectS3LogConfigProvider` as the config provider. As long as you enable `log.s3.enable=true` and configure the bucket info in the worker config, log upload will be automatically initialized with the Connect process; if not set or returns `log.s3.enable=false`, the uploader remains disabled.
+`config/connect-log4j.properties` has switched `connectAppender` to `com.automq.log.S3RollingFileAppender` and specifies `org.apache.kafka.connect.automq.log.ConnectS3LogConfigProvider` as the config provider. As long as you enable `log.s3.enable=true` and configure the bucket info in the worker config, log upload will be automatically initialized with the Connect process; if not set or returns `log.s3.enable=false`, the uploader remains disabled.
 
 ## Programmatic Usage
 

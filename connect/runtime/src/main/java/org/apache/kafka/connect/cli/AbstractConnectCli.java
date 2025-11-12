@@ -19,9 +19,9 @@ package org.apache.kafka.connect.cli;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.connect.automq.AzMetadataProviderHolder;
-import org.apache.kafka.connect.automq.ConnectLogUploader;
-import org.apache.kafka.connect.automq.OpenTelemetryMetricsReporter;
+import org.apache.kafka.connect.automq.az.AzMetadataProviderHolder;
+import org.apache.kafka.connect.automq.log.ConnectLogUploader;
+import org.apache.kafka.connect.automq.metrics.OpenTelemetryMetricsReporter;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.Herder;
@@ -31,8 +31,6 @@ import org.apache.kafka.connect.runtime.isolation.Plugins;
 import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestClient;
 import org.apache.kafka.connect.runtime.rest.RestServer;
-
-import com.automq.opentelemetry.TelemetryConstants;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +105,6 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
 
             Properties telemetryProps = new Properties();
             telemetryProps.putAll(workerProps);
-            telemetryProps.putIfAbsent(TelemetryConstants.S3_SELECTOR_TYPE_KEY, "connect-leader");
             OpenTelemetryMetricsReporter.initializeTelemetry(telemetryProps);
             // AutoMQ inject end
 

@@ -3,6 +3,9 @@ package org.apache.kafka.connect.automq;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.connect.automq.az.AzAwareClientConfigurator;
+import org.apache.kafka.connect.automq.az.AzMetadataProvider;
+import org.apache.kafka.connect.automq.az.AzMetadataProviderHolder;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;

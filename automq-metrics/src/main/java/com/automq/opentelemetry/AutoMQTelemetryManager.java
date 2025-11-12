@@ -19,11 +19,13 @@
 
 package com.automq.opentelemetry;
 
+import com.automq.opentelemetry.exporter.MetricsConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
 import com.automq.opentelemetry.yammer.YammerMetricsReporter;
 import com.yammer.metrics.core.MetricsRegistry;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,9 +33,13 @@ import org.slf4j.bridge.SLF4JBridgeHandler;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
-import java.util.Properties;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
@@ -64,24 +70,36 @@ import io.opentelemetry.sdk.resources.Resource;
  */
 public class AutoMQTelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQTelemetryManager.class);
-    
+
     // Singleton instance support
     private static volatile AutoMQTelemetryManager instance;
     private static final Object LOCK = new Object();
 
-    private final TelemetryConfig config;
+    private final String exporterUri;
+    private final String serviceName;
+    private final String instanceId;
+    private final MetricsConfig metricsConfig;
     private final List<MetricReader> metricReaders = new ArrayList<>();
     private final List<AutoCloseable> autoCloseableList;
     private OpenTelemetrySdk openTelemetrySdk;
     private YammerMetricsReporter yammerReporter;
 
+    private int metricCardinalityLimit = TelemetryConstants.DEFAULT_METRIC_CARDINALITY_LIMIT;
+    private String jmxConfigPath;
+
     /**
      * Constructs a new Telemetry Manager with the given configuration.
      *
-     * @param props Configuration properties.
+     * @param exporterUri   The metrics exporter URI.
+     * @param serviceName   The service name to be used in telemetry data.
+     * @param instanceId    The unique instance ID for this service instance.
+     * @param metricsConfig The metrics configuration.
      */
-    public AutoMQTelemetryManager(Properties props) {
-        this.config = new TelemetryConfig(props);
+    public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId, MetricsConfig metricsConfig) {
+        this.exporterUri = exporterUri;
+        this.serviceName = serviceName;
+        this.instanceId = instanceId;
+        this.metricsConfig = metricsConfig;
         this.autoCloseableList = new ArrayList<>();
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -102,14 +120,17 @@ public class AutoMQTelemetryManager {
      * Initializes the singleton instance with the given configuration.
      * This method should be called before any other components try to access the instance.
      *
-     * @param props Configuration properties
+     * @param exporterUri   The metrics exporter URI.
+     * @param serviceName   The service name to be used in telemetry data.
+     * @param instanceId    The unique instance ID for this service instance.
+     * @param metricsConfig The metrics configuration.
      * @return the initialized singleton instance
      */
-    public static AutoMQTelemetryManager initializeInstance(Properties props) {
+    public static AutoMQTelemetryManager initializeInstance(String exporterUri, String serviceName, String instanceId, MetricsConfig metricsConfig) {
         if (instance == null) {
             synchronized (LOCK) {
                 if (instance == null) {
-                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(props);
+                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(exporterUri, serviceName, instanceId, metricsConfig);
                     newInstance.init();
                     instance = newInstance;
                     LOGGER.info("AutoMQTelemetryManager singleton instance initialized");
@@ -142,10 +163,10 @@ public class AutoMQTelemetryManager {
         SdkMeterProvider meterProvider = buildMeterProvider();
 
         this.openTelemetrySdk = OpenTelemetrySdk.builder()
-                .setMeterProvider(meterProvider)
-                .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
-                        W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
-                .buildAndRegisterGlobal();
+            .setMeterProvider(meterProvider)
+            .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+                W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
+            .buildAndRegisterGlobal();
 
         // Register JVM and JMX metrics
         registerJvmMetrics(openTelemetrySdk);
@@ -155,15 +176,21 @@ public class AutoMQTelemetryManager {
     }
 
     private SdkMeterProvider buildMeterProvider() {
+        String hostName;
+        try {
+            hostName = InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            hostName = "unknown-host";
+        }
         AttributesBuilder attrsBuilder = Attributes.builder()
-                .put(TelemetryConstants.SERVICE_NAME_KEY, config.getServiceName())
-                .put(TelemetryConstants.SERVICE_INSTANCE_ID_KEY, config.getInstanceId())
-                .put(TelemetryConstants.HOST_NAME_KEY, config.getHostName())
-                // Add attributes for Prometheus compatibility
-                .put(TelemetryConstants.PROMETHEUS_JOB_KEY, config.getServiceName())
-                .put(TelemetryConstants.PROMETHEUS_INSTANCE_KEY, config.getInstanceId());
+            .put(TelemetryConstants.SERVICE_NAME_KEY, serviceName)
+            .put(TelemetryConstants.SERVICE_INSTANCE_ID_KEY, instanceId)
+            .put(TelemetryConstants.HOST_NAME_KEY, hostName)
+            // Add attributes for Prometheus compatibility
+            .put(TelemetryConstants.PROMETHEUS_JOB_KEY, serviceName)
+            .put(TelemetryConstants.PROMETHEUS_INSTANCE_KEY, instanceId);
 
-        for (Pair<String, String> label : config.getBaseLabels()) {
+        for (Pair<String, String> label : metricsConfig.baseLabels()) {
             attrsBuilder.put(label.getKey(), label.getValue());
         }
 
@@ -171,19 +198,19 @@ public class AutoMQTelemetryManager {
         SdkMeterProviderBuilder meterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
 
         // Configure exporters from URI
-        MetricsExporterURI exporterURI = buildMetricsExporterURI(config);
+        MetricsExporterURI exporterURI = buildMetricsExporterURI(exporterUri, metricsConfig);
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
             MetricReader reader = exporter.asMetricReader();
             metricReaders.add(reader);
             SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(meterProviderBuilder, reader,
-                    instrumentType -> config.getMetricCardinalityLimit());
+                instrumentType -> metricCardinalityLimit);
         }
 
         return meterProviderBuilder.build();
     }
 
-    protected MetricsExporterURI buildMetricsExporterURI(TelemetryConfig config) {
-        return MetricsExporterURI.parse(config);
+    protected MetricsExporterURI buildMetricsExporterURI(String exporterUri, MetricsConfig metricsConfig) {
+        return MetricsExporterURI.parse(exporterUri, metricsConfig);
     }
 
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {
@@ -196,13 +223,13 @@ public class AutoMQTelemetryManager {
 
     @SuppressWarnings({"NP_LOAD_OF_KNOWN_NULL_VALUE", "RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"})
     private void registerJmxMetrics(OpenTelemetry openTelemetry) {
-        List<String> jmxConfigPaths = config.getJmxConfigPaths();
+        List<String> jmxConfigPaths = getJmxConfigPaths();
         if (jmxConfigPaths.isEmpty()) {
             LOGGER.info("No JMX metric config paths provided, skipping JMX metrics registration.");
             return;
         }
 
-        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(openTelemetry, config.getExporterIntervalMs());
+        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(openTelemetry, metricsConfig.intervalMs());
         MetricConfiguration metricConfig = new MetricConfiguration();
 
         for (String path : jmxConfigPaths) {
@@ -222,6 +249,16 @@ public class AutoMQTelemetryManager {
         // JmxMetricInsight doesn't implement Closeable, but we can create a wrapper
 
         LOGGER.info("JMX metrics registered with config paths: {}", jmxConfigPaths);
+    }
+
+    public List<String> getJmxConfigPaths() {
+        if (StringUtils.isEmpty(jmxConfigPath)) {
+            return Collections.emptyList();
+        }
+        return Stream.of(jmxConfigPath.split(","))
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .collect(Collectors.toList());
     }
 
     /**
@@ -263,11 +300,20 @@ public class AutoMQTelemetryManager {
     }
 
     /**
-     *  get YammerMetricsReporter instance.
+     * get YammerMetricsReporter instance.
+     *
      * @return The YammerMetricsReporter instance.
      */
     public YammerMetricsReporter getYammerReporter() {
         return this.yammerReporter;
+    }
+
+    public void setMetricCardinalityLimit(int limit) {
+        this.metricCardinalityLimit = limit;
+    }
+
+    public void setJmxConfigPaths(String jmxConfigPaths) {
+        this.jmxConfigPath = jmxConfigPaths;
     }
 
     /**

@@ -119,7 +119,7 @@ class ConnectAzMetadataTest(KafkaTest):
 
             import java.util.Map;
             import java.util.Optional;
-            import org.apache.kafka.connect.automq.AzMetadataProvider;
+            import org.apache.kafka.connect.automq.az.AzMetadataProvider;
 
             public class FixedAzMetadataProvider implements AzMetadataProvider {{
                 private volatile Optional<String> availabilityZoneId = Optional.empty();
@@ -167,7 +167,7 @@ class ConnectAzMetadataTest(KafkaTest):
             node.account.create_file(java_path, java_source)
             
             # Create the ServiceLoader service definition in the runtime classes
-            service_path = f"{runtime_classes_dir}/META-INF/services/org.apache.kafka.connect.automq.AzMetadataProvider"
+            service_path = f"{runtime_classes_dir}/META-INF/services/org.apache.kafka.connect.automq.az.AzMetadataProvider"
             node.account.create_file(service_path, service_definition)
             
             # Compile the Java file directly to the runtime classes directory

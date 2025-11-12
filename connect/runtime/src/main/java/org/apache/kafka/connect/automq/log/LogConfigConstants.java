@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.connect.automq;
+package org.apache.kafka.connect.automq.log;
 
 public class LogConfigConstants {
     public static final String LOG_S3_ENABLE_KEY = "log.s3.enable";

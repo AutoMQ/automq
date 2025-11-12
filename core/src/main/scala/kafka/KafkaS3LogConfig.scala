@@ -20,7 +20,6 @@
 package kafka
 
 import com.automq.log.uploader.S3LogConfig
-import com.automq.log.uploader.selector.LogLeaderNodeSelector
 import com.automq.stream.s3.operator.{ObjectStorage, ObjectStorageFactory}
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer}
 
@@ -52,13 +51,11 @@ class KafkaS3LogConfig(
     _objectStorage
   }
 
-  override def leaderSelector(): LogLeaderNodeSelector = new LogLeaderNodeSelector {
-    override def isLeader: Boolean = {
-      if (kafkaServer != null) {
-        false
-      } else {
-        kafkaRaftServer.controller.exists(controller => controller.controller != null && controller.controller.isActive)
-      }
+  override def isLeader: Boolean = {
+    if (kafkaServer != null) {
+      false
+    } else {
+      kafkaRaftServer.controller.exists(controller => controller.controller != null && controller.controller.isActive)
     }
   }
 }

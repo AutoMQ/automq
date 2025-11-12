@@ -17,7 +17,6 @@
 
 package kafka.server
 
-import com.automq.opentelemetry.exporter.s3.runtime.{RuntimeLeaderRegistry => TelemetryLeaderRegistry}
 import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
@@ -62,7 +61,6 @@ import org.apache.kafka.server.util.{Deadline, FutureUtils}
 import java.util
 import java.util.concurrent.locks.ReentrantLock
 import java.util.concurrent.{CompletableFuture, TimeUnit}
-import java.util.function.BooleanSupplier
 import java.util.{Optional, OptionalLong, Random}
 import scala.collection.immutable
 import scala.compat.java8.OptionConverters._
@@ -300,12 +298,6 @@ class ControllerServer(
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
-      // AutoMQ inject start
-      val controllerLeaderSupplier = new BooleanSupplier {
-        override def getAsBoolean: Boolean = controller.isActive
-      }
-      TelemetryLeaderRegistry.register(controllerLeaderSupplier)
-      // AutoMQ inject end
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.

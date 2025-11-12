@@ -17,46 +17,28 @@
  * limitations under the License.
  */
 
-package com.automq.opentelemetry.exporter.s3;
+package org.apache.kafka.connect.automq.az;
 
-import com.automq.stream.s3.operator.ObjectStorage;
-
-import org.apache.commons.lang3.tuple.Pair;
-
-import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /**
- * Configuration interface for S3 metrics exporter.
+ * Pluggable provider for availability-zone metadata used to tune Kafka client configurations.
  */
-public interface S3MetricsConfig {
+public interface AzMetadataProvider {
 
     /**
-     * Get the cluster ID.
-     * @return The cluster ID.
+     * Configure the provider with the worker properties. Implementations may cache values extracted from the
+     * configuration map. This method is invoked exactly once during worker bootstrap.
      */
-    String clusterId();
+    default void configure(Map<String, String> workerProps) {
+        // no-op
+    }
 
     /**
-     * Check if the current node is a primary node for metrics upload.
-     * @return True if the current node should upload metrics, false otherwise.
+     * @return the availability-zone identifier for the current node, if known.
      */
-    boolean isLeader();
-
-    /**
-     * Get the node ID.
-     * @return The node ID.
-     */
-    int nodeId();
-
-    /**
-     * Get the object storage instance.
-     * @return The object storage instance.
-     */
-    ObjectStorage objectStorage();
-
-    /**
-     * Get the base labels to include in all metrics.
-     * @return The base labels.
-     */
-    List<Pair<String, String>> baseLabels();
+    default Optional<String> availabilityZoneId() {
+        return Optional.empty();
+    }
 }

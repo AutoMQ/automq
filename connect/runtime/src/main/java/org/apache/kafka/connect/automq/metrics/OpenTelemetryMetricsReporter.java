@@ -17,17 +17,23 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.connect.automq;
+package org.apache.kafka.connect.automq.metrics;
 
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
 
 import com.automq.opentelemetry.AutoMQTelemetryManager;
+import com.automq.opentelemetry.TelemetryConstants;
+import com.automq.stream.s3.operator.BucketURI;
 
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -87,8 +93,45 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private final Map<String, KafkaMetric> registeredMetrics = new ConcurrentHashMap<>();
     
     public static void initializeTelemetry(Properties props) {
-        AutoMQTelemetryManager.initializeInstance(props);
+        String exportURIStr = props.getProperty(TelemetryConstants.EXPORTER_URI_KEY);
+        String serviceName = props.getProperty(TelemetryConstants.SERVICE_NAME_KEY, "connect-default");
+        String instanceId = props.getProperty(TelemetryConstants.SERVICE_INSTANCE_ID_KEY, "instance-default");
+        int intervalMs = Integer.parseInt(props.getProperty(TelemetryConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
+        BucketURI metricsBucket = getMetricsBucket(props);
+        List<Pair<String, String>> baseLabels = getBaseLabels(props);
+        
+        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsConfig(serviceName, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
+    }
+
+    private static BucketURI getMetricsBucket(Properties props) {
+        String metricsBucket = props.getProperty(TelemetryConstants.S3_BUCKET, "");
+        if (StringUtils.isNotBlank(metricsBucket)) {
+            List<BucketURI> bucketList = BucketURI.parseBuckets(metricsBucket);
+            if (!bucketList.isEmpty()) {
+                return bucketList.get(0);
+            }
+        }
+        return null;
+    }
+
+    private static List<Pair<String, String>> getBaseLabels(Properties props) {
+        // This part is hard to abstract without a clear config pattern.
+        // Assuming for now it's empty. The caller can extend this class
+        // or the manager can have a method to add more labels.
+        String baseLabels = props.getProperty(TelemetryConstants.TELEMETRY_METRICS_BASE_LABELS_CONFIG);
+        if (StringUtils.isBlank(baseLabels)) {
+            return Collections.emptyList();
+        }
+        List<Pair<String, String>> labels = new ArrayList<>();
+        for (String label : baseLabels.split(",")) {
+            String[] kv = label.split("=");
+            if (kv.length != 2) {
+                continue;
+            }
+            labels.add(Pair.of(kv[0], kv[1]));
+        }
+        return labels;
     }
     
     @Override

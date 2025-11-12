@@ -1,0 +1,5 @@
+package kafka
+
+class KafkaMetricsConfig {
+
+}
