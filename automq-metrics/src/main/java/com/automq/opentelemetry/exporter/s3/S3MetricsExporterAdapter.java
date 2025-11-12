@@ -19,7 +19,7 @@
 
 package com.automq.opentelemetry.exporter.s3;
 
-import com.automq.opentelemetry.exporter.MetricsConfig;
+import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 
 import org.slf4j.Logger;
@@ -37,27 +37,27 @@ import io.opentelemetry.sdk.metrics.export.PeriodicMetricReader;
 public class S3MetricsExporterAdapter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3MetricsExporterAdapter.class);
 
-    private final MetricsConfig metricsConfig;
+    private final MetricsExportConfig metricsExportConfig;
 
     /**
      * Creates a new S3MetricsExporterAdapter.
      *
-     * @param metricsConfig The configuration for the S3 metrics exporter.
+     * @param metricsExportConfig The configuration for the S3 metrics exporter.
      */
-    public S3MetricsExporterAdapter(MetricsConfig metricsConfig) {
-        this.metricsConfig = metricsConfig;
-        LOGGER.info("S3MetricsExporterAdapter initialized with labels :{}", metricsConfig.baseLabels());
+    public S3MetricsExporterAdapter(MetricsExportConfig metricsExportConfig) {
+        this.metricsExportConfig = metricsExportConfig;
+        LOGGER.info("S3MetricsExporterAdapter initialized with labels :{}", metricsExportConfig.baseLabels());
     }
 
     @Override
     public MetricReader asMetricReader() {
         // Create and start the S3MetricsExporter
-        S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(metricsConfig);
+        S3MetricsExporter s3MetricsExporter = new S3MetricsExporter(metricsExportConfig);
         s3MetricsExporter.start();
 
         // Create and return the periodic metric reader
         return PeriodicMetricReader.builder(s3MetricsExporter)
-                .setInterval(Duration.ofMillis(metricsConfig.intervalMs()))
+                .setInterval(Duration.ofMillis(metricsExportConfig.intervalMs()))
                 .build();
     }
 }

@@ -28,7 +28,7 @@ import java.util.List;
 /**
  * Configuration interface for metrics exporter.
  */
-public interface MetricsConfig {
+public interface MetricsExportConfig {
 
     /**
      * Get the cluster ID.

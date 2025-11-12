@@ -58,7 +58,7 @@ public final class AzMetadataProviderHolder {
         return provider;
     }
 
-    static void setProviderForTest(AzMetadataProvider newProvider) {
+    public static void setProviderForTest(AzMetadataProvider newProvider) {
         provider = newProvider != null ? newProvider : DEFAULT_PROVIDER;
     }
 }

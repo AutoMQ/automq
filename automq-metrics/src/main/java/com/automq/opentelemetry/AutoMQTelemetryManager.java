@@ -19,7 +19,7 @@
 
 package com.automq.opentelemetry;
 
-import com.automq.opentelemetry.exporter.MetricsConfig;
+import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
 import com.automq.opentelemetry.yammer.YammerMetricsReporter;
@@ -78,7 +78,7 @@ public class AutoMQTelemetryManager {
     private final String exporterUri;
     private final String serviceName;
     private final String instanceId;
-    private final MetricsConfig metricsConfig;
+    private final MetricsExportConfig metricsExportConfig;
     private final List<MetricReader> metricReaders = new ArrayList<>();
     private final List<AutoCloseable> autoCloseableList;
     private OpenTelemetrySdk openTelemetrySdk;
@@ -93,13 +93,13 @@ public class AutoMQTelemetryManager {
      * @param exporterUri   The metrics exporter URI.
      * @param serviceName   The service name to be used in telemetry data.
      * @param instanceId    The unique instance ID for this service instance.
-     * @param metricsConfig The metrics configuration.
+     * @param metricsExportConfig The metrics configuration.
      */
-    public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId, MetricsConfig metricsConfig) {
+    public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId, MetricsExportConfig metricsExportConfig) {
         this.exporterUri = exporterUri;
         this.serviceName = serviceName;
         this.instanceId = instanceId;
-        this.metricsConfig = metricsConfig;
+        this.metricsExportConfig = metricsExportConfig;
         this.autoCloseableList = new ArrayList<>();
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -123,14 +123,14 @@ public class AutoMQTelemetryManager {
      * @param exporterUri   The metrics exporter URI.
      * @param serviceName   The service name to be used in telemetry data.
      * @param instanceId    The unique instance ID for this service instance.
-     * @param metricsConfig The metrics configuration.
+     * @param metricsExportConfig The metrics configuration.
      * @return the initialized singleton instance
      */
-    public static AutoMQTelemetryManager initializeInstance(String exporterUri, String serviceName, String instanceId, MetricsConfig metricsConfig) {
+    public static AutoMQTelemetryManager initializeInstance(String exporterUri, String serviceName, String instanceId, MetricsExportConfig metricsExportConfig) {
         if (instance == null) {
             synchronized (LOCK) {
                 if (instance == null) {
-                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(exporterUri, serviceName, instanceId, metricsConfig);
+                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(exporterUri, serviceName, instanceId, metricsExportConfig);
                     newInstance.init();
                     instance = newInstance;
                     LOGGER.info("AutoMQTelemetryManager singleton instance initialized");
@@ -190,7 +190,7 @@ public class AutoMQTelemetryManager {
             .put(TelemetryConstants.PROMETHEUS_JOB_KEY, serviceName)
             .put(TelemetryConstants.PROMETHEUS_INSTANCE_KEY, instanceId);
 
-        for (Pair<String, String> label : metricsConfig.baseLabels()) {
+        for (Pair<String, String> label : metricsExportConfig.baseLabels()) {
             attrsBuilder.put(label.getKey(), label.getValue());
         }
 
@@ -198,7 +198,7 @@ public class AutoMQTelemetryManager {
         SdkMeterProviderBuilder meterProviderBuilder = SdkMeterProvider.builder().setResource(resource);
 
         // Configure exporters from URI
-        MetricsExporterURI exporterURI = buildMetricsExporterURI(exporterUri, metricsConfig);
+        MetricsExporterURI exporterURI = buildMetricsExporterURI(exporterUri, metricsExportConfig);
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
             MetricReader reader = exporter.asMetricReader();
             metricReaders.add(reader);
@@ -209,8 +209,8 @@ public class AutoMQTelemetryManager {
         return meterProviderBuilder.build();
     }
 
-    protected MetricsExporterURI buildMetricsExporterURI(String exporterUri, MetricsConfig metricsConfig) {
-        return MetricsExporterURI.parse(exporterUri, metricsConfig);
+    protected MetricsExporterURI buildMetricsExporterURI(String exporterUri, MetricsExportConfig metricsExportConfig) {
+        return MetricsExporterURI.parse(exporterUri, metricsExportConfig);
     }
 
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {
@@ -229,7 +229,7 @@ public class AutoMQTelemetryManager {
             return;
         }
 
-        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(openTelemetry, metricsConfig.intervalMs());
+        JmxMetricInsight jmxMetricInsight = JmxMetricInsight.createService(openTelemetry, metricsExportConfig.intervalMs());
         MetricConfiguration metricConfig = new MetricConfiguration();
 
         for (String path : jmxConfigPaths) {

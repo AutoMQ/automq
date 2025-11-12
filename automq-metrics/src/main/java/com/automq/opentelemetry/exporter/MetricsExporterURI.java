@@ -61,7 +61,7 @@ public class MetricsExporterURI {
         return metricsExporters;
     }
 
-    public static MetricsExporterURI parse(String uriStr, MetricsConfig config) {
+    public static MetricsExporterURI parse(String uriStr, MetricsExportConfig config) {
         LOGGER.info("Parsing metrics exporter URI: {}", uriStr);
         if (StringUtils.isBlank(uriStr)) {
             LOGGER.info("Metrics exporter URI is not configured, no metrics will be exported.");
@@ -87,7 +87,7 @@ public class MetricsExporterURI {
         return new MetricsExporterURI(exporters);
     }
 
-    public static MetricsExporter parseExporter(MetricsConfig config, String uriStr) {
+    public static MetricsExporter parseExporter(MetricsExportConfig config, String uriStr) {
         try {
             URI uri = new URI(uriStr);
             String type = uri.getScheme();
@@ -104,7 +104,7 @@ public class MetricsExporterURI {
         }
     }
 
-    public static MetricsExporter parseExporter(MetricsConfig config, String type, Map<String, List<String>> queries, URI uri) {
+    public static MetricsExporter parseExporter(MetricsExportConfig config, String type, Map<String, List<String>> queries, URI uri) {
         MetricsExporterType exporterType = MetricsExporterType.fromString(type);
         switch (exporterType) {
             case PROMETHEUS:
@@ -129,7 +129,7 @@ public class MetricsExporterURI {
         return null;
     }
 
-    private static MetricsExporter buildPrometheusExporter(MetricsConfig config, Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildPrometheusExporter(MetricsExportConfig config, Map<String, List<String>> queries, URI uri) {
         // Use query parameters if available, otherwise fall back to URI authority or config defaults
         String host = getStringFromQuery(queries, "host", uri.getHost());
         if (StringUtils.isBlank(host)) {
@@ -154,7 +154,7 @@ public class MetricsExporterURI {
         return new PrometheusMetricsExporter(host, port, config.baseLabels());
     }
 
-    private static MetricsExporter buildOtlpExporter(MetricsConfig config, Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildOtlpExporter(MetricsExportConfig config, Map<String, List<String>> queries, URI uri) {
         // Get endpoint from query parameters or construct from URI
         String endpoint = getStringFromQuery(queries, "endpoint", null);
         if (StringUtils.isBlank(endpoint)) {
@@ -170,7 +170,7 @@ public class MetricsExporterURI {
         return new OTLPMetricsExporter(config.intervalMs(), endpoint, protocol, compression);
     }
 
-    private static MetricsExporter buildS3MetricsExporter(MetricsConfig config, URI uri) {
+    private static MetricsExporter buildS3MetricsExporter(MetricsExportConfig config, URI uri) {
         LOGGER.info("Creating S3 metrics exporter from URI: {}", uri);
         if (config.objectStorage() == null) {
             LOGGER.warn("No object storage configured, skip s3 metrics exporter creation.");

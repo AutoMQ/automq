@@ -1,6 +1,8 @@
 package kafka.server.telemetry
 
 import com.automq.opentelemetry.AutoMQTelemetryManager
+import com.automq.opentelemetry.exporter.MetricsExportConfig
+import com.automq.shell.AutoMQApplication
 import com.automq.stream.s3.metrics.{Metrics, MetricsConfig, MetricsLevel, S3StreamMetricsManager}
 import io.opentelemetry.api.common.Attributes
 import kafka.automq.table.metric.TableTopicMetricsManager
@@ -25,7 +27,7 @@ object TelemetrySupport {
   private val KafkaMetricsPrefix = "kafka_stream_"
 
   def start(config: KafkaConfig, clusterId: String): AutoMQTelemetryManager = {
-    val telemetryManager = new AutoMQTelemetryManager(config.automq.metricsExporterURI(), clusterId, config.nodeId.toString, null)
+    val telemetryManager = new AutoMQTelemetryManager(config.automq.metricsExporterURI(), clusterId, config.nodeId.toString, AutoMQApplication.getBean(classOf[MetricsExportConfig]))
     telemetryManager.setJmxConfigPaths(buildJmxConfigPaths(config))
     telemetryManager.init()
     telemetryManager.startYammerMetricsReporter(KafkaYammerMetrics.defaultRegistry())

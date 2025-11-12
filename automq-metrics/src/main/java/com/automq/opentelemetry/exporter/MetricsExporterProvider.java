@@ -43,5 +43,5 @@ public interface MetricsExporterProvider {
      * @param queryParameters parsed query parameters from the URI
      * @return a MetricsExporter instance, or {@code null} if unable to create one
      */
-    MetricsExporter create(MetricsConfig config, URI uri, Map<String, List<String>> queryParameters);
+    MetricsExporter create(MetricsExportConfig config, URI uri, Map<String, List<String>> queryParameters);
 }

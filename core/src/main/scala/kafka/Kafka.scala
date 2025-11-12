@@ -19,6 +19,7 @@ package kafka
 
 import com.automq.log.S3RollingFileAppender
 import com.automq.log.uploader.S3LogConfig
+import com.automq.opentelemetry.exporter.MetricsExportConfig
 import com.automq.shell.AutoMQApplication
 import com.automq.stream.s3.ByteBufAlloc
 import joptsimple.OptionParser
@@ -91,6 +92,7 @@ object Kafka extends Logging {
       )
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
       AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, kafkaServer, null))
+      AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, kafkaServer, null))
       kafkaServer
     } else {
       val kafkaRaftServer = new KafkaRaftServer(
@@ -99,6 +101,7 @@ object Kafka extends Logging {
       )
       AutoMQApplication.setClusterId(kafkaRaftServer.getSharedServer().clusterId)
       AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, null, kafkaRaftServer))
+      AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
     }

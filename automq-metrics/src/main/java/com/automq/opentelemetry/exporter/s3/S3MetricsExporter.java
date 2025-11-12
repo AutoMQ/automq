@@ -19,7 +19,7 @@
 
 package com.automq.opentelemetry.exporter.s3;
 
-import com.automq.opentelemetry.exporter.MetricsConfig;
+import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
@@ -71,7 +71,7 @@ public class S3MetricsExporter implements MetricExporter {
     public static final int MAX_JITTER_INTERVAL = 60 * 1000;
     public static final int DEFAULT_BUFFER_SIZE = 16 * 1024 * 1024;
 
-    private final MetricsConfig config;
+    private final MetricsExportConfig config;
     private final Map<String, String> defaultTagMap = new HashMap<>();
 
     private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
@@ -91,7 +91,7 @@ public class S3MetricsExporter implements MetricExporter {
      * 
      * @param config The configuration for the S3 metrics exporter.
      */
-    public S3MetricsExporter(MetricsConfig config) {
+    public S3MetricsExporter(MetricsExportConfig config) {
         this.config = config;
         this.objectStorage = config.objectStorage();
 

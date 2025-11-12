@@ -3,7 +3,7 @@ package org.apache.kafka.connect.automq.metrics;
 import org.apache.kafka.connect.automq.runtime.LeaderNodeSelector;
 import org.apache.kafka.connect.automq.runtime.RuntimeLeaderSelectorProvider;
 
-import com.automq.opentelemetry.exporter.MetricsConfig;
+import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
@@ -12,7 +12,7 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.List;
 
-public class ConnectMetricsConfig implements MetricsConfig {
+public class ConnectMetricsExportConfig implements MetricsExportConfig {
     
     private final BucketURI metricsBucket;
     private final String clusterId;
@@ -23,7 +23,7 @@ public class ConnectMetricsConfig implements MetricsConfig {
     private LeaderNodeSelector leaderNodeSelector;
 
 
-    public ConnectMetricsConfig(String clusterId, int nodeId, BucketURI metricsBucket, List<Pair<String, String>> baseLabels, int intervalMs) {
+    public ConnectMetricsExportConfig(String clusterId, int nodeId, BucketURI metricsBucket, List<Pair<String, String>> baseLabels, int intervalMs) {
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.metricsBucket = metricsBucket;
