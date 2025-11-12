@@ -96,7 +96,7 @@ public class S3MetricsExporter implements MetricExporter {
 
         defaultTagMap.put("host_name", getHostName());
         defaultTagMap.put("job", config.clusterId());
-        defaultTagMap.put("node_id", String.valueOf(config.nodeId()));
+        defaultTagMap.put("instance", String.valueOf(config.nodeId()));
         config.baseLabels().forEach(pair -> defaultTagMap.put(PrometheusUtils.mapLabelName(pair.getKey()), pair.getValue()));
 
         uploadThread = new Thread(new UploadTask());
