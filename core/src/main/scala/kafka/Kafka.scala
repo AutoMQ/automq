@@ -91,7 +91,7 @@ object Kafka extends Logging {
         enableForwarding = enableApiForwarding(config)
       )
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, kafkaServer, null))
+      S3RollingFileAppender.setup(new KafkaS3LogConfig(config, kafkaServer, null))
       AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, kafkaServer, null))
       kafkaServer
     } else {
@@ -100,7 +100,7 @@ object Kafka extends Logging {
         Time.SYSTEM,
       )
       AutoMQApplication.setClusterId(kafkaRaftServer.getSharedServer().clusterId)
-      AutoMQApplication.registerSingleton(classOf[S3LogConfig], new KafkaS3LogConfig(config, null, kafkaRaftServer))
+      S3RollingFileAppender.setup(new KafkaS3LogConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
@@ -161,9 +161,6 @@ object Kafka extends Logging {
           fatal("Exiting Kafka due to fatal exception during startup.", e)
           Exit.exit(1)
       }
-      // AutoMQ for Kafka inject start
-      S3RollingFileAppender.setup(AutoMQApplication.getBean(classOf[S3LogConfig]))
-      // AutoMQ for Kafka inject end
       server.awaitShutdown()
     }
     catch {
