@@ -253,7 +253,8 @@ public class AutoMQConfig {
 
     private static final String TELEMETRY_EXPORTER_TYPE_OTLP = "otlp";
     private static final String TELEMETRY_EXPORTER_TYPE_PROMETHEUS = "prometheus";
-    private static final String TELEMETRY_EXPORTER_TYPE_S3 = "s3";
+    private static final String TELEMETRY_EXPORTER_TYPE_OPS = "ops";
+    public static final String URI_DELIMITER = "://?";
 
     // Deprecated config end
 
@@ -427,7 +428,7 @@ public class AutoMQConfig {
                     case TELEMETRY_EXPORTER_TYPE_PROMETHEUS:
                         exportedUris.add(buildPrometheusExporterURI(kafkaConfig));
                         break;
-                    case "ops":
+                    case TELEMETRY_EXPORTER_TYPE_OPS:
                         exportedUris.add(buildS3ExporterURI());
                         break;
                     default:
@@ -466,16 +467,13 @@ public class AutoMQConfig {
     }
 
     private static String buildPrometheusExporterURI(KafkaConfig kafkaConfig) {
-        String host = kafkaConfig.getString(S3_METRICS_EXPORTER_PROM_HOST_CONFIG);
-        if (StringUtils.isBlank(host)) {
-            host = "localhost";
-        }
-        int port = kafkaConfig.getInt(S3_METRICS_EXPORTER_PROM_PORT_CONFIG);
-        return TELEMETRY_EXPORTER_TYPE_PROMETHEUS + "://" + host + ":" + port;
+        return TELEMETRY_EXPORTER_TYPE_PROMETHEUS + URI_DELIMITER +
+            "host" + "=" + kafkaConfig.getString(S3_METRICS_EXPORTER_PROM_HOST_CONFIG) + "&" +
+            "port" + "=" + kafkaConfig.getInt(S3_METRICS_EXPORTER_PROM_PORT_CONFIG);
     }
 
     private static String buildS3ExporterURI() {
-        return TELEMETRY_EXPORTER_TYPE_S3 + "://?";
+        return TELEMETRY_EXPORTER_TYPE_OPS + URI_DELIMITER;
     }
 
     private static List<Pair<String, String>> parseBaseLabels(KafkaConfig config) {
