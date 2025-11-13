@@ -27,6 +27,7 @@ import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 
@@ -44,6 +45,7 @@ import io.netty.buffer.ByteBuf;
 
 public class ObjectRouterChannel implements RouterChannel {
     private static final ExecutorService ASYNC_EXECUTOR = Executors.newCachedThreadPool();
+    private static final long OVER_CAPACITY_RETRY_DELAY_MS = 1000L;
     private final Logger logger;
     private final AtomicLong mockOffset = new AtomicLong(0);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -82,20 +84,30 @@ public class ObjectRouterChannel implements RouterChannel {
 
     CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data) {
         StreamRecordBatch record = new StreamRecordBatch(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data);
-        try {
-            return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
-                readLock.lock();
-                try {
-                    long epoch = this.channelEpoch;
-                    ChannelOffset channelOffset = ChannelOffset.of(channelId, orderHint, nodeId, targetNodeId, walRst.recordOffset().buffer());
-                    channelEpoch2LastRecordOffset.put(epoch, walRst.recordOffset());
-                    return new AppendResult(epoch, channelOffset.byteBuf());
-                } finally {
-                    readLock.unlock();
-                }
-            });
-        } catch (OverCapacityException e) {
-            return CompletableFuture.failedFuture(e);
+        record.encoded();
+        record.retain();
+        for (; ; ) {
+            try {
+                return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
+                    readLock.lock();
+                    try {
+                        long epoch = this.channelEpoch;
+                        ChannelOffset channelOffset = ChannelOffset.of(channelId, orderHint, nodeId, targetNodeId, walRst.recordOffset().buffer());
+                        channelEpoch2LastRecordOffset.put(epoch, walRst.recordOffset());
+                        return new AppendResult(epoch, channelOffset.byteBuf());
+                    } finally {
+                        readLock.unlock();
+                    }
+                }).whenComplete((r, e) -> record.release());
+            } catch (OverCapacityException e) {
+                logger.warn("OverCapacityException occurred while appending, err={}", e.getMessage());
+                // Use block-based delayed retries for network backpressure.
+                Threads.sleep(OVER_CAPACITY_RETRY_DELAY_MS);
+            } catch (Throwable e) {
+                logger.error("[UNEXPECTED], append wal fail", e);
+                record.release();
+                return CompletableFuture.failedFuture(e);
+            }
         }
     }
 
