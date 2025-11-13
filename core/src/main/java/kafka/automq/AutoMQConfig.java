@@ -475,7 +475,7 @@ public class AutoMQConfig {
     }
 
     private static String buildS3ExporterURI() {
-        return TELEMETRY_EXPORTER_TYPE_S3 + "://";
+        return TELEMETRY_EXPORTER_TYPE_S3 + "://?";
     }
 
     private static List<Pair<String, String>> parseBaseLabels(KafkaConfig config) {

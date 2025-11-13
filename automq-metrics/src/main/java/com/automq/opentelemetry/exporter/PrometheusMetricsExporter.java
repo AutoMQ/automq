@@ -48,7 +48,7 @@ public class PrometheusMetricsExporter implements MetricsExporter {
         this.host = host;
         this.port = port;
         this.baseLabelKeys = baseLabels.stream().map(Pair::getKey).collect(Collectors.toSet());
-        LOGGER.info("PrometheusMetricsExporter initialized with host: {}, port: {}", host, port);
+        LOGGER.info("PrometheusMetricsExporter initialized with host: {}, port: {}, labels: {}", host, port, baseLabels);
     }
 
     @Override

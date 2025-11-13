@@ -93,10 +93,10 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private final Map<String, KafkaMetric> registeredMetrics = new ConcurrentHashMap<>();
     
     public static void initializeTelemetry(Properties props) {
-        String exportURIStr = props.getProperty(TelemetryConstants.EXPORTER_URI_KEY);
-        String serviceName = props.getProperty(TelemetryConstants.SERVICE_NAME_KEY, "connect-default");
-        String instanceId = props.getProperty(TelemetryConstants.SERVICE_INSTANCE_ID_KEY, "instance-default");
-        int intervalMs = Integer.parseInt(props.getProperty(TelemetryConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
+        String exportURIStr = props.getProperty(MetricsConfigConstants.EXPORTER_URI_KEY);
+        String serviceName = props.getProperty(MetricsConfigConstants.SERVICE_NAME_KEY, "connect-default");
+        String instanceId = props.getProperty(MetricsConfigConstants.SERVICE_INSTANCE_ID_KEY, "instance-default");
+        int intervalMs = Integer.parseInt(props.getProperty(MetricsConfigConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
         BucketURI metricsBucket = getMetricsBucket(props);
         List<Pair<String, String>> baseLabels = getBaseLabels(props);
         
@@ -105,7 +105,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     }
 
     private static BucketURI getMetricsBucket(Properties props) {
-        String metricsBucket = props.getProperty(TelemetryConstants.S3_BUCKET, "");
+        String metricsBucket = props.getProperty(MetricsConfigConstants.S3_BUCKET, "");
         if (StringUtils.isNotBlank(metricsBucket)) {
             List<BucketURI> bucketList = BucketURI.parseBuckets(metricsBucket);
             if (!bucketList.isEmpty()) {
@@ -119,7 +119,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         // This part is hard to abstract without a clear config pattern.
         // Assuming for now it's empty. The caller can extend this class
         // or the manager can have a method to add more labels.
-        String baseLabels = props.getProperty(TelemetryConstants.TELEMETRY_METRICS_BASE_LABELS_CONFIG);
+        String baseLabels = props.getProperty(MetricsConfigConstants.TELEMETRY_METRICS_BASE_LABELS_CONFIG);
         if (StringUtils.isBlank(baseLabels)) {
             return Collections.emptyList();
         }
