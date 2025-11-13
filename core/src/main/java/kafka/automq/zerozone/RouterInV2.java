@@ -47,9 +47,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -71,7 +71,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private final String rack;
     private final RouterInProduceHandler localAppendHandler;
     private RouterInProduceHandler routerInProduceHandler;
-    private final Queue<PartitionProduceRequest> unpackLinkQueue = new ConcurrentLinkedQueue<>();
+    private final BlockingQueue<PartitionProduceRequest> unpackLinkQueue = new ArrayBlockingQueue<>(Systems.CPU_CORES * 8192);
     private final EventLoop[] appendEventLoops;
     private final FastThreadLocal<RequestLocal> requestLocals = new FastThreadLocal<>() {
         @Override
@@ -115,9 +115,9 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
-            unpackLinkQueue.add(partitionProduceRequest);
+            addToUnpackLinkQueue(partitionProduceRequest);
             partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                if (ex != null) {
+                if (ex == null) {
                     size.addAndGet(rst.readableBytes());
                 }
                 handleUnpackLink();
@@ -161,6 +161,16 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
                 } else {
                     break;
                 }
+            }
+        }
+    }
+
+    private void addToUnpackLinkQueue(PartitionProduceRequest req) {
+        for (;;) {
+            try {
+                unpackLinkQueue.put(req);
+                return;
+            } catch (InterruptedException ignored) {
             }
         }
     }
