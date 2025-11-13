@@ -38,14 +38,12 @@ import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 
-import com.automq.opentelemetry.TelemetryConstants;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
-import com.automq.stream.s3.trace.TraceUtils;
 import com.automq.stream.utils.FutureUtil;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -65,15 +63,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.opentelemetry.api.common.AttributeKey;
-import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
-    private static final AttributeKey<Long> MAX_FETCH_BYTES_KEY = AttributeKey.longKey("maxBytes");
 
     protected final AtomicInteger size;
     // only used for recover
@@ -126,14 +121,8 @@ public class ElasticLogFileRecords implements AutoCloseable {
             ReadOptions readOptions = ReadOptions.builder().fastRead(ReadHint.isFastRead()).pooledBuf(true).build();
             FetchContext fetchContext = new FetchContext();
             fetchContext.setReadOptions(readOptions);
-            Attributes attributes = Attributes.builder()
-                    .put(TelemetryConstants.START_OFFSET_KEY, startOffset)
-                    .put(TelemetryConstants.END_OFFSET_KEY, maxOffset)
-                    .put(MAX_FETCH_BYTES_KEY, (long) maxSize)
-                    .build();
             try {
-                return TraceUtils.runWithSpanAsync(fetchContext, attributes, "ElasticLogFileRecords::read",
-                        () -> readAll0(fetchContext, startOffset, maxOffset, maxSize));
+                return readAll0(fetchContext, startOffset, maxOffset, maxSize);
             } catch (Throwable ex) {
                 return CompletableFuture.failedFuture(ex);
             }
@@ -227,8 +216,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
         }
         CompletableFuture<?> cf;
         try {
-            cf = TraceUtils.runWithSpanAsync(context, Attributes.empty(), "ElasticLogFileRecords::append",
-                    () -> streamSlice.append(context, batch));
+            cf = streamSlice.append(context, batch);
         } catch (Throwable ex) {
             throw new IOException("Failed to append to stream " + streamSlice.stream().streamId(), ex);
         } finally {

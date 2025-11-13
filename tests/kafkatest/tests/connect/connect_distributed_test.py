@@ -1321,14 +1321,12 @@ class ConnectDistributedTest(Test):
             self.logger.info(f"Node {node.account.hostname} load test metrics validation passed")
 
     @cluster(num_nodes=5)
-    @parametrize(selector_type="connect-leader")
-    def test_opentelemetry_s3_metrics_exporter(self, selector_type):
+    def test_opentelemetry_s3_metrics_exporter(self):
         """Test OpenTelemetry S3 Metrics exporter functionality"""
         # Setup mock S3 server using localstack
         self.setup_services(num_workers=2)
 
         bucket_name = "ko3"
-        cluster_id = f"connect-metrics-{selector_type}-{int(time.time())}"
         metrics_prefix = f"automq/metrics/{cluster_id}"
 
         def s3_config(node):
@@ -1411,13 +1409,12 @@ class ConnectDistributedTest(Test):
                 self.logger.warning(f"Cleanup error: {e}")
 
     @cluster(num_nodes=5)
-    @parametrize(selector_type="connect-leader")
-    def test_s3_log_uploader(self, selector_type):
+    def test_s3_log_uploader(self):
         """Verify that Connect workers upload logs to S3 using the AutoMQ log uploader."""
         self.setup_services(num_workers=2)
 
         bucket_name = "ko3"
-        cluster_id = f"connect-logs-{selector_type}-{int(time.time())}"
+        cluster_id = f"connect-logs-{int(time.time())}"
         logs_prefix = f"automq/logs/{cluster_id}"
 
         def s3_log_config(node):

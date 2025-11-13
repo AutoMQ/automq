@@ -1,33 +1,33 @@
 # AutoMQ automq-metrics Module
 
-##├── exporter/
+## Module Structure
+
+```
+com.automq.opentelemetry/
+├── AutoMQTelemetryManager.java    # Main management class for initialization and lifecycle
+├── TelemetryConstants.java        # Constants definition
+├── common/
+│   ├── OTLPCompressionType.java   # OTLP compression types
+│   └── OTLPProtocol.java          # OTLP protocol types
+├── exporter/
 │   ├── MetricsExporter.java       # Exporter interface
-│   ├── MetricsExporterURI.java    # URI parser
+│   ├── MetricsExportConfig.java   # Export configuration
+│   ├── MetricsExporterProvider.java # Exporter factory provider
+│   ├── MetricsExporterType.java   # Exporter type enumeration
+│   ├── MetricsExporterURI.java    # URI parser for exporters
 │   ├── OTLPMetricsExporter.java   # OTLP exporter implementation
 │   ├── PrometheusMetricsExporter.java # Prometheus exporter implementation
-│   │   ├── PromConsts.java        # Prometheus constants
-│   │   ├── PromLabels.java        # Label management for Prometheus format
-│   │   ├── PromTimeSeries.java    # Time series data structures
-│   │   ├── PromUtils.java         # Prometheus utility functions
-│   │   ├── RemoteWriteExporter.java # Main remote write exporter
-│   │   ├── RemoteWriteMetricsExporter.java # Metrics exporter adapter
-│   │   ├── RemoteWriteRequestMarshaller.java # Request marshalling
-│   │   ├── RemoteWriteURI.java    # URI parsing for remote write
-│   │   └── auth/                  # Authentication support
-│   │       ├── AuthType.java      # Authentication type enum
-│   │       ├── AuthUtils.java     # Authentication utilities
-│   │       ├── AwsSigV4Auth.java  # AWS SigV4 authentication
-│   │       ├── AwsSigV4Interceptor.java
-│   │       ├── AwsSigV4Signer.java
-│   │       ├── AzureADAuth.java   # Azure AD authentication
-│   │       ├── AzureADInterceptor.java
-│   │       ├── AzureCloudConst.java
-│   │       ├── BasicAuth.java     # HTTP Basic authentication
-│   │   │   ├── BasicAuthInterceptor.java
-│   │       ├── BearerAuthInterceptor.java # Bearer token authentication
-│   │       ├── BearerTokenAuth.java
-│   │       └── RemoteWriteAuth.java # Authentication interface
-│   └── s3/                        # S3 metrics exporter implementationiew
+│   └── s3/                        # S3 metrics exporter implementation
+│       ├── CompressionUtils.java  # Utility for data compression
+│       ├── PrometheusUtils.java   # Utilities for Prometheus format
+│       ├── S3MetricsExporter.java # S3 metrics exporter implementation
+│       └── S3MetricsExporterAdapter.java # Adapter to handle S3 metrics export
+└── yammer/
+    ├── DeltaHistogram.java        # Delta histogram implementation
+    ├── OTelMetricUtils.java       # OpenTelemetry metrics utilities
+    ├── YammerMetricsProcessor.java # Yammer metrics processor
+    └── YammerMetricsReporter.java  # Yammer metrics reporter
+```
 
 The AutoMQ OpenTelemetry module is a telemetry data collection and export component based on OpenTelemetry SDK, specifically designed for AutoMQ Kafka. This module provides unified telemetry data management capabilities, supporting the collection of JVM metrics, JMX metrics, and Yammer metrics, and can export data to Prometheus, OTLP-compatible backend systems, or S3-compatible storage.
 
@@ -83,33 +83,66 @@ com.automq.opentelemetry/
 
 ```java
 import com.automq.opentelemetry.AutoMQTelemetryManager;
-import java.util.Properties;
+import com.automq.opentelemetry.exporter.MetricsExportConfig;
 
-// Create configuration
-Properties props = new Properties();
-props.setProperty("automq.telemetry.exporter.uri", "prometheus://localhost:9090");
-props.setProperty("service.name", "automq-kafka");
-props.setProperty("service.instance.id", "broker-1");
+// Implement MetricsExportConfig
+public class MyMetricsExportConfig implements MetricsExportConfig {
+    @Override
+    public String clusterId() { return "my-cluster"; }
+    
+    @Override
+    public boolean isLeader() { return true; }
+    
+    @Override
+    public int nodeId() { return 1; }
+    
+    @Override
+    public ObjectStorage objectStorage() { 
+        // Return your object storage instance for S3 exports
+        return myObjectStorage; 
+    }
+    
+    @Override
+    public List<Pair<String, String>> baseLabels() {
+        return Arrays.asList(
+            Pair.of("environment", "production"),
+            Pair.of("region", "us-east-1")
+        );
+    }
+    
+    @Override
+    public int intervalMs() { return 60000; } // 60 seconds
+}
 
-// Initialize telemetry manager
-AutoMQTelemetryManager telemetryManager = new AutoMQTelemetryManager(props);
-telemetryManager.init();
+// Create export configuration
+MetricsExportConfig config = new MyMetricsExportConfig();
+
+// Initialize telemetry manager singleton
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "prometheus://localhost:9090",  // exporter URI
+    "automq-kafka",                 // service name
+    "broker-1",                     // instance ID
+    config                          // export config
+);
 
 // Start Yammer metrics reporting (optional)
 MetricsRegistry yammerRegistry = // Get Kafka's Yammer registry
-telemetryManager.startYammerMetricsReporter(yammerRegistry);
+manager.startYammerMetricsReporter(yammerRegistry);
 
 // Application running...
 
 // Shutdown telemetry system
-telemetryManager.shutdown();
+AutoMQTelemetryManager.shutdownInstance();
 ```
 
 ### 2. Get Meter Instance
 
 ```java
-// Get OpenTelemetry Meter for custom metrics
-Meter meter = telemetryManager.getMeter();
+// Get the singleton instance
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.getInstance();
+
+// Get Meter for custom metrics
+Meter meter = manager.getMeter();
 
 // Create custom metrics
 LongCounter requestCounter = meter
@@ -124,208 +157,119 @@ requestCounter.add(1, Attributes.of(AttributeKey.stringKey("method"), "GET"));
 
 ### Basic Configuration
 
-| Configuration | Description | Default Value | Example |
-|---------------|-------------|---------------|---------|
-| `automq.telemetry.exporter.uri` | Exporter URI | Empty (no export) | `prometheus://localhost:9090` |
-| `service.name` | Service name | `unknown-service` | `automq-kafka` |
-| `service.instance.id` | Service instance ID | `unknown-instance` | `broker-1` |
+Configuration is provided through the `MetricsExportConfig` interface and constructor parameters:
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `exporterUri` | Metrics exporter URI | `prometheus://localhost:9090` |
+| `serviceName` | Service name for telemetry | `automq-kafka` |
+| `instanceId` | Unique service instance ID | `broker-1` |
+| `config` | MetricsExportConfig implementation | See example above |
 
 ### Exporter Configuration
 
+All configuration is done through the `MetricsExportConfig` interface and constructor parameters. Export intervals, compression settings, and other options are controlled through:
+
+1. **Exporter URI**: Determines the export destination and protocol
+2. **MetricsExportConfig**: Provides cluster information, intervals, and base labels
+3. **Constructor parameters**: Service name and instance ID
+
 #### Prometheus Exporter
-```properties
-# Prometheus HTTP server configuration
-automq.telemetry.exporter.uri=prometheus://localhost:9090
+```java
+// Use prometheus:// URI scheme
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "prometheus://localhost:9090",
+    "automq-kafka", 
+    "broker-1",
+    config
+);
 ```
 
-#### OTLP Exporter
-```properties
-# OTLP exporter configuration
-automq.telemetry.exporter.uri=otlp://localhost:4317
-automq.telemetry.exporter.interval.ms=60000
-automq.telemetry.exporter.otlp.protocol=grpc
-automq.telemetry.exporter.otlp.compression=gzip
-automq.telemetry.exporter.otlp.timeout.ms=30000
+#### OTLP Exporter  
+```java
+// Use otlp:// URI scheme with optional query parameters
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "otlp://localhost:4317?protocol=grpc&compression=gzip&timeout=30000",
+    "automq-kafka",
+    "broker-1", 
+    config
+);
 ```
 
 #### S3 Metrics Exporter
-```properties
-# S3 metrics exporter configuration
-automq.telemetry.exporter.uri=s3://access-key:secret-key@my-bucket.s3.amazonaws.com
-automq.telemetry.exporter.interval.ms=60000
-automq.telemetry.s3.cluster.id=cluster-1
-automq.telemetry.s3.node.id=1
-automq.telemetry.s3.primary.node=true
+```java
+// Use s3:// URI scheme
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "s3://access-key:secret-key@my-bucket.s3.amazonaws.com",
+    "automq-kafka",
+    "broker-1",
+    config // config.clusterId(), nodeId(), isLeader() used for S3 export
+);
 ```
 
 Example usage with S3 exporter:
 
 ```java
-// Create configuration for S3 metrics export
-Properties props = new Properties();
-props.setProperty("automq.telemetry.exporter.uri", "s3://access-key:secret-key@my-bucket.s3.amazonaws.com");
-props.setProperty("automq.telemetry.s3.cluster.id", "my-kafka-cluster");
-props.setProperty("automq.telemetry.s3.node.id", "1");
-props.setProperty("automq.telemetry.s3.primary.node", "true");  // Only one node should be set to true
-props.setProperty("service.name", "automq-kafka");
-props.setProperty("service.instance.id", "broker-1");
+// Implementation for S3 export configuration  
+public class S3MetricsExportConfig implements MetricsExportConfig {
+    private final ObjectStorage objectStorage;
+    
+    public S3MetricsExportConfig(ObjectStorage objectStorage) {
+        this.objectStorage = objectStorage;
+    }
+    
+    @Override
+    public String clusterId() { return "my-kafka-cluster"; }
+    
+    @Override
+    public boolean isLeader() { 
+        // Only one node in the cluster should return true
+        return isCurrentNodeLeader(); 
+    }
+    
+    @Override
+    public int nodeId() { return 1; }
+    
+    @Override
+    public ObjectStorage objectStorage() { return objectStorage; }
+    
+    @Override
+    public List<Pair<String, String>> baseLabels() {
+        return Arrays.asList(Pair.of("environment", "production"));
+    }
+    
+    @Override
+    public int intervalMs() { return 60000; }
+}
 
 // Initialize telemetry manager with S3 export
-AutoMQTelemetryManager telemetryManager = new AutoMQTelemetryManager(props);
-telemetryManager.init();
+ObjectStorage objectStorage = // Create your object storage instance
+MetricsExportConfig config = new S3MetricsExportConfig(objectStorage);
+
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "s3://access-key:secret-key@my-bucket.s3.amazonaws.com",
+    "automq-kafka",
+    "broker-1", 
+    config
+);
 
 // Application running...
 
 // Shutdown telemetry system
-telemetryManager.shutdown();
+AutoMQTelemetryManager.shutdownInstance();
 ```
-
-### S3 Metrics Exporter Configuration
-
-The S3 Metrics Exporter allows you to export metrics data to S3-compatible storage systems, with support for different node selection strategies to ensure only one node uploads metrics data in a cluster environment.
-
-#### URI Format
-
-```
-s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
-```
-
-S3 bucket URI format description:
-```
-s3://<bucket-name>?region=<region>[&endpoint=<endpoint>][&pathStyle=<enablePathStyle>][&authType=<authType>][&accessKey=<accessKey>][&secretKey=<secretKey>][&checksumAlgorithm=<checksumAlgorithm>]
-```
-
-- **pathStyle**: `true|false`. Object storage access path style. Set to true when using MinIO.
-- **authType**: `instance|static`. When set to instance, instance profile is used for authentication. When set to static, accessKey and secretKey are obtained from the URL or system environment variables KAFKA_S3_ACCESS_KEY/KAFKA_S3_SECRET_KEY.
-
-Simplified format is also supported, with credentials in the user info part:
-```
-s3://<access-key>:<secret-key>@<bucket-name>?endpoint=<endpoint>&<other-parameters>
-```
-
-Examples:
-- `s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com`
-- `s3://metrics-bucket?region=us-west-2&authType=instance`
-
-#### Configuration Properties
-
-| Configuration | Description | Default Value |
-|---------------|-------------|---------------|
-| `automq.telemetry.s3.cluster.id` | Cluster identifier | `automq-cluster` |
-| `automq.telemetry.s3.node.id` | Node identifier | `0` |
-| `automq.telemetry.s3.primary.node` | Whether this node is the primary uploader | `false` |
-| `automq.telemetry.s3.selector.type` | Node selection strategy type | `controller` |
-| `automq.telemetry.s3.bucket` | S3 bucket URI | None |
-
-#### Node Selection Strategies
-
-In a multi-node cluster, typically only one node should upload metrics to S3 to avoid duplication. The S3 Metrics Exporter provides several built-in node selection strategies through the `LeaderNodeSelector` interface:
-
-1. **Controller Runtime Leadership** (`controller`)
-
-   Defers to the Kafka KRaft controller's leadership. When the AutoMQ broker runtime registers its supplier the exporter will automatically start uploading from the active controller node—no extra configuration required.
-
-2. **Kafka Connect Runtime Leadership** (`connect-leader`)
-
-   Uses the Kafka Connect distributed herder leadership. AutoMQ's Connect runtime registers the supplier once the worker joins the cluster, ensuring only the elected leader uploads metrics.
-
-> **Note**
->
-> Runtime-backed selectors (`controller`, `connect-leader`) poll the registry on every decision. Once the hosting runtime publishes or updates its supplier, the exporter immediately reflects the new leadership without restarting the telemetry pipeline.
-
-1. **Custom SPI-based Selectors**
-
-   The system supports custom node selection strategies through Java's ServiceLoader SPI mechanism.
-
-   ```properties
-   automq.telemetry.s3.selector.type=custom-type-name
-   # Additional custom parameters as needed
-   ```
-
-#### Custom Node Selection using SPI
-
-You can implement custom node selection strategies by implementing the `LeaderNodeSelectorProvider` interface and registering it using Java's ServiceLoader mechanism:
-
-1. **Implement the Provider Interface**
-
-   ```java
-   public class CustomSelectorProvider implements LeaderNodeSelectorProvider {
-       @Override
-       public String getType() {
-           return "custom-type"; // The selector type to use in configuration
-       }
-       
-       @Override
-       public LeaderNodeSelector createSelector(String clusterId, int nodeId, Map<String, String> config) {
-           // Create and return your custom selector implementation
-           return new CustomSelector(config);
-       }
-   }
-   
-   public class CustomSelector implements LeaderNodeSelector {
-       public CustomSelector(Map<String, String> config) {
-           // Initialize your selector with the configuration
-       }
-       
-       @Override
-       public boolean isPrimaryUploader() {
-           // Implement your custom logic
-           return /* your decision logic */;
-       }
-   }
-   ```
-
-2. **Register the Provider**
-
-   Create a file at `META-INF/services/com.automq.opentelemetry.exporter.s3.LeaderNodeSelectorProvider` containing the fully qualified class name of your provider:
-
-   ```
-   com.example.CustomSelectorProvider
-   ```
-
-3. **Configure the Custom Selector**
-
-   ```properties
-   automq.telemetry.s3.selector.type=custom-type
-   # Any additional parameters your custom selector needs
-   ```
-
-### Example Configurations
-
-#### Single Node Setup
-
-```properties
-automq.telemetry.exporter.uri=s3://accessKey:secretKey@metrics-bucket?endpoint=https://s3.amazonaws.com
-automq.telemetry.s3.cluster.id=my-cluster
-automq.telemetry.s3.node.id=1
-automq.telemetry.s3.primary.node=true
-automq.telemetry.s3.selector.type=controller
-```
-
-
-```properties
-```
-
-### Advanced Configuration
-
-| Configuration | Description | Default Value |
-|---------------|-------------|---------------|
-| `automq.telemetry.exporter.interval.ms` | Export interval (milliseconds) | `60000` |
-| `automq.telemetry.exporter.otlp.protocol` | OTLP protocol | `grpc` |
-| `automq.telemetry.exporter.otlp.compression` | OTLP compression method | `none` |
-| `automq.telemetry.exporter.otlp.timeout.ms` | OTLP timeout (milliseconds) | `30000` |
-| `automq.telemetry.s3.cluster.id` | Cluster ID for S3 metrics | `automq-cluster` |
-| `automq.telemetry.s3.node.id` | Node ID for S3 metrics | `0` |
-| `automq.telemetry.s3.primary.node` | Whether this node should upload metrics | `false` |
-| `automq.telemetry.jmx.config.paths` | JMX config file paths (comma-separated) | Empty |
-| `automq.telemetry.metric.cardinality.limit` | Metric cardinality limit | `20000` |
 
 ### JMX Metrics Configuration
 
 Define JMX metrics collection rules through YAML configuration files:
 
-```properties
-automq.telemetry.jmx.config.paths=/jmx-config.yaml,/kafka-jmx.yaml
+```java
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    exporterUri, serviceName, instanceId, config
+);
+
+// Set JMX config paths after initialization
+manager.setJmxConfigPaths("/jmx-config.yaml,/kafka-jmx.yaml");
 ```
 
 #### Configuration File Requirements
@@ -391,36 +335,80 @@ Support creating custom metrics through OpenTelemetry API:
 ## Best Practices
 
 ### 1. Production Environment Configuration
-```properties
-# Service identification
-service.name=automq-kafka
-service.instance.id=${HOSTNAME}
 
-# Prometheus export
-automq.telemetry.exporter.uri=prometheus://0.0.0.0:9090
+```java
+public class ProductionMetricsConfig implements MetricsExportConfig {
+    @Override
+    public String clusterId() { return "production-cluster"; }
+    
+    @Override
+    public boolean isLeader() { 
+        // Implement your leader election logic
+        return isCurrentNodeController(); 
+    }
+    
+    @Override
+    public int nodeId() { return getCurrentNodeId(); }
+    
+    @Override
+    public ObjectStorage objectStorage() { 
+        return productionObjectStorage; 
+    }
+    
+    @Override
+    public List<Pair<String, String>> baseLabels() {
+        return Arrays.asList(
+            Pair.of("environment", "production"),
+            Pair.of("region", System.getenv("AWS_REGION")),
+            Pair.of("version", getApplicationVersion())
+        );
+    }
+    
+    @Override
+    public int intervalMs() { return 60000; } // 1 minute
+}
 
-# S3 Metrics export (optional)
-# automq.telemetry.exporter.uri=s3://access-key:secret-key@my-bucket.s3.amazonaws.com
-# automq.telemetry.s3.cluster.id=production-cluster
-# automq.telemetry.s3.node.id=${NODE_ID}
-# automq.telemetry.s3.primary.node=true (only for one node in the cluster)
-
-# Metric cardinality control
-automq.telemetry.metric.cardinality.limit=10000
-
-# JMX metrics (configure as needed)
-automq.telemetry.jmx.config.paths=/kafka-broker-jmx.yaml
+// Initialize for production
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "prometheus://0.0.0.0:9090",        // Or S3 URI for object storage export
+    "automq-kafka",
+    System.getenv("HOSTNAME"),
+    new ProductionMetricsConfig()
+);
 ```
 
 ### 2. Development Environment Configuration
-```properties
-# Local development
-service.name=automq-kafka-dev
-service.instance.id=local-dev
 
-# OTLP export to local Jaeger
-automq.telemetry.exporter.uri=otlp://localhost:4317
-automq.telemetry.exporter.interval.ms=10000
+```java
+public class DevelopmentMetricsConfig implements MetricsExportConfig {
+    @Override
+    public String clusterId() { return "dev-cluster"; }
+    
+    @Override
+    public boolean isLeader() { return true; } // Single node in dev
+    
+    @Override
+    public int nodeId() { return 1; }
+    
+    @Override
+    public ObjectStorage objectStorage() { return null; } // Not needed for OTLP
+    
+    @Override
+    public List<Pair<String, String>> baseLabels() {
+        return Arrays.asList(Pair.of("environment", "development"));
+    }
+    
+    @Override
+    public int intervalMs() { return 10000; } // 10 seconds for faster feedback
+}
+
+// Initialize for development  
+AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
+    "otlp://localhost:4317",
+    "automq-kafka-dev",
+    "local-dev",
+    new DevelopmentMetricsConfig()
+);
 ```
 
 ### 3. Resource Management
@@ -433,26 +421,30 @@ automq.telemetry.exporter.interval.ms=10000
 ### Common Issues
 
 1. **Metrics not exported**
-   - Check if `automq.telemetry.exporter.uri` configuration is correct
+   - Check if exporter URI passed to `initializeInstance()` is correct
    - Verify target endpoint is reachable
    - Check error messages in logs
+   - Ensure `MetricsExportConfig.intervalMs()` returns reasonable value
 
 2. **JMX metrics missing**
-   - Confirm JMX configuration file path is correct
+   - Confirm JMX configuration file path set via `setJmxConfigPaths()` is correct
    - Check YAML configuration file format
    - Verify JMX Bean exists
+   - Ensure files are in classpath
 
 3. **High memory usage**
-   - Lower `automq.telemetry.metric.cardinality.limit` value
-   - Check for high cardinality labels
-   - Consider increasing export interval
+   - Implement cardinality limits in your `MetricsExportConfig`
+   - Check for high cardinality labels in `baseLabels()`
+   - Consider increasing export interval via `intervalMs()`
 
 ### Logging Configuration
 
-Enable debug logging for more information:
-```properties
-logging.level.com.automq.opentelemetry=DEBUG
-logging.level.io.opentelemetry=INFO
+Enable debug logging for more information using your logging framework configuration (e.g., logback.xml, log4j2.xml):
+
+```xml
+<!-- For Logback -->
+<logger name="com.automq.opentelemetry" level="DEBUG" />
+<logger name="io.opentelemetry" level="INFO" />
 ```
 
 ## Dependencies

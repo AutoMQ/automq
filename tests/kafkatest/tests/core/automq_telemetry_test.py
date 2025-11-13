@@ -175,11 +175,9 @@ class AutoMQBrokerTelemetryTest(Test):
         """Verify that the broker exposes Prometheus metrics via the AutoMQ OpenTelemetry module."""
         cluster_label = f"kafka-core-prom-{int(time.time())}"
         server_overrides = [
-            ["automq.telemetry.exporter.uri", "prometheus://0.0.0.0:9464"],
-            ["automq.telemetry.exporter.interval.ms", "10000"],
-            ["service.name", cluster_label],
-            ["service.instance.id", "broker-telemetry"],
-            ["automq.telemetry.metrics.base.labels", "component=broker"]
+            ["s3.telemetry.metrics.exporter.uri", "prometheus://0.0.0.0:9464"],
+            ["s3.telemetry.exporter.report.interval.ms", "10000"],
+            ["s3.telemetry.metrics.base.labels", "component=broker"]
         ]
 
         self._start_kafka(server_overrides=server_overrides)
@@ -192,58 +190,31 @@ class AutoMQBrokerTelemetryTest(Test):
                 output = self._fetch_metrics(node)
                 self._assert_prometheus_metrics(
                     output,
-                    expected_labels=[f"service_name=\"{cluster_label}\""]
+                    expected_labels=['instance="']
                 )
         finally:
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    @parametrize(selector_type="controller")
-    def test_s3_metrics_exporter(self, selector_type):
+    def test_s3_metrics_exporter(self):
         """Verify that broker metrics are exported to S3 via the AutoMQ telemetry module."""
-        cluster_id = f"core-metrics-{selector_type}-{int(time.time())}"
         bucket_name = "ko3"
-        metrics_prefix = f"automq/metrics/{cluster_id}"
+        metrics_prefix = f"automq/metrics"
 
         self._clear_s3_prefix(bucket_name, metrics_prefix)
 
         server_overrides = [
-            ["automq.telemetry.exporter.uri", f"s3://{bucket_name}"],
-            ["automq.telemetry.exporter.interval.ms", "10000"],
-            ["automq.telemetry.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
-            ["automq.telemetry.s3.cluster.id", cluster_id],
-            ["service.name", cluster_id],
-            ["service.instance.id", "broker-s3-metrics"],
+            ["s3.telemetry.metrics.exporter.uri", f"s3://{bucket_name}"],
+            ["s3.telemetry.ops.enabled", "true"],
+            ["s3.ops.buckets", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
         ]
 
         original_num_brokers = self.num_brokers
         node_count = max(2, self.num_brokers)
         self.num_brokers = node_count
-        per_node_overrides = {
-            idx: [("automq.telemetry.s3.node.id", str(idx))]
-            for idx in range(1, node_count + 1)
-        }
-
-        server_overrides.append(["automq.telemetry.s3.selector.type", "controller"])
-
-        def telemetry_leader_nodes():
-            leaders = []
-            for node in self.kafka.nodes:
-                cmd = f"grep -a 'Node became leader' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                if "Node became leader" in output:
-                    leaders.append(str(self.kafka.idx(node)))
-            return leaders
 
         try:
-            self._start_kafka(server_overrides=server_overrides, per_node_overrides=per_node_overrides)
-
-            wait_until(
-                lambda: len(telemetry_leader_nodes()) == 1,
-                timeout_sec=120,
-                backoff_sec=5,
-                err_msg="Telemetry leader election did not converge to a single node"
-            )
+            self._start_kafka(server_overrides=server_overrides)
 
             self._produce_messages(max_messages=200)
 
@@ -265,22 +236,17 @@ class AutoMQBrokerTelemetryTest(Test):
             self._stop_kafka()
 
     @cluster(num_nodes=4)
-    @parametrize(selector_type="controller")
-    def test_s3_log_uploader(self, selector_type):
+    def test_s3_log_uploader(self):
         """Verify that broker logs are uploaded to S3 via the AutoMQ log uploader module."""
-        cluster_id = f"core-logs-{selector_type}-{int(time.time())}"
         bucket_name = "ko3"
         logs_prefix = f"automq/logs"
         
         self._clear_s3_prefix(bucket_name, logs_prefix)
 
         server_overrides = [
-            ["log.s3.enable", "true"],
-            ["log.s3.bucket", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
-            ["log.s3.cluster.id", cluster_id],
+            ["s3.telemetry.ops.enabled", "true"],
+            ["s3.ops.buckets", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
         ]
-
-        server_overrides.append(["log.s3.selector.type", "controller"])
 
         extra_env = [
             "AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL=15000",
@@ -290,29 +256,9 @@ class AutoMQBrokerTelemetryTest(Test):
         original_num_brokers = self.num_brokers
         node_count = max(2, self.num_brokers)
         self.num_brokers = node_count
-        per_node_overrides = {
-            idx: [("log.s3.node.id", str(idx))]
-            for idx in range(1, node_count + 1)
-        }
-
-        def log_leader_nodes():
-            leaders = []
-            for node in self.kafka.nodes:
-                cmd = f"grep -a 'LogUploader started successfully' -R {KafkaService.OPERATIONAL_LOG_DIR} || true"
-                output = "".join(node.account.ssh_capture(cmd, allow_fail=True))
-                if "LogUploader started successfully" in output:
-                    leaders.append(str(self.kafka.idx(node)))
-            return leaders
 
         try:
-            self._start_kafka(server_overrides=server_overrides, per_node_overrides=per_node_overrides, extra_env=extra_env)
-
-            wait_until(
-                lambda: len(log_leader_nodes()) == 1,
-                timeout_sec=120,
-                backoff_sec=5,
-                err_msg="Log uploader leader election did not converge to a single node"
-            )
+            self._start_kafka(server_overrides=server_overrides, extra_env=extra_env)
 
             self._produce_messages(max_messages=300)
 

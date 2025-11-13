@@ -85,8 +85,8 @@ public class LogUploader implements LogRecorder {
             return;
         }
         this.config = config;
-        if (config == null || !config.isEnabled() || config.objectStorage() == null) {
-            LOGGER.warn("LogUploader is disabled due to invalid configuration.");
+        if (!config.isEnabled() || config.objectStorage() == null) {
+            LOGGER.warn("LogUploader is disabled due to configuration.");
             closed = true;
             return;
         }

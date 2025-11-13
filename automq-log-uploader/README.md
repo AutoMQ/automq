@@ -4,7 +4,7 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
 
 - `com.automq.log.S3RollingFileAppender`: Extends `RollingFileAppender`, pushes log events to the uploader while writing to local files.
 - `com.automq.log.uploader.LogUploader`: Asynchronously buffers, compresses, and uploads logs; supports configuration switches and periodic cleanup.
-- `com.automq.log.uploader.S3LogConfig`/`S3LogConfigProvider`: Abstracts the configuration required for uploading. The default implementation `PropertiesS3LogConfigProvider` reads from `automq-log.properties`.
+- `com.automq.log.uploader.S3LogConfig`: Interface that abstracts the configuration required for uploading. Implementations must provide cluster ID, node ID, object storage instance, and leadership status.
 
 ## Quick Integration
 
@@ -12,15 +12,15 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
    ```groovy
    implementation project(':automq-log-uploader')
    ```
-2. Create `automq-log.properties` in the resources directory (or customize `S3LogConfigProvider`):
-   ```properties
-   log.s3.enable=true
-   log.s3.bucket=0@s3://your-log-bucket?region=us-east-1
-   log.s3.cluster.id=my-cluster
-   log.s3.node.id=1
-   log.s3.selector.type=controller
+2. Implement or provide an `S3LogConfig` instance and configure the appender:
+
+   ```java
+   // Set up the S3LogConfig through your application
+   S3LogConfig config = // your S3LogConfig implementation
+   S3RollingFileAppender.setup(config);
    ```
 3. Reference the Appender in `log4j.properties`:
+
    ```properties
    log4j.appender.s3_uploader=com.automq.log.S3RollingFileAppender
    log4j.appender.s3_uploader.File=logs/server.log
@@ -29,19 +29,20 @@ This module provides asynchronous S3 log upload capability based on Log4j 1.x. O
    log4j.appender.s3_uploader.layout=org.apache.log4j.PatternLayout
    log4j.appender.s3_uploader.layout.ConversionPattern=[%d] %p %m (%c)%n
    ```
-   If you need to customize the configuration provider, you can set:
-   ```properties
-  log4j.appender.s3_uploader.configProviderClass=com.example.CustomS3LogConfigProvider
-  ```
 
-## Key Configuration Description
+## S3LogConfig Interface
 
-| Configuration Item | Description |
-| ------ | ---- |
-| `log.s3.enable` | Whether to enable S3 upload function.
-| `log.s3.bucket` | It is recommended to use AutoMQ Bucket URI (e.g. `0@s3://bucket?region=us-east-1&pathStyle=true`). If using a shorthand bucket name, additional fields such as `log.s3.region` need to be provided.
-| `log.s3.cluster.id` / `log.s3.node.id` | Used to construct the object storage path `automq/logs/{cluster}/{node}/{hour}/{uuid}`.
-| `log.s3.selector.type` | Leader election strategy (`controller`, `connect-leader`, or custom).
+The `S3LogConfig` interface provides the configuration needed for log uploading:
+
+```java
+public interface S3LogConfig {
+    boolean isEnabled();           // Whether S3 upload is enabled
+    String clusterId();            // Cluster identifier  
+    int nodeId();                  // Node identifier
+    ObjectStorage objectStorage(); // S3 object storage instance
+    boolean isLeader();            // Whether this node should upload logs
+}
+```
 
 
 The upload schedule can be overridden by environment variables:
@@ -49,26 +50,76 @@ The upload schedule can be overridden by environment variables:
 - `AUTOMQ_OBSERVABILITY_UPLOAD_INTERVAL`: Maximum upload interval (milliseconds).
 - `AUTOMQ_OBSERVABILITY_CLEANUP_INTERVAL`: Retention period (milliseconds), old objects earlier than this time will be cleaned up.
 
-### Leader Election Strategies
+## Implementation Notes
 
-To avoid multiple nodes executing S3 cleanup tasks simultaneously, the log uploader has a built-in leader election mechanism consistent with the OpenTelemetry module:
+### Leader Selection
 
-1. **controller** *(default for brokers)*: Defers to the Kafka KRaft controller leadership that AutoMQ exposes at runtime. No additional configuration is required—the broker registers a supplier and the uploader continuously checks it.
-2. **connect-leader** *(default for Kafka Connect clusters)*: Mirrors the distributed herder leader election. Works out of the box when running inside AutoMQ's Connect runtime.
-3. **custom**: Implement `com.automq.log.uploader.selector.LogLeaderNodeSelectorProvider` and register it through SPI to introduce a custom leader election strategy.
+The log uploader relies on the `S3LogConfig.isLeader()` method to determine whether the current node should upload logs and perform cleanup tasks. This avoids multiple nodes in a cluster simultaneously executing these operations.
 
-> **Note**
->
-> Runtime-backed selectors (`controller`, `connect-leader`) no longer require the S3 uploader to be initialized after leadership registration. The selector re-evaluates the registry on every invocation, so once the hosting runtime publishes its leader supplier the uploader automatically adopts it.
+### Object Storage Path
 
-## Extension
+Logs are uploaded to object storage following this path pattern:
+```
+automq/logs/{clusterId}/{nodeId}/{hour}/{uuid}
+```
 
-If the application already has its own dependency injection/configuration method, you can implement `S3LogConfigProvider` and call it at startup:
+Where:
+- `clusterId` and `nodeId` come from the S3LogConfig
+- `hour` is the timestamp hour for log organization  
+- `uuid` is a unique identifier for each log batch
+
+## Usage Example
+
+Complete example of using the log uploader:
 
 ```java
 import com.automq.log.S3RollingFileAppender;
+import com.automq.log.uploader.S3LogConfig;
+import com.automq.stream.s3.operator.ObjectStorage;
 
-S3RollingFileAppender.setConfigProvider(new CustomConfigProvider());
+// Implement S3LogConfig
+public class MyS3LogConfig implements S3LogConfig {
+    @Override
+    public boolean isEnabled() {
+        return true; // Enable S3 upload
+    }
+    
+    @Override
+    public String clusterId() {
+        return "my-cluster";
+    }
+    
+    @Override
+    public int nodeId() {
+        return 1;
+    }
+    
+    @Override
+    public ObjectStorage objectStorage() {
+        // Return your ObjectStorage instance
+        return myObjectStorage;
+    }
+    
+    @Override
+    public boolean isLeader() {
+        // Return true if this node should upload logs
+        return isCurrentNodeLeader();
+    }
+}
+
+// Setup and use
+S3LogConfig config = new MyS3LogConfig();
+S3RollingFileAppender.setup(config);
+
+// Configure Log4j to use the appender
+// The appender will now automatically upload logs to S3
 ```
 
-All `S3RollingFileAppender` instances will share this provider.
+## Lifecycle Management
+
+Remember to properly shutdown the log uploader when your application terminates:
+
+```java
+// During application shutdown
+S3RollingFileAppender.shutdown();
+```
