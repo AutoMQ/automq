@@ -48,9 +48,10 @@ import java.util.UUID;
  */
 public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
 
+
     @SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
     @Override
-    public Object convert(Object sourceValue, S sourceSchema, Type targetType) {
+    public Object convert(Object sourceValue, S sourceSchema, Type targetType, StructConverter<S> structConverter) {
         if (sourceValue == null) {
             return null;
         }
@@ -86,6 +87,8 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
                 return convertList(sourceValue, sourceSchema, (Types.ListType) targetType);
             case MAP:
                 return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType);
+            case STRUCT:
+                return structConverter.convert(sourceValue, sourceSchema, targetType);
             default:
                 return sourceValue;
         }

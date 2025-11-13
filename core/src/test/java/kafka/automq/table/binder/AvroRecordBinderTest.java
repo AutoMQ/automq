@@ -84,6 +84,8 @@ import static org.apache.iceberg.TableProperties.PARQUET_ROW_GROUP_SIZE_BYTES;
 import static org.apache.iceberg.TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 public class AvroRecordBinderTest {
@@ -282,35 +284,6 @@ public class AvroRecordBinderTest {
             icebergRecord -> assertNull(icebergRecord.getField(fieldName))
         );
     }
-
-    /**
-     * Writes a record whose map field may still contain Avro GenericRecord entries for non-string keys.
-     * The entries are rebound to Iceberg Records when necessary so the writer sees the expected structure.
-     */
-    private void writeRecordWithConvertedMapEntries(Record icebergRecord,
-                                                    org.apache.iceberg.Schema icebergSchema,
-                                                    Schema entryAvroSchema) {
-        Object fieldValue = icebergRecord.getField("mapField");
-        if (fieldValue instanceof List<?>) {
-            List<?> entries = (List<?>) fieldValue;
-            if (!entries.isEmpty() && !(entries.get(0) instanceof Record)) {
-                org.apache.iceberg.types.Type elementType =
-                    icebergSchema.findField("mapField").type().asListType().elementType();
-                org.apache.iceberg.Schema entryIcebergSchema = elementType.asStructType().asSchema();
-                RecordBinder entryBinder = new RecordBinder(entryIcebergSchema, entryAvroSchema);
-                List<Record> convertedEntries = new ArrayList<>(entries.size());
-                for (Object entry : entries) {
-                    convertedEntries.add(entryBinder.bind((GenericRecord) entry));
-                }
-                org.apache.iceberg.data.GenericRecord copy = org.apache.iceberg.data.GenericRecord.create(icebergSchema.asStruct());
-                copy.setField("mapField", convertedEntries);
-                testSendRecord(icebergSchema.asStruct().asSchema(), copy);
-                return;
-            }
-        }
-        testSendRecord(icebergSchema.asStruct().asSchema(), icebergRecord);
-    }
-
 
     @Test
     public void testSchemaEvolution() {
@@ -631,6 +604,177 @@ public class AvroRecordBinderTest {
         );
     }
 
+    @Test
+    public void testListOfRecordsConversion() {
+        String avroSchemaJson = "{\n"
+            + "  \"type\": \"record\",\n"
+            + "  \"name\": \"ListRecordContainer\",\n"
+            + "  \"namespace\": \"" + TEST_NAMESPACE + "\",\n"
+            + "  \"fields\": [\n"
+            + "    {\n"
+            + "      \"name\": \"listField\",\n"
+            + "      \"type\": {\n"
+            + "        \"type\": \"array\",\n"
+            + "        \"items\": {\n"
+            + "          \"type\": \"record\",\n"
+            + "          \"name\": \"ListRecordEntry\",\n"
+            + "          \"fields\": [\n"
+            + "            {\"name\": \"innerString\", \"type\": \"string\"},\n"
+            + "            {\"name\": \"innerInt\", \"type\": \"int\"}\n"
+            + "          ]\n"
+            + "        }\n"
+            + "      }\n"
+            + "    }\n"
+            + "  ]\n"
+            + "}\n";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaJson);
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+
+        Schema listFieldSchema = avroSchema.getField("listField").schema();
+        Schema listEntrySchema = listFieldSchema.getElementType();
+
+        @SuppressWarnings("unchecked")
+        GenericData.Array<GenericRecord> listValue = new GenericData.Array<>(2, listFieldSchema);
+
+        GenericRecord firstEntry = new GenericData.Record(listEntrySchema);
+        firstEntry.put("innerString", new Utf8("first"));
+        firstEntry.put("innerInt", 1);
+        listValue.add(firstEntry);
+
+        GenericRecord secondEntry = new GenericData.Record(listEntrySchema);
+        secondEntry.put("innerString", new Utf8("second"));
+        secondEntry.put("innerInt", 2);
+        listValue.add(secondEntry);
+
+        avroRecord.put("listField", listValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        Record icebergRecord = new RecordBinder(icebergSchema, avroSchema)
+            .bind(serializeAndDeserialize(avroRecord, avroSchema));
+
+        @SuppressWarnings("unchecked")
+        List<Record> boundList = (List<Record>) icebergRecord.getField("listField");
+        assertEquals(2, boundList.size());
+        assertEquals("first", boundList.get(0).getField("innerString").toString());
+        assertEquals(1, boundList.get(0).getField("innerInt"));
+        assertEquals("second", boundList.get(1).getField("innerString").toString());
+        assertEquals(2, boundList.get(1).getField("innerInt"));
+
+        testSendRecord(icebergSchema, icebergRecord);
+    }
+
+    @Test
+    public void testStructBindersHandleDuplicateFullNames() {
+        Schema directStruct = Schema.createRecord("DuplicatedStruct", null, TEST_NAMESPACE, false);
+        directStruct.setFields(Arrays.asList(
+            new Schema.Field("directOnly", Schema.create(Schema.Type.STRING), null, null)
+        ));
+
+        Schema listStruct = Schema.createRecord("DuplicatedStruct", null, TEST_NAMESPACE, false);
+        listStruct.setFields(Arrays.asList(
+            new Schema.Field("listOnly", Schema.create(Schema.Type.INT), null, null)
+        ));
+
+        Schema listSchema = Schema.createArray(listStruct);
+
+        Schema parent = Schema.createRecord("StructCollisionRoot", null, TEST_NAMESPACE, false);
+        parent.setFields(Arrays.asList(
+            new Schema.Field("directField", directStruct, null, null),
+            new Schema.Field("listField", listSchema, null, null)
+        ));
+
+        GenericRecord parentRecord = new GenericData.Record(parent);
+        GenericRecord directRecord = new GenericData.Record(directStruct);
+        directRecord.put("directOnly", new Utf8("direct"));
+        parentRecord.put("directField", directRecord);
+
+        @SuppressWarnings("unchecked")
+        GenericData.Array<GenericRecord> listValue = new GenericData.Array<>(1, listSchema);
+        GenericRecord listRecord = new GenericData.Record(listStruct);
+        listRecord.put("listOnly", 42);
+        listValue.add(listRecord);
+        parentRecord.put("listField", listValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(parent);
+        Record icebergRecord = new RecordBinder(icebergSchema, parent)
+            .bind(serializeAndDeserialize(parentRecord, parent));
+
+        Record directField = (Record) icebergRecord.getField("directField");
+        assertEquals("direct", directField.getField("directOnly").toString());
+
+        @SuppressWarnings("unchecked")
+        List<Record> boundList = (List<Record>) icebergRecord.getField("listField");
+        assertEquals(1, boundList.size());
+        assertEquals(42, boundList.get(0).getField("listOnly"));
+    }
+
+    @Test
+    public void testStructBindersHandleDuplicateFullNamesInMapValues() {
+        Schema directStruct = Schema.createRecord("DuplicatedStruct", null, TEST_NAMESPACE, false);
+        directStruct.setFields(Arrays.asList(
+            new Schema.Field("directOnly", Schema.create(Schema.Type.STRING), null, null)
+        ));
+
+        Schema mapStruct = Schema.createRecord("DuplicatedStruct", null, TEST_NAMESPACE, false);
+        mapStruct.setFields(Arrays.asList(
+            new Schema.Field("mapOnly", Schema.create(Schema.Type.LONG), null, null)
+        ));
+
+        Schema mapSchema = Schema.createMap(mapStruct);
+
+        Schema parent = Schema.createRecord("StructCollisionMapRoot", null, TEST_NAMESPACE, false);
+        parent.setFields(Arrays.asList(
+            new Schema.Field("directField", directStruct, null, null),
+            new Schema.Field("mapField", mapSchema, null, null)
+        ));
+
+        GenericRecord parentRecord = new GenericData.Record(parent);
+        GenericRecord directRecord = new GenericData.Record(directStruct);
+        directRecord.put("directOnly", new Utf8("direct"));
+        parentRecord.put("directField", directRecord);
+
+        Map<String, GenericRecord> mapValue = new HashMap<>();
+        GenericRecord mapEntry = new GenericData.Record(mapStruct);
+        mapEntry.put("mapOnly", 123L);
+        mapValue.put("key", mapEntry);
+        parentRecord.put("mapField", mapValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(parent);
+        Record icebergRecord = new RecordBinder(icebergSchema, parent)
+            .bind(serializeAndDeserialize(parentRecord, parent));
+
+        Record directField = (Record) icebergRecord.getField("directField");
+        assertEquals("direct", directField.getField("directOnly").toString());
+
+        @SuppressWarnings("unchecked")
+        Map<CharSequence, Record> boundMap = (Map<CharSequence, Record>) icebergRecord.getField("mapField");
+        assertEquals(1, boundMap.size());
+        assertEquals(123L, boundMap.get(new Utf8("key")).getField("mapOnly"));
+    }
+
+    @Test
+    public void testConvertStructThrowsWhenSourceFieldMissing() {
+        Schema nestedSchema = Schema.createRecord("NestedRecord", null, TEST_NAMESPACE, false);
+        nestedSchema.setFields(Arrays.asList(
+            new Schema.Field("presentField", Schema.create(Schema.Type.STRING), null, null)
+        ));
+
+        GenericRecord nestedRecord = new GenericData.Record(nestedSchema);
+        nestedRecord.put("presentField", new Utf8("value"));
+
+        Types.StructType icebergStruct = Types.StructType.of(
+            Types.NestedField.optional(2, "presentField", Types.StringType.get()),
+            Types.NestedField.optional(3, "missingField", Types.StringType.get())
+        );
+
+        AvroValueAdapter adapter = new AvroValueAdapter();
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+            () -> adapter.convert(nestedRecord, nestedSchema, icebergStruct));
+        assertTrue(exception.getMessage().contains("missingField"));
+        assertTrue(exception.getMessage().contains("NestedRecord"));
+    }
+
     // Test method for converting a map field
     @Test
     public void testStringMapConversion() {
@@ -642,6 +786,67 @@ public class AvroRecordBinderTest {
             schema -> new HashMap<>(map),
             value -> assertEquals(map, normalizeValue(value))
         );
+    }
+
+    @Test
+    public void testMapWithRecordValuesConversion() {
+        String avroSchemaJson = "{\n"
+            + "  \"type\": \"record\",\n"
+            + "  \"name\": \"MapRecordContainer\",\n"
+            + "  \"namespace\": \"" + TEST_NAMESPACE + "\",\n"
+            + "  \"fields\": [\n"
+            + "    {\n"
+            + "      \"name\": \"mapField\",\n"
+            + "      \"type\": {\n"
+            + "        \"type\": \"map\",\n"
+            + "        \"values\": {\n"
+            + "          \"type\": \"record\",\n"
+            + "          \"name\": \"MapValueRecord\",\n"
+            + "          \"fields\": [\n"
+            + "            {\"name\": \"innerString\", \"type\": \"string\"},\n"
+            + "            {\"name\": \"innerLong\", \"type\": \"long\"}\n"
+            + "          ]\n"
+            + "        }\n"
+            + "      }\n"
+            + "    }\n"
+            + "  ]\n"
+            + "}\n";
+
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaJson);
+        GenericRecord avroRecord = new GenericData.Record(avroSchema);
+
+        Schema mapFieldSchema = avroSchema.getField("mapField").schema();
+        Schema mapValueSchema = mapFieldSchema.getValueType();
+
+        Map<String, GenericRecord> mapValue = new HashMap<>();
+        GenericRecord firstValue = new GenericData.Record(mapValueSchema);
+        firstValue.put("innerString", new Utf8("first"));
+        firstValue.put("innerLong", 10L);
+        mapValue.put("key1", firstValue);
+
+        GenericRecord secondValue = new GenericData.Record(mapValueSchema);
+        secondValue.put("innerString", new Utf8("second"));
+        secondValue.put("innerLong", 20L);
+        mapValue.put("key2", secondValue);
+
+        avroRecord.put("mapField", mapValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroSchema);
+        Record icebergRecord = new RecordBinder(icebergSchema, avroSchema)
+            .bind(serializeAndDeserialize(avroRecord, avroSchema));
+
+        Map<String, Object> boundMap = normalizeMapValues(icebergRecord.getField("mapField"));
+        assertEquals(2, boundMap.size());
+
+        Record key1Record = (Record) boundMap.get(new Utf8("key1"));
+        assertEquals("first", key1Record.getField("innerString").toString());
+        assertEquals(10L, key1Record.getField("innerLong"));
+
+        Record key2Record = (Record) boundMap.get(new Utf8("key2"));
+        assertEquals("second", key2Record.getField("innerString").toString());
+        assertEquals(20L, key2Record.getField("innerLong"));
+
+        testSendRecord(icebergSchema, icebergRecord);
     }
 
     // Test method for converting a map field
@@ -1122,12 +1327,12 @@ public class AvroRecordBinderTest {
 
         // Create nested record
         GenericRecord nestedRecord = new GenericData.Record(avroSchema.getField("nestedField").schema());
-        nestedRecord.put("nestedString", "nested"); // 1 field
-        nestedRecord.put("nestedInt", 123); // 1 field
+        nestedRecord.put("nestedString", "nested");
+        nestedRecord.put("nestedInt", 123);
 
         GenericRecord mainRecord = new GenericData.Record(avroSchema);
-        mainRecord.put("simpleField", "simple"); // 1 field
-        mainRecord.put("nestedField", nestedRecord); // STRUCT fields are counted when accessed
+        mainRecord.put("simpleField", "simple");
+        mainRecord.put("nestedField", nestedRecord);
 
         Record icebergRecord = recordBinder.bind(mainRecord);
 
@@ -1137,7 +1342,7 @@ public class AvroRecordBinderTest {
         assertEquals("nested", nested.getField("nestedString"));
         assertEquals(123, nested.getField("nestedInt"));
 
-        // Total: 3 (simple) + 1(struct) + 3 (nested string) + 1 (nested int) = 4 fields
+        // Total: 3 (simple) + 1(struct) + 3 (nested string) + 1 (nested int) = 8 fields
         // Note: STRUCT type itself doesn't add to count, only its leaf fields
         long fieldCount = recordBinder.getAndResetFieldCount();
         assertEquals(8, fieldCount);

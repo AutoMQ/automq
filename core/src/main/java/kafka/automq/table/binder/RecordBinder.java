@@ -30,6 +30,7 @@ import org.apache.iceberg.types.Types;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
@@ -48,7 +49,7 @@ public class RecordBinder {
     private final FieldMapping[] fieldMappings;
 
     // Pre-computed RecordBinders for nested STRUCT fields
-    private final Map<String, RecordBinder> nestedStructBinders;
+    private final Map<Schema, RecordBinder> nestedStructBinders;
 
     // Field count statistics for this batch
     private final AtomicLong batchFieldCount;
@@ -78,11 +79,9 @@ public class RecordBinder {
         }
 
         // Initialize field mappings
-        this.fieldMappings = new FieldMapping[icebergSchema.columns().size()];
-        initializeFieldMappings(avroSchema);
-
+        this.fieldMappings = buildFieldMappings(avroSchema, icebergSchema);
         // Pre-compute nested struct binders
-        this.nestedStructBinders = precomputeNestedStructBinders(typeAdapter);
+        this.nestedStructBinders = precomputeBindersMap(typeAdapter);
     }
 
     public RecordBinder createBinderForNewSchema(org.apache.iceberg.Schema icebergSchema, Schema avroSchema) {
@@ -121,8 +120,9 @@ public class RecordBinder {
         batchFieldCount.addAndGet(count);
     }
 
-    private void initializeFieldMappings(Schema avroSchema) {
+    private FieldMapping[] buildFieldMappings(Schema avroSchema, org.apache.iceberg.Schema icebergSchema) {
         Schema recordSchema = avroSchema;
+        FieldMapping[] mappings = new FieldMapping[icebergSchema.columns().size()];
 
         if (recordSchema.getType() == Schema.Type.UNION) {
             recordSchema = recordSchema.getTypes().stream()
@@ -137,32 +137,28 @@ public class RecordBinder {
 
             Schema.Field avroField = recordSchema.getField(fieldName);
             if (avroField != null) {
-                fieldMappings[icebergPos] = createOptimizedMapping(
+                mappings[icebergPos] = buildFieldMapping(
                     avroField.name(),
                     avroField.pos(),
                     icebergField.type(),
                     avroField.schema()
                 );
             } else {
-                fieldMappings[icebergPos] = null;
+                mappings[icebergPos] = null;
             }
         }
+        return mappings;
     }
 
-    private FieldMapping createOptimizedMapping(String avroFieldName, int avroPosition, Type icebergType, Schema avroType) {
-        org.apache.iceberg.Schema nestedSchema = null;
-        String nestedSchemaId = null;
-        if (icebergType.isStructType()) {
-            nestedSchema = icebergType.asStructType().asSchema();
-            nestedSchemaId = icebergType.toString();
-        }
+    private FieldMapping buildFieldMapping(String avroFieldName, int avroPosition, Type icebergType, Schema avroType) {
         if (Type.TypeID.TIMESTAMP.equals(icebergType.typeId())
             || Type.TypeID.TIME.equals(icebergType.typeId())
             || Type.TypeID.MAP.equals(icebergType.typeId())
-            || Type.TypeID.LIST.equals(icebergType.typeId())) {
+            || Type.TypeID.LIST.equals(icebergType.typeId())
+            || Type.TypeID.STRUCT.equals(icebergType.typeId())) {
             avroType = resolveUnionElement(avroType);
         }
-        return new FieldMapping(avroPosition, avroFieldName, icebergType, icebergType.typeId(), avroType, nestedSchema, nestedSchemaId);
+        return new FieldMapping(avroPosition, avroFieldName, icebergType, avroType);
     }
 
     private Schema resolveUnionElement(Schema schema) {
@@ -183,24 +179,55 @@ public class RecordBinder {
     /**
      * Pre-computes RecordBinders for nested STRUCT fields.
      */
-    private Map<String, RecordBinder> precomputeNestedStructBinders(TypeAdapter<Schema> typeAdapter) {
-        Map<String, RecordBinder> binders = new HashMap<>();
+    private Map<Schema, RecordBinder> precomputeBindersMap(TypeAdapter<Schema> typeAdapter) {
+        Map<Schema, RecordBinder> binders = new IdentityHashMap<>();
 
         for (FieldMapping mapping : fieldMappings) {
-            if (mapping != null && mapping.typeId() == Type.TypeID.STRUCT) {
-                String structId = mapping.nestedSchemaId();
-                if (!binders.containsKey(structId)) {
-                    RecordBinder nestedBinder = new RecordBinder(
-                        mapping.nestedSchema(),
+            if (mapping != null) {
+                Type type = mapping.icebergType();
+                if (type.isPrimitiveType()) {
+                } else if (type.isStructType()) {
+                    org.apache.iceberg.Schema schema = type.asStructType().asSchema();
+                    RecordBinder structBinder = new RecordBinder(
+                        schema,
                         mapping.avroSchema(),
                         typeAdapter,
                         batchFieldCount
                     );
-                    binders.put(structId, nestedBinder);
+                    binders.put(mapping.avroSchema(), structBinder);
+                } else if (type.isListType()) {
+                    Types.ListType listType = type.asListType();
+                    Type elementType = listType.elementType();
+                    if (elementType.isStructType()) {
+                        org.apache.iceberg.Schema schema = elementType.asStructType().asSchema();
+                        RecordBinder elementBinder = new RecordBinder(
+                            schema,
+                            mapping.avroSchema().getElementType(),
+                            typeAdapter,
+                            batchFieldCount
+                        );
+                        binders.put(mapping.avroSchema().getElementType(), elementBinder);
+                    }
+                } else if (type.isMapType()) {
+                    Types.MapType mapType = type.asMapType();
+                    Type keyType = mapType.keyType();
+                    Type valueType = mapType.valueType();
+                    if (keyType.isStructType()) {
+                        throw new UnsupportedOperationException("Struct keys in MAP types are not supported");
+                    }
+                    if (valueType.isStructType()) {
+                        org.apache.iceberg.Schema schema = valueType.asStructType().asSchema();
+                        RecordBinder valueBinder = new RecordBinder(
+                            schema,
+                            mapping.avroSchema().getValueType(),
+                            typeAdapter,
+                            batchFieldCount
+                        );
+                        binders.put(mapping.avroSchema().getValueType(), valueBinder);
+                    }
                 }
             }
         }
-
         return binders;
     }
 
@@ -210,16 +237,16 @@ public class RecordBinder {
         private final TypeAdapter<Schema> typeAdapter;
         private final Map<String, Integer> fieldNameToPosition;
         private final FieldMapping[] fieldMappings;
-        private final Map<String, RecordBinder> nestedStructBinders;
+        private final Map<Schema, RecordBinder> nestedStructBinders;
         private final RecordBinder parentBinder;
 
         AvroRecordView(GenericRecord avroRecord,
-                    org.apache.iceberg.Schema icebergSchema,
-                    TypeAdapter<Schema> typeAdapter,
-                    Map<String, Integer> fieldNameToPosition,
-                    FieldMapping[] fieldMappings,
-                    Map<String, RecordBinder> nestedStructBinders,
-                    RecordBinder parentBinder) {
+                       org.apache.iceberg.Schema icebergSchema,
+                       TypeAdapter<Schema> typeAdapter,
+                       Map<String, Integer> fieldNameToPosition,
+                       FieldMapping[] fieldMappings,
+                       Map<Schema, RecordBinder> nestedStructBinders,
+                       RecordBinder parentBinder) {
             this.avroRecord = avroRecord;
             this.icebergSchema = icebergSchema;
             this.typeAdapter = typeAdapter;
@@ -242,31 +269,28 @@ public class RecordBinder {
             if (mapping == null) {
                 return null;
             }
-
             Object avroValue = avroRecord.get(mapping.avroPosition());
             if (avroValue == null) {
                 return null;
             }
-
-            // Handle STRUCT type - delegate to nested binder
-            if (mapping.typeId() == Type.TypeID.STRUCT) {
-                String structId = mapping.nestedSchemaId();
-                RecordBinder nestedBinder = nestedStructBinders.get(structId);
-                if (nestedBinder == null) {
-                    throw new IllegalStateException("Nested binder not found for struct: " + structId);
-                }
-                parentBinder.addFieldCount(1);
-                return nestedBinder.bind((GenericRecord) avroValue);
-            }
-
-            // Convert non-STRUCT types
-            Object result = typeAdapter.convert(avroValue, mapping.avroSchema(), mapping.icebergType());
+            Object result = convert(avroValue, mapping.avroSchema(), mapping.icebergType());
 
             // Calculate and accumulate field count
             long fieldCount = calculateFieldCount(result, mapping.icebergType());
             parentBinder.addFieldCount(fieldCount);
 
             return result;
+        }
+
+        public Object convert(Object sourceValue, Schema sourceSchema, Type targetType) {
+            if (targetType.typeId() == Type.TypeID.STRUCT) {
+                RecordBinder binder = nestedStructBinders.get(sourceSchema);
+                if (binder == null) {
+                    throw new IllegalStateException("Missing nested binder for schema: " + sourceSchema);
+                }
+                return binder.bind((GenericRecord) sourceValue);
+            }
+            return typeAdapter.convert(sourceValue, (Schema) sourceSchema, targetType, this::convert);
         }
 
         /**
@@ -358,66 +382,20 @@ public class RecordBinder {
         public void setField(String name, Object value) {
             throw new UnsupportedOperationException("Read-only");
         }
+
         @Override
         public Record copy() {
             throw new UnsupportedOperationException("Read-only");
         }
+
         @Override
         public Record copy(Map<String, Object> overwriteValues) {
             throw new UnsupportedOperationException("Read-only");
         }
+
         @Override
         public <T> void set(int pos, T value) {
             throw new UnsupportedOperationException("Read-only");
-        }
-    }
-
-    // Field mapping structure
-    private static class FieldMapping {
-        private final int avroPosition;
-        private final String avroKey;
-        private final Type icebergType;
-        private final Type.TypeID typeId;
-        private final Schema avroSchema;
-        private final org.apache.iceberg.Schema nestedSchema;
-        private final String nestedSchemaId;
-
-        FieldMapping(int avroPosition, String avroKey, Type icebergType, Type.TypeID typeId, Schema avroSchema, org.apache.iceberg.Schema nestedSchema, String nestedSchemaId) {
-            this.avroPosition = avroPosition;
-            this.avroKey = avroKey;
-            this.icebergType = icebergType;
-            this.typeId = typeId;
-            this.avroSchema = avroSchema;
-            this.nestedSchema = nestedSchema;
-            this.nestedSchemaId = nestedSchemaId;
-        }
-
-        public int avroPosition() {
-            return avroPosition;
-        }
-
-        public String avroKey() {
-            return avroKey;
-        }
-
-        public Type icebergType() {
-            return icebergType;
-        }
-
-        public Type.TypeID typeId() {
-            return typeId;
-        }
-
-        public Schema avroSchema() {
-            return avroSchema;
-        }
-
-        public org.apache.iceberg.Schema nestedSchema() {
-            return nestedSchema;
-        }
-
-        public String nestedSchemaId() {
-            return nestedSchemaId;
         }
     }
 }

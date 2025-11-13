@@ -185,4 +185,26 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
         }
         return adaptedMap;
     }
+
+    @Override
+    public Object convert(Object sourceValue, Schema sourceSchema, Type targetType) {
+        return convert(sourceValue, sourceSchema, targetType, this::convertStruct);
+    }
+
+    protected Object convertStruct(Object sourceValue, Schema sourceSchema, Type targetType) {
+        org.apache.iceberg.Schema schema = targetType.asStructType().asSchema();
+        org.apache.iceberg.data.GenericRecord result = org.apache.iceberg.data.GenericRecord.create(schema);
+        for (Types.NestedField f : schema.columns()) {
+            // Convert the value to the expected type
+            GenericRecord record = (GenericRecord) sourceValue;
+            Schema.Field sourceField = sourceSchema.getField(f.name());
+            if (sourceField == null) {
+                throw new IllegalStateException("Missing field '" + f.name()
+                    + "' in source schema: " + sourceSchema.getFullName());
+            }
+            Object fieldValue = convert(record.get(f.name()), sourceField.schema(), f.type());
+            result.setField(f.name(), fieldValue);
+        }
+        return result;
+    }
 }
