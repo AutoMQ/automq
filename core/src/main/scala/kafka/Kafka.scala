@@ -18,7 +18,6 @@
 package kafka
 
 import com.automq.log.S3RollingFileAppender
-import com.automq.log.uploader.S3LogConfig
 import com.automq.opentelemetry.exporter.MetricsExportConfig
 import com.automq.shell.AutoMQApplication
 import com.automq.stream.s3.ByteBufAlloc

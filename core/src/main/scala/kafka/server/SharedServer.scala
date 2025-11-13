@@ -21,7 +21,6 @@ import com.automq.opentelemetry.AutoMQTelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
-import kafka.server.telemetry.TelemetrySupport
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics

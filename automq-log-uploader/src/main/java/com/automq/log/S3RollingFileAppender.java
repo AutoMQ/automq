@@ -53,6 +53,7 @@ public class S3RollingFileAppender extends RollingFileAppender {
                 }
                 if (!s3LogConfig.isEnabled() || s3LogConfig.objectStorage() == null) {
                     LOGGER.warn("S3 log upload is disabled by configuration.");
+                    return;
                 }
 
                 LogUploader uploader = new LogUploader();

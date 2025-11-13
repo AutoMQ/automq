@@ -204,7 +204,7 @@ class AutoMQBrokerTelemetryTest(Test):
         self._clear_s3_prefix(bucket_name, metrics_prefix)
 
         server_overrides = [
-            ["s3.telemetry.metrics.exporter.uri", f"s3://{bucket_name}"],
+            ["s3.telemetry.metrics.exporter.uri", f"ops://{bucket_name}"],
             ["s3.telemetry.ops.enabled", "true"],
             ["s3.ops.buckets", f"0@s3://{bucket_name}?endpoint=http://10.5.0.2:4566&region=us-east-1"],
         ]

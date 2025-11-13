@@ -111,7 +111,7 @@ public class MetricsExporterURI {
                 return buildPrometheusExporter(config, queries, uri);
             case OTLP:
                 return buildOtlpExporter(config, queries, uri);
-            case S3:
+            case OPS:
                 return buildS3MetricsExporter(config, uri);
             default:
                 break;

@@ -1334,7 +1334,7 @@ class ConnectDistributedTest(Test):
             # Replace prometheus exporter with S3 exporter
             config = config.replace(
                 "automq.telemetry.exporter.uri=prometheus://0.0.0.0:9464",
-                f"automq.telemetry.exporter.uri=s3://{bucket_name}"
+                f"automq.telemetry.exporter.uri=ops://{bucket_name}"
             )
             # Add S3 specific configurations
             config += "\nautomq.telemetry.exporter.interval.ms=10000\n"
