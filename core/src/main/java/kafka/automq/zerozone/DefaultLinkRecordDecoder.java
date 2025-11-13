@@ -67,10 +67,10 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                     streamRecordBatch.encoded(SnapshotReadCache.ENCODE_ALLOC);
                     return streamRecordBatch;
                 } finally {
-                    src.release();
                     buf.release();
                 }
             }).whenComplete((rst, ex) -> {
+                src.release();
                 if (ex != null) {
                     LOGGER.error("Error while decoding link record, link={}", linkRecord, ex);
                 }
