@@ -109,6 +109,11 @@ public class RouterOutV2 {
                     }
                     ZeroZoneMetricsManager.PROXY_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
                 });
+            }).exceptionally(ex -> {
+                LOGGER.error("Exception in processing append proxies", ex);
+                // Make the producer retry send.
+                responseMap.put(tp, errorPartitionResponse(Errors.LEADER_NOT_AVAILABLE));
+                return null;
             });
             cfList.add(proxyCf);
         }
@@ -142,6 +147,10 @@ public class RouterOutV2 {
 
     interface Proxy {
         void send(ProxyRequest request);
+    }
+
+    static ProduceResponse.PartitionResponse errorPartitionResponse(Errors error) {
+        return new ProduceResponse.PartitionResponse(error, -1, -1, -1, -1, Collections.emptyList(), "");
     }
 
     static class LocalProxy implements Proxy {
@@ -341,7 +350,7 @@ public class RouterOutV2 {
         }
 
         private void completeWithError(Errors errors) {
-            ProduceResponse.PartitionResponse rst = new ProduceResponse.PartitionResponse(errors, -1, -1, -1, -1, Collections.emptyList(), "");
+            ProduceResponse.PartitionResponse rst = errorPartitionResponse(errors);
             cf.complete(rst);
         }
     }
