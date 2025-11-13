@@ -24,7 +24,6 @@ import org.apache.kafka.common.metrics.KafkaMetric;
 import org.apache.kafka.common.metrics.MetricsReporter;
 
 import com.automq.opentelemetry.AutoMQTelemetryManager;
-import com.automq.opentelemetry.TelemetryConstants;
 import com.automq.stream.s3.operator.BucketURI;
 
 import org.apache.commons.lang3.StringUtils;
