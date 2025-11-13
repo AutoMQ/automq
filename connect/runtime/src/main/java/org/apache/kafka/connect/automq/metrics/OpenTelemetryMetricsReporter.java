@@ -95,11 +95,12 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         String exportURIStr = props.getProperty(MetricsConfigConstants.EXPORTER_URI_KEY);
         String serviceName = props.getProperty(MetricsConfigConstants.SERVICE_NAME_KEY, "connect-default");
         String instanceId = props.getProperty(MetricsConfigConstants.SERVICE_INSTANCE_ID_KEY, "instance-default");
+        String clusterId = props.getProperty(MetricsConfigConstants.S3_CLIENT_ID_KEY, "cluster-default");
         int intervalMs = Integer.parseInt(props.getProperty(MetricsConfigConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
         BucketURI metricsBucket = getMetricsBucket(props);
         List<Pair<String, String>> baseLabels = getBaseLabels(props);
         
-        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(serviceName, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
+        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
     }
 

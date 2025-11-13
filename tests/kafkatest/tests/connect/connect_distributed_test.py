@@ -1325,7 +1325,7 @@ class ConnectDistributedTest(Test):
         """Test OpenTelemetry S3 Metrics exporter functionality"""
         # Setup mock S3 server using localstack
         self.setup_services(num_workers=2)
-
+        cluster_id = f"connect-logs-{int(time.time())}"
         bucket_name = "ko3"
         metrics_prefix = f"automq/metrics/{cluster_id}"
 

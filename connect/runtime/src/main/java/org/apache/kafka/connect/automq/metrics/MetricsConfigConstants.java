@@ -3,6 +3,7 @@ package org.apache.kafka.connect.automq.metrics;
 public class MetricsConfigConstants {
     public static final String SERVICE_NAME_KEY = "service.name";
     public static final String SERVICE_INSTANCE_ID_KEY = "service.instance.id";
+    public static final String S3_CLIENT_ID_KEY = "automq.telemetry.s3.cluster.id";
     /**
      * The URI for configuring metrics exporters. e.g. prometheus://localhost:9090, otlp://localhost:4317
      */
