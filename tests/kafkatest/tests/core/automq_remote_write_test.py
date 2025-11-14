@@ -218,7 +218,6 @@ PY"""
             remote_write_node = self.kafka.nodes[0]
             self.logger.info("Setting up mock remote write server...")
 
-            # 使用新的健壮的 mock server 启动方法
             mock_pid = self._start_mock_remote_write_server(remote_write_node, remote_write_port, log_file, script_path)
 
             self.logger.info("Starting message production...")
