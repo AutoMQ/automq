@@ -16,6 +16,13 @@
  */
 package kafka.server;
 
+import kafka.automq.table.metric.TableTopicMetricsManager;
+
+import org.apache.kafka.common.config.types.Password;
+import org.apache.kafka.server.ProcessRole;
+import org.apache.kafka.server.metrics.KafkaYammerMetrics;
+import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
+
 import com.automq.opentelemetry.AutoMQTelemetryManager;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.shell.AutoMQApplication;
@@ -23,27 +30,24 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.Meter;
-import kafka.automq.table.metric.TableTopicMetricsManager;
+
 import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.common.config.types.Password;
-import org.apache.kafka.server.ProcessRole;
-import org.apache.kafka.server.metrics.KafkaYammerMetrics;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import scala.collection.immutable.Set;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.Meter;
+import scala.collection.immutable.Set;
+
 /**
  * Helper used by the core module to bootstrap AutoMQ telemetry using the AutoMQTelemetryManager implement.
  */
 public final class TelemetrySupport {
-    private static final Logger logger = LoggerFactory.getLogger(TelemetrySupport.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(TelemetrySupport.class);
     private static final String COMMON_JMX_PATH = "/jmx/rules/common.yaml";
     private static final String BROKER_JMX_PATH = "/jmx/rules/broker.yaml";
     private static final String CONTROLLER_JMX_PATH = "/jmx/rules/controller.yaml";
@@ -75,7 +79,7 @@ public final class TelemetrySupport {
                 Password password = config.getPassword("ssl.truststore.certificates");
                 return password != null ? password.value() : null;
             } catch (Exception e) {
-                logger.error("Failed to obtain truststore certificates", e);
+                LOGGER.error("Failed to obtain truststore certificates", e);
                 return null;
             }
         });
@@ -85,7 +89,7 @@ public final class TelemetrySupport {
                 Password password = config.getPassword("ssl.keystore.certificate.chain");
                 return password != null ? password.value() : null;
             } catch (Exception e) {
-                logger.error("Failed to obtain certificate chain", e);
+                LOGGER.error("Failed to obtain certificate chain", e);
                 return null;
             }
         });
@@ -113,7 +117,7 @@ public final class TelemetrySupport {
         try {
             return MetricsLevel.valueOf(rawLevel.trim().toUpperCase(Locale.ENGLISH));
         } catch (IllegalArgumentException e) {
-            logger.warn("Illegal metrics level '{}', defaulting to INFO", rawLevel);
+            LOGGER.warn("Illegal metrics level '{}', defaulting to INFO", rawLevel);
             return MetricsLevel.INFO;
         }
     }

@@ -19,7 +19,6 @@
 
 package kafka.automq;
 
-import com.automq.opentelemetry.exporter.MetricsExporterType;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.config.ConfigDef;
