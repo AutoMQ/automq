@@ -206,6 +206,9 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
             Instant instant = Instant.parse(sourceValue.toString());
             return DateTimeUtil.timestamptzFromMicros(DateTimeUtil.microsFromInstant(instant));
         }
+        if (sourceValue instanceof Number) {
+            return DateTimeUtil.timestamptzFromMicros(((Number) sourceValue).longValue());
+        }
         throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to " + targetType.typeId());
     }
 
