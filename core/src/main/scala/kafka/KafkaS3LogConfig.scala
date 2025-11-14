@@ -19,15 +19,15 @@
 
 package kafka
 
-import com.automq.shell.log.S3LogConfig
+import com.automq.log.uploader.S3LogConfig
 import com.automq.stream.s3.operator.{ObjectStorage, ObjectStorageFactory}
 import kafka.server.{KafkaConfig, KafkaRaftServer, KafkaServer}
 
 class KafkaS3LogConfig(
-  config: KafkaConfig,
-  kafkaServer: KafkaServer,
-  kafkaRaftServer: KafkaRaftServer
-) extends S3LogConfig {
+                        config: KafkaConfig,
+                        kafkaServer: KafkaServer,
+                        kafkaRaftServer: KafkaRaftServer
+                      ) extends S3LogConfig {
 
   private val _objectStorage = if (config.automq.opsBuckets().isEmpty) {
     null
@@ -36,15 +36,6 @@ class KafkaS3LogConfig(
   }
 
   override def isEnabled: Boolean = config.s3OpsTelemetryEnabled
-
-  override def isActiveController: Boolean = {
-
-    if (kafkaServer != null) {
-      false
-    } else {
-      kafkaRaftServer.controller.exists(controller => controller.controller != null && controller.controller.isActive)
-    }
-  }
 
   override def clusterId(): String = {
     if (kafkaServer != null) {
@@ -60,4 +51,11 @@ class KafkaS3LogConfig(
     _objectStorage
   }
 
+  override def isLeader: Boolean = {
+    if (kafkaServer != null) {
+      false
+    } else {
+      kafkaRaftServer.controller.exists(controller => controller.controller != null && controller.controller.isActive)
+    }
+  }
 }
