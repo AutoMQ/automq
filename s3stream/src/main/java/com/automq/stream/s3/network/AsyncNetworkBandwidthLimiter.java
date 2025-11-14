@@ -187,7 +187,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         }
     }
 
-    private static class BucketItem implements Comparable<BucketItem> {
+    private class BucketItem implements Comparable<BucketItem> {
         private final ThrottleStrategy strategy;
         private final CompletableFuture<Void> cf;
         private final long timestamp;
@@ -212,6 +212,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             size -= completeSize;
             if (size <= 0) {
                 executor.submit(() -> cf.complete(null));
+                NetworkStats.getInstance().networkLimiterQueueTimeStats(type, strategy).record(System.nanoTime() - timestamp);
                 return true;
             }
             return false;
