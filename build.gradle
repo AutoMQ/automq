@@ -2400,31 +2400,6 @@ project(':automq-metrics') {
     implementation('org.xerial.snappy:snappy-java:1.1.10.5')
   }
 
-  task createVersionFile() {
-    def receiptFile = file("$buildDir/kafka/$buildVersionFileName")
-    inputs.property "commitId", commitId
-    inputs.property "version", version
-    outputs.file receiptFile
-
-    doLast {
-      def data = [
-        commitId: commitId,
-        version: version,
-      ]
-
-      receiptFile.parentFile.mkdirs()
-      def content = data.entrySet().collect { "$it.key=$it.value" }.sort().join("\n")
-      receiptFile.setText(content, "ISO-8859-1")
-    }
-  }
-
-  jar {
-    dependsOn createVersionFile
-    from("$buildDir") {
-      include "kafka/$buildVersionFileName"
-    }
-  }
-
   clean.doFirst {
     delete "$buildDir/kafka/"
   }
@@ -3576,7 +3551,7 @@ project(':connect:runtime') {
     api project(':connect:json')
     api project(':connect:transforms')
     api project(':automq-metrics')
-    implementation project(':automq-log-uploader')
+    api project(':automq-log-uploader')
 
     implementation libs.slf4jApi
     implementation libs.reload4j

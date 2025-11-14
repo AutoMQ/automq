@@ -27,7 +27,6 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
@@ -54,28 +53,22 @@ public final class AzAwareClientConfigurator {
         }
 
         String az = azOpt.get();
-        if (!props.containsKey(CommonClientConfigs.CLIENT_ID_CONFIG)) {
-            LOGGER.info("No client.id configured for role {}; skipping AZ-aware configuration", roleDescriptor);
-            return;
-        }
-        Object currentId = props.get(CommonClientConfigs.CLIENT_ID_CONFIG);
-        if (!(currentId instanceof String currentIdStr)) {
-            LOGGER.warn("client.id for role {} is not a string ({}); skipping AZ-aware configuration",
-                roleDescriptor, currentId.getClass().getName());
-            return;
-        }
 
         String encodedAz = URLEncoder.encode(az, StandardCharsets.UTF_8);
-        String type = switch (family) {
-            case PRODUCER -> "producer";
-            case CONSUMER -> "consumer";
-            case ADMIN -> "admin";
-        };
-        String encodedRole = URLEncoder.encode(roleDescriptor.toLowerCase(Locale.ROOT), StandardCharsets.UTF_8);
-        String automqClientId = "automq_type=" + type
-            + "&automq_role=" + encodedRole
-            + "&automq_az=" + encodedAz
-            + "&" + currentIdStr;
+        String automqClientId;
+
+        if (props.containsKey(CommonClientConfigs.CLIENT_ID_CONFIG)) {
+            Object currentId = props.get(CommonClientConfigs.CLIENT_ID_CONFIG);
+            if (currentId instanceof String currentIdStr) {
+                automqClientId = "automq_az=" + encodedAz + "&" + currentIdStr;
+            } else {
+                LOGGER.warn("client.id for role {} is not a string ({});",
+                    roleDescriptor, currentId.getClass().getName());
+                return;
+            }
+        } else {
+            automqClientId = "automq_az=" + encodedAz;
+        }
         props.put(CommonClientConfigs.CLIENT_ID_CONFIG, automqClientId);
         LOGGER.info("Applied AZ-aware client.id for role {} -> {}", roleDescriptor, automqClientId);
 
