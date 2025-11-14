@@ -84,9 +84,9 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
             case TIMESTAMP:
                 return convertTimestamp(sourceValue, sourceSchema, (Types.TimestampType) targetType);
             case LIST:
-                return convertList(sourceValue, sourceSchema, (Types.ListType) targetType);
+                return convertList(sourceValue, sourceSchema, (Types.ListType) targetType, structConverter);
             case MAP:
-                return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType);
+                return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType, structConverter);
             case STRUCT:
                 return structConverter.convert(sourceValue, sourceSchema, targetType);
             default:
@@ -212,7 +212,7 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
         throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to " + targetType.typeId());
     }
 
-    protected abstract List<?> convertList(Object sourceValue, S sourceSchema, Types.ListType targetType);
+    protected abstract List<?> convertList(Object sourceValue, S sourceSchema, Types.ListType targetType, StructConverter<S> structConverter);
 
-    protected abstract Map<?, ?> convertMap(Object sourceValue, S sourceSchema, Types.MapType targetType);
+    protected abstract Map<?, ?> convertMap(Object sourceValue, S sourceSchema, Types.MapType targetType, StructConverter<S> structConverter);
 }

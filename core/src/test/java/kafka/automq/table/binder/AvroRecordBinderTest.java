@@ -122,7 +122,7 @@ public class AvroRecordBinderTest {
         }
     }
 
-    private TaskWriter<Record> createTableWriter(Table table) {
+    public static TaskWriter<Record> createTableWriter(Table table) {
         FileAppenderFactory<Record> appenderFactory = new GenericAppenderFactory(
             table.schema(),
             table.spec(),

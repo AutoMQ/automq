@@ -116,7 +116,7 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
     }
 
     @Override
-    protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType) {
+    protected List<?> convertList(Object sourceValue, Schema sourceSchema, Types.ListType targetType, StructConverter<Schema> structConverter) {
         Schema listSchema = sourceSchema;
         Schema elementSchema = listSchema.getElementType();
 
@@ -131,14 +131,14 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
         List<Object> list = new ArrayList<>(sourceList.size());
         for (Object element : sourceList) {
-            Object convert = convert(element, elementSchema, targetType.elementType());
+            Object convert = convert(element, elementSchema, targetType.elementType(), structConverter);
             list.add(convert);
         }
         return list;
     }
 
     @Override
-    protected Map<?, ?> convertMap(Object sourceValue, Schema sourceSchema, Types.MapType targetType) {
+    protected Map<?, ?> convertMap(Object sourceValue, Schema sourceSchema, Types.MapType targetType, StructConverter<Schema> structConverter) {
         if (sourceValue instanceof GenericData.Array) {
             GenericData.Array<?> arrayValue = (GenericData.Array<?>) sourceValue;
             Map<Object, Object> recordMap = new HashMap<>(arrayValue.size());
@@ -161,8 +161,8 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
                     continue;
                 }
                 GenericRecord record = (GenericRecord) element;
-                Object key = convert(record.get(keyField.pos()), keySchema, keyType);
-                Object value = convert(record.get(valueField.pos()), valueSchema, valueType);
+                Object key = convert(record.get(keyField.pos()), keySchema, keyType, structConverter);
+                Object value = convert(record.get(valueField.pos()), valueSchema, valueType, structConverter);
                 recordMap.put(key, value);
             }
             return recordMap;
@@ -179,8 +179,8 @@ public class AvroValueAdapter extends AbstractTypeAdapter<Schema> {
 
         for (Map.Entry<?, ?> entry : sourceMap.entrySet()) {
             Object rawKey = entry.getKey();
-            Object key = convert(rawKey, STRING_SCHEMA_INSTANCE, keyType);
-            Object value = convert(entry.getValue(), valueSchema, valueType);
+            Object key = convert(rawKey, STRING_SCHEMA_INSTANCE, keyType, structConverter);
+            Object value = convert(entry.getValue(), valueSchema, valueType, structConverter);
             adaptedMap.put(key, value);
         }
         return adaptedMap;
