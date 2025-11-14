@@ -775,6 +775,91 @@ public class AvroRecordBinderTest {
         assertTrue(exception.getMessage().contains("NestedRecord"));
     }
 
+    @Test
+    public void testNestedStructsBindRecursively() {
+        Schema innerStruct = Schema.createRecord("InnerStruct", null, TEST_NAMESPACE, false);
+        innerStruct.setFields(Arrays.asList(
+            new Schema.Field("innerField", Schema.create(Schema.Type.INT), null, null)
+        ));
+
+        Schema middleStruct = Schema.createRecord("MiddleStruct", null, TEST_NAMESPACE, false);
+        middleStruct.setFields(Arrays.asList(
+            new Schema.Field("middleField", Schema.create(Schema.Type.STRING), null, null),
+            new Schema.Field("inner", innerStruct, null, null)
+        ));
+
+        Schema outerStruct = Schema.createRecord("OuterStruct", null, TEST_NAMESPACE, false);
+        outerStruct.setFields(Arrays.asList(
+            new Schema.Field("outerField", Schema.create(Schema.Type.STRING), null, null),
+            new Schema.Field("middle", middleStruct, null, null)
+        ));
+
+        GenericRecord innerRecord = new GenericData.Record(innerStruct);
+        innerRecord.put("innerField", 7);
+
+        GenericRecord middleRecord = new GenericData.Record(middleStruct);
+        middleRecord.put("middleField", new Utf8("mid"));
+        middleRecord.put("inner", innerRecord);
+
+        GenericRecord outerRecord = new GenericData.Record(outerStruct);
+        outerRecord.put("outerField", new Utf8("out"));
+        outerRecord.put("middle", middleRecord);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(outerStruct);
+        Record icebergRecord = new RecordBinder(icebergSchema, outerStruct)
+            .bind(serializeAndDeserialize(outerRecord, outerStruct));
+
+        Record middleResult = (Record) icebergRecord.getField("middle");
+        assertEquals("mid", middleResult.getField("middleField").toString());
+        Record innerResult = (Record) middleResult.getField("inner");
+        assertEquals(7, innerResult.getField("innerField"));
+    }
+
+    @Test
+    public void testStructSchemaInstanceReuseSharesBinder() {
+        Schema sharedStruct = Schema.createRecord("SharedStruct", null, TEST_NAMESPACE, false);
+        sharedStruct.setFields(Arrays.asList(
+            new Schema.Field("value", Schema.create(Schema.Type.LONG), null, null)
+        ));
+
+        Schema listSchema = Schema.createArray(sharedStruct);
+
+        Schema parent = Schema.createRecord("SharedStructReuseRoot", null, TEST_NAMESPACE, false);
+        parent.setFields(Arrays.asList(
+            new Schema.Field("directField", sharedStruct, null, null),
+            new Schema.Field("listField", listSchema, null, null)
+        ));
+
+        GenericRecord directValue = new GenericData.Record(sharedStruct);
+        directValue.put("value", 1L);
+
+        @SuppressWarnings("unchecked")
+        GenericData.Array<GenericRecord> listValue = new GenericData.Array<>(2, listSchema);
+        GenericRecord listEntry1 = new GenericData.Record(sharedStruct);
+        listEntry1.put("value", 2L);
+        listValue.add(listEntry1);
+        GenericRecord listEntry2 = new GenericData.Record(sharedStruct);
+        listEntry2.put("value", 3L);
+        listValue.add(listEntry2);
+
+        GenericRecord parentRecord = new GenericData.Record(parent);
+        parentRecord.put("directField", directValue);
+        parentRecord.put("listField", listValue);
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(parent);
+        Record icebergRecord = new RecordBinder(icebergSchema, parent)
+            .bind(serializeAndDeserialize(parentRecord, parent));
+
+        Record directRecord = (Record) icebergRecord.getField("directField");
+        assertEquals(1L, directRecord.getField("value"));
+
+        @SuppressWarnings("unchecked")
+        List<Record> boundList = (List<Record>) icebergRecord.getField("listField");
+        assertEquals(2, boundList.size());
+        assertEquals(2L, boundList.get(0).getField("value"));
+        assertEquals(3L, boundList.get(1).getField("value"));
+    }
+
     // Test method for converting a map field
     @Test
     public void testStringMapConversion() {
