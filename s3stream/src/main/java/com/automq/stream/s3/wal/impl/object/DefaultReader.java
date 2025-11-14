@@ -195,6 +195,8 @@ public class DefaultReader {
                                     boolean isTriggerTrimRecord = batch.getCount() == 0 && batch.getStreamId() == -1L && batch.getEpoch() == -1L;
                                     if (!isTriggerTrimRecord) {
                                         batches.add(batch);
+                                    } else {
+                                        batch.release();
                                     }
                                     nextRecordOffset += lastReadableBytes - buf.readableBytes();
                                     lastReadableBytes = buf.readableBytes();
