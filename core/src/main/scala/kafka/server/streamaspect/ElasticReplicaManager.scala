@@ -1,7 +1,6 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
-import com.automq.stream.s3.metrics.stats.NetworkStats
 import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
 import com.automq.stream.s3.network.{AsyncNetworkBandwidthLimiter, GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.{FutureUtil, Systems}
@@ -980,11 +979,8 @@ class ElasticReplicaManager(
   }
 
   private def acquireNetworkOutPermit(size: Int, throttleStrategy: ThrottleStrategy): Unit = {
-    val start = time.nanoseconds()
     GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND)
       .consume(throttleStrategy, size).join()
-    val networkStats = NetworkStats.getInstance()
-    networkStats.networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, throttleStrategy).record(time.nanoseconds() - start)
   }
 
   def handlePartitionFailure(partitionDir: String): Unit = {

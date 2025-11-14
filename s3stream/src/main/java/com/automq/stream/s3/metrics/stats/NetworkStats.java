@@ -96,8 +96,18 @@ public class NetworkStats {
     }
 
     public HistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
-        return type == AsyncNetworkBandwidthLimiter.Type.INBOUND
-                ? networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy))
-                : networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+        HistogramMetric metric;
+        if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+            metric = networkInboundLimiterQueueTimeStatsMap.get(strategy);
+            if (metric == null) {
+                metric = networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+            }
+        } else {
+            metric = networkOutboundLimiterQueueTimeStatsMap.get(strategy);
+            if (metric == null) {
+                metric = networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+            }
+        }
+        return metric;
     }
 }
