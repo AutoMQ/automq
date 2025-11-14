@@ -1735,6 +1735,12 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
         configBackingStore.putLoggerLevel(namespace, level);
     }
 
+    // AutoMQ inject start
+    public boolean isLeaderInstance() {
+        return isLeader();
+    }
+    // AutoMQ inject end
+
     // Should only be called from work thread, so synchronization should not be needed
     protected boolean isLeader() {
         return assignment != null && member.memberId().equals(assignment.leader());

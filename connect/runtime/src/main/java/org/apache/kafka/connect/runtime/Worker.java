@@ -48,6 +48,7 @@ import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Timer;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.automq.az.AzAwareClientConfigurator;
 import org.apache.kafka.connect.connector.ConnectRecord;
 import org.apache.kafka.connect.connector.Connector;
 import org.apache.kafka.connect.connector.Task;
@@ -841,6 +842,10 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         producerProps.putAll(producerOverrides);
 
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, defaultClientId);
+        // AutoMQ for Kafka inject end
+
         return producerProps;
     }
 
@@ -909,6 +914,10 @@ public class Worker {
                                            connectorClientConfigOverridePolicy);
         consumerProps.putAll(consumerOverrides);
 
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, defaultClientId);
+        // AutoMQ for Kafka inject end
+
         return consumerProps;
     }
 
@@ -937,6 +946,10 @@ public class Worker {
 
         // Admin client-specific overrides in the worker config
         adminProps.putAll(config.originalsWithPrefix("admin."));
+
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, defaultClientId);
+        // AutoMQ for Kafka inject end
 
         // Connector-specified overrides
         Map<String, Object> adminOverrides =

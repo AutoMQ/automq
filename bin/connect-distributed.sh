@@ -42,4 +42,5 @@ case $COMMAND in
     ;;
 esac
 
+export KAFKA_CONNECT_MODE=true
 exec $(dirname $0)/kafka-run-class.sh $EXTRA_ARGS org.apache.kafka.connect.cli.ConnectDistributed "$@"

@@ -19,6 +19,9 @@ package org.apache.kafka.connect.cli;
 import org.apache.kafka.common.utils.Exit;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.automq.az.AzMetadataProviderHolder;
+import org.apache.kafka.connect.automq.log.ConnectLogUploader;
+import org.apache.kafka.connect.automq.metrics.OpenTelemetryMetricsReporter;
 import org.apache.kafka.connect.connector.policy.ConnectorClientConfigOverridePolicy;
 import org.apache.kafka.connect.runtime.Connect;
 import org.apache.kafka.connect.runtime.Herder;
@@ -36,6 +39,7 @@ import java.net.URI;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Map;
+import java.util.Properties;
 
 /**
  * Common initialization logic for Kafka Connect, intended for use by command line utilities
@@ -45,7 +49,9 @@ import java.util.Map;
  */
 public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfig> {
 
-    private static final Logger log = LoggerFactory.getLogger(AbstractConnectCli.class);
+    private static Logger getLogger() {
+        return LoggerFactory.getLogger(AbstractConnectCli.class);
+    }
     private final String[] args;
     private final Time time = Time.SYSTEM;
 
@@ -83,7 +89,6 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
      */
     public void run() {
         if (args.length < 1 || Arrays.asList(args).contains("--help")) {
-            log.info("Usage: {}", usage());
             Exit.exit(1);
         }
 
@@ -92,6 +97,17 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             Map<String, String> workerProps = !workerPropsFile.isEmpty() ?
                     Utils.propsToStringMap(Utils.loadProps(workerPropsFile)) : Collections.emptyMap();
             String[] extraArgs = Arrays.copyOfRange(args, 1, args.length);
+
+            // AutoMQ inject start
+            // Initialize S3 log uploader and OpenTelemetry with worker properties
+            ConnectLogUploader.initialize(workerProps);
+            AzMetadataProviderHolder.initialize(workerProps);
+
+            Properties telemetryProps = new Properties();
+            telemetryProps.putAll(workerProps);
+            OpenTelemetryMetricsReporter.initializeTelemetry(telemetryProps);
+            // AutoMQ inject end
+
             Connect<H> connect = startConnect(workerProps);
             processExtraArgs(connect, extraArgs);
 
@@ -99,7 +115,7 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             connect.awaitStop();
 
         } catch (Throwable t) {
-            log.error("Stopping due to error", t);
+            getLogger().error("Stopping due to error", t);
             Exit.exit(2);
         }
     }
@@ -111,17 +127,17 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
      * @return a started instance of {@link Connect}
      */
     public Connect<H> startConnect(Map<String, String> workerProps) {
-        log.info("Kafka Connect worker initializing ...");
+        getLogger().info("Kafka Connect worker initializing ...");
         long initStart = time.hiResClockMs();
 
         WorkerInfo initInfo = new WorkerInfo();
         initInfo.logAll();
 
-        log.info("Scanning for plugin classes. This might take a moment ...");
+        getLogger().info("Scanning for plugin classes. This might take a moment ...");
         Plugins plugins = new Plugins(workerProps);
         plugins.compareAndSwapWithDelegatingLoader();
         T config = createConfig(workerProps);
-        log.debug("Kafka cluster ID: {}", config.kafkaClusterId());
+        getLogger().debug("Kafka cluster ID: {}", config.kafkaClusterId());
 
         RestClient restClient = new RestClient(config);
 
@@ -138,11 +154,11 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         H herder = createHerder(config, workerId, plugins, connectorClientConfigOverridePolicy, restServer, restClient);
 
         final Connect<H> connect = new Connect<>(herder, restServer);
-        log.info("Kafka Connect worker initialization took {}ms", time.hiResClockMs() - initStart);
+        getLogger().info("Kafka Connect worker initialization took {}ms", time.hiResClockMs() - initStart);
         try {
             connect.start();
         } catch (Exception e) {
-            log.error("Failed to start Connect", e);
+            getLogger().error("Failed to start Connect", e);
             connect.stop();
             Exit.exit(3);
         }

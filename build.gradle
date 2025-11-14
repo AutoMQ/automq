@@ -840,6 +840,13 @@ tasks.create(name: "jarConnect", dependsOn: connectPkgs.collect { it + ":jar" })
 
 tasks.create(name: "testConnect", dependsOn: connectPkgs.collect { it + ":test" }) {}
 
+// OpenTelemetry related tasks
+tasks.create(name: "jarOpenTelemetry", dependsOn: ":opentelemetry:jar") {}
+
+tasks.create(name: "testOpenTelemetry", dependsOn: ":opentelemetry:test") {}
+
+tasks.create(name: "buildOpenTelemetry", dependsOn: [":opentelemetry:jar", ":opentelemetry:test"]) {}
+
 project(':server') {
   base {
     archivesName = "kafka-server"
@@ -941,6 +948,8 @@ project(':core') {
     implementation project(':storage')
     implementation project(':server')
     implementation project(':automq-shell')
+    implementation project(':automq-metrics')
+    implementation project(':automq-log-uploader')
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -982,14 +991,6 @@ project(':core') {
     // The `jcl-over-slf4j` library is used to redirect JCL logging to SLF4J.
     implementation libs.jclOverSlf4j
 
-    implementation libs.opentelemetryJava8
-    implementation libs.opentelemetryOshi
-    implementation libs.opentelemetrySdk
-    implementation libs.opentelemetrySdkMetrics
-    implementation libs.opentelemetryExporterLogging
-    implementation libs.opentelemetryExporterProm
-    implementation libs.opentelemetryExporterOTLP
-    implementation libs.opentelemetryJmx
     implementation libs.awsSdkAuth
 
     // table topic start
@@ -1253,6 +1254,10 @@ project(':core') {
     from(project(':trogdor').configurations.runtimeClasspath) { into("libs/") }
     from(project(':automq-shell').jar) { into("libs/") }
     from(project(':automq-shell').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-metrics').jar) { into("libs/") }
+    from(project(':automq-metrics').configurations.runtimeClasspath) { into("libs/") }
+    from(project(':automq-log-uploader').jar) { into("libs/") }
+    from(project(':automq-log-uploader').configurations.runtimeClasspath) { into("libs/") }
     from(project(':shell').jar) { into("libs/") }
     from(project(':shell').configurations.runtimeClasspath) { into("libs/") }
     from(project(':connect:api').jar) { into("libs/") }
@@ -2332,6 +2337,100 @@ project(':tools:tools-api') {
 
   javadoc {
     include "**/org/apache/kafka/tools/api/*"
+  }
+}
+
+project(':automq-metrics') {
+  archivesBaseName = "automq-metrics"
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-server.xml")
+  }
+
+  dependencies {
+    // OpenTelemetry core dependencies
+    api libs.opentelemetryJava8
+    api libs.opentelemetryOshi
+    api libs.opentelemetrySdk
+    api libs.opentelemetrySdkMetrics
+    api libs.opentelemetryExporterLogging
+    api libs.opentelemetryExporterProm
+    api libs.opentelemetryExporterOTLP
+    api libs.opentelemetryJmx
+
+    // Logging dependencies
+    api libs.slf4jApi
+    api libs.slf4jBridge  // 添加 SLF4J Bridge 依赖
+    api libs.reload4j
+
+    api libs.commonLang
+
+    // Yammer metrics (for integration)
+    api 'com.yammer.metrics:metrics-core:2.2.0'
+
+    implementation(project(':s3stream')) {
+      exclude(group: 'io.opentelemetry', module: '*')
+      exclude(group: 'io.opentelemetry.instrumentation', module: '*')
+      exclude(group: 'io.opentelemetry.proto', module: '*')
+      exclude(group: 'io.netty', module: 'netty-tcnative-boringssl-static')
+      exclude(group: 'com.github.jnr', module: '*')
+      exclude(group: 'org.aspectj', module: '*')
+      exclude(group: 'net.java.dev.jna', module: '*')
+      exclude(group: 'net.sourceforge.argparse4j', module: '*')
+      exclude(group: 'com.bucket4j', module: '*')
+      exclude(group: 'com.yammer.metrics', module: '*')
+      exclude(group: 'com.github.spotbugs', module: '*')
+      exclude(group: 'org.apache.kafka.shaded', module: '*')
+    }
+    implementation libs.nettyBuffer
+    implementation libs.jacksonDatabind
+    implementation libs.guava
+    implementation project(':clients')
+
+    // Test dependencies
+    testImplementation libs.junitJupiter
+    testImplementation libs.mockitoCore
+    testImplementation libs.slf4jReload4j
+
+    testRuntimeOnly libs.junitPlatformLanucher
+
+    implementation('io.opentelemetry:opentelemetry-sdk:1.40.0')
+    implementation("io.opentelemetry.semconv:opentelemetry-semconv:1.25.0-alpha")
+    implementation("io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:2.6.0-alpha")
+    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation('org.xerial.snappy:snappy-java:1.1.10.5')
+  }
+
+  clean.doFirst {
+    delete "$buildDir/kafka/"
+  }
+
+  javadoc {
+    enabled = false
+  }
+}
+
+project(':automq-log-uploader') {
+  archivesBaseName = "automq-log-uploader"
+
+  checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-server.xml")
+  }
+
+  dependencies {
+    api project(':s3stream')
+
+    implementation project(':clients')
+    implementation libs.reload4j
+    implementation libs.slf4jApi
+    implementation libs.slf4jBridge
+    implementation libs.nettyBuffer
+    implementation libs.guava
+    implementation libs.commonLang
+  }
+
+  javadoc {
+    enabled = false
   }
 }
 
@@ -3452,6 +3551,8 @@ project(':connect:runtime') {
     api project(':clients')
     api project(':connect:json')
     api project(':connect:transforms')
+    api project(':automq-metrics')
+    api project(':automq-log-uploader')
 
     implementation libs.slf4jApi
     implementation libs.reload4j
@@ -3460,6 +3561,7 @@ project(':connect:runtime') {
     implementation libs.jacksonJaxrsJsonProvider
     implementation libs.jerseyContainerServlet
     implementation libs.jerseyHk2
+    implementation libs.jaxrsApi
     implementation libs.jaxbApi // Jersey dependency that was available in the JDK before Java 9
     implementation libs.activation // Jersey dependency that was available in the JDK before Java 9
     implementation libs.jettyServer
