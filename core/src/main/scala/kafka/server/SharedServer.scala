@@ -126,6 +126,10 @@ class SharedServer(
 
   def nodeId: Int = metaPropsEnsemble.nodeId().getAsInt
 
+  protected def buildTelemetryManager(config: KafkaConfig, clusterId: String): AutoMQTelemetryManager = {
+    TelemetrySupport.start(config, clusterId)
+  }
+  
   private def isUsed(): Boolean = synchronized {
     usedByController || usedByBroker
   }
@@ -278,7 +282,7 @@ class SharedServer(
         }
         
         // AutoMQ inject start
-        telemetryManager = TelemetrySupport.start(sharedServerConfig, clusterId)
+        telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
