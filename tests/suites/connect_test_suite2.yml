@@ -4,3 +4,7 @@ connect_test_suite:
     - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_failed_task
     - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_connector_and_tasks_failed_connector
     - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_restart_connector_and_tasks_failed_task
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_opentelemetry_metrics_basic
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_opentelemetry_metrics_comprehensive
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_metrics_under_load
+    - ../kafkatest/tests/connect/connect_distributed_test.py::ConnectDistributedTest.test_opentelemetry_s3_metrics_exporter

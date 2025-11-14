@@ -19,7 +19,6 @@
 
 package kafka.automq;
 
-import kafka.log.stream.s3.telemetry.exporter.ExporterConstants;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.config.ConfigDef;
@@ -39,6 +38,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
@@ -251,6 +251,11 @@ public class AutoMQConfig {
     public static final String S3_TELEMETRY_OPS_ENABLED_CONFIG = "s3.telemetry.ops.enabled";
     public static final String S3_TELEMETRY_OPS_ENABLED_DOC = "[DEPRECATED] use s3.telemetry.metrics.uri instead.";
 
+    private static final String TELEMETRY_EXPORTER_TYPE_OTLP = "otlp";
+    private static final String TELEMETRY_EXPORTER_TYPE_PROMETHEUS = "prometheus";
+    private static final String TELEMETRY_EXPORTER_TYPE_OPS = "ops";
+    public static final String URI_DELIMITER = "://?";
+
     // Deprecated config end
 
     public static void define(ConfigDef configDef) {
@@ -400,16 +405,13 @@ public class AutoMQConfig {
     private static String genMetricsExporterURI(KafkaConfig config) {
         Password pwd = config.getPassword(S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG);
         String uri = pwd == null ? null : pwd.value();
-        if (uri == null) {
-            uri = buildMetrixExporterURIWithOldConfigs(config);
+        if (StringUtils.isNotBlank(uri)) {
+            return uri;
         }
-        if (!uri.contains(ExporterConstants.OPS_TYPE)) {
-            uri += "," + buildOpsExporterURI();
-        }
-        return uri;
+        return buildMetricsExporterUriFromLegacy(config);
     }
 
-    private static String buildMetrixExporterURIWithOldConfigs(KafkaConfig kafkaConfig) {
+    private static String buildMetricsExporterUriFromLegacy(KafkaConfig kafkaConfig) {
         if (!kafkaConfig.getBoolean(S3_METRICS_ENABLE_CONFIG)) {
             return "";
         }
@@ -420,11 +422,14 @@ public class AutoMQConfig {
             for (String exporterType : exporterTypeArray) {
                 exporterType = exporterType.trim();
                 switch (exporterType) {
-                    case ExporterConstants.OTLP_TYPE:
+                    case TELEMETRY_EXPORTER_TYPE_OTLP:
                         exportedUris.add(buildOTLPExporterURI(kafkaConfig));
                         break;
-                    case ExporterConstants.PROMETHEUS_TYPE:
+                    case TELEMETRY_EXPORTER_TYPE_PROMETHEUS:
                         exportedUris.add(buildPrometheusExporterURI(kafkaConfig));
+                        break;
+                    case TELEMETRY_EXPORTER_TYPE_OPS:
+                        exportedUris.add(buildS3ExporterURI());
                         break;
                     default:
                         LOGGER.error("illegal metrics exporter type: {}", exporterType);
@@ -434,33 +439,41 @@ public class AutoMQConfig {
         }
 
         if (kafkaConfig.getBoolean(S3_TELEMETRY_OPS_ENABLED_CONFIG)) {
-            exportedUris.add(buildOpsExporterURI());
+            exportedUris.add(buildS3ExporterURI());
         }
 
-        return String.join(",", exportedUris);
+        return exportedUris.stream()
+            .filter(StringUtils::isNotBlank)
+            .distinct()
+            .collect(Collectors.joining(","));
     }
 
     private static String buildOTLPExporterURI(KafkaConfig kafkaConfig) {
+        String endpoint = kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG);
+        if (StringUtils.isBlank(endpoint)) {
+            return "";
+        }
         StringBuilder uriBuilder = new StringBuilder()
-            .append(ExporterConstants.OTLP_TYPE)
-            .append(ExporterConstants.URI_DELIMITER)
-            .append(ExporterConstants.ENDPOINT).append("=").append(kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_ENDPOINT_CONFIG))
-            .append("&")
-            .append(ExporterConstants.PROTOCOL).append("=").append(kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG));
+            .append(TELEMETRY_EXPORTER_TYPE_OTLP)
+            .append("://?endpoint=").append(endpoint);
+        String protocol = kafkaConfig.getString(S3_TELEMETRY_EXPORTER_OTLP_PROTOCOL_CONFIG);
+        if (StringUtils.isNotBlank(protocol)) {
+            uriBuilder.append("&protocol=").append(protocol);
+        }
         if (kafkaConfig.getBoolean(S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG)) {
-            uriBuilder.append("&").append(ExporterConstants.COMPRESSION).append("=").append("gzip");
+            uriBuilder.append("&compression=gzip");
         }
         return uriBuilder.toString();
     }
 
     private static String buildPrometheusExporterURI(KafkaConfig kafkaConfig) {
-        return ExporterConstants.PROMETHEUS_TYPE + ExporterConstants.URI_DELIMITER +
-            ExporterConstants.HOST + "=" + kafkaConfig.getString(S3_METRICS_EXPORTER_PROM_HOST_CONFIG) + "&" +
-            ExporterConstants.PORT + "=" + kafkaConfig.getInt(S3_METRICS_EXPORTER_PROM_PORT_CONFIG);
+        return TELEMETRY_EXPORTER_TYPE_PROMETHEUS + URI_DELIMITER +
+            "host" + "=" + kafkaConfig.getString(S3_METRICS_EXPORTER_PROM_HOST_CONFIG) + "&" +
+            "port" + "=" + kafkaConfig.getInt(S3_METRICS_EXPORTER_PROM_PORT_CONFIG);
     }
 
-    private static String buildOpsExporterURI() {
-        return ExporterConstants.OPS_TYPE + ExporterConstants.URI_DELIMITER;
+    private static String buildS3ExporterURI() {
+        return TELEMETRY_EXPORTER_TYPE_OPS + URI_DELIMITER;
     }
 
     private static List<Pair<String, String>> parseBaseLabels(KafkaConfig config) {

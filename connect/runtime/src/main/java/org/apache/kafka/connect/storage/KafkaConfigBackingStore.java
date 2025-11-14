@@ -35,6 +35,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Timer;
 import org.apache.kafka.common.utils.Utils;
+import org.apache.kafka.connect.automq.az.AzAwareClientConfigurator;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.data.SchemaAndValue;
 import org.apache.kafka.connect.data.SchemaBuilder;
@@ -440,6 +441,9 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
         Map<String, Object> result = new HashMap<>(baseProducerProps(workerConfig));
 
         result.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId + "-leader");
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyProducerAz(result, "config-log-leader");
+        // AutoMQ for Kafka inject end
         // Always require producer acks to all to ensure durable writes
         result.put(ProducerConfig.ACKS_CONFIG, "all");
         // We can set this to 5 instead of 1 without risking reordering because we are using an idempotent producer
@@ -773,11 +777,17 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
 
         Map<String, Object> producerProps = new HashMap<>(baseProducerProps);
         producerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, "config-log");
+        // AutoMQ for Kafka inject end
 
         Map<String, Object> consumerProps = new HashMap<>(originals);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, "config-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(consumerProps, config, clusterId);
         if (config.exactlyOnceSourceEnabled()) {
             ConnectUtils.ensureProperty(
@@ -790,6 +800,9 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
         Map<String, Object> adminProps = new HashMap<>(originals);
         ConnectUtils.addMetricsContextProperties(adminProps, config, clusterId);
         adminProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, "config-log");
+        // AutoMQ for Kafka inject end
 
         Map<String, Object> topicSettings = config instanceof DistributedConfig
                                             ? ((DistributedConfig) config).configStorageTopicSettings()

@@ -40,7 +40,23 @@ should_include_file() {
   fi
   file=$1
   if [ -z "$(echo "$file" | grep -E "$regex")" ] ; then
-    return 0
+    # If Connect mode is enabled, apply additional filtering
+    if [ "$KAFKA_CONNECT_MODE" = "true" ]; then
+      # Skip if file doesn't exist
+      [ ! -f "$file" ] && return 1
+      
+      # Exclude heavy dependencies that Connect doesn't need
+      case "$file" in
+        *hadoop*) return 1 ;;
+        *hive*) return 1 ;;
+        *iceberg*) return 1 ;;
+        *avro*) return 1 ;;
+        *parquet*) return 1 ;;
+        *) return 0 ;;
+      esac
+    else
+      return 0
+    fi
   else
     return 1
   fi

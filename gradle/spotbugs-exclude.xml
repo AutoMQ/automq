@@ -601,7 +601,8 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
     <Match>
         <Or>
             <Class name="org.apache.kafka.jmh.util.ByteUtilsBenchmark$BaseBenchmarkState"/>
-            <Class name="com.automq.shell.log.LogUploader"/>
+            <Class name="com.automq.log.LogUploader"/>
+            <Class name="com.automq.log.uploader.LogUploader"/>
             <Class name="com.automq.shell.metrics.S3MetricsExporter"/>
         </Or>
         <!-- Suppress warning because JMH code is used to instantiate Random() once per Trial. This is done to ensure
@@ -623,6 +624,16 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             <Class name="org.apache.kafka.tools.StreamsResetter"/>
         </Or>
         <Bug pattern="RV_RETURN_VALUE_IGNORED_NO_SIDE_EFFECT"/>
+    </Match>
+
+    <!-- Exclude AutoMQTelemetryManager JMX configuration issues -->
+    <Match>
+        <Class name="com.automq.opentelemetry.AutoMQTelemetryManager"/>
+        <Method name="registerJmxMetrics"/>
+        <Or>
+            <Bug pattern="NP_LOAD_OF_KNOWN_NULL_VALUE"/>
+            <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"/>
+        </Or>
     </Match>
 
 </FindBugsFilter>

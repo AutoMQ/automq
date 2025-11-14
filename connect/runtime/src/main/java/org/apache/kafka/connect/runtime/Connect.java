@@ -21,6 +21,8 @@ import org.apache.kafka.connect.runtime.distributed.DistributedHerder;
 import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestServer;
 
+import com.automq.log.S3RollingFileAppender;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -115,6 +117,9 @@ public class Connect<H extends Herder> {
             try {
                 startLatch.await();
                 Connect.this.stop();
+                // AutoMQ inject start
+                S3RollingFileAppender.shutdown();
+                // AutoMQ inject end
             } catch (InterruptedException e) {
                 log.error("Interrupted in shutdown hook while waiting for Kafka Connect startup to finish");
             }
