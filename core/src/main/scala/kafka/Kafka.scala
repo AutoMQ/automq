@@ -106,7 +106,7 @@ object Kafka extends Logging {
       AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
-      // AutoMQ for Kafka inject start
+      // AutoMQ for Kafka inject end
     }
   }
 

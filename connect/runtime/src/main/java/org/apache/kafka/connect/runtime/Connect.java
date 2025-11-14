@@ -117,7 +117,9 @@ public class Connect<H extends Herder> {
             try {
                 startLatch.await();
                 Connect.this.stop();
+                // AutoMQ inject start
                 S3RollingFileAppender.shutdown();
+                // AutoMQ inject end
             } catch (InterruptedException e) {
                 log.error("Interrupted in shutdown hook while waiting for Kafka Connect startup to finish");
             }
