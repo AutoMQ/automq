@@ -184,19 +184,25 @@ public class KafkaStatusBackingStore extends KafkaTopicBasedBackingStore impleme
         // gets approved and scheduled for release.
         producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "false"); // disable idempotence since retries is force to 0
         producerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
         AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, "status-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(producerProps, config, clusterId);
 
         Map<String, Object> consumerProps = new HashMap<>(originals);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
         AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, "status-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(consumerProps, config, clusterId);
 
         Map<String, Object> adminProps = new HashMap<>(originals);
         adminProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
         AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, "status-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(adminProps, config, clusterId);
 
         Map<String, Object> topicSettings = config instanceof DistributedConfig

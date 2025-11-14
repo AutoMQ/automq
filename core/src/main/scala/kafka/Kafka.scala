@@ -89,20 +89,24 @@ object Kafka extends Logging {
         threadNamePrefix = None,
         enableForwarding = enableApiForwarding(config)
       )
+      // AutoMQ for Kafka inject start
       AutoMQApplication.setClusterId(kafkaServer.clusterId)
       S3RollingFileAppender.setup(new KafkaS3LogConfig(config, kafkaServer, null))
       AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, kafkaServer, null))
       kafkaServer
+      // AutoMQ for Kafka inject end
     } else {
       val kafkaRaftServer = new KafkaRaftServer(
         config,
         Time.SYSTEM,
       )
+      // AutoMQ for Kafka inject start
       AutoMQApplication.setClusterId(kafkaRaftServer.getSharedServer().clusterId)
       S3RollingFileAppender.setup(new KafkaS3LogConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[MetricsExportConfig], new KafkaMetricsExportConfig(config, null, kafkaRaftServer))
       AutoMQApplication.registerSingleton(classOf[KafkaRaftServer], kafkaRaftServer)
       kafkaRaftServer
+      // AutoMQ for Kafka inject start
     }
   }
 
