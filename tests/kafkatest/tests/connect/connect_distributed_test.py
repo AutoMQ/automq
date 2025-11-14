@@ -180,6 +180,139 @@ class ConnectDistributedTest(Test):
     #     metadata_quorum=[quorum.zk],
     #     use_new_coordinator=[False]
     # )
+    @matrix(
+        exactly_once_source=[True, False],
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[True],
+        group_protocol=consumer_group.all_group_protocols
+    )
+    def test_restart_failed_connector(self, exactly_once_source, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
+        self.EXACTLY_ONCE_SOURCE_SUPPORT = 'enabled' if exactly_once_source else 'disabled'
+        self.CONNECT_PROTOCOL = connect_protocol
+        self.setup_services()
+        self.cc.set_configs(lambda node: self.render("connect-distributed.properties", node=node))
+        self.cc.start()
+
+        if exactly_once_source:
+            self.connector = MockSource(self.cc, mode='connector-failure', delay_sec=5)
+        else:
+            self.connector = MockSink(self.cc, self.topics.keys(), mode='connector-failure', delay_sec=5, consumer_group_protocol=group_protocol)
+        self.connector.start()
+
+        wait_until(lambda: self.connector_is_failed(self.connector), timeout_sec=15,
+                   err_msg="Failed to see connector transition to the FAILED state")
+
+        self.cc.restart_connector(self.connector.name)
+        
+        wait_until(lambda: self.connector_is_running(self.connector), timeout_sec=10,
+                   err_msg="Failed to see connector transition to the RUNNING state")
+
+    @cluster(num_nodes=5)
+    @matrix(
+        connector_type=['source', 'exactly-once source', 'sink'],
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        connector_type=['source', 'exactly-once source', 'sink'],
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[True],
+        group_protocol=consumer_group.all_group_protocols
+    )
+    def test_restart_failed_task(self, connector_type, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
+        self.EXACTLY_ONCE_SOURCE_SUPPORT = 'enabled' if connector_type == 'exactly-once source' else 'disabled'
+        self.CONNECT_PROTOCOL = connect_protocol
+        self.setup_services()
+        self.cc.set_configs(lambda node: self.render("connect-distributed.properties", node=node))
+        self.cc.start()
+
+        connector = None
+        if connector_type == "sink":
+            connector = MockSink(self.cc, self.topics.keys(), mode='task-failure', delay_sec=5, consumer_group_protocol=group_protocol)
+        else:
+            connector = MockSource(self.cc, mode='task-failure', delay_sec=5)
+            
+        connector.start()
+
+        task_id = 0
+        wait_until(lambda: self.task_is_failed(connector, task_id), timeout_sec=20,
+                   err_msg="Failed to see task transition to the FAILED state")
+
+        self.cc.restart_task(connector.name, task_id)
+        
+        wait_until(lambda: self.task_is_running(connector, task_id), timeout_sec=10,
+                   err_msg="Failed to see task transition to the RUNNING state")
+
+    @cluster(num_nodes=5)
+    @matrix(
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[True],
+        group_protocol=consumer_group.all_group_protocols
+    )
+    def test_restart_connector_and_tasks_failed_connector(self, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
+        self.CONNECT_PROTOCOL = connect_protocol
+        self.setup_services()
+        self.cc.set_configs(lambda node: self.render("connect-distributed.properties", node=node))
+        self.cc.start()
+
+        self.sink = MockSink(self.cc, self.topics.keys(), mode='connector-failure', delay_sec=5, consumer_group_protocol=group_protocol)
+        self.sink.start()
+
+        wait_until(lambda: self.connector_is_failed(self.sink), timeout_sec=15,
+                   err_msg="Failed to see connector transition to the FAILED state")
+
+        self.cc.restart_connector_and_tasks(self.sink.name, only_failed = "true", include_tasks = "false")
+
+        wait_until(lambda: self.connector_is_running(self.sink), timeout_sec=10,
+                   err_msg="Failed to see connector transition to the RUNNING state")
+
+    @cluster(num_nodes=5)
+    @matrix(
+        connector_type=['source', 'sink'],
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        connector_type=['source', 'sink'],
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[True],
+        group_protocol=consumer_group.all_group_protocols
+    )
+    def test_restart_connector_and_tasks_failed_task(self, connector_type, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
+        self.CONNECT_PROTOCOL = connect_protocol
+        self.setup_services()
+        self.cc.set_configs(lambda node: self.render("connect-distributed.properties", node=node))
+        self.cc.start()
+
+        connector = None
+        if connector_type == "sink":
+            connector = MockSink(self.cc, self.topics.keys(), mode='task-failure', delay_sec=5, consumer_group_protocol=group_protocol)
+        else:
+            connector = MockSource(self.cc, mode='task-failure', delay_sec=5)
+
+        connector.start()
+
+        task_id = 0
+        wait_until(lambda: self.task_is_failed(connector, task_id), timeout_sec=20,
+                   err_msg="Failed to see task transition to the FAILED state")
+
+        self.cc.restart_connector_and_tasks(connector.name, only_failed = "false", include_tasks = "true")
+
+        wait_until(lambda: self.task_is_running(connector, task_id), timeout_sec=10,
+                   err_msg="Failed to see task transition to the RUNNING state")
+
+    @cluster(num_nodes=5)
     # @matrix(
     #     exactly_once_source=[True, False],
     #     connect_protocol=['sessioned', 'compatible', 'eager'],
