@@ -284,6 +284,69 @@ class IcebergWriterSchemaEvolutionTest {
     }
 
     @Test
+    void testSchemaEvolutionSwitchOptionalField() throws IOException {
+        // Base schema without optional fields
+        Schema avroSchemaV1 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV1 = new ArrayList<>();
+        fieldsV1.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV1.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        avroSchemaV1.setFields(fieldsV1);
+
+        GenericRecord avroRecordV1 = new GenericData.Record(avroSchemaV1);
+        avroRecordV1.put("id", 1L);
+        avroRecordV1.put("name", "base");
+
+        // Schema with optional field1 added on top of base schema
+        Schema avroSchemaV2 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV2 = new ArrayList<>();
+        fieldsV2.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV2.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        Schema optionalField1 = Schema.createUnion(Arrays.asList(Schema.create(Schema.Type.NULL), Schema.create(Schema.Type.STRING)));
+        fieldsV2.add(new Schema.Field("field1", optionalField1, null, null));
+        avroSchemaV2.setFields(fieldsV2);
+
+        GenericRecord avroRecordV2 = new GenericData.Record(avroSchemaV2);
+        avroRecordV2.put("id", 2L);
+        avroRecordV2.put("name", "with-field1");
+        avroRecordV2.put("field1", "value1");
+
+        // Schema removes field1 and introduces optional field2 instead
+        Schema avroSchemaV3 = Schema.createRecord("TestRecord", null, null, false);
+        List<Schema.Field> fieldsV3 = new ArrayList<>();
+        fieldsV3.add(new Schema.Field("id", Schema.create(Schema.Type.LONG), null, null));
+        fieldsV3.add(new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null));
+        Schema optionalField2 = Schema.createUnion(Arrays.asList(Schema.create(Schema.Type.NULL), Schema.create(Schema.Type.STRING)));
+        fieldsV3.add(new Schema.Field("field2", optionalField2, null, null));
+        avroSchemaV3.setFields(fieldsV3);
+
+        GenericRecord avroRecordV3 = new GenericData.Record(avroSchemaV3);
+        avroRecordV3.put("id", 3L);
+        avroRecordV3.put("name", "with-field2");
+        avroRecordV3.put("field2", "value2");
+
+        when(kafkaAvroDeserializer.deserialize(anyString(), any(), any(ByteBuffer.class)))
+            .thenReturn(avroRecordV1)
+            .thenReturn(avroRecordV2)
+            .thenReturn(avroRecordV3);
+
+        Record kafkaRecordV1 = createMockKafkaRecord(1, 0);
+        writer.write(0, kafkaRecordV1);
+
+        Record kafkaRecordV2 = createMockKafkaRecord(2, 1);
+        writer.write(0, kafkaRecordV2);
+
+        Record kafkaRecordV3 = createMockKafkaRecord(3, 2);
+        writer.write(0, kafkaRecordV3);
+
+        Table table = catalog.loadTable(tableId);
+        assertNotNull(table);
+        assertNotNull(table.schema().findField("_kafka_value.field1"));
+        assertEquals(false, table.schema().findField("_kafka_value.field1").isRequired());
+        assertNotNull(table.schema().findField("_kafka_value.field2"));
+        assertEquals(false, table.schema().findField("_kafka_value.field2").isRequired());
+    }
+
+    @Test
     void testSchemaEvolutionReorderColumn() throws IOException {
         // Given: Initial Avro schema (v1)
         Schema avroSchemaV1 = Schema.createRecord("TestRecord", null, null, false);

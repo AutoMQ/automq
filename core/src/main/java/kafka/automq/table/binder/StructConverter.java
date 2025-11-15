@@ -20,31 +20,8 @@ package kafka.automq.table.binder;
 
 import org.apache.iceberg.types.Type;
 
-/**
- * Converts values between different schema systems.
- *
- * @param <S> The source schema type (e.g., org.apache.avro.Schema)
- */
-public interface TypeAdapter<S> {
+@FunctionalInterface
+public interface StructConverter<S> {
 
-    /**
-     * Converts a source value to the target Iceberg type.
-     *
-     * @param sourceValue  The source value
-     * @param sourceSchema The source schema
-     * @param targetType   The target Iceberg type
-     * @return The converted value
-     */
     Object convert(Object sourceValue, S sourceSchema, Type targetType);
-
-    /**
-     * Converts a source value to the target Iceberg type with support for recursive struct conversion.
-     *
-     * @param sourceValue     The source value
-     * @param sourceSchema    The source schema
-     * @param targetType      The target Iceberg type
-     * @param structConverter A callback for converting nested STRUCT types
-     * @return The converted value
-     */
-    Object convert(Object sourceValue, S sourceSchema, Type targetType, StructConverter<S> structConverter);
 }
