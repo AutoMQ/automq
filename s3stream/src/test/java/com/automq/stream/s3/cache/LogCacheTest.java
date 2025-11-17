@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -164,7 +165,7 @@ public class LogCacheTest {
     }
 
     @Test
-    public void testTryMergeLogic() {
+    public void testTryMergeLogic() throws ExecutionException, InterruptedException {
         LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
         final long streamId = 233L;
         final int blocksToCreate = LogCache.MERGE_BLOCK_THRESHOLD + 2;
@@ -187,8 +188,8 @@ public class LogCacheTest {
         assertEquals(leftCache.endOffset(), rightCache.startOffset());
 
         // mark both blocks free to trigger tryMerge (called inside markFree)
-        logCache.markFree(left);
-        logCache.markFree(right);
+        logCache.markFree(left).get();
+        logCache.markFree(right).get();
 
         int after = logCache.blocks.size();
         assertEquals(before - 1, after, "two adjacent free contiguous blocks should be merged into one");
