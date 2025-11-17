@@ -37,4 +37,14 @@ public interface TypeAdapter<S> {
      */
     Object convert(Object sourceValue, S sourceSchema, Type targetType);
 
+    /**
+     * Converts a source value to the target Iceberg type with support for recursive struct conversion.
+     *
+     * @param sourceValue     The source value
+     * @param sourceSchema    The source schema
+     * @param targetType      The target Iceberg type
+     * @param structConverter A callback for converting nested STRUCT types
+     * @return The converted value
+     */
+    Object convert(Object sourceValue, S sourceSchema, Type targetType, StructConverter<S> structConverter);
 }

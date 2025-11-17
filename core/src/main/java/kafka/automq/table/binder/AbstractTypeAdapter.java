@@ -48,9 +48,10 @@ import java.util.UUID;
  */
 public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
 
+
     @SuppressWarnings({"CyclomaticComplexity", "NPathComplexity"})
     @Override
-    public Object convert(Object sourceValue, S sourceSchema, Type targetType) {
+    public Object convert(Object sourceValue, S sourceSchema, Type targetType, StructConverter<S> structConverter) {
         if (sourceValue == null) {
             return null;
         }
@@ -83,9 +84,11 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
             case TIMESTAMP:
                 return convertTimestamp(sourceValue, sourceSchema, (Types.TimestampType) targetType);
             case LIST:
-                return convertList(sourceValue, sourceSchema, (Types.ListType) targetType);
+                return convertList(sourceValue, sourceSchema, (Types.ListType) targetType, structConverter);
             case MAP:
-                return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType);
+                return convertMap(sourceValue, sourceSchema, (Types.MapType) targetType, structConverter);
+            case STRUCT:
+                return structConverter.convert(sourceValue, sourceSchema, targetType);
             default:
                 return sourceValue;
         }
@@ -203,10 +206,13 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
             Instant instant = Instant.parse(sourceValue.toString());
             return DateTimeUtil.timestamptzFromMicros(DateTimeUtil.microsFromInstant(instant));
         }
+        if (sourceValue instanceof Number) {
+            return DateTimeUtil.timestamptzFromMicros(((Number) sourceValue).longValue());
+        }
         throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to " + targetType.typeId());
     }
 
-    protected abstract List<?> convertList(Object sourceValue, S sourceSchema, Types.ListType targetType);
+    protected abstract List<?> convertList(Object sourceValue, S sourceSchema, Types.ListType targetType, StructConverter<S> structConverter);
 
-    protected abstract Map<?, ?> convertMap(Object sourceValue, S sourceSchema, Types.MapType targetType);
+    protected abstract Map<?, ?> convertMap(Object sourceValue, S sourceSchema, Types.MapType targetType, StructConverter<S> structConverter);
 }

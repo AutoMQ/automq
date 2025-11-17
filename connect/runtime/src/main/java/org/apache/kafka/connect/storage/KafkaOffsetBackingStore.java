@@ -30,6 +30,7 @@ import org.apache.kafka.common.errors.UnsupportedVersionException;
 import org.apache.kafka.common.serialization.ByteArrayDeserializer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.connect.automq.az.AzAwareClientConfigurator;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.runtime.WorkerConfig;
 import org.apache.kafka.connect.runtime.distributed.DistributedConfig;
@@ -192,12 +193,18 @@ public class KafkaOffsetBackingStore extends KafkaTopicBasedBackingStore impleme
         // gets approved and scheduled for release.
         producerProps.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, "false");
         producerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyProducerAz(producerProps, "offset-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(producerProps, config, clusterId);
 
         Map<String, Object> consumerProps = new HashMap<>(originals);
         consumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer.class.getName());
         consumerProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyConsumerAz(consumerProps, "offset-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(consumerProps, config, clusterId);
         if (config.exactlyOnceSourceEnabled()) {
             ConnectUtils.ensureProperty(
@@ -209,6 +216,9 @@ public class KafkaOffsetBackingStore extends KafkaTopicBasedBackingStore impleme
 
         Map<String, Object> adminProps = new HashMap<>(originals);
         adminProps.put(CommonClientConfigs.CLIENT_ID_CONFIG, clientId);
+        // AutoMQ for Kafka inject start
+        AzAwareClientConfigurator.maybeApplyAdminAz(adminProps, "offset-log");
+        // AutoMQ for Kafka inject end
         ConnectUtils.addMetricsContextProperties(adminProps, config, clusterId);
         NewTopic topicDescription = newTopicDescription(topic, config);
 
