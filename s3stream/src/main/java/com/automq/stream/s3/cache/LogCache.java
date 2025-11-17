@@ -24,6 +24,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
+import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.biniarysearch.StreamRecordBatchList;
 
 import org.slf4j.Logger;
@@ -37,7 +38,9 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -59,6 +62,8 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
+    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
+        1, "LOG_CACHE_ASYNC", true, LOGGER);
     static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
@@ -259,10 +264,19 @@ public class LogCache {
 
     }
 
-    public void markFree(LogCacheBlock block) {
+    public CompletableFuture<Void> markFree(LogCacheBlock block) {
         block.free = true;
         tryRealFree();
-        tryMerge();
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        LOG_CACHE_ASYNC_EXECUTOR.execute(() -> {
+            try {
+                tryMerge();
+                cf.complete(null);
+            } catch (Throwable t) {
+                cf.completeExceptionally(t);
+            }
+        });
+        return cf;
     }
 
     private void tryRealFree() {
@@ -295,10 +309,10 @@ public class LogCache {
             writeLock.unlock();
         }
         size.addAndGet(-freeSize);
-        removed.forEach(b -> {
+        LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();
-        });
+        }));
     }
 
     private void tryMerge() {
