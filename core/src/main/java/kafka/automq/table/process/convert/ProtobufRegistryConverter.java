@@ -78,7 +78,7 @@ public class ProtobufRegistryConverter implements Converter {
         Message protoMessage = deserializer.deserialize(topic, null, buffer);
         Schema schema = avroSchemaCache.getIfPresent(schemaId);
         if (schema == null) {
-            ProtobufData protobufData = ProtobufData.get();
+            ProtobufData protobufData = LogicalMapProtobufData.get();
             protobufData.addLogicalTypeConversion(new ProtoConversions.TimestampMicrosConversion());
             schema = protobufData.getSchema(protoMessage.getDescriptorForType());
             avroSchemaCache.put(schemaId, schema);
