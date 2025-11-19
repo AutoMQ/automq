@@ -414,6 +414,10 @@ object SocketServer {
 
   val ListenerReconfigurableConfigs: Set[String] = Set(SocketServerConfigs.MAX_CONNECTIONS_CONFIG, SocketServerConfigs.MAX_CONNECTION_CREATION_RATE_CONFIG)
 
+  // AutoMQ inject start
+  val MaxInflightRequestsPerConnection = 64;
+  // AutoMQ inject end
+
   def closeSocket(
     channel: SocketChannel,
     logging: Logging
@@ -1063,14 +1067,27 @@ private[kafka] class Processor(
             if (isTraceEnabled) {
               trace(s"Socket server received empty response to send, registering for read: $response")
             }
-            // AutoMQ for Kafka inject start
-            // Try unmuting the channel. If there was no quota violation and the channel has not been throttled,
-            // it will be unmuted immediately. If the channel has been throttled, it will be unmuted only if the
-            // throttling delay has already passed by now.
-//            handleChannelMuteEvent(channelId, ChannelMuteEvent.RESPONSE_SENT)
-//            tryUnmuteChannel(channelId)
-            // AutoMQ for Kafka inject end
-
+            // AutoMQ inject start
+            val channelContext = channelContexts.get(channelId)
+            val channel = selector.channel(channelId)
+            try{
+              if (channel != null && channel.isMuted) {
+                val unmute = if (channelContext == null) {
+                  true
+                } else if (channelContext.nextCorrelationId.size() < MaxInflightRequestsPerConnection && channelContext.clearQueueFull()) {
+                  true
+                } else {
+                  false
+                }
+                if (unmute) {
+                  selector.unmute(channel.id)
+                }
+              }
+            }catch {
+              case e:IllegalStateException =>
+                warn(s"Channel already closed while processing response for $channelId",e)
+            }
+          // AutoMQ inject end
           case response: SendResponse =>
             sendResponse(response, response.responseSend)
           case response: CloseConnectionResponse =>
@@ -1183,7 +1200,7 @@ private[kafka] class Processor(
                 // AutoMQ will pipeline the requests to accelerate the performance and also keep the request order.
 
                 // Mute the channel if the inflight requests exceed the threshold.
-                if (channelContext.nextCorrelationId.size() >= SocketServerConfigs.MAX_INFLIGHT_REQUESTS_PER_CONNECTION && !channel.isMuted) {
+                if (channelContext.nextCorrelationId.size() >= MaxInflightRequestsPerConnection && !channel.isMuted) {
                   if (isTraceEnabled) {
                     trace(s"Mute channel ${channel.id} because the inflight requests exceed the threshold, inflight count is ${channelContext.nextCorrelationId.size()}.")
                   }
@@ -1231,7 +1248,7 @@ private[kafka] class Processor(
           if (channel.isMuted) {
             val unmute = if (channelContext == null) {
               true
-            } else if (channelContext.nextCorrelationId.size() < 8 && channelContext.clearQueueFull()) {
+            } else if (channelContext.nextCorrelationId.size() < MaxInflightRequestsPerConnection && channelContext.clearQueueFull()) {
               if (isTraceEnabled) {
                 trace(s"Unmute channel ${send.destinationId} because the inflight requests are below the threshold.")
               }
@@ -1272,7 +1289,7 @@ private[kafka] class Processor(
           }
           remove
         })
-        channelContexts.remove(connectionId)
+        removeChannelContext(connectionId)
         // the channel has been closed by the selector but the quotas still need to be updated
         connectionQuotas.dec(listenerName, InetAddress.getByName(remoteHost))
       } catch {
@@ -1313,7 +1330,7 @@ private[kafka] class Processor(
         }
         remove
       })
-      channelContexts.remove(connectionId)
+      removeChannelContext(connectionId)
       //      inflightResponses.remove(connectionId).foreach(updateRequestMetrics)
       // AutoMQ for Kafka inject end
     }
@@ -1424,6 +1441,26 @@ private[kafka] class Processor(
     }
     // AutoMQ for Kafka inject end
   }
+
+  // AutoMQ inject start
+  private def removeChannelContext(connectionId: String): Unit = {
+    val channelContext = channelContexts.remove(connectionId)
+    if (channelContext == null) {
+      return
+    }
+    channelContext.synchronized {
+      channelContext.nextCorrelationId.clear()
+      channelContext.responses.forEach((_, response) => {
+        response match {
+          case sendResponse: SendResponse =>
+            sendResponse.responseSend.release()
+          case _ =>
+        }
+      })
+      channelContext.responses.clear()
+    }
+  }
+  // AutoMQ inject end
 
   private def dequeueResponse(): RequestChannel.Response = {
     val response = responseQueue.poll()
