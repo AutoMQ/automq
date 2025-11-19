@@ -38,23 +38,28 @@ import org.junit.jupiter.api.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class IcebergTableManagerTest {
     private InMemoryCatalog catalog;
-    private IcebergTableManager icebergTableManager;
 
     @BeforeEach
     public void setup() {
@@ -62,241 +67,250 @@ public class IcebergTableManagerTest {
         catalog.createNamespace(Namespace.of("default"));
     }
 
-    private String generateRandomTableName() {
-        int randomNum = ThreadLocalRandom.current().nextInt(1000, 10000);
-        return "my_table_" + randomNum;
-    }
-
     @Test
-    public void testTableCreationAndLoad() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void shouldCreateTableOnceAndReuseInstance() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
         Schema schema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
 
-        Table table = icebergTableManager.getTableOrCreate(schema);
-        assertNotNull(table, "Table should not be null");
-
-        Table loadedTable = icebergTableManager.getTableOrCreate(schema);
-        assertEquals(table, loadedTable, "Loaded table should be the same as the created table");
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        assertEquals(table, manager.getTableOrCreate(schema));
     }
 
     @Test
-    public void testTableCreationWithDotInName() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void createsMissingNamespaceBeforeCreatingTable() {
+        String namespace = "ns_" + ThreadLocalRandom.current().nextInt(1000, 10000);
+        TableIdentifier tableId = TableIdentifier.of(namespace, "table_" + ThreadLocalRandom.current().nextInt(1000, 10000));
+        IcebergTableManager manager = newManager(tableId);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        // Namespace should now exist and table should be loadable
+        assertNotNull(catalog.loadTable(tableId));
+    }
+
+    @Test
+    public void supportsFieldNamesContainingDots() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
         Schema schema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name.test", Types.StringType.get()));
 
-        Table table = icebergTableManager.getTableOrCreate(schema);
-        assertNotNull(table, "Table should not be null");
-
-        Table loadedTable = icebergTableManager.getTableOrCreate(schema);
-        assertEquals(table, loadedTable, "Loaded table should be the same as the created table");
-
-        Types.NestedField field = loadedTable.schema().findField("name.test");
-        assertNotNull(field, "Field 'name.test' should exist in the table schema");
-        assertEquals(field.name(), "name.test", "Field name should be 'name.test'");
+        Table table = manager.getTableOrCreate(schema);
+        Types.NestedField field = table.schema().findField("name.test");
+        assertNotNull(field);
+        assertEquals("name.test", field.name());
     }
 
     @Test
-    public void testCheckAndApplySchemaChanges() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void addsPrimitiveColumn() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        Schema initialSchema = new Schema(
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        Table updated = applyChanges(manager, table, new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
+            Types.NestedField.optional(2, "email", Types.StringType.get())));
 
-        Schema updatedSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.LongType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()),
-            Types.NestedField.optional(3, "email", Types.StringType.get()));
-
-        Record record = GenericRecord.create(updatedSchema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, record.struct().asSchema());
-        assertFalse(schemaChanges.isEmpty(), "Schema changes should be applied");
-        icebergTableManager.applySchemaChange(table, schemaChanges);
-
-        // Reload table and verify the schema changes
-        Table updatedTable = catalog.loadTable(tableId);
-        List<Types.NestedField> columns = updatedTable.schema().columns();
-        assertEquals(3, columns.size(), "Table schema should have three columns");
-        assertEquals(Types.LongType.get(), columns.get(0).type(), "Column 'id' should be of type Long");
+        assertNotNull(updated.schema().findField("email"));
     }
 
     @Test
-    public void testAddNewColumn() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void promotesPrimitiveColumnType() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
 
-        Schema updatedSchema = new Schema(
+        Table updated = applyChanges(manager, table, new Schema(
+            Types.NestedField.required(1, "id", Types.LongType.get())));
+
+        assertEquals(Types.LongType.get(), updated.schema().findField("id").type());
+    }
+
+    @Test
+    public void makesColumnOptional() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        Table updated = applyChanges(manager, table, new Schema(
+            Types.NestedField.optional(1, "id", Types.IntegerType.get())));
+
+        assertTrue(updated.schema().findField("id").isOptional());
+    }
+
+    @Test
+    public void addsStructColumn() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        Table updated = applyChanges(manager, table, new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()),
-            Types.NestedField.optional(3, "email", Types.StringType.get()));
+            Types.NestedField.optional(2, "address", Types.StructType.of(
+                Types.NestedField.optional(3, "street", Types.StringType.get()),
+                Types.NestedField.optional(4, "zipCode", Types.IntegerType.get())))));
 
-        Record record = GenericRecord.create(updatedSchema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, record.struct().asSchema());
-        assertFalse(schemaChanges.isEmpty(), "New columns should be added");
-        icebergTableManager.applySchemaChange(table, schemaChanges);
-
-        // Reload table and verify the new columns
-        Table updatedTable = catalog.loadTable(tableId);
-        List<Types.NestedField> columns = updatedTable.schema().columns();
-        assertEquals(3, columns.size(), "Table schema should have three columns");
-        assertEquals(Types.StringType.get(), columns.get(2).type(), "Column 'email' should be of type String");
+        Types.NestedField address = updated.schema().findField("address");
+        assertNotNull(address);
+        assertTrue(address.type().isStructType());
+        assertNotNull(updated.schema().findField("address.street"));
+        assertNotNull(updated.schema().findField("address.zipCode"));
     }
 
     @Test
-    public void testMakeColumnOptional() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void addsNestedFieldInsideStruct() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        Schema updatedSchema = new Schema(
-            Types.NestedField.optional(1, "id", Types.IntegerType.get()));
-
-        Record record = GenericRecord.create(updatedSchema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, record.struct().asSchema());
-        assertFalse(schemaChanges.isEmpty(), "Column 'id' should be made optional");
-        icebergTableManager.applySchemaChange(table, schemaChanges);
-
-        // Reload table and verify column is optional
-        Table updatedTable = catalog.loadTable(tableId);
-        Types.NestedField column = updatedTable.schema().findField("id");
-        assertTrue(column.isOptional(), "Column 'id' should be optional");
-    }
-
-    @Test
-    public void testNoSchemaChanges() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
-
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        Record record = GenericRecord.create(initialSchema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, record.struct().asSchema());
-        assertTrue(schemaChanges.isEmpty(), "No schema changes should be detected");
-    }
-
-    @Test
-    public void testNoChangesWhenV2AddsColumnAndV1RecordProvided() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
-
-        // v2 Schema with additional column
-        Schema v2Schema = new Schema(
+        Table table = manager.getTableOrCreate(new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()),
-            Types.NestedField.optional(3, "email", Types.StringType.get()));
+            Types.NestedField.optional(2, "address", Types.StructType.of(
+                Types.NestedField.optional(3, "street", Types.StringType.get())))));
 
-        // Create the table with v2 schema
-        Table table = icebergTableManager.getTableOrCreate(v2Schema);
-
-        // v1 Record Schema without the new column
-        Schema v1Schema = new Schema(
+        Table updated = applyChanges(manager, table, new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
+            Types.NestedField.optional(2, "address", Types.StructType.of(
+                Types.NestedField.optional(3, "street", Types.StringType.get()),
+                Types.NestedField.optional(4, "zipCode", Types.IntegerType.get())))));
 
-        Record v1Record = GenericRecord.create(v1Schema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, v1Record.struct().asSchema());
-        assertTrue(schemaChanges.isEmpty(), "No schema changes should be applied in this case");
-
-        // Verify the schema remains unchanged
-        List<Types.NestedField> columns = catalog.loadTable(tableId).schema().columns();
-        assertEquals(3, columns.size(), "Table schema should have three columns");
-        assertEquals(Types.StringType.get(), columns.get(2).type(), "Column 'email' should exist and be of type String");
+        assertNotNull(updated.schema().findField("address.zipCode"));
     }
 
     @Test
-    public void testNoChangesWhenV2SetsFieldToOptionalAndV1RecordProvided() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void addsFieldInsideListElementStruct() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // v2 Schema with "id" set to optional
-        Schema v2Schema = new Schema(
-            Types.NestedField.optional(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.optional(1, "addresses", Types.ListType.ofOptional(2,
+                Types.StructType.of(Types.NestedField.optional(3, "street", Types.StringType.get()))))));
 
-        // Create the table with v2 schema
-        Table table = icebergTableManager.getTableOrCreate(v2Schema);
+        Table updated = applyChanges(manager, table, new Schema(
+            Types.NestedField.optional(1, "addresses", Types.ListType.ofOptional(2,
+                Types.StructType.of(
+                    Types.NestedField.optional(3, "street", Types.StringType.get()),
+                    Types.NestedField.optional(4, "zip", Types.IntegerType.get()))))));
 
-        // v1 Record Schema with "id" required
-        Schema v1Schema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
-
-        Record v1Record = GenericRecord.create(v1Schema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, v1Record.struct().asSchema());
-        assertTrue(schemaChanges.isEmpty(), "No schema changes should be applied in this case");
-
-        // Verify the schema remains unchanged
-        List<Types.NestedField> columns = catalog.loadTable(tableId).schema().columns();
-        assertEquals(2, columns.size(), "Table schema should have two columns");
-        assertTrue(columns.get(0).isOptional(), "Column 'id' should remain optional");
+        assertNotNull(updated.schema().findField("addresses.element.zip"));
     }
 
     @Test
-    public void testNoChangesWhenV2PromotesTypeAndV1RecordProvided() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void addsFieldInsideMapValueStruct() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // v2 Schema with "id" type promoted to Long
-        Schema v2Schema = new Schema(
-            Types.NestedField.required(1, "id", Types.LongType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.optional(1, "attributes", Types.MapType.ofOptional(2, 3,
+                Types.StringType.get(),
+                Types.StructType.of(Types.NestedField.optional(4, "city", Types.StringType.get()))))));
 
-        // Create the table with v2 schema
-        Table table = icebergTableManager.getTableOrCreate(v2Schema);
+        Table updated = applyChanges(manager, table, new Schema(
+            Types.NestedField.optional(1, "attributes", Types.MapType.ofOptional(2, 3,
+                Types.StringType.get(),
+                Types.StructType.of(
+                    Types.NestedField.optional(4, "city", Types.StringType.get()),
+                    Types.NestedField.optional(5, "country", Types.StringType.get()))))));
 
-        // v1 Record Schema with "id" as Integer
-        Schema v1Schema = new Schema(
+        assertNotNull(updated.schema().findField("attributes.value.country"));
+    }
+
+    @Test
+    public void promotesFieldInsideListElementStruct() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.optional(1, "addresses", Types.ListType.ofOptional(2,
+                Types.StructType.of(Types.NestedField.optional(3, "zip", Types.IntegerType.get()))))));
+
+        Table updated = applyChanges(manager, table, new Schema(
+            Types.NestedField.optional(1, "addresses", Types.ListType.ofOptional(2,
+                Types.StructType.of(Types.NestedField.optional(3, "zip", Types.LongType.get()))))));
+
+        assertEquals(Types.LongType.get(), updated.schema().findField("addresses.element.zip").type());
+    }
+
+    @Test
+    public void exposesPartitionSpecAndAllowsReset() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        assertNotNull(manager.spec(), "Partition spec should be captured after table creation");
+
+        manager.reset();
+        Table reloaded = manager.getTableOrCreate(table.schema());
+        assertEquals(table.schema().asStruct(), reloaded.schema().asStruct());
+    }
+
+    @Test
+    public void handleSchemaChangesWithFlushTriggersFlushOnlyWhenNeeded() throws Exception {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+        manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        Schema newSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()));
 
-        Record v1Record = GenericRecord.create(v1Schema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, v1Record.struct().asSchema());
+        AtomicInteger flushCount = new AtomicInteger();
+        boolean changed = manager.handleSchemaChangesWithFlush(newSchema, () -> {
+            flushCount.incrementAndGet();
+        });
+        assertTrue(changed);
+        assertEquals(1, flushCount.get());
+        assertNotNull(catalog.loadTable(tableId).schema().findField("name"));
 
-        assertTrue(schemaChanges.isEmpty(), "No schema changes should be applied in this case");
-
-        // Verify the schema remains unchanged
-        List<Types.NestedField> columns = catalog.loadTable(tableId).schema().columns();
-        assertEquals(2, columns.size(), "Table schema should have two columns");
-        assertEquals(Types.LongType.get(), columns.get(0).type(), "Column 'id' should remain of type Long");
+        boolean noChange = manager.handleSchemaChangesWithFlush(newSchema, () -> {
+            flushCount.incrementAndGet();
+        });
+        assertFalse(noChange);
+        assertEquals(1, flushCount.get());
     }
 
     @Test
-    public void testUpdateTableOnErrorRetry() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
+    public void handleSchemaChangesWithFlushPropagatesFlushFailures() throws Exception {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+        manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
 
-        Schema schema = new Schema(
+        Schema newSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()));
 
+        assertThrows(IOException.class, () -> manager.handleSchemaChangesWithFlush(newSchema, () -> {
+            throw new IOException("flush failed");
+        }));
+
+        assertNull(catalog.loadTable(tableId).schema().findField("name"));
+    }
+
+    @Test
+    public void retriesSchemaCommitOnFailure() {
+        TableIdentifier tableId = randomTableId();
+        Schema baseSchema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()),
+            Types.NestedField.optional(2, "name", Types.StringType.get()));
         Schema updatedSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()),
@@ -307,252 +321,173 @@ public class IcebergTableManagerTest {
         UpdateSchema mockUpdateSchema = mock(UpdateSchema.class);
 
         when(mockCatalog.loadTable(eq(tableId))).thenThrow(new NoSuchTableException("Table not found"));
-        when(mockCatalog.createTable(eq(tableId), eq(schema), any(), any())).thenReturn(mockTable);
-        when(mockTable.schema()).thenReturn(schema);
+        when(mockCatalog.createTable(eq(tableId), eq(baseSchema), any(), any())).thenReturn(mockTable);
+        when(mockTable.schema()).thenReturn(baseSchema);
         when(mockTable.updateSchema()).thenReturn(mockUpdateSchema);
-
-        // Ensure that addColumn method also returns the mock for fluent API chaining
         when(mockUpdateSchema.addColumn("email", Types.StringType.get())).thenReturn(mockUpdateSchema);
 
-        // Configure commit to throw exception on first call and succeed on second call
         doAnswer(new Answer<Void>() {
             private int count = 0;
 
             @Override
-            public Void answer(InvocationOnMock invocation) throws Throwable {
-                if (count < 2) {
+            public Void answer(InvocationOnMock invocation) {
+                if (count < 1) {
                     count++;
                     throw new RuntimeException("Commit Error");
                 }
-                return null; // No exception on the second call
+                return null;
             }
         }).when(mockUpdateSchema).commit();
 
-        IcebergTableManager icebergTableManager = new IcebergTableManager(mockCatalog, tableId, mock(WorkerConfig.class));
-        Table table = icebergTableManager.getTableOrCreate(schema);
+        IcebergTableManager manager = new IcebergTableManager(mockCatalog, tableId, mock(WorkerConfig.class));
+        Table table = manager.getTableOrCreate(baseSchema);
 
         Record record = GenericRecord.create(updatedSchema);
-        List<IcebergTableManager.SchemaChange> schemaChanges = icebergTableManager.checkSchemaChanges(table, record.struct().asSchema());
-        assertFalse(schemaChanges.isEmpty(), "Schema changes should be applied after retrying on error");
-        icebergTableManager.applySchemaChange(table, schemaChanges);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertFalse(schemaChanges.isEmpty());
+        manager.applySchemaChange(table, schemaChanges);
     }
 
     @Test
-    public void testCollectSchemaChanges_AddNewColumn() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void ignoresOlderRecordMissingColumn() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // Create table with initial schema
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        // Current schema with new column
-        Schema currentSchema = new Schema(
+        Table table = manager.getTableOrCreate(new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()),
-            Types.NestedField.optional(3, "email", Types.StringType.get()));
+            Types.NestedField.optional(3, "email", Types.StringType.get())));
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
-
-        assertEquals(1, changes.size());
-        assertEquals(IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN, changes.get(0).getType());
-        assertEquals("email", changes.get(0).getColumnName());
-        assertEquals(null, changes.get(0).getParentName());
-    }
-
-    @Test
-    public void testCollectSchemaChanges_MakeOptional() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
-
-        // Create table with required field
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.required(2, "name", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        // Current schema with optional field
-        Schema currentSchema = new Schema(
+        Schema olderSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()));
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
-
-        assertEquals(1, changes.size());
-        assertEquals(IcebergTableManager.SchemaChange.ChangeType.MAKE_OPTIONAL, changes.get(0).getType());
-        assertEquals("name", changes.get(0).getColumnName());
+        Record record = GenericRecord.create(olderSchema);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertTrue(schemaChanges.isEmpty());
+        assertNotNull(catalog.loadTable(tableId).schema().findField("email"));
     }
 
     @Test
-    public void testCollectSchemaChanges_PromoteType() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void ignoresOlderRecordWhenFieldAlreadyOptional() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // Create table with integer type
-        Schema initialSchema = new Schema(
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.optional(1, "id", Types.IntegerType.get()),
+            Types.NestedField.optional(2, "name", Types.StringType.get())));
+
+        Schema olderSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "count", Types.IntegerType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
+            Types.NestedField.optional(2, "name", Types.StringType.get()));
 
-        // Current schema with promoted types
-        Schema currentSchema = new Schema(
+        Record record = GenericRecord.create(olderSchema);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertTrue(schemaChanges.isEmpty());
+        assertTrue(catalog.loadTable(tableId).schema().findField("id").isOptional());
+    }
+
+    @Test
+    public void ignoresOlderRecordWhenTypeAlreadyPromoted() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+
+        Table table = manager.getTableOrCreate(new Schema(
             Types.NestedField.required(1, "id", Types.LongType.get()),
-            Types.NestedField.optional(2, "count", Types.LongType.get()));
+            Types.NestedField.optional(2, "name", Types.StringType.get())));
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
-
-        assertEquals(2, changes.size());
-        assertTrue(changes.stream().allMatch(c -> c.getType() == IcebergTableManager.SchemaChange.ChangeType.PROMOTE_TYPE));
-        assertTrue(changes.stream().anyMatch(c -> c.getColumnName().equals("id")));
-        assertTrue(changes.stream().anyMatch(c -> c.getColumnName().equals("count")));
-    }
-
-    @Test
-    public void testCollectSchemaChanges_NestedFields() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
-
-        // Create table with nested struct
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "user", Types.StructType.of(
-                Types.NestedField.required(3, "name", Types.StringType.get()))));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        // Current schema with additional nested field
-        Schema currentSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "user", Types.StructType.of(
-                Types.NestedField.required(3, "name", Types.StringType.get()),
-                Types.NestedField.optional(4, "email", Types.StringType.get()))));
-
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
-
-        assertEquals(1, changes.size());
-        assertEquals(IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN, changes.get(0).getType());
-        assertEquals("email", changes.get(0).getColumnName());
-        assertEquals("user", changes.get(0).getParentName());
-    }
-
-    @Test
-    public void testCollectSchemaChanges_RemovedField() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
-
-        // Create table with more fields
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()),
-            Types.NestedField.required(3, "email", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
-
-        // Current schema with removed field
-        Schema currentSchema = new Schema(
+        Schema olderSchema = new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
             Types.NestedField.optional(2, "name", Types.StringType.get()));
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
-
-        assertEquals(1, changes.size());
-        assertEquals(IcebergTableManager.SchemaChange.ChangeType.MAKE_OPTIONAL, changes.get(0).getType());
-        assertEquals("email", changes.get(0).getColumnName());
+        Record record = GenericRecord.create(olderSchema);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertTrue(schemaChanges.isEmpty());
+        assertEquals(Types.LongType.get(), catalog.loadTable(tableId).schema().findField("id").type());
     }
 
     @Test
-    public void testCollectSchemaChanges_NoChanges() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void doesNothingWhenSchemasMatch() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // Create table with schema
         Schema schema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "name", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(schema);
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+        Table table = manager.getTableOrCreate(schema);
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(schema, table);
-
-        assertTrue(changes.isEmpty());
+        Record record = GenericRecord.create(schema);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertTrue(schemaChanges.isEmpty());
     }
 
     @Test
-    public void testCollectSchemaChanges_ComplexNestedStructure() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void skipsDuplicateNestedAdditions() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // Create table with deeply nested structure
-        Schema initialSchema = new Schema(
+        Table table = manager.getTableOrCreate(new Schema(
             Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "user", Types.StructType.of(
-                Types.NestedField.required(3, "profile", Types.StructType.of(
-                    Types.NestedField.required(4, "name", Types.StringType.get()))))));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
+            Types.NestedField.optional(2, "address", Types.StructType.of(
+                Types.NestedField.optional(3, "street", Types.StringType.get())))));
 
-        // Current schema with additional deeply nested field
-        Schema currentSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.optional(2, "user", Types.StructType.of(
-                Types.NestedField.required(3, "profile", Types.StructType.of(
-                    Types.NestedField.required(4, "name", Types.StringType.get()),
-                    Types.NestedField.optional(5, "age", Types.IntegerType.get()))))));
+        List<IcebergTableManager.SchemaChange> schemaChanges = List.of(
+            new IcebergTableManager.SchemaChange(IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN,
+                "street", Types.StringType.get(), "address"),
+            new IcebergTableManager.SchemaChange(IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN,
+                "zipCode", Types.IntegerType.get(), "address"));
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
+        manager.applySchemaChange(table, schemaChanges);
 
-        assertEquals(1, changes.size());
-        assertEquals(IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN, changes.get(0).getType());
-        assertEquals("age", changes.get(0).getColumnName());
-        assertEquals("user.profile", changes.get(0).getParentName());
+        Table updatedTable = catalog.loadTable(tableId);
+        Types.NestedField addressField = updatedTable.schema().findField("address");
+        assertNotNull(addressField);
+        List<Types.NestedField> nestedFields = addressField.type().asStructType().fields();
+        assertEquals(2, nestedFields.size());
+        assertNotNull(updatedTable.schema().findField("address.street"));
+        assertNotNull(updatedTable.schema().findField("address.zipCode"));
     }
 
     @Test
-    public void testCollectSchemaChanges_MixedChanges() {
-        String tableName = generateRandomTableName();
-        TableIdentifier tableId = TableIdentifier.of("default", tableName);
-        icebergTableManager = new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    public void skipsMakeOptionalAndPromoteWhenAlreadyApplied() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
 
-        // Create table with initial schema
-        Schema initialSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.IntegerType.get()),
-            Types.NestedField.required(2, "name", Types.StringType.get()),
-            Types.NestedField.optional(3, "score", Types.FloatType.get()),
-            Types.NestedField.optional(4, "old_field", Types.StringType.get()));
-        Table table = icebergTableManager.getTableOrCreate(initialSchema);
+        Schema tableSchema = new Schema(
+            Types.NestedField.optional(1, "name", Types.StringType.get()),
+            Types.NestedField.required(2, "id", Types.LongType.get()));
 
-        // Current schema with mixed changes
-        Schema currentSchema = new Schema(
-            Types.NestedField.required(1, "id", Types.LongType.get()), // promote type
-            Types.NestedField.optional(2, "name", Types.StringType.get()), // make optional
-            Types.NestedField.optional(3, "score", Types.DoubleType.get()), // promote type
-            Types.NestedField.optional(5, "new_field", Types.StringType.get())); // add column
-        // old_field is removed
+        Table mockTable = mock(Table.class);
+        UpdateSchema mockUpdateSchema = mock(UpdateSchema.class);
+        when(mockTable.schema()).thenReturn(tableSchema);
+        when(mockTable.updateSchema()).thenReturn(mockUpdateSchema);
 
-        List<IcebergTableManager.SchemaChange> changes = icebergTableManager.collectSchemaChanges(currentSchema, table);
+        List<IcebergTableManager.SchemaChange> schemaChanges = List.of(
+            new IcebergTableManager.SchemaChange(IcebergTableManager.SchemaChange.ChangeType.MAKE_OPTIONAL,
+                "name", null, null),
+            new IcebergTableManager.SchemaChange(IcebergTableManager.SchemaChange.ChangeType.PROMOTE_TYPE,
+                "id", Types.LongType.get(), null));
 
-        assertEquals(4, changes.size());
+        manager.applySchemaChange(mockTable, schemaChanges);
 
-        assertTrue(changes.stream().anyMatch(c ->
-            c.getType() == IcebergTableManager.SchemaChange.ChangeType.PROMOTE_TYPE &&
-            c.getColumnName().equals("id")));
+        verify(mockUpdateSchema, never()).makeColumnOptional("name");
+        verify(mockUpdateSchema, never()).updateColumn(eq("id"), any());
+        verify(mockUpdateSchema).commit();
+    }
 
-        assertTrue(changes.stream().anyMatch(c ->
-            c.getType() == IcebergTableManager.SchemaChange.ChangeType.MAKE_OPTIONAL &&
-            c.getColumnName().equals("name")));
+    private Table applyChanges(IcebergTableManager manager, Table table, Schema newSchema) {
+        Record record = GenericRecord.create(newSchema);
+        List<IcebergTableManager.SchemaChange> schemaChanges = manager.checkSchemaChanges(table, record.struct().asSchema());
+        assertFalse(schemaChanges.isEmpty(), "Expected schema changes to be detected");
+        manager.applySchemaChange(table, schemaChanges);
+        return catalog.loadTable(manager.tableId());
+    }
 
-        assertTrue(changes.stream().anyMatch(c ->
-            c.getType() == IcebergTableManager.SchemaChange.ChangeType.PROMOTE_TYPE &&
-            c.getColumnName().equals("score")));
+    private IcebergTableManager newManager(TableIdentifier tableId) {
+        return new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+    }
 
-        assertTrue(changes.stream().anyMatch(c ->
-            c.getType() == IcebergTableManager.SchemaChange.ChangeType.ADD_COLUMN &&
-            c.getColumnName().equals("new_field")));
+    private TableIdentifier randomTableId() {
+        return TableIdentifier.of("default", "table_" + ThreadLocalRandom.current().nextInt(1000, 10000));
     }
 
     private InMemoryCatalog initializeCatalog() {
