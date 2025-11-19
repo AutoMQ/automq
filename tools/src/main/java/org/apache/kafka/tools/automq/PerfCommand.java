@@ -309,13 +309,10 @@ public class PerfCommand implements AutoCloseable {
         int randomBytes = (int) (size * randomRatio);
         int staticBytes = size - randomBytes;
         byte[] staticPayload = new byte[staticBytes];
-        r.nextBytes(staticPayload);
-
         if (randomBytes == 0) {
             // all payloads are the same, no need to create multiple copies
             return List.of(staticPayload);
         }
-
         List<byte[]> payloads = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
             byte[] payload = new byte[size];
