@@ -1067,14 +1067,27 @@ private[kafka] class Processor(
             if (isTraceEnabled) {
               trace(s"Socket server received empty response to send, registering for read: $response")
             }
-            // AutoMQ for Kafka inject start
-            // Try unmuting the channel. If there was no quota violation and the channel has not been throttled,
-            // it will be unmuted immediately. If the channel has been throttled, it will be unmuted only if the
-            // throttling delay has already passed by now.
-//            handleChannelMuteEvent(channelId, ChannelMuteEvent.RESPONSE_SENT)
-//            tryUnmuteChannel(channelId)
-            // AutoMQ for Kafka inject end
-
+            // AutoMQ inject start
+            val channelContext = channelContexts.get(channelId)
+            val channel = selector.channel(channelId)
+            try{
+              if (channel != null && channel.isMuted) {
+                val unmute = if (channelContext == null) {
+                  true
+                } else if (channelContext.nextCorrelationId.size() < MaxInflightRequestsPerConnection && channelContext.clearQueueFull()) {
+                  true
+                } else {
+                  false
+                }
+                if (unmute) {
+                  selector.unmute(channel.id)
+                }
+              }
+            }catch {
+              case e:IllegalStateException =>
+                warn(s"Channel already closed while processing response for $channelId",e)
+            }
+          // AutoMQ inject end
           case response: SendResponse =>
             sendResponse(response, response.responseSend)
           case response: CloseConnectionResponse =>
