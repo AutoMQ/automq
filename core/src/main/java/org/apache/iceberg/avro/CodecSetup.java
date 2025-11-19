@@ -23,6 +23,10 @@ import org.apache.avro.LogicalTypes;
 
 public class CodecSetup {
 
+    public static LogicalMap getLogicalMap() {
+        return LogicalMap.get();
+    }
+
     static {
         LogicalTypes.register(LogicalMap.NAME, schema -> LogicalMap.get());
     }
