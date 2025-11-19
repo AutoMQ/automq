@@ -4,7 +4,7 @@ global:
 image:
   registry: automqinc
   repository: automq
-  tag: 1.6.0-bitnami
+  tag: 1.6.1-rc0-bitnami
   pullPolicy: Always
 extraEnvVars:
   - name: AWS_ACCESS_KEY_ID
