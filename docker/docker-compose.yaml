@@ -61,7 +61,7 @@ services:
   # Single node with combined controller and broker roles
   server1:
     container_name: "automq-single-server"
-    image: automqinc/automq:1.6.0
+    image: automqinc/automq:1.6.1-rc0
     stop_grace_period: 1m
     environment:
       - KAFKA_S3_ACCESS_KEY=minioadmin

@@ -78,7 +78,7 @@ services:
       "
   automq:
     container_name: "automq"
-    image: automqinc/automq:1.6.0
+    image: automqinc/automq:1.6.1-rc0
     stop_grace_period: 1m
     networks:
       iceberg_net:
