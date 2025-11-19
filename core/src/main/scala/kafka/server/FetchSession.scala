@@ -548,6 +548,16 @@ class IncrementalFetchContext(private val time: Time,
       if (session.epoch != expectedEpoch) {
         info(s"Incremental fetch session ${session.id} expected epoch $expectedEpoch, but " +
           s"got ${session.epoch}.  Possible duplicate request.")
+        // AutoMQ inject start
+        // The fetch will return empty data, so we need to release the fetched records.
+        updates.forEach((_, response) => {
+          response.records() match {
+            case r: PooledResource =>
+              r.release()
+            case _ =>
+          }
+        })
+        // AutoMQ inject end
         FetchResponse.of(Errors.INVALID_FETCH_SESSION_EPOCH, 0, session.id, new FetchSession.RESP_MAP)
       } else {
         // Iterate over the update list using PartitionIterator. This will prune updates which don't need to be sent

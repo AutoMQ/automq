@@ -183,10 +183,6 @@ public class SocketServerConfigs {
     public static final int NUM_NETWORK_THREADS_DEFAULT = 3;
     public static final String NUM_NETWORK_THREADS_DOC = "The number of threads that the server uses for receiving requests from the network and sending responses to the network. Noted: each listener (except for controller listener) creates its own thread pool.";
 
-    // AutoMQ inject start
-    public static final int MAX_INFLIGHT_REQUESTS_PER_CONNECTION = 64;
-    // AutoMQ inject end
-
     public static final ConfigDef CONFIG_DEF =  new ConfigDef()
             .define(LISTENERS_CONFIG, STRING, LISTENERS_DEFAULT, HIGH, LISTENERS_DOC)
             .define(ADVERTISED_LISTENERS_CONFIG, STRING, null, HIGH, ADVERTISED_LISTENERS_DOC)
