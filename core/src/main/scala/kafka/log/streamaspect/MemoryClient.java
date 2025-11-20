@@ -191,6 +191,11 @@ public class MemoryClient implements Client {
         }
 
         @Override
+        public CompletableFuture<Void> preWarmStream(long streamId) {
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions openStreamOptions) {
             return CompletableFuture.completedFuture(new StreamImpl(streamId));
         }

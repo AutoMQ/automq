@@ -190,6 +190,11 @@ public class ClientWrapper implements Client {
         }
 
         @Override
+        public CompletableFuture<Void> preWarmStream(long streamId) {
+            return streamClient.preWarmStream(streamId);
+        }
+
+        @Override
         public CompletableFuture<Stream> openStream(long streamId, OpenStreamOptions options) {
             return failureHandle(streamClient.openStream(streamId, options).thenApplyAsync(rst -> rst, streamManagerCallbackExecutors));
         }
