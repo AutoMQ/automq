@@ -27,6 +27,7 @@ import org.apache.avro.SchemaBuilder;
 import org.apache.avro.SchemaNormalization;
 import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.util.internal.Accessor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -145,7 +146,9 @@ public final class RecordAssembler {
         List<Schema.Field> finalFields = new ArrayList<>(baseRecord.getSchema().getFields().size() + 3);
         Schema baseSchema = baseRecord.getSchema();
         for (Schema.Field field : baseSchema.getFields()) {
-            finalFields.add(new Schema.Field(field, field.schema()));
+            // Accessor keeps the original Schema instance (preserving logical types) while skipping default-value revalidation.
+            Schema.Field f = Accessor.createField(field.name(), field.schema(), field.doc(), Accessor.defaultValue(field), false, field.order());
+            finalFields.add(f);
         }
 
         int baseFieldCount = baseSchema.getFields().size();
