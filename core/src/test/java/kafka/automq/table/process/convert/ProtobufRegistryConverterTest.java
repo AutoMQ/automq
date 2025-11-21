@@ -1,3 +1,21 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package kafka.automq.table.process.convert;
 
 import kafka.automq.table.binder.RecordBinder;
@@ -18,6 +36,8 @@ import com.google.protobuf.Timestamp;
 import com.squareup.wire.schema.internal.parser.ProtoFileElement;
 import com.squareup.wire.schema.internal.parser.ProtoParser;
 
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.avro.AvroSchemaUtil;
@@ -26,6 +46,7 @@ import org.apache.iceberg.catalog.TableIdentifier;
 import org.apache.iceberg.data.Record;
 import org.apache.iceberg.inmemory.InMemoryCatalog;
 import org.apache.iceberg.io.TaskWriter;
+import org.apache.iceberg.types.Type;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -39,8 +60,9 @@ import java.util.stream.Collectors;
 
 import io.confluent.kafka.schemaregistry.client.MockSchemaRegistryClient;
 
-import static kafka.automq.table.binder.AvroRecordBinderTest.createTableWriter;
+import static kafka.automq.table.binder.AvroRecordBinderTypeTest.createTableWriter;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 @Tag("S3Unit")
@@ -103,6 +125,16 @@ public class ProtobufRegistryConverterTest {
             }
             repeated Nested f_nested_list = 24;
             map<string, Nested> f_string_nested_map = 25;
+        }
+        """;
+
+    private static final String MAP_ONLY_PROTO = """
+        syntax = \"proto3\";
+
+        package kafka.automq.table.process.proto;
+
+        message MapOnly {
+            map<string, int32> attributes = 1;
         }
         """;
 
@@ -230,6 +262,63 @@ public class ProtobufRegistryConverterTest {
         Timestamp timestamp = Timestamp.newBuilder().setSeconds(1_234_567_890L).setNanos(987_000_000).build();
         builder.setField(descriptor.findFieldByName("f_timestamp"), timestamp);
 
+        return builder.build();
+    }
+
+    @Test
+    void testConvertStandaloneMapField() throws Exception {
+        String topic = "pb-map-only";
+        String subject = topic + "-value";
+
+        MockSchemaRegistryClient registryClient = new MockSchemaRegistryClient(List.of(new ProtobufSchemaProvider()));
+        CustomProtobufSchema schema = new CustomProtobufSchema(
+            "MapOnly",
+            -1,
+            null,
+            null,
+            MAP_ONLY_PROTO,
+            List.of(),
+            Map.of()
+        );
+        int schemaId = registryClient.register(subject, schema);
+
+        ProtoFileElement fileElement = ProtoParser.Companion.parse(ProtoConstants.DEFAULT_LOCATION, MAP_ONLY_PROTO);
+        DynamicSchema dynamicSchema = ProtobufSchemaParser.toDynamicSchema("MapOnly", fileElement, Collections.emptyMap());
+        Descriptors.Descriptor descriptor = dynamicSchema.getMessageDescriptor("MapOnly");
+
+        DynamicMessage message = buildMapOnlyMessage(descriptor);
+        ByteBuffer payload = buildConfluentPayload(schemaId, message.toByteArray(), 0);
+
+        ProtobufRegistryConverter converter = new ProtobufRegistryConverter(registryClient, "http://mock:8081", false);
+        ConversionResult result = converter.convert(topic, payload.asReadOnlyBuffer());
+
+        GenericRecord record = (GenericRecord) result.getValue();
+        List<?> attributeEntries = (List<?>) record.get("attributes");
+        Map<String, Integer> attributes = attributeEntries.stream()
+            .map(GenericRecord.class::cast)
+            .collect(Collectors.toMap(
+                entry -> entry.get("key").toString(),
+                entry -> (Integer) entry.get("value")
+            ));
+
+        assertEquals(Map.of("env", 1, "tier", 2), attributes);
+
+        Schema.Field attributesField = record.getSchema().getField("attributes");
+        Schema mapSchema = attributesField.schema();
+        assertNotNull(mapSchema.getLogicalType(), "Map field should have logical type");
+        assertEquals("map", mapSchema.getLogicalType().getName());
+        assertEquals(GenericData.Array.class, record.get("attributes").getClass());
+
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(record.getSchema());
+        assertEquals(Type.TypeID.MAP, icebergSchema.findField("attributes").type().typeId());
+    }
+
+    private static DynamicMessage buildMapOnlyMessage(Descriptors.Descriptor descriptor) {
+        DynamicMessage.Builder builder = DynamicMessage.newBuilder(descriptor);
+        Descriptors.FieldDescriptor mapField = descriptor.findFieldByName("attributes");
+        Descriptors.Descriptor entryDescriptor = mapField.getMessageType();
+        builder.addRepeatedField(mapField, mapEntry(entryDescriptor, "env", 1));
+        builder.addRepeatedField(mapField, mapEntry(entryDescriptor, "tier", 2));
         return builder.build();
     }
 

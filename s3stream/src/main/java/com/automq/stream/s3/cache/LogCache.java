@@ -380,13 +380,13 @@ public class LogCache {
     }
 
     public void clearStreamRecords(long streamId) {
-        readLock.lock();
+        writeLock.lock();
         try {
             for (LogCacheBlock block : blocks) {
                 block.free(streamId);
             }
         } finally {
-            readLock.unlock();
+            writeLock.unlock();
         }
     }
 
@@ -519,12 +519,10 @@ public class LogCache {
         }
 
         public void free(long streamId) {
-            suppress(() -> {
-                StreamCache streamCache = map.remove(streamId);
-                if (streamCache != null) {
-                    streamCache.free();
-                }
-            }, LOGGER);
+            StreamCache streamCache = map.remove(streamId);
+            if (streamCache != null) {
+                LOG_CACHE_ASYNC_EXECUTOR.execute(() -> suppress(streamCache::free, LOGGER));
+            }
         }
 
         public void addFreeListener(FreeListener freeListener) {
