@@ -126,6 +126,9 @@ import io.netty.buffer.Unpooled;
             requestCommit = false;
             data.setRequestCommit(true);
         }
+        if (data.requestCommit()) {
+            LOGGER.info("[SNAPSHOT_SUBSCRIBE_REQUEST_COMMIT],node={},sessionId={},sessionEpoch={}", node, sessionId, sessionEpoch);
+        }
         AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
         asyncSender.sendRequest(node, builder)
             .thenAcceptAsync(rst -> {
