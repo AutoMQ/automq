@@ -176,7 +176,12 @@ public class S3Storage implements Storage {
         } else {
             delayTrim = new DelayTrim(0);
         }
-        this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        // Adjust the walUploadThreshold to be less than 2/5 of deltaWALCacheSize to avoid the upload speed being slower than the append speed.
+        long walUploadThreadhold = Math.min(deltaWALCacheSize * 2 / 5, config.walUploadThreshold());
+        if (walUploadThreadhold != config.walUploadThreshold()) {
+            LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreadhold);
+        }
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreadhold, config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
