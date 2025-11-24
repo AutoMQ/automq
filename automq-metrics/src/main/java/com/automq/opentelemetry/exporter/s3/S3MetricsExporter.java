@@ -259,21 +259,53 @@ public class S3MetricsExporter implements MetricExporter {
 
     @Override
     public CompletableResultCode flush() {
+        ByteBuf slice;
         synchronized (uploadBuffer) {
-            if (uploadBuffer.readableBytes() > 0) {
-                try {
-                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), CompressionUtils.compress(uploadBuffer.slice().asReadOnly())).get();
-                } catch (Exception e) {
-                    LOGGER.error("Failed to upload metrics to s3", e);
-                    return CompletableResultCode.ofFailure();
-                } finally {
-                    lastUploadTimestamp = System.currentTimeMillis();
-                    nextUploadInterval = UPLOAD_INTERVAL + RANDOM.nextInt(MAX_JITTER_INTERVAL);
-                    uploadBuffer.clear();
-                }
+            int readable = uploadBuffer.readableBytes();
+            if (readable == 0) {
+                return CompletableResultCode.ofSuccess();
             }
+            slice = uploadBuffer.readRetainedSlice(readable);
+            uploadBuffer.clear();
         }
-        return CompletableResultCode.ofSuccess();
+
+        CompletableResultCode result = new CompletableResultCode();
+        ByteBuf compressed = null;
+        try {
+            compressed = CompressionUtils.compress(slice);
+            ByteBuf finalCompressed = compressed;
+
+            objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), finalCompressed)
+                .whenComplete((v, ex) -> {
+                    try {
+                        if (ex != null) {
+                            LOGGER.error("Upload metrics failed", ex);
+                            result.fail();
+                        } else {
+                            lastUploadTimestamp = System.currentTimeMillis();
+                            nextUploadInterval = UPLOAD_INTERVAL + RANDOM.nextInt(MAX_JITTER_INTERVAL);
+                            result.succeed();
+                        }
+                    } finally {
+                        if (finalCompressed.refCnt() > 0) {
+                            finalCompressed.release();
+                        }
+                        if (slice.refCnt() > 0) {
+                            slice.release();
+                        }
+                    }
+                });
+        } catch (Throwable e) {
+            LOGGER.error("Failed to upload metrics to s3", e);
+            if (compressed != null && compressed.refCnt() > 0) {
+                compressed.release();
+            }
+            if (slice.refCnt() > 0) {
+                slice.release();
+            }
+            result.fail();
+        }
+        return result;
     }
 
     @Override
