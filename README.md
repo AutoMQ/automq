@@ -23,8 +23,8 @@
 </div>
 
 <div align="center">
-    
-<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/97fcde87-19ef-42a9-9835-01b63516d497" />
+
+<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/bdf6c5f5-7fe1-4004-8e15-54f1aa6bc32f" />
 
 <a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
     <img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="19%" />
