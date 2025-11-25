@@ -193,6 +193,7 @@ public class DefaultS3Client implements Client {
         this.networkInboundLimiter.shutdown();
         this.networkOutboundLimiter.shutdown();
         this.requestSender.shutdown();
+        S3StreamThreadPoolMonitor.shutdown();
         LOGGER.info("S3Client shutdown successfully");
     }
 
