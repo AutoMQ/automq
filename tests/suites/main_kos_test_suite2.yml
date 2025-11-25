@@ -33,6 +33,7 @@ core_test_suite:
     - ../kafkatest/tests/core/mirror_maker_test.py
     - ../kafkatest/tests/core/produce_bench_test.py
     - ../kafkatest/tests/core/transactions_test.py
+    - ../kafkatest/tests/core/automq_remote_write_test.py
 
     # cannot downgrade to official kafka
     - ../kafkatest/tests/core/downgrade_test.py::TestDowngrade.test_upgrade_and_downgrade
