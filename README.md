@@ -1,4 +1,4 @@
-<img width="1500" height="500" alt="github-8000" src="https://github.com/user-attachments/assets/af9a4879-c25e-4ac8-bd7f-f429bad20f96" /># A Diskless Kafka® on S3, Offering 10x Cost Savings and Scaling in Seconds.
+# A Diskless Kafka® on S3, Offering 10x Cost Savings and Scaling in Seconds.
 
 <div align="center">
 <p align="center">
