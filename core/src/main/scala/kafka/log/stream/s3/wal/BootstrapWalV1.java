@@ -183,8 +183,8 @@ public class BootstrapWalV1 implements WriteAheadLog {
     private CompletableFuture<? extends WriteAheadLog> buildRecoverWal(String kraftWalConfigs, long oldNodeEpoch) {
         IdURI uri = IdURI.parse(kraftWalConfigs);
         CompletableFuture<Void> cf = walHandle
-            .acquirePermission(nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(true));
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).openMode(OpenMode.FAILOVER).build()), executor);
+            .acquirePermission(nodeId, oldNodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(oldNodeEpoch).openMode(failoverMode ? OpenMode.FAILOVER : OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<? extends WriteAheadLog> buildWal(String kraftWalConfigs) {
