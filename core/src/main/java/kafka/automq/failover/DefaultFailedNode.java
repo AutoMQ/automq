@@ -19,37 +19,5 @@
 
 package kafka.automq.failover;
 
-import java.util.Objects;
-
-public final class K8sFailedNode implements FailedNode {
-    private final int id;
-
-    public K8sFailedNode(int id) {
-        this.id = id;
-    }
-
-    public int id() {
-        return id;
-    }
-
-    @Override
-    public boolean equals(Object obj) {
-        if (obj == this)
-            return true;
-        if (obj == null || obj.getClass() != this.getClass())
-            return false;
-        var that = (K8sFailedNode) obj;
-        return this.id == that.id;
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
-    }
-
-    @Override
-    public String toString() {
-        return "K8sFailedNode[" +
-            "id=" + id + ']';
-    }
+public record DefaultFailedNode(int id, long epoch) implements FailedNode {
 }

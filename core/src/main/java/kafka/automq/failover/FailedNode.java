@@ -27,10 +27,10 @@ public interface FailedNode {
     int id();
 
     static FailedNode from(NodeRuntimeMetadata node) {
-        return new K8sFailedNode(node.id());
+        return new DefaultFailedNode(node.id(), node.epoch());
     }
 
     static FailedNode from(FailoverContext context) {
-        return new K8sFailedNode(context.getNodeId());
+        return new DefaultFailedNode(context.getNodeId(), context.getNodeEpoch());
     }
 }
