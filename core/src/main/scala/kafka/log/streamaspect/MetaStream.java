@@ -334,10 +334,9 @@ public class MetaStream implements Stream {
             return CompletableFuture.completedFuture(null);
         }
         CompletableFuture<Void> overwriteCf = CompletableFuture.allOf(overwrite.stream().map(this::append).toArray(CompletableFuture[]::new));
-        return overwriteCf.thenAccept(nil -> {
-            OptionalLong minOffset = metaCache.values().stream().mapToLong(v -> v.offset).min();
-            minOffset.ifPresent(this::trim);
-        });
+        OptionalLong minOffset = metaCache.values().stream().mapToLong(v -> v.offset).min();
+        // await overwrite complete then trim to the minimum offset in metaCache
+        return overwriteCf.thenAccept(nil -> minOffset.ifPresent(this::trim));
     }
 
     static class MetadataValue {
