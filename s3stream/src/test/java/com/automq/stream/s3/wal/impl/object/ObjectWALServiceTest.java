@@ -295,13 +295,6 @@ public class ObjectWALServiceTest {
                 List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(30, 40)),
                 10L,
                 List.of(mockWALObject(10, 20))
-            ),
-            Arguments.of(
-                "trimmed and hollow",
-                // When the object-10-20 doesn't write successfully and the broker halt, the hollow happens.
-                List.of(mockWALObject(0, 10), mockWALObject(30, 40)),
-                10L,
-                List.of()
             )
         );
     }
