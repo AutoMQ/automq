@@ -49,7 +49,6 @@ import io.netty.buffer.Unpooled;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE;
 
-@SuppressWarnings("NPathComplexity")
 public class RecoverIterator implements Iterator<RecoverResult> {
     private static final Logger LOGGER = LoggerFactory.getLogger(RecoverIterator.class);
     private final ObjectStorage objectStorage;
@@ -123,13 +122,6 @@ public class RecoverIterator implements Iterator<RecoverResult> {
             }
         }
         if (startIndex >= objectList.size()) {
-            return Collections.emptyList();
-        }
-
-        if (trimOffset != -1 && objectList.get(startIndex).startOffset() > trimOffset) {
-            for (int i = startIndex; i < objectList.size(); i++) {
-                LOGGER.warn("There is hollow before trim offset, drop discontinuous object: {}", objectList.get(i));
-            }
             return Collections.emptyList();
         }
 
