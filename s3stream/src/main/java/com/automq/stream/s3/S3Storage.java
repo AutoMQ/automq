@@ -820,28 +820,25 @@ public class S3Storage implements Storage {
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
-        // parallel execute append callback in streamId based executor.
-        EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
-        executor.execute(() -> {
-            try {
-                handleAppendCallback0(request);
-            } catch (Throwable e) {
-                LOGGER.error("[UNEXPECTED], handle append callback fail, request {}", request, e);
-            }
-        });
-    }
-
-    private void handleAppendCallback0(WalWriteRequest request) {
         final long startTime = System.nanoTime();
         request.record.retain();
-        boolean full = deltaWALCache.put(request.record);
-        deltaWALCache.setLastRecordOffset(request.offset);
+        boolean full;
+        synchronized (deltaWALCache) {
+            // Because LogCacheBlock will use request.offset to execute WAL#trim after being uploaded,
+            // this cache put order should keep consistence with WAL put order.
+            full = deltaWALCache.put(request.record);
+            deltaWALCache.setLastRecordOffset(request.offset);
+        }
         if (full) {
             // cache block is full, trigger WAL upload.
             uploadDeltaWAL();
         }
-        request.cf.complete(null);
-        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        // parallel execute append callback in streamId based executor.
+        EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
+        executor.execute(() -> {
+            request.cf.complete(null);
+            StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        });
     }
 
     private Lock getStreamCallbackLock(long streamId) {
