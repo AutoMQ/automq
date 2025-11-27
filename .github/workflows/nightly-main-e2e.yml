@@ -43,6 +43,22 @@ jobs:
     if: ${{ github.repository_owner == 'AutoMQ' }}
     with:
       suite-id: "main5"
+      test-yaml: "tests/suites/main_kos_test_suite5.yml"
+      runner: "e2e"
+  main_e2e_6:
+    name: "Run Main E2E Tests 6"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "main6"
+      test-yaml: "tests/suites/main_kos_test_suite6.yml"
+      runner: "e2e"
+  main_e2e_7:
+    name: "Run Main E2E Tests 7"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "main5"
       test-path: "tests/kafkatest/automq"
       runner: "e2e"
   e2e_summary:
@@ -57,5 +73,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}}"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"main_e2e_6\": ${{ toJSON(needs.main_e2e_6.outputs) }}, \"main_e2e_7\": ${{ toJSON(needs.main_e2e_7.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"

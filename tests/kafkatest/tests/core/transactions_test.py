@@ -226,6 +226,53 @@ class TransactionsTest(Test):
         metadata_quorum=quorum.all_kraft,
         use_new_coordinator=[False]
     )
+    def test_transactions_0(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
+        security_protocol = 'PLAINTEXT'
+        self.kafka.security_protocol = security_protocol
+        self.kafka.interbroker_security_protocol = security_protocol
+        self.kafka.logs["kafka_data_1"]["collect_default"] = True
+        self.kafka.logs["kafka_data_2"]["collect_default"] = True
+        self.kafka.logs["kafka_operational_logs_debug"]["collect_default"] = True
+        if check_order:
+            # To check ordering, we simply create input and output topics
+            # with a single partition.
+            # We reduce the number of seed messages to copy to account for the fewer output
+            # partitions, and thus lower parallelism. This helps keep the test
+            # time shorter.
+            self.num_seed_messages = self.num_seed_messages // 3
+            self.num_input_partitions = 1
+            self.num_output_partitions = 1
+
+        self.setup_topics()
+        self.kafka.start()
+
+        input_messages = self.seed_messages(self.input_topic, self.num_seed_messages)
+        concurrently_consumed_messages = self.copy_messages_transactionally(
+            failure_mode, bounce_target, input_topic=self.input_topic,
+            output_topic=self.output_topic, num_copiers=self.num_input_partitions,
+            num_messages_to_copy=self.num_seed_messages, use_group_metadata=use_group_metadata, group_protocol=group_protocol)
+        output_messages = self.get_messages_from_topic(self.output_topic, self.num_seed_messages, group_protocol)
+
+        concurrently_consumed_message_set = set(concurrently_consumed_messages)
+        output_message_set = set(output_messages)
+        input_message_set = set(input_messages)
+
+        num_dups = abs(len(output_messages) - len(output_message_set))
+        num_dups_in_concurrent_consumer = abs(len(concurrently_consumed_messages)
+                                              - len(concurrently_consumed_message_set))
+        assert num_dups == 0, "Detected %d duplicates in the output stream" % num_dups
+        assert input_message_set == output_message_set, "Input and output message sets are not equal. Num input messages %d. Num output messages %d" %\
+            (len(input_message_set), len(output_message_set))
+
+        assert num_dups_in_concurrent_consumer == 0, "Detected %d dups in concurrently consumed messages" % num_dups_in_concurrent_consumer
+        assert input_message_set == concurrently_consumed_message_set, \
+            "Input and concurrently consumed output message sets are not equal. Num input messages: %d. Num concurrently_consumed_messages: %d" %\
+            (len(input_message_set), len(concurrently_consumed_message_set))
+        if check_order:
+            assert input_messages == sorted(input_messages), "The seed messages themselves were not in order"
+            assert output_messages == input_messages, "Output messages are not in order"
+            assert concurrently_consumed_messages == output_messages, "Concurrently consumed messages are not in order"
+
     @matrix(
         failure_mode=["hard_bounce", "clean_bounce"],
         bounce_target=["brokers", "clients"],
@@ -233,9 +280,65 @@ class TransactionsTest(Test):
         use_group_metadata=[True, False],
         metadata_quorum=quorum.all_kraft,
         use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
+        group_protocol=["classic"]
     )
-    def test_transactions(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
+    def test_transactions_1(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
+        security_protocol = 'PLAINTEXT'
+        self.kafka.security_protocol = security_protocol
+        self.kafka.interbroker_security_protocol = security_protocol
+        self.kafka.logs["kafka_data_1"]["collect_default"] = True
+        self.kafka.logs["kafka_data_2"]["collect_default"] = True
+        self.kafka.logs["kafka_operational_logs_debug"]["collect_default"] = True
+        if check_order:
+            # To check ordering, we simply create input and output topics
+            # with a single partition.
+            # We reduce the number of seed messages to copy to account for the fewer output
+            # partitions, and thus lower parallelism. This helps keep the test
+            # time shorter.
+            self.num_seed_messages = self.num_seed_messages // 3
+            self.num_input_partitions = 1
+            self.num_output_partitions = 1
+
+        self.setup_topics()
+        self.kafka.start()
+
+        input_messages = self.seed_messages(self.input_topic, self.num_seed_messages)
+        concurrently_consumed_messages = self.copy_messages_transactionally(
+            failure_mode, bounce_target, input_topic=self.input_topic,
+            output_topic=self.output_topic, num_copiers=self.num_input_partitions,
+            num_messages_to_copy=self.num_seed_messages, use_group_metadata=use_group_metadata, group_protocol=group_protocol)
+        output_messages = self.get_messages_from_topic(self.output_topic, self.num_seed_messages, group_protocol)
+
+        concurrently_consumed_message_set = set(concurrently_consumed_messages)
+        output_message_set = set(output_messages)
+        input_message_set = set(input_messages)
+
+        num_dups = abs(len(output_messages) - len(output_message_set))
+        num_dups_in_concurrent_consumer = abs(len(concurrently_consumed_messages)
+                                              - len(concurrently_consumed_message_set))
+        assert num_dups == 0, "Detected %d duplicates in the output stream" % num_dups
+        assert input_message_set == output_message_set, "Input and output message sets are not equal. Num input messages %d. Num output messages %d" %\
+            (len(input_message_set), len(output_message_set))
+
+        assert num_dups_in_concurrent_consumer == 0, "Detected %d dups in concurrently consumed messages" % num_dups_in_concurrent_consumer
+        assert input_message_set == concurrently_consumed_message_set, \
+            "Input and concurrently consumed output message sets are not equal. Num input messages: %d. Num concurrently_consumed_messages: %d" %\
+            (len(input_message_set), len(concurrently_consumed_message_set))
+        if check_order:
+            assert input_messages == sorted(input_messages), "The seed messages themselves were not in order"
+            assert output_messages == input_messages, "Output messages are not in order"
+            assert concurrently_consumed_messages == output_messages, "Concurrently consumed messages are not in order"
+
+    @matrix(
+        failure_mode=["hard_bounce", "clean_bounce"],
+        bounce_target=["brokers", "clients"],
+        check_order=[True, False],
+        use_group_metadata=[True, False],
+        metadata_quorum=quorum.all_kraft,
+        use_new_coordinator=[True],
+        group_protocol=["consumer"]
+    )
+    def test_transactions_2(self, failure_mode, bounce_target, check_order, use_group_metadata, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         security_protocol = 'PLAINTEXT'
         self.kafka.security_protocol = security_protocol
         self.kafka.interbroker_security_protocol = security_protocol
