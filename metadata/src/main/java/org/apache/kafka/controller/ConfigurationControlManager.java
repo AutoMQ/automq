@@ -57,6 +57,9 @@ import static org.apache.kafka.controller.QuorumController.MAX_RECORDS_PER_USER_
 
 public class ConfigurationControlManager {
     public static final ConfigResource DEFAULT_NODE = new ConfigResource(Type.BROKER, "");
+    // AutoMQ inject start
+    public static final String DEFAULT_TOPIC_NAME = "+";
+    // AutoMQ inject end
 
     private final Logger log;
     private final SnapshotRegistry snapshotRegistry;
@@ -454,6 +457,12 @@ public class ConfigurationControlManager {
         }
         return map.get(configKey);
     }
+
+    // AutoMQ inject start
+    Map<String, String> getDefaultTopicConfigs() {
+        return getConfigs(new ConfigResource(Type.TOPIC, DEFAULT_TOPIC_NAME));
+    }
+    // AutoMQ inject end
 
     public Map<ConfigResource, ResultOrError<Map<String, String>>> describeConfigs(
             long lastCommittedOffset, Map<ConfigResource, Collection<String>> resources) {

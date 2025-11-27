@@ -997,13 +997,23 @@ public class ReplicationControlManager {
         }
     }
 
-    static Map<ConfigResource, Map<String, Entry<OpType, String>>>
+    Map<ConfigResource, Map<String, Entry<OpType, String>>>
             computeConfigChanges(Map<String, ApiError> topicErrors,
                                  CreatableTopicCollection topics) {
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges = new HashMap<>();
+        // AutoMQ inject start
+        Map<String, String> defaultConfigs = configurationControl.getDefaultTopicConfigs();
+        // AutoMQ inject end
         for (CreatableTopic topic : topics) {
             if (topicErrors.containsKey(topic.name())) continue;
             Map<String, Entry<OpType, String>> topicConfigs = new HashMap<>();
+            // AutoMQ inject start
+            if (!defaultConfigs.isEmpty()) {
+                for (Entry<String, String> entry : defaultConfigs.entrySet()) {
+                    topicConfigs.put(entry.getKey(), new SimpleImmutableEntry<>(SET, entry.getValue()));
+                }
+            }
+            // AutoMQ inject end
             List<String> nullConfigs = new ArrayList<>();
             for (CreateTopicsRequestData.CreatableTopicConfig config : topic.configs()) {
                 if (config.value() == null) {

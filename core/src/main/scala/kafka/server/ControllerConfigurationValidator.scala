@@ -21,7 +21,7 @@ import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, CLIENT_METRICS, TOPIC}
 import org.apache.kafka.common.errors.{InvalidConfigurationException, InvalidRequestException}
 import org.apache.kafka.common.internals.Topic
-import org.apache.kafka.controller.ConfigurationValidator
+import org.apache.kafka.controller.{ConfigurationControlManager, ConfigurationValidator}
 import org.apache.kafka.server.metrics.ClientMetricsConfigs
 import org.apache.kafka.storage.internals.log.LogConfig
 
@@ -50,6 +50,11 @@ class ControllerConfigurationValidator(kafkaConfig: KafkaConfig) extends Configu
     if (name.isEmpty) {
       throw new InvalidRequestException("Default topic resources are not allowed.")
     }
+    // AutoMQ inject start
+    if (name == ConfigurationControlManager.DEFAULT_TOPIC_NAME) {
+      return
+    }
+    // AutoMQ inject end
     Topic.validate(name)
   }
 
