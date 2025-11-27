@@ -562,6 +562,11 @@ public final class QuorumController implements Controller {
                     }
                     break;
                 case TOPIC:
+                    // AutoMQ inject start
+                    if (configResource.name().equals(ConfigurationControlManager.DEFAULT_TOPIC_NAME)) {
+                        break;
+                    }
+                    // AutoMQ inject end
                     if (replicationControl.getTopicId(configResource.name()) == null) {
                         throw new UnknownTopicOrPartitionException("The topic '" +
                             configResource.name() + "' does not exist.");
