@@ -45,6 +45,7 @@ plugins {
   id "com.github.spotbugs" version '5.1.3' apply false
   id 'org.scoverage' version '8.0.3' apply false
   id 'io.github.goooler.shadow' version '8.1.3' apply false
+  
   //  Spotless 6.13.0 has issue with Java 21 (see https://github.com/diffplug/spotless/pull/1920), and Spotless 6.14.0+ requires JRE 11
   //  We are going to drop JDK8 support. Hence, the spotless is upgrade to newest version and be applied only if the build env is compatible with JDK 11.
   //  spotless 6.15.0+ has issue in runtime with JDK8 even through we define it with `apply:false`. see https://github.com/diffplug/spotless/issues/2156 for more details
@@ -125,13 +126,108 @@ ext {
 }
 
 allprojects {
-
   repositories {
     mavenCentral()
     maven {
       url = uri("https://packages.confluent.io/maven/")
     }
   }
+
+  configurations.all {
+      resolutionStrategy {
+          failOnVersionConflict()
+          // --- Resolving Conflicts (Issue #1085) ---
+          force 'org.scala-lang:scala-library:2.13.11'
+          force 'org.scala-lang:scala-reflect:2.13.11'
+          force 'org.scala-lang:scala-compiler:2.13.11'
+          force 'com.lihaoyi:sourcecode_2.13:0.3.0'
+
+          force 'org.slf4j:slf4j-api:1.7.36'
+          force 'io.netty:netty-buffer:4.1.115.Final'
+          force 'io.opentelemetry:opentelemetry-api:1.40.0'
+          force 'org.apache.commons:commons-lang3:3.13.0'
+          force 'com.fasterxml.jackson.core:jackson-databind:2.17.1'
+          force 'com.fasterxml.jackson.core:jackson-core:2.17.1'
+          force 'io.netty:netty-common:4.1.115.Final'
+          force 'ch.qos.reload4j:reload4j:1.2.25'
+          force 'com.fasterxml.jackson.dataformat:jackson-dataformat-csv:2.17.1'
+          force 'io.dropwizard.metrics:metrics-core:4.1.12.1'
+          force 'org.apache.zookeeper:zookeeper:3.8.4'
+          force 'io.netty:netty-codec-http2:4.1.115.Final'
+          force 'com.google.guava:guava:32.0.1-jre'
+          force 'org.apache.avro:avro:1.11.4'
+          force 'com.google.protobuf:protobuf-java:3.25.5'
+          force 'org.eclipse.jetty:jetty-webapp:9.4.54.v20240208'
+          force 'com.fasterxml.jackson.core:jackson-annotations:2.17.1'
+          force 'io.netty:netty-transport-native-epoll:4.1.105.Final'
+          force 'io.netty:netty-handler:4.1.115.Final'
+          force 'io.netty:netty-transport:4.1.115.Final'
+          force 'io.netty:netty-codec:4.1.115.Final'
+          force 'io.netty:netty-codec-http:4.1.115.Final'
+          force 'org.apache.commons:commons-compress:1.26.2'
+          force 'commons-cli:commons-cli:1.5.0'
+          force 'commons-io:commons-io:2.16.1'
+          force 'org.apache.httpcomponents:httpclient:4.5.13'
+          force 'org.codehaus.woodstox:stax2-api:4.2.1'
+          force 'org.eclipse.jetty:jetty-servlet:9.4.54.v20240208'
+          force 'org.apache.derby:derby:10.14.1.0'
+          force 'io.netty:netty-resolver:4.1.115.Final'
+          force 'io.netty:netty-transport-native-unix-common:4.1.115.Final'
+          force 'io.netty:netty-transport-classes-epoll:4.1.105.Final'
+          force 'commons-codec:commons-codec:1.17.0'
+          force 'org.apache.httpcomponents:httpcore:4.4.13'
+          force 'org.apache.commons:commons-text:1.11.0'
+          force 'commons-logging:commons-logging:1.3.0'
+          force 'org.apache.curator:curator-framework:5.2.0'
+          force 'org.eclipse.jetty:jetty-util:9.4.54.v20240208'
+          force 'com.google.re2j:re2j:1.6'
+          force 'javax.xml.bind:jaxb-api:2.2.11'
+          force 'org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10'
+          force 'org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10'
+          force 'com.fasterxml.jackson.module:jackson-module-jaxb-annotations:2.17.1'
+          force 'com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:2.17.1'
+          force 'org.eclipse.jetty:jetty-server:9.4.54.v20240208'
+          force 'org.apache.orc:orc-core:1.5.8'
+          force 'org.eclipse.jetty:jetty-client:9.4.54.v20240208'
+          force 'org.eclipse.jetty:jetty-http:9.4.54.v20240208'
+          force 'org.eclipse.jetty:jetty-io:9.4.54.v20240208'
+          force 'net.java.dev.jna:jna:5.13.0'
+          force 'com.eed3si9n:sjson-new-core_2.13:0.9.1'
+          force 'com.github.luben:zstd-jni:1.5.6-3'
+          force 'org.xerial.snappy:snappy-java:1.1.10.5'
+          force 'org.checkerframework:checker-qual:3.33.0'
+          force 'com.google.errorprone:error_prone_annotations:2.18.0'
+          force 'io.airlift:aircompressor:0.27'
+          force 'org.apache.commons:commons-configuration2:2.11.0'
+          force 'org.yaml:snakeyaml:2.2'
+          force 'org.apache.yetus:audience-annotations:0.13.0'
+          force 'commons-pool:commons-pool:1.6'
+          force 'org.jetbrains.kotlin:kotlin-stdlib:1.9.10'
+          force 'com.squareup.okio:okio:3.6.0'
+          force 'org.javassist:javassist:3.29.0-GA'
+          force 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+          force 'io.swagger.core.v3:swagger-annotations:2.2.8'
+          force 'jakarta.activation:jakarta.activation-api:1.2.2'
+      }
+  }
+
+  task printAllDependencies(type: DependencyReportTask) {}
+
+  tasks.withType(Javadoc) {
+    options.charSet = 'UTF-8'
+    options.docEncoding = 'UTF-8'
+    options.encoding = 'UTF-8'
+    options.memberLevel = JavadocMemberLevel.PUBLIC
+    options.addStringOption('Xdoclint:none', '-quiet')
+    options.addBooleanOption('Werror', JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_15))
+
+    if (JavaVersion.current().isJava11Compatible())
+      options.links "https://docs.oracle.com/en/java/javase/${JavaVersion.current().majorVersion}/docs/api/"
+    else
+      options.links "https://docs.oracle.com/javase/8/docs/api/"
+  }
+}
+
 
   dependencyUpdates {
     revision="release"
@@ -175,7 +271,6 @@ allprojects {
       }
     }
   }
-  task printAllDependencies(type: DependencyReportTask) {}
 
   tasks.withType(Javadoc) {
     options.charSet = 'UTF-8'
@@ -193,7 +288,7 @@ allprojects {
     else
       options.links "https://docs.oracle.com/javase/8/docs/api/"
   }
-}
+
 
 def determineCommitId() {
   def takeFromHash = 16
@@ -3906,4 +4001,22 @@ task aggregatedJavadoc(type: Javadoc, dependsOn: compileJava) {
   classpath = files(projectsWithJavadoc.collect { it.sourceSets.main.compileClasspath })
   includes = projectsWithJavadoc.collectMany { it.javadoc.getIncludes() }
   excludes = projectsWithJavadoc.collectMany { it.javadoc.getExcludes() }
+}
+
+// ==========================================================
+// WINDOWS ENCODING FIX (UTF-8)
+// Paste this at the very bottom of build.gradle
+// ==========================================================
+
+subprojects {
+    // Force Java Compiler to use UTF-8
+    tasks.withType(JavaCompile) {
+        options.encoding = 'UTF-8'
+    }
+
+    // Force Scala Compiler to use UTF-8
+    tasks.withType(ScalaCompile) {
+        scalaCompileOptions.encoding = 'UTF-8'
+        options.encoding = 'UTF-8' 
+    }
 }
