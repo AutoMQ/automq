@@ -13,7 +13,7 @@
 </p>
 
 [![Linkedin Badge](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white&link=https://www.linkedin.com/company/automq)](https://www.linkedin.com/company/automq)
-[![](https://badgen.net/badge/Slack/Join%20AutoMQ/0abd59?icon=slack)](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)
+[![](https://badgen.net/badge/Slack/Join%20AutoMQ/0abd59?icon=slack)](https://go.automq.com/slack)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Cost)-yellow)](https://www.automq.com/blog/automq-vs-apache-kafka-a-real-aws-cloud-bill-comparison?utm_source=github_automq)
 [![](https://img.shields.io/badge/AutoMQ%20vs.%20Kafka(Performance)-orange)](https://www.automq.com/docs/automq/benchmarks/automq-vs-apache-kafka-benchmarks-and-cost?utm_source=github_automq)
 [![Gurubase](https://img.shields.io/badge/Gurubase-Ask%20AutoMQ%20Guru-006BFF)](https://gurubase.io/g/automq)
@@ -156,7 +156,7 @@ Star AutoMQ on GitHub for instant updates on new releases.
 ## 💬 Community
 You can join the following groups or channels to discuss or ask questions about AutoMQ:
 - Ask questions or report a bug by [GitHub Issues](https://github.com/AutoMQ/automq/issues)
-- Discuss about AutoMQ or Kafka by [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA) or [Wechat Group](docs/images/automq-wechat.png)
+- Discuss about AutoMQ or Kafka by [Slack](https://go.automq.com/slack) or [Wechat Group](docs/images/automq-wechat.png)
 
 
 ## 👥 How to contribute
