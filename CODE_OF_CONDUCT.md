@@ -1,78 +1,39 @@
-# Code of Conduct
-
 ## Pledge
-
-We as contributors and maintainers pledge to foster an open, inclusive, and welcoming environment. Participation in our project and community should remain harassment‑free for everyone, regardless of age, body size, disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio‑economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
+In the interest of fostering an open and welcoming environment, we as contributors and maintainers pledge to make participation in our project and our community a harassment-free experience for everyone, regardless of age, body size, disability, ethnicity, sex characteristics, gender identity and expression, level of experience, education, socio-economic status, nationality, personal appearance, race, religion, or sexual identity and orientation.
 
 ## Our Standards
+Examples of behavior that contributes to creating a positive environment include:
+- Using welcoming and inclusive language
+- Being respectful of differing viewpoints and experiences
+- Gracefully accepting constructive criticism
+- Focusing on what is best for the community
+- Showing empathy towards other community members
+- Respecting the work of others by recognizing acknowledgment/citation requests of original authors
+- Being explicit about how we want our own work to be cited or acknowledged
 
-### Positive behaviors include:
-
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
-* Respecting the work of others by recognizing acknowledgment/citation requests by original authors
-* Being explicit about how we want our own work to be cited or acknowledged
-
-### Unacceptable behaviors include:
-
-* Sexualized language or imagery and unwelcome sexual attention or advances
-* Sexist, racist, or exclusionary jokes
-* Trolling, insulting/derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information without explicit permission
-* Any conduct that may be considered inappropriate in a professional environment
-
-## Additional Standards (New)
-
-### AI‑Generated Content Transparency
-
-Contributors must clearly disclose when a pull request, design, or code snippet is generated using AI tools (e.g., GitHub Copilot, ChatGPT) to maintain transparency and assist reviewers.
-
-### Mental Well‑Being Consideration
-
-Contributors are encouraged to prioritize their mental health. If overwhelmed, they may step back temporarily. The community will respect such breaks without judgment.
-
-### Misrepresentation and Identity Integrity
-
-Contributors must not misrepresent their identity, role, or expertise. False claims, impersonation, or misleading identity use are prohibited.
-
-### Respect for Maintainers' Time
-
-Demanding urgent reviews, spamming maintainers, or repeatedly pushing for immediate responses is disruptive. Contributors should respect the voluntary nature of open‑source maintenance.
-
-### Contribution Integrity
-
-Submitting malicious, intentionally broken, plagiarized, or unattributed code is strictly forbidden. All contributions must be honest and in good faith.
-
-### Collaboration Over Competition
-
-Contributors should prioritize cooperation, share credit, and avoid creating unnecessary conflict or competition.
-
-### Zero‑Tolerance for Hate or Extremism
-
-Any content promoting hate groups, violence, or extremist ideologies—directly or indirectly—will result in immediate removal and potential ban.
-
-### Privacy‑First Rule
-
-Recording, screenshotting, or sharing private conversations (e.g., Slack, Discord, DMs) without explicit permission is strictly prohibited.
+Examples of unacceptable behavior by participants include:
+- The use of sexualized language or imagery and unwelcome sexual attention or advances
+- Sexist, racist, or otherwise exclusionary jokes
+- Trolling, insulting/derogatory comments, and personal or political attacks
+- Public or private harassment
+- Publishing others' private information, such as a physical or electronic address, without explicit permission
+- Other conduct which could reasonably be considered inappropriate in a professional setting
 
 ## Our Responsibilities
+Project maintainers are responsible for clarifying the standards of acceptable behavior and are expected to take appropriate and fair corrective action in response to any instances of unacceptable behavior.
 
-Project maintainers must clarify standards of acceptable behavior and take fair corrective action when unacceptable behavior occurs. They may remove, edit, or reject comments, commits, issues, or other contributions not aligned with this Code of Conduct.
-
-Maintainers not acting in good faith in enforcing the Code may face repercussions decided by project leadership.
+Project maintainers have the right and responsibility to remove, edit, or reject comments, commits, code, wiki edits, issues, and other contributions that are not aligned to this Code of Conduct, or to ban temporarily or permanently any contributor for other behaviors that they deem inappropriate, threatening, offensive, or harmful.
 
 ## Enforcement
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the project maintainers at AutoMQ. All complaints will be reviewed and investigated and will result in a response that is deemed necessary and appropriate to the circumstances. The project team is obligated to maintain confidentiality with regard to the reporter of an incident. Further details of specific enforcement policies may be posted separately.
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the project maintainers at AutoMQ. All complaints will be reviewed confidentially and acted upon appropriately.
+Project maintainers who do not follow or enforce the Code of Conduct in good faith may face temporary or permanent repercussions as determined by other members of the project’s leadership.
 
 ## Scope
+This Code of Conduct applies both within project spaces and in public spaces when an individual is representing the project or its community. Examples of representing a project or community include using an official project e-mail address, posting via an official social media account, or acting as an appointed representative at an online or offline event. Representation of a project may be further defined and clarified by the Community Standards Committee.
 
-This Code of Conduct applies within all project spaces and public spaces where individuals represent the project or its community. This includes official emails, social media accounts, and events.
+This Code of Conduct is to be understood to apply in addition to any institutional codes of conduct governing individuals working within the project.
 
 ## Attribution
-
 This Code of Conduct is adapted from that of [Airbyte](https://github.com/airbytehq/airbyte), which is adapted from the Contributor Covenant, version 1.4, available at https://www.contributor-covenant.org/version/1/4/code-of-conduct.html
+
