@@ -264,22 +264,19 @@ subprojects {
       options.compilerArgs << "-Xlint:-rawtypes"
     options.compilerArgs << "-Xlint:-serial"
     options.compilerArgs << "-Xlint:-try"
-    // AutoMQ inject start
-    // TODO: remove me, when upgrade to 4.x
-//    options.compilerArgs << "-Werror"
-    // AutoMQ inject start
+    
+    // ... (Baki ka beech ka code waisa hi rahega) ...
 
-    // --release is the recommended way to select the target release, but it's only supported in Java 9 so we also
-    // set --source and --target via `sourceCompatibility` and `targetCompatibility` a couple of lines below
-    if (JavaVersion.current().isJava9Compatible())
-      options.release = minJavaVersion
-    // --source/--target 8 is deprecated in Java 20, suppress warning until Java 8 support is dropped in Kafka 4.0
     if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_20))
       options.compilerArgs << "-Xlint:-options"
 
     addParametersForTests(name, options)
-  }
+  } 
 
+  tasks.withType(ScalaCompile) {
+      options.encoding = 'UTF-8'
+      scalaCompileOptions.encoding = 'UTF-8'
+  }
   java {
     // We should only set this if Java version is < 9 (--release is recommended for >= 9), but the Scala plugin for IntelliJ sets
     // `-target` incorrectly if this is unset
