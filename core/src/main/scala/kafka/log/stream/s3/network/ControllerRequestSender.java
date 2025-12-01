@@ -19,6 +19,7 @@
 
 package kafka.log.stream.s3.network;
 
+import com.automq.stream.utils.Systems;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
@@ -51,7 +52,7 @@ public class ControllerRequestSender {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
 
-    private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
+    private static final long MAX_RETRY_DELAY_MS = Systems.getEnvLong("AUTOMQ_MAX_RETRY_DELAY_MS", 10L * 1000);
 
     private final RetryPolicyContext retryPolicyContext;
 
