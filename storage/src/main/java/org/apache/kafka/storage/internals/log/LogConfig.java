@@ -449,6 +449,10 @@ public class LogConfig extends AbstractConfig {
     public final String kafkaLinksId;
     public final long kafkaLinksTopicStartTime;
     public final String kafkaLinksTopicState;
+
+    public final boolean tableTopicExpireSnapshotEnabled;
+    public final int tableTopicExpireSnapshotOlderThanHours;
+    public final int tableTopicExpireSnapshotRetainLast;
     // AutoMQ inject end
 
     private final int maxMessageSize;
@@ -518,6 +522,10 @@ public class LogConfig extends AbstractConfig {
         this.kafkaLinksId = getString(TopicConfig.KAFKA_LINKS_ID_CONFIG);
         this.kafkaLinksTopicStartTime = getLong(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG);
         this.kafkaLinksTopicState = getString(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG);
+
+        this.tableTopicExpireSnapshotEnabled = getBoolean(TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG);
+        this.tableTopicExpireSnapshotOlderThanHours = getInt(TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG);
+        this.tableTopicExpireSnapshotRetainLast = getInt(TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG);
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
