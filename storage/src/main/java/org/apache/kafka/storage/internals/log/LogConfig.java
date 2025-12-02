@@ -126,7 +126,7 @@ public class LogConfig extends AbstractConfig {
                     && messageFormatVersion.highestSupportedRecordVersion().precedes(RecordVersion.V2);
         }
 
-        @SuppressWarnings("deprecation")1`  
+        @SuppressWarnings("deprecation") 
         public String topicWarningMessage(String topicName) {
             return "Topic configuration " + TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG + " with value `"
                     + messageFormatVersionString + "` is ignored for `" + topicName + "` because the "
