@@ -17,8 +17,10 @@
 package kafka.server;
 
 import kafka.automq.table.metric.TableTopicMetricsManager;
+import kafka.server.streamaspect.FingerPrintControlManagerProvider;
 
 import org.apache.kafka.common.config.types.Password;
+import org.apache.kafka.controller.FPCManager;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -90,6 +92,20 @@ public final class TelemetrySupport {
                 return password != null ? password.value() : null;
             } catch (Exception e) {
                 LOGGER.error("Failed to obtain certificate chain", e);
+                return null;
+            }
+        });
+
+        // Set license expiry date supplier - dynamically fetches from FPCManager
+        S3StreamKafkaMetricsManager.setLicenseExpireDateSupplier(() -> {
+            try {
+                FPCManager fpcManager = FingerPrintControlManagerProvider.get();
+                if (fpcManager != null) {
+                    return fpcManager.getExpireDate();
+                }
+                return null;
+            } catch (Exception e) {
+                LOGGER.error("Failed to obtain license expiry date", e);
                 return null;
             }
         });

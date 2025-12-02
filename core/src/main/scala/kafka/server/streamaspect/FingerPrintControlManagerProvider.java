@@ -18,6 +18,8 @@
 package kafka.server.streamaspect;
 
 
+import kafka.server.BrokerServer;
+
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.FPCManager;
 import org.apache.kafka.controller.QuorumController;
@@ -64,13 +66,13 @@ public final class FingerPrintControlManagerProvider {
      * Convenience helper used by the controller to both retrieve and initialize the implementation
      * (if it exposes a compatible {@code initialize(QuorumController, ClusterControlManager)} method).
      */
-    public static FPCManager getAndInitialize(
+    public static FPCManager getAndInitForController(
         QuorumController controller,
         ClusterControlManager clusterControlManager
     ) {
         FPCManager manager = get();
         if (manager != null) {
-            initialize(manager, controller, clusterControlManager);
+            initForController(manager, controller, clusterControlManager);
         }
         return manager;
     }
@@ -87,12 +89,7 @@ public final class FingerPrintControlManagerProvider {
                     break;
                 }
                 first = impl;
-            }
-
-            if (first != null) {
                 LOG.info("Loaded FingerPrintControlManagerV1 implementation: {}", first.getClass().getName());
-            } else {
-                LOG.warn("No FingerPrintControlManagerV1 implementation found on the classpath.");
             }
             return first;
         } catch (Throwable t) {
@@ -101,14 +98,14 @@ public final class FingerPrintControlManagerProvider {
         }
     }
 
-    private static void initialize(
+    private static void initForController(
         FPCManager manager,
         QuorumController controller,
         ClusterControlManager clusterControlManager
     ) {
         try {
             Method initializeMethod = manager.getClass().getMethod(
-                "initialize",
+                "initForController",
                 QuorumController.class,
                 ClusterControlManager.class
             );
@@ -118,16 +115,19 @@ public final class FingerPrintControlManagerProvider {
         }
     }
 
-//    public static void setMetadataCache(MetadataCache metadataCache) {
-//        try {
-//            FingerPrintControlManagerV1 manager = get();
-//            Method initializeMethod = manager.getClass().getMethod(
-//                "setMetadataCache",
-//                MetadataCache.class
-//            );
-//            initializeMethod.invoke(manager, metadataCache);
-//        } catch (Throwable t) {
-//
-//        }
-//    }
+    private static void initForBroker(
+        FPCManager manager,
+        BrokerServer brokerServer
+    ) {
+        try {
+            Method initializeMethod = manager.getClass().getMethod(
+                "initForBroker",
+                BrokerServer.class
+            );
+            initializeMethod.invoke(manager, brokerServer);
+        } catch (Throwable t) {
+            LOG.warn("Failed to initialize FingerPrintControlManagerV1 implementation {}", manager.getClass().getName(), t);
+        }
+    }
+
 }

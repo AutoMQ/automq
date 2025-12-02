@@ -21,11 +21,13 @@ import com.automq.opentelemetry.AutoMQTelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
+import kafka.server.streamaspect.FingerPrintControlManagerProvider
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.utils.{AppInfoParser, LogContext, Time}
+import org.apache.kafka.controller.FPCManager
 import org.apache.kafka.controller.metrics.ControllerMetadataMetrics
 import org.apache.kafka.image.MetadataProvenance
 import org.apache.kafka.image.loader.MetadataLoader
@@ -110,8 +112,9 @@ class SharedServer(
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
   @volatile var telemetryManager: AutoMQTelemetryManager = _
+  @volatile var fpcManager: FPCManager = _
   // AutoMQ for Kafka injection end
-  
+
   @volatile var metrics: Metrics = _metrics
   @volatile var raftManager: KafkaRaftManager[ApiMessageAndVersion] = _
   @volatile var brokerMetrics: BrokerServerMetrics = _
@@ -129,7 +132,7 @@ class SharedServer(
   protected def buildTelemetryManager(config: KafkaConfig, clusterId: String): AutoMQTelemetryManager = {
     TelemetrySupport.start(config, clusterId)
   }
-  
+
   private def isUsed(): Boolean = synchronized {
     usedByController || usedByBroker
   }
@@ -280,9 +283,10 @@ class SharedServer(
         if (sharedServerConfig.processRoles.contains(ProcessRole.ControllerRole)) {
           controllerServerMetrics = new ControllerMetadataMetrics(Optional.of(KafkaYammerMetrics.defaultRegistry()))
         }
-        
+
         // AutoMQ inject start
         telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
+        fpcManager = FingerPrintControlManagerProvider.get()
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](

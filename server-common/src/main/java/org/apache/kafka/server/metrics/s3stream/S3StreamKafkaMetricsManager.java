@@ -131,6 +131,16 @@ public class S3StreamKafkaMetricsManager {
      */
     private static Supplier<String> certChainSupplier = () -> null;
 
+    /**
+     * Supplier for license expiry date.
+     * Returns the expiry date of the license, or null if no license is configured.
+     */
+    private static Supplier<Date> licenseExpireDateSupplier = () -> null;
+
+    // License metrics
+    private static ObservableLongGauge licenseExpiryTimestampMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge licenseDaysRemainingMetrics = new NoopObservableLongGauge();
+
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             S3StreamKafkaMetricsManager.metricsConfig = metricsConfig;
@@ -147,6 +157,7 @@ public class S3StreamKafkaMetricsManager {
         initLogAppendMetrics(meter, prefix);
         initPartitionStatusStatisticsMetrics(meter, prefix);
         initBackPressureMetrics(meter, prefix);
+        initLicenseMetrics(meter, prefix);
         try {
             initCertMetrics(meter, prefix);
         } catch (Exception e) {
@@ -324,6 +335,35 @@ public class S3StreamKafkaMetricsManager {
                 });
     }
 
+    private static void initLicenseMetrics(Meter meter, String prefix) {
+        licenseExpiryTimestampMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
+                .setDescription("The expiry timestamp of the license")
+                .setUnit("milliseconds")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        Date expireDate = licenseExpireDateSupplier.get();
+                        if (expireDate != null) {
+                            result.record(expireDate.getTime(), metricsConfig.getBaseAttributes());
+                        }
+                    }
+                });
+
+        licenseDaysRemainingMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_DAYS_REMAINING_METRIC_NAME)
+                .setDescription("The remaining days until the license expires")
+                .setUnit("days")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        Date expireDate = licenseExpireDateSupplier.get();
+                        if (expireDate != null) {
+                            long daysRemaining = (expireDate.getTime() - System.currentTimeMillis()) / (1000 * 3600 * 24);
+                            result.record(daysRemaining, metricsConfig.getBaseAttributes());
+                        }
+                    }
+                });
+    }
+
     /**
      * Initialize the certificate metrics.
      *
@@ -413,12 +453,12 @@ public class S3StreamKafkaMetricsManager {
             // Clean the PEM part by removing headers and all whitespace characters
             String cleanedPemPart = pemPart.replace("-----BEGIN CERTIFICATE-----", "")
                     .replaceAll("\\s", ""); // Remove all whitespace characters (spaces, tabs, newlines, etc.)
-            
+
             // Skip empty parts that might result from splitting
             if (cleanedPemPart.isEmpty()) {
                 continue;
             }
-            
+
             try {
                 byte[] certBytes = Base64.getDecoder().decode(cleanedPemPart);
                 X509Certificate cert = (X509Certificate) factory.generateCertificate(new ByteArrayInputStream(certBytes));
@@ -431,7 +471,7 @@ public class S3StreamKafkaMetricsManager {
                 // Continue processing other certificates instead of failing completely
             }
         }
-        
+
         return certList.toArray(new X509Certificate[0]);
     }
 
@@ -515,5 +555,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setCertChainSupplier(Supplier<String> certChainSupplier) {
         S3StreamKafkaMetricsManager.certChainSupplier = certChainSupplier;
+    }
+
+    public static void setLicenseExpireDateSupplier(Supplier<Date> licenseExpireDateSupplier) {
+        S3StreamKafkaMetricsManager.licenseExpireDateSupplier = licenseExpireDateSupplier;
     }
 }

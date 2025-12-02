@@ -303,7 +303,7 @@ class ControllerServer(
       }
       controller = controllerBuilder.build()
 //      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
-      fpcManager = FingerPrintControlManagerProvider.getAndInitialize(controller, controller.clusterControl())
+      fpcManager = FingerPrintControlManagerProvider.getAndInitForController(controller, controller.clusterControl())
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.

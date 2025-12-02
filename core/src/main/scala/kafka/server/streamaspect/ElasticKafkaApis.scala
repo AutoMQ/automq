@@ -472,11 +472,28 @@ class ElasticKafkaApis(
     val versionId = request.header.apiVersion
     val clientId = request.header.clientId
     val fetchRequest = request.body[FetchRequest]
-    if (!fetchRequest.isFromFollower && !fpcManager.checkLicense()) {
-      logger.info("Consumer is not allowed to fetch data due to license!");
-      requestHelper.sendMaybeThrottle(request, fetchRequest.getErrorResponse(Errors.POLICY_VIOLATION.exception))
+    if (!fetchRequest.isFromFollower && fpcManager != null && !fpcManager.checkLicense()) {
+//      logger.info("Consumer is not allowed to fetch data due to license!");
+      val emptyResponse = FetchResponse.of(
+        Errors.NONE,
+        0,
+        fetchRequest.metadata.sessionId(),
+        new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
+      )
+      requestChannel.sendResponse(request, emptyResponse, None)
       return
     }
+//    if (!fetchRequest.isFromFollower && fpcManager != null && !fpcManager.checkLicense()) {
+//      logger.info("Consumer is not allowed to fetch data due to license!");
+//      val emptyResponse = FetchResponse.of(
+//        Errors.NONE,
+//        0,
+//        fetchRequest.metadata.sessionId(),
+//        new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
+//      )
+//      requestHelper.sendMaybeThrottle(request, emptyResponse)
+//      return
+//    }
     val topicNames =
       if (fetchRequest.version() >= 13)
         metadataCache.topicIdsToNames()

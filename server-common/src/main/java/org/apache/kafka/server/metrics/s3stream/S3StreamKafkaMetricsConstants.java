@@ -60,4 +60,8 @@ public class S3StreamKafkaMetricsConstants {
     // Back Pressure
     public static final String BACK_PRESSURE_STATE_METRIC_NAME = "back_pressure_state";
     public static final AttributeKey<String> LABEL_BACK_PRESSURE_STATE = AttributeKey.stringKey("state");
+
+    // License
+    public static final String LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME = "license_expiry_timestamp";
+    public static final String LICENSE_DAYS_REMAINING_METRIC_NAME = "license_days_remaining";
 }

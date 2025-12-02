@@ -5,6 +5,7 @@ import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 
+import java.util.Date;
 import java.util.Map;
 
 
@@ -24,4 +25,6 @@ public interface FPCManager extends Reconfigurable {
     boolean recordExists();
 
     boolean legacyUpdateDynamicConfig(Map<ConfigResource, Map<String, String>> newConfigs);
+
+    Date getExpireDate();
 }
