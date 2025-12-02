@@ -82,6 +82,20 @@ import static org.apache.kafka.server.record.TableTopicTransformType.NONE;
 
 public class LogConfig extends AbstractConfig {
 
+    public static class TableSnapshotConfig {
+        public static final String EXPIRE_SNAPSHOT_ENABLED_CONFIG = "table.topic.expire.snapshot.enabled";
+        public static final String EXPIRE_SNAPSHOT_ENABLED_DOC = "Enable/disable automatic snapshot expiration.";
+        public static final boolean EXPIRE_SNAPSHOT_ENABLED_DEFAULT = true;
+
+        public static final String EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG = "table.topic.expire.snapshot.older.than.hours";
+        public static final String EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC = "Set retention duration in hours.";
+        public static final int EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT = 1;
+
+        public static final String EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG = "table.topic.expire.snapshot.retain.last";
+        public static final String EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
+        public static final int EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
+    }
+
     public static class MessageFormatVersion {
         private final String messageFormatVersionString;
         private final String interBrokerProtocolVersionString;
@@ -112,7 +126,7 @@ public class LogConfig extends AbstractConfig {
                     && messageFormatVersion.highestSupportedRecordVersion().precedes(RecordVersion.V2);
         }
 
-        @SuppressWarnings("deprecation")
+        @SuppressWarnings("deprecation")1`  
         public String topicWarningMessage(String topicName) {
             return "Topic configuration " + TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG + " with value `"
                     + messageFormatVersionString + "` is ignored for `" + topicName + "` because the "
