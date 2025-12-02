@@ -377,6 +377,9 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)
+                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG, BOOLEAN, TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_DEFAULT, MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_DOC)
+                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, INT, TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT, atLeast(1), MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC)
+                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, INT, TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT, atLeast(1), MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_DOC)
                 // AutoMQ inject end
                 .define(TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG, STRING, TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN,
                         in(TopicConfig.REMOTE_LOG_DISABLE_POLICY_RETAIN, TopicConfig.REMOTE_LOG_DISABLE_POLICY_DELETE),
