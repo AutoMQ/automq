@@ -52,7 +52,7 @@ public class ControllerRequestSender {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
 
-    private static final long MAX_RETRY_DELAY_MS = Systems.getEnvLong("AUTOMQ_MAX_RETRY_DELAY_MS", 10L * 1000);
+    private static final long MAX_RETRY_DELAY_MS = Systems.getEnvLong("AUTOMQ_MAX_RETRY_DELAY_MS", 10L * 1000); // 10s
 
     private final RetryPolicyContext retryPolicyContext;
 
