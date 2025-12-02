@@ -19,7 +19,6 @@
 
 package kafka.log.stream.s3.network;
 
-import com.automq.stream.utils.Systems;
 import kafka.log.stream.s3.network.request.BatchRequest;
 import kafka.log.stream.s3.network.request.WrapRequest;
 import kafka.server.BrokerServer;
@@ -32,6 +31,7 @@ import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
 import org.apache.kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.NodeToControllerChannelManager;
 
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
