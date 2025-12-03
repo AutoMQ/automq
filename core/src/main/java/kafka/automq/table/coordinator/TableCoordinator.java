@@ -392,10 +392,10 @@ public class TableCoordinator implements Closeable {
                         LogConfig currentLogConfig = config.get();
                         if (currentLogConfig.tableTopicExpireSnapshotEnabled) {
                             transaction.expireSnapshots()
-                            .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(currentLogConfig.tableTopicExpireSnapshotOlderThanHours))
-                            .retainLast(currentLogConfig.tableTopicExpireSnapshotRetainLast)
-                            .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
-                            .commit();
+                                .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(currentLogConfig.tableTopicExpireSnapshotOlderThanHours))
+                                .retainLast(currentLogConfig.tableTopicExpireSnapshotRetainLast)
+                                .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
+                                .commit();
                         }
                     } catch (Exception exception) {
                         // skip expire snapshot failure
