@@ -57,7 +57,7 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             failoverControlManager.replay((KVRecord) message);
             if (fingerPrintControlManager != null) {
                 log.info("Fingerprint control manager replayed,ft");
-                fingerPrintControlManager.replay((KVRecord) message);
+                fingerPrintControlManager.replayKVRecord((KVRecord) message);
             }
         } else {
             return false;

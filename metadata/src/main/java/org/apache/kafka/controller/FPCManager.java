@@ -10,17 +10,12 @@ import java.util.Map;
 
 
 public interface FPCManager extends Reconfigurable {
-    String TIME_KEY = "createdTimestamp";
-
-    String installId();
 
     boolean checkLicense();
 
-    boolean startScheduleCheck();
+    boolean replayKVRecord(KVRecord record);
 
-    boolean replay(KVRecord record);
-
-    boolean replayLicenseConfig(ApiMessage record);
+    boolean replayConfigRecord(ApiMessage record);
 
     boolean recordExists();
 

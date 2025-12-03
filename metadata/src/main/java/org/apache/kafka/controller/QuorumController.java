@@ -216,7 +216,6 @@ import java.util.stream.Collectors;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.NANOSECONDS;
-import static org.apache.kafka.controller.FPCManager.TIME_KEY;
 import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.DOES_NOT_UPDATE_QUEUE_TIME;
 import static org.apache.kafka.controller.QuorumController.ControllerOperationFlag.RUNS_IN_PREMIGRATION;
 
@@ -1399,8 +1398,8 @@ public final class QuorumController implements Controller {
                             .putLong(now)
                             .array();
 
-                        KVRecord record = new KVRecord().setKeyValues(Arrays.asList(
-                            new KVRecord.KeyValue().setKey(TIME_KEY).setValue(timestampBytes)
+                        KVRecord record = new KVRecord().setKeyValues(List.of(
+                            new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes)
                         ));
                         ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
                         all.add(fingerPrint);
@@ -1713,7 +1712,7 @@ public final class QuorumController implements Controller {
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
         // AutoMQ for Kafka inject start
         if (fpcManager != null) {
-            fpcManager.replayLicenseConfig(message);
+            fpcManager.replayConfigRecord(message);
         }
         boolean extensionMatch = extension.replay(type, message, snapshotId, offset);
         // AutoMQ for Kafka inject end nick
@@ -1844,7 +1843,7 @@ public final class QuorumController implements Controller {
                 nodeControlManager.replay(record);
                 routerChannelEpochControlManager.replay(record);
                 if (fpcManager != null) {
-                    fpcManager.replay(record);
+                    fpcManager.replayKVRecord(record);
                 }
                 break;
             }

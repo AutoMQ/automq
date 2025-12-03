@@ -21,6 +21,7 @@ import com.automq.stream.s3.S3Storage
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
+import kafka.automq.license.FPCListener
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.table.TableManager
 import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultLinkRecordDecoder, DefaultRouterChannelProvider, RouterChannelProvider, ZeroZoneTrafficInterceptor}
@@ -583,6 +584,7 @@ class BrokerServer(
       })
 
       newFailoverListener(ElasticLogManager.INSTANCE.get.client)
+      newFPCListener()
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -897,6 +899,10 @@ class BrokerServer(
     val failoverListener = new FailoverListener(config.nodeId, client)
     metadataLoader.installPublishers(util.List.of(failoverListener));
     failoverListener
+  }
+
+  protected def newFPCListener(): FPCListener = {
+    null
   }
   // AutoMQ inject end
 
