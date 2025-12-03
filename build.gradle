@@ -208,6 +208,7 @@ allprojects {
           force 'org.bouncycastle:bcprov-jdk18on:1.78.1'
           force 'io.swagger.core.v3:swagger-annotations:2.2.8'
           force 'jakarta.activation:jakarta.activation-api:1.2.2'
+          force 'com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.17.1'
       }
   }
 
