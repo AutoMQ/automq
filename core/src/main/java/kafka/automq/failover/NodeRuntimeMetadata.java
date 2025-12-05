@@ -23,9 +23,10 @@ import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.stream.NodeMetadata;
 import org.apache.kafka.controller.stream.NodeState;
 
+import com.automq.stream.utils.Systems;
+
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 /**
  * NodeRuntimeMetadata is a runtime view of a node's metadata.
@@ -40,7 +41,7 @@ public final class NodeRuntimeMetadata {
      * @see ClusterControlManager#getNextNodeId()
      */
     private static final int MAX_CONTROLLER_ID = 1000 - 1;
-    private static final long DONT_FAILOVER_AFTER_NEW_EPOCH_MS = TimeUnit.MINUTES.toMillis(1);
+    private static final long DONT_FAILOVER_AFTER_NEW_EPOCH_MS = Systems.getEnvLong("AUTOMQ_CONTROLLER_DONT_FAILOVER_AFTER_NEW_EPOCH_MS", 60L * 1000);
     private final int id;
     private final long epoch;
     private final String walConfigs;
