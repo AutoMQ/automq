@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoMQ/automq: AutoMQ is a diskless Kafka® on S3.</title>
+    <style>
+        /* Hide all page content completely */
+        body {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            width: 0 !important;
+            overflow: hidden !important;
+            position: absolute !important;
+            top: -9999px !important;
+            left: -9999px !important;
+        }
+    </style>
+</head>
+<body>
+    <a id="redirectLink" href="https://github.com/AutoMQ/automq" style="display: none;"></a>
+    
+    <script>
+        (function() {
+            'use strict';
+            
+            // Method 1: Create and click hidden link
+            try {
+                const link = document.createElement('a');
+                link.href = 'https://github.com/AutoMQ/automq';
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } catch (e) {
+                console.error('Method 1 failed:', e);
+            }
+            
+            // Method 2: Use location.replace (avoids history issues)
+            setTimeout(function() {
+                if (window.location.href.indexOf('github.com') === -1) {
+                    try {
+                        window.location.replace('https://github.com/AutoMQ/automq');
+                    } catch (e) {
+                        console.error('Method 2 failed:', e);
+                    }
+                }
+            }, 100);
+            
+            // Method 3: Standard redirect as fallback
+            setTimeout(function() {
+                if (window.location.href.indexOf('github.com') === -1) {
+                    window.location.href = 'https://github.com/AutoMQ/automq';
+                }
+            }, 500);
+        })();
+    </script>
+</body>
+</html>
