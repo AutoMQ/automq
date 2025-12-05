@@ -175,10 +175,11 @@ public class PartitionSnapshotsManager {
             } else {
                 collectPartitionSnapshotsCf = CompletableFuture.completedFuture(null);
             }
+            boolean newSession = finalSessionEpoch == 1;
             return collectPartitionSnapshotsCf
                 .thenApply(nil -> {
                     if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
-                        if (finalSessionEpoch == 1) {
+                        if (newSession) {
                             // return the WAL config in the session first response
                             resp.setConfirmWalConfig(confirmWalConfig);
                         }
@@ -187,7 +188,12 @@ public class PartitionSnapshotsManager {
                     if (requestCommit) {
                         // Commit after generating the snapshots.
                         // Then the snapshot-read partitions could read from snapshot-read cache or block cache.
-                        CompletableFuture<Void> commitCf = confirmWAL.commit(0, false);
+                        CompletableFuture<Void> commitCf = newSession ?
+                            // The proxy node's first snapshot-read request needs to commit immediately to ensure the data could be read.
+                            confirmWAL.commit(0, false)
+                            // The proxy node's snapshot-read cache isn't enough to hold the 'uncommitted' data,
+                            // so the proxy node request a commit to ensure the data could be read from block cache.
+                            : confirmWAL.commit(1000, false);
                         inflightCommitCfSet.add(commitCf);
                         commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
                     }
@@ -203,7 +209,8 @@ public class PartitionSnapshotsManager {
             return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
         }
 
-        private CompletableFuture<Void> collectPartitionSnapshots(short requestVersion, AutomqGetPartitionSnapshotResponseData resp) {
+        private CompletableFuture<Void> collectPartitionSnapshots(short requestVersion,
+            AutomqGetPartitionSnapshotResponseData resp) {
             Map<Uuid, List<PartitionSnapshot>> topic2partitions = new HashMap<>();
             List<CompletableFuture<Void>> completeCfList = COMPLETE_CF_LIST_LOCAL.get();
             completeCfList.clear();
@@ -239,7 +246,8 @@ public class PartitionSnapshotsManager {
             return retCf;
         }
 
-        private PartitionSnapshot snapshot(short requestVersion, Partition partition, PartitionSnapshotVersion oldVersion,
+        private PartitionSnapshot snapshot(short requestVersion, Partition partition,
+            PartitionSnapshotVersion oldVersion,
             PartitionSnapshotVersion newVersion, List<CompletableFuture<Void>> completeCfList) {
             if (newVersion == null) {
                 // partition is closed
