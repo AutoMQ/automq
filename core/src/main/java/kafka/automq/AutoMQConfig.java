@@ -79,7 +79,7 @@ public class AutoMQConfig {
 
     public static final String S3_WAL_UPLOAD_INTERVAL_MS_CONFIG = "s3.wal.upload.interval.ms";
     public static final String S3_WAL_UPLOAD_INTERVAL_MS_DOC = "The interval at which WAL triggers upload to object storage. -1 means only upload by size trigger";
-    public static final long S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT = -1L;
+    public static final long S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT = 60000L;
 
     public static final String S3_STREAM_SPLIT_SIZE_CONFIG = "s3.stream.object.split.size";
     public static final String S3_STREAM_SPLIT_SIZE_DOC = "The S3 stream object split size threshold when upload delta WAL or compact stream set object.";
