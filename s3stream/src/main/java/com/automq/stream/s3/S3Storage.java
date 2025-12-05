@@ -757,21 +757,41 @@ public class S3Storage implements Storage {
     private CompletableFuture<Void> lazyUpload(LazyCommit lazyCommit) {
         lazyUploadQueue.add(lazyCommit);
         backgroundExecutor.schedule(() -> {
-            if (!lazyCommit.cf.isDone()) {
-                forceUpload();
+            if (lazyUploadQueue.contains(lazyCommit)) {
+                // If the queue does not contain the lazyCommit, it means another commit has happened after this lazyCommit.
+                if (lazyCommit.lazyLingerMs == 0) {
+                    // If the lazyLingerMs is 0, we need to force upload as soon as possible.
+                    forceUpload();
+                } else {
+                    uploadDeltaWAL();
+                }
             }
         }, lazyCommit.lazyLingerMs, TimeUnit.MILLISECONDS);
-        return lazyCommit.cf;
+        return lazyCommit.awaitTrim ? lazyCommit.trimCf : lazyCommit.commitCf;
     }
 
-    private void completeLazyUpload(List<LazyCommit> tasks, Throwable ex) {
-        tasks.forEach(task -> {
-            if (ex != null) {
-                task.cf.completeExceptionally(ex);
-            } else {
-                task.cf.complete(null);
-            }
-        });
+    private void notifyLazyUpload(List<LazyCommit> tasks) {
+        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.cf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
+            .whenComplete((nil, ex) -> {
+                for (LazyCommit task : tasks) {
+                    if (ex != null) {
+                        task.commitCf.completeExceptionally(ex);
+                    } else {
+                        task.commitCf.complete(null);
+                    }
+                }
+            });
+
+        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.trimCf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
+            .whenComplete((nil, ex) -> {
+                for (LazyCommit task : tasks) {
+                    if (ex != null) {
+                        task.trimCf.completeExceptionally(ex);
+                    } else {
+                        task.trimCf.complete(null);
+                    }
+                }
+            });
     }
 
     private CompletableFuture<Void> forceUpload() {
@@ -867,15 +887,7 @@ public class S3Storage implements Storage {
         }
 
         // notify lazy upload tasks
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.cf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
-            .whenComplete((nil, ex) -> {
-                completeLazyUpload(lazyUploadTasks.stream().filter(t -> !t.awaitTrim).collect(Collectors.toList()), ex);
-            });
-
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.trimCf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
-            .whenComplete((nil, ex) -> {
-                completeLazyUpload(lazyUploadTasks.stream().filter(t -> t.awaitTrim).collect(Collectors.toList()), ex);
-            });
+        notifyLazyUpload(lazyUploadTasks);
         return cf;
     }
 
@@ -1079,7 +1091,8 @@ public class S3Storage implements Storage {
     }
 
     public static class LazyCommit {
-        final CompletableFuture<Void> cf = new CompletableFuture<>();
+        final CompletableFuture<Void> trimCf = new CompletableFuture<>();
+        final CompletableFuture<Void> commitCf = new CompletableFuture<>();
         final long lazyLingerMs;
         final boolean awaitTrim;
 
