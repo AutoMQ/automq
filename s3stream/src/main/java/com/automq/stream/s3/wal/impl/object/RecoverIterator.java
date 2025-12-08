@@ -194,13 +194,12 @@ public class RecoverIterator implements Iterator<RecoverResult> {
 
     @Override
     public RecoverResult next() {
-        if (nextRecord != null) {
+        if (nextRecord != null || hasNext()) {
+            // - If the nextRecord is already read ahead.
+            // - Or #hasNext() is true, it means the nextRecord is already ready.
             RecoverResult rst = nextRecord;
             nextRecord = null;
             return rst;
-        }
-        if (hasNext()) {
-            return nextRecord;
         } else {
             return null;
         }
