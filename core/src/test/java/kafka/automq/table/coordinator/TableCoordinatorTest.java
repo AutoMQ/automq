@@ -20,10 +20,14 @@
 
 package kafka.automq.table.coordinator;
 
-import com.automq.stream.utils.threads.EventLoop;
 import kafka.automq.table.Channel;
 import kafka.log.streamaspect.MetaStream;
 import kafka.server.MetadataCache;
+
+import org.apache.kafka.storage.internals.log.LogConfig;
+
+import com.automq.stream.utils.threads.EventLoop;
+
 import org.apache.iceberg.AppendFiles;
 import org.apache.iceberg.DataFile;
 import org.apache.iceberg.ExpireSnapshots;
@@ -31,7 +35,6 @@ import org.apache.iceberg.Table;
 import org.apache.iceberg.Transaction;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.TableIdentifier;
-import org.apache.kafka.storage.internals.log.LogConfig;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
