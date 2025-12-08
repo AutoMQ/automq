@@ -8,7 +8,7 @@
  * (the "License"); you may not use this file except in compliance with
  * the License. You may obtain a copy of the License at
  *
- *    http://www.apache.org/licenses/LICENSE-2.0
+ * http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,10 +17,10 @@
  * limitations under the License.
  */
 
-
 package kafka.automq.table.coordinator;
 
 import kafka.automq.table.Channel;
+import kafka.log.streamaspect.MetaKeyValue; // [FIX 1] Added Import
 import kafka.log.streamaspect.MetaStream;
 import kafka.server.MetadataCache;
 
@@ -46,6 +46,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
@@ -79,8 +80,12 @@ class TableCoordinatorTest {
         
         // Mock subchannel to return null immediately to avoid infinite polling loops if it enters that block
         Channel.SubChannel subChannel = mock(Channel.SubChannel.class);
+        
+        // Use anyLong() for primitive long arguments
         when(channel.subscribeData(anyString(), anyLong())).thenReturn(subChannel);
-        when(channel.subscribeData(anyString(), any())).thenReturn(subChannel);
+        
+        // [FIX 2] Specify MetaKeyValue.class to resolve ambiguity and return completed future
+        when(metaStream.append(any(MetaKeyValue.class))).thenReturn(CompletableFuture.completedFuture(null));
 
         // Prepare default config map
         Map<String, Object> props = new HashMap<>();
@@ -150,8 +155,6 @@ class TableCoordinatorTest {
         setField(coordinator, "commitStatusMachine", machine);
 
         // 8. Execute the method
-        // Since tryMoveToCommitedStatus is in the inner class, we invoke it via reflection or direct call if accessible
-        // Based on the provided file, it is package-private or public, so we can use reflection to call it
         machine.getClass().getMethod("tryMoveToCommitedStatus").invoke(machine);
 
         // 9. Verify logic
@@ -205,7 +208,6 @@ class TableCoordinatorTest {
         field.set(target, value);
     }
 
-    // Helper to instantiate the non-static inner class CommitStatusMachine
     private Object instantiateInnerClass(Object outerInstance, String innerClassName) throws Exception {
         Class<?> innerClass = Class.forName(innerClassName);
         Constructor<?> constructor = innerClass.getDeclaredConstructor(outerInstance.getClass());
@@ -213,7 +215,6 @@ class TableCoordinatorTest {
         return constructor.newInstance(outerInstance);
     }
     
-    // Helper to instantiate the static inner class CommitInfo
     private Object instantiateInnerClassStatic(String innerClassName, Object... args) throws Exception {
         Class<?> innerClass = Class.forName(innerClassName);
         Constructor<?> constructor = innerClass.getDeclaredConstructors()[0]; // Assume first constructor
