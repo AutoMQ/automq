@@ -389,11 +389,14 @@ public class TableCoordinator implements Closeable {
                         delta.commit();
                     }
                     try {
-                        transaction.expireSnapshots()
-                            .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1))
-                            .retainLast(1)
-                            .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
-                            .commit();
+                        LogConfig currentLogConfig = config.get();
+                        if (currentLogConfig.tableTopicExpireSnapshotEnabled) {
+                            transaction.expireSnapshots()
+                                .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(currentLogConfig.tableTopicExpireSnapshotOlderThanHours))
+                                .retainLast(currentLogConfig.tableTopicExpireSnapshotRetainLast)
+                                .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
+                                .commit();
+                        }
                     } catch (Exception exception) {
                         // skip expire snapshot failure
                         LOGGER.error("[EXPIRE_SNAPSHOT_FAIL],{}", getTable().name(), exception);
