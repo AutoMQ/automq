@@ -20,7 +20,7 @@
 package kafka.automq.table.coordinator;
 
 import kafka.automq.table.Channel;
-import kafka.log.streamaspect.MetaKeyValue; // [FIX 1] Added Import
+import kafka.log.streamaspect.MetaKeyValue;
 import kafka.log.streamaspect.MetaStream;
 import kafka.server.MetadataCache;
 
