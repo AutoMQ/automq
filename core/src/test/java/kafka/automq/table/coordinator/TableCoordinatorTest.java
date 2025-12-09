@@ -173,7 +173,7 @@ class TableCoordinatorTest {
             List.of(new PartitionMetric(0, 100L), new PartitionMetric(1, 200L)));
         subChannel.offer(new Envelope(0, 3L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
         table.refresh();
 
         assertEquals(Status.COMMITTED, machine.status);
@@ -193,7 +193,7 @@ class TableCoordinatorTest {
         CommitResponse response = new CommitResponse(partitionType, Errors.MORE_DATA, commitId, TOPIC, nextOffsets, List.of(), List.of(), TopicMetric.NOOP, List.of());
         subChannel.offer(new Envelope(0, 1L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
 
         assertTrue(getPrivateBoolean(machine, "fastNextCommit"));
     }
@@ -210,7 +210,7 @@ class TableCoordinatorTest {
         machine.nextRoundCommit();
         setPrivateLong(machine, "requestCommitTimestamp", System.currentTimeMillis() - 60_000);
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
         assertTrue(getPrivateBoolean(machine, "fastNextCommit"));
@@ -287,7 +287,7 @@ class TableCoordinatorTest {
             List.of(dataFile), List.of(), new TopicMetric(1), List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
         subChannel.offer(new Envelope(0, 1L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
         assertTrue(capture.commitCalled);
@@ -322,7 +322,7 @@ class TableCoordinatorTest {
             List.of(), List.of(), TopicMetric.NOOP, List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
         subChannel.offer(new Envelope(0, 0L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
         assertEquals(5, capture.expireOlderThanHours);
@@ -353,7 +353,7 @@ class TableCoordinatorTest {
             List.of(), List.of(), TopicMetric.NOOP, List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
         subChannel.offer(new Envelope(0, 0L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
-        machine.tryMoveToCommitedStatus();
+        machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
         assertFalse(capture.commitCalled);

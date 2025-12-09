@@ -175,7 +175,7 @@ public class TableCoordinator implements Closeable {
                     commitStatusMachine.nextRoundCommit();
                     break;
                 case REQUEST_COMMIT:
-                    commitStatusMachine.tryMoveToCommitedStatus();
+                    commitStatusMachine.tryMoveToCommittedStatus();
                     break;
                 default:
                     LOGGER.error("[TABLE_COORDINATOR_UNKNOWN_STATUS],{}", commitStatusMachine.status);
@@ -325,7 +325,7 @@ public class TableCoordinator implements Closeable {
             channel.send(topic, new Event(time.milliseconds(), EventType.COMMIT_REQUEST, commitRequest));
         }
 
-        public void tryMoveToCommitedStatus() throws Exception {
+        public void tryMoveToCommittedStatus() throws Exception {
             for (; ; ) {
                 boolean awaitCommitTimeout = (time.milliseconds() - requestCommitTimestamp) > commitTimeout;
                 if (!awaitCommitTimeout) {
