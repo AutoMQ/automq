@@ -80,20 +80,6 @@ import static org.apache.kafka.server.record.TableTopicTransformType.NONE;
 
 public class LogConfig extends AbstractConfig {
 
-    public static class TableSnapshotConfig {
-        public static final String EXPIRE_SNAPSHOT_ENABLED_CONFIG = "table.topic.expire.snapshot.enabled";
-        public static final String EXPIRE_SNAPSHOT_ENABLED_DOC = "Enable/disable automatic snapshot expiration.";
-        public static final boolean EXPIRE_SNAPSHOT_ENABLED_DEFAULT = true;
-
-        public static final String EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG = "table.topic.expire.snapshot.older.than.hours";
-        public static final String EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC = "Set retention duration in hours.";
-        public static final int EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT = 1;
-
-        public static final String EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG = "table.topic.expire.snapshot.retain.last";
-        public static final String EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
-        public static final int EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
-    }
-
     public static class MessageFormatVersion {
         private final String messageFormatVersionString;
         private final String interBrokerProtocolVersionString;
@@ -378,12 +364,12 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG, STRING, ErrorsTolerance.INVALID_DATA.name, in(ErrorsTolerance.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG, BOOLEAN, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DEFAULT, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)
-                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG, BOOLEAN, TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_DEFAULT, MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_DOC)
-                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, INT, TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT, atLeast(1), MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC)
-                .define(TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, INT, TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT, atLeast(1), MEDIUM, TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_DOC)
                 // AutoMQ inject end
                 .define(TopicConfig.REMOTE_LOG_COPY_DISABLE_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_LOG_COPY_DISABLE_DOC)
                 .define(TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_CONFIG, BOOLEAN, false, MEDIUM, TopicConfig.REMOTE_LOG_DELETE_ON_DISABLE_DOC);
@@ -526,9 +512,9 @@ public class LogConfig extends AbstractConfig {
         this.kafkaLinksTopicStartTime = getLong(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG);
         this.kafkaLinksTopicState = getString(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG);
 
-        this.tableTopicExpireSnapshotEnabled = getBoolean(TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG);
-        this.tableTopicExpireSnapshotOlderThanHours = getInt(TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG);
-        this.tableTopicExpireSnapshotRetainLast = getInt(TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG);
+        this.tableTopicExpireSnapshotEnabled = getBoolean(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG);
+        this.tableTopicExpireSnapshotOlderThanHours = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG);
+        this.tableTopicExpireSnapshotRetainLast = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG);
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
