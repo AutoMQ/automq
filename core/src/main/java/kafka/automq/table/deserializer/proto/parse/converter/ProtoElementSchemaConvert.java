@@ -127,8 +127,8 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
         MessageDefinition.Builder mapMessage = MessageDefinition.newBuilder(mapEntryName);
         mapMessage.setMapEntry(true);
 
-        mapMessage.addField(null, keyType.getSimpleName(), ProtoConstants.KEY_FIELD, 1, null, null, null);
-        mapMessage.addField(null, valueType.getSimpleName(), ProtoConstants.VALUE_FIELD, 2, null, null, null);
+        mapMessage.addField(null, resolveFieldTypeName(keyType), ProtoConstants.KEY_FIELD, 1, null, null, null);
+        mapMessage.addField(null, resolveFieldTypeName(valueType), ProtoConstants.VALUE_FIELD, 2, null, null, null);
 
         message.addMessageDefinition(mapMessage.build());
         message.addField("repeated", mapEntryName, field.getName(), field.getTag(),
@@ -179,5 +179,9 @@ public class ProtoElementSchemaConvert implements ProtoElementConvert {
         return Character.toUpperCase(fieldName.charAt(0)) +
             fieldName.substring(1) +
             ProtoConstants.MAP_ENTRY_SUFFIX;
+    }
+
+    private static String resolveFieldTypeName(ProtoType type) {
+        return type.toString();
     }
 }
