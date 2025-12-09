@@ -70,6 +70,11 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
+    public String uri() {
+        return "0@mem://?";
+    }
+
+    @Override
     public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) {
         if (full) {
             streamRecordBatch.release();

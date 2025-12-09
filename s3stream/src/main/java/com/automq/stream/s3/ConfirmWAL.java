@@ -39,6 +39,10 @@ public class ConfirmWAL {
         return log.confirmOffset();
     }
 
+    public String uri() {
+        return log.uri();
+    }
+
     /**
      * Commit with lazy timeout.
      * If in [0, lazyLingerMs), there is no other commit happened, then trigger a new commit.

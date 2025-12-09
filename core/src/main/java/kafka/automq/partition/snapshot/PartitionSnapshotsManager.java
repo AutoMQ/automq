@@ -68,13 +68,11 @@ public class PartitionSnapshotsManager {
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;
-    private final String confirmWalConfig;
     private final ConfirmWAL confirmWAL;
 
     public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL,
         Supplier<AutoMQVersion> versionGetter) {
         this.time = time;
-        this.confirmWalConfig = config.walConfig();
         this.confirmWAL = confirmWAL;
         if (config.zoneRouterChannels().isPresent()) {
             Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
@@ -181,7 +179,7 @@ public class PartitionSnapshotsManager {
                     if (requestVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
                         if (newSession) {
                             // return the WAL config in the session first response
-                            resp.setConfirmWalConfig(confirmWalConfig);
+                            resp.setConfirmWalConfig(confirmWAL.uri());
                         }
                         resp.setConfirmWalEndOffset(confirmWAL.confirmOffset().bufferAsBytes());
                     }
