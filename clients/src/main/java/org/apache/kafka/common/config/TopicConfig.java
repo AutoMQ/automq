@@ -322,6 +322,18 @@ public class TopicConfig {
     public static final String AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG = "automq.table.topic.errors.tolerance";
     public static final String AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC = "Configures the error handling strategy for table topic record processing. Valid values are <code>none</code>, <code>invalid_data</code>, and <code>all</code>.";
 
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG = "table.topic.expire.snapshot.enabled";
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DOC = "Enable/disable automatic snapshot expiration.";
+    public static final boolean AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DEFAULT = true;
+
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG = "table.topic.expire.snapshot.older.than.hours";
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC = "Set retention duration in hours.";
+    public static final int AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT = 1;
+
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG = "table.topic.expire.snapshot.retain.last";
+    public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
+    public static final int AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
+
     public static final String KAFKA_LINKS_ID_CONFIG = "automq.kafka.links.id";
     public static final String KAFKA_LINKS_ID_DOC = "The unique id of a kafka link";
     public static final String KAFKA_LINKS_TOPIC_START_TIME_CONFIG = "automq.kafka.links.topic.start.time";

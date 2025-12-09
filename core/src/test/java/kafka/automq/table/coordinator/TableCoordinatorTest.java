@@ -77,7 +77,6 @@ import scala.Some;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -134,7 +133,7 @@ class TableCoordinatorTest {
 
         // channel stub
         subChannel = new FakeSubChannel();
-        when(channel.subscribeData(eq(TOPIC), anyLong())).thenReturn(subChannel);
+        when(channel.subscribeData(eq(TOPIC), anyLong())).thenAnswer(invocation -> subChannel);
 
         coordinator = new TableCoordinator(catalog, TOPIC, metaStream, channel, new ImmediateEventLoop(), metadataCache, configSupplier);
         machine = coordinator.new CommitStatusMachine();
@@ -270,96 +269,112 @@ class TableCoordinatorTest {
 
     @Test
     void expireSnapshotsHonorsDefaultRetention() throws Exception {
-        ExpireCapture capture = new ExpireCapture();
-        Table tableSpy = spyTableWithExpireCapture(table, capture);
-        setPrivateField(coordinator, "table", tableSpy);
+        SpyHolder spyHolder = spyTableForExpireVerification(table);
+        setPrivateField(coordinator, "table", spyHolder.tableSpy);
 
         machine.nextRoundCommit();
         UUID commitId = machine.processing.commitId;
-        Types.StructType partitionType = Types.StructType.of(Types.NestedField.required(1, "id", Types.IntegerType.get()));
-        List<WorkerOffset> nextOffsets = List.of(new WorkerOffset(0, 1, 5L), new WorkerOffset(1, 1, 6L));
-        DataFile dataFile = DataFiles.builder(PartitionUtil.buildPartitionSpec(List.of(), new Schema(Types.NestedField.required(1, "id", Types.IntegerType.get()))))
+
+        DataFile dataFile = DataFiles.builder(table.spec())
             .withPath("file:///tmp/commit.parquet")
             .withFileSizeInBytes(10)
             .withRecordCount(1)
             .build();
-        CommitResponse response = new CommitResponse(partitionType, Errors.NONE, commitId, TOPIC, nextOffsets,
-            List.of(dataFile), List.of(), new TopicMetric(1), List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
+
+        CommitResponse response = createCommitResponse(commitId, List.of(dataFile));
         subChannel.offer(new Envelope(0, 1L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
         machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
-        assertTrue(capture.commitCalled);
-        assertEquals(1, capture.retainLast); // default retainLast
-        long expectedOlderThan = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1);
-        assertTrue(Math.abs(capture.expireOlderThan - expectedOlderThan) < TimeUnit.SECONDS.toMillis(5));
+        verifyExpireSnapshotsCalledWith(spyHolder.capturedExpireSnapshots, 1, 1);
     }
 
     @Test
     void expireSnapshotsUsesConfiguredValues() throws Exception {
-        ExpireCapture capture = new ExpireCapture();
-        Table tableSpy = spyTableWithExpireCapture(table, capture);
-        setPrivateField(coordinator, "table", tableSpy);
-
-        Map<String, Object> props = new HashMap<>();
-        props.put(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, true);
-        props.put(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, 1000L);
-        props.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, "db");
-        props.put(TopicConfig.SEGMENT_BYTES_CONFIG, 1073741824);
-        props.put(TopicConfig.RETENTION_MS_CONFIG, 86400000L);
-        props.put(LogConfig.TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG, true);
-        props.put(LogConfig.TableSnapshotConfig.EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, 5);
-        props.put(LogConfig.TableSnapshotConfig.EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, 3);
-        Supplier<LogConfig> custom = () -> new LogConfig(props);
-        setPrivateField(coordinator, "config", custom);
+        SpyHolder spyHolder = spyTableForExpireVerification(table);
+        setPrivateField(coordinator, "table", spyHolder.tableSpy);
+        setCustomExpireConfig(5, 3, true);
 
         machine.nextRoundCommit();
         UUID commitId = machine.processing.commitId;
-        Types.StructType partitionType = table.spec().partitionType();
-        List<WorkerOffset> nextOffsets = List.of(new WorkerOffset(0, 1, 1L), new WorkerOffset(1, 1, 1L));
-        CommitResponse response = new CommitResponse(partitionType, Errors.NONE, commitId, TOPIC, nextOffsets,
-            List.of(), List.of(), TopicMetric.NOOP, List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
-        subChannel.offer(new Envelope(0, 0L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
+
+        DataFile dataFile = DataFiles.builder(table.spec())
+            .withPath("file:///tmp/commit.parquet")
+            .withFileSizeInBytes(10)
+            .withRecordCount(1)
+            .build();
+
+        CommitResponse response = createCommitResponse(commitId, List.of(dataFile));
+        subChannel.offer(new Envelope(0, 1L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
 
         machine.tryMoveToCommittedStatus();
 
         assertEquals(Status.COMMITTED, machine.status);
-        assertEquals(5, capture.expireOlderThanHours);
-        assertEquals(3, capture.retainLast);
+        verifyExpireSnapshotsCalledWith(spyHolder.capturedExpireSnapshots, 3, 5);
     }
 
     @Test
     void expireSnapshotsDisabledSkipsCall() throws Exception {
-        ExpireCapture capture = new ExpireCapture();
-        Table tableSpy = spyTableWithExpireCapture(table, capture);
-        setPrivateField(coordinator, "table", tableSpy);
+        SpyHolder spyHolder = spyTableForExpireVerification(table);
+        setPrivateField(coordinator, "table", spyHolder.tableSpy);
+        setCustomExpireConfig(0, 0, false);
 
+        machine.nextRoundCommit();
+        UUID commitId = machine.processing.commitId;
+
+        CommitResponse response = createCommitResponse(commitId, List.of());
+        subChannel.offer(new Envelope(0, 0L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
+
+        machine.tryMoveToCommittedStatus();
+
+        assertEquals(Status.COMMITTED, machine.status);
+        verify(spyHolder.tableSpy, Mockito.never()).newTransaction();
+    }
+
+    // --- test helpers ---
+    private CommitResponse createCommitResponse(UUID commitId, List<DataFile> dataFiles) {
+        Types.StructType partitionType = table.spec().partitionType();
+        List<WorkerOffset> nextOffsets = List.of(new WorkerOffset(0, 1, 5L), new WorkerOffset(1, 1, 6L));
+        TopicMetric topicMetric = dataFiles.isEmpty() ? TopicMetric.NOOP : new TopicMetric(1);
+        List<PartitionMetric> partitionMetrics = List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L));
+
+        return new CommitResponse(partitionType, Errors.NONE, commitId, TOPIC, nextOffsets,
+            dataFiles, List.of(), topicMetric, partitionMetrics);
+    }
+
+    private void setCustomExpireConfig(int olderThanHours, int retainLast, boolean enabled) throws Exception {
         Map<String, Object> props = new HashMap<>();
         props.put(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, true);
         props.put(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, 1000L);
         props.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, "db");
         props.put(TopicConfig.SEGMENT_BYTES_CONFIG, 1073741824);
         props.put(TopicConfig.RETENTION_MS_CONFIG, 86400000L);
-        props.put(LogConfig.TableSnapshotConfig.EXPIRE_SNAPSHOT_ENABLED_CONFIG, false);
+        props.put(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG, enabled);
+        if (enabled) {
+            props.put(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, olderThanHours);
+            props.put(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, retainLast);
+        }
         Supplier<LogConfig> custom = () -> new LogConfig(props);
         setPrivateField(coordinator, "config", custom);
-
-        machine.nextRoundCommit();
-        UUID commitId = machine.processing.commitId;
-        Types.StructType partitionType = table.spec().partitionType();
-        List<WorkerOffset> nextOffsets = List.of(new WorkerOffset(0, 1, 1L), new WorkerOffset(1, 1, 1L));
-        CommitResponse response = new CommitResponse(partitionType, Errors.NONE, commitId, TOPIC, nextOffsets,
-            List.of(), List.of(), TopicMetric.NOOP, List.of(new PartitionMetric(0, 10L), new PartitionMetric(1, 20L)));
-        subChannel.offer(new Envelope(0, 0L, new Event(System.currentTimeMillis(), EventType.COMMIT_RESPONSE, response)));
-
-        machine.tryMoveToCommittedStatus();
-
-        assertEquals(Status.COMMITTED, machine.status);
-        assertFalse(capture.commitCalled);
     }
 
-    // --- test helpers ---
+    private void verifyExpireSnapshotsCalledWith(ExpireSnapshots expireSnapshots, int retainLast, int olderThanHours) {
+        assertNotNull(expireSnapshots, "ExpireSnapshots should have been captured");
+
+        verify(expireSnapshots).retainLast(retainLast);
+
+        ArgumentCaptor<Long> olderThanCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(expireSnapshots).expireOlderThan(olderThanCaptor.capture());
+        long expectedOlderThan = System.currentTimeMillis() - TimeUnit.HOURS.toMillis(olderThanHours);
+        long actualOlderThan = olderThanCaptor.getValue();
+        assertTrue(Math.abs(actualOlderThan - expectedOlderThan) < TimeUnit.SECONDS.toMillis(5),
+            String.format("Expected olderThan within 5s of %d hours ago, but was %d ms off",
+                olderThanHours, Math.abs(actualOlderThan - expectedOlderThan)));
+
+        verify(expireSnapshots).executeDeleteWith(any());
+        verify(expireSnapshots).commit();
+    }
 
     private static boolean getPrivateBoolean(Object target, String name) throws Exception {
         Field field = target.getClass().getDeclaredField(name);
@@ -450,35 +465,124 @@ class TableCoordinatorTest {
         return (long[]) f.get(machine);
     }
 
-    private static Table spyTableWithExpireCapture(Table delegate, ExpireCapture capture) {
-        Table tableSpy = Mockito.spy(delegate);
-        Mockito.doAnswer(invocation -> {
-            Transaction realTxn = delegate.newTransaction();
-            Transaction txnSpy = Mockito.spy(realTxn);
-            ExpireSnapshots expire = Mockito.spy(realTxn.expireSnapshots());
-            Mockito.doAnswer(a -> {
-                capture.expireOlderThan = (long) a.getArgument(0);
-                capture.expireOlderThanHours = (int) TimeUnit.MILLISECONDS.toHours(System.currentTimeMillis() - capture.expireOlderThan);
-                return expire;
-            }).when(expire).expireOlderThan(anyLong());
-            Mockito.doAnswer(a -> {
-                capture.retainLast = (int) a.getArgument(0);
-                return expire;
-            }).when(expire).retainLast(anyInt());
-            Mockito.doAnswer(a -> {
-                capture.commitCalled = true;
-                return null;
-            }).when(expire).commit();
-            Mockito.doReturn(expire).when(txnSpy).expireSnapshots();
-            return txnSpy;
-        }).when(tableSpy).newTransaction();
-        return tableSpy;
+    // --- Spy infrastructure for testing ExpireSnapshots ---
+
+    private static class SpyHolder {
+        final Table tableSpy;
+        volatile ExpireSnapshots capturedExpireSnapshots;
+
+        SpyHolder(Table tableSpy) {
+            this.tableSpy = tableSpy;
+        }
     }
 
-    private static class ExpireCapture {
-        long expireOlderThan;
-        int expireOlderThanHours;
-        int retainLast;
-        boolean commitCalled;
+    private static SpyHolder spyTableForExpireVerification(Table delegate) {
+        Table tableSpy = Mockito.spy(delegate);
+        SpyHolder holder = new SpyHolder(tableSpy);
+
+        Mockito.doAnswer(invocation -> {
+            Transaction realTxn = (Transaction) invocation.callRealMethod();
+            return new TransactionWrapper(realTxn, holder);
+        }).when(tableSpy).newTransaction();
+
+        return holder;
+    }
+
+    /**
+     * Transparent wrapper for Transaction that only intercepts expireSnapshots()
+     * to create a spy for verification purposes.
+     */
+    private static class TransactionWrapper implements Transaction {
+        private final Transaction delegate;
+        private final SpyHolder holder;
+
+        TransactionWrapper(Transaction delegate, SpyHolder holder) {
+            this.delegate = delegate;
+            this.holder = holder;
+        }
+
+        @Override
+        public ExpireSnapshots expireSnapshots() {
+            ExpireSnapshots realExpire = delegate.expireSnapshots();
+            ExpireSnapshots expireSpy = Mockito.spy(realExpire);
+            holder.capturedExpireSnapshots = expireSpy;
+            return expireSpy;
+        }
+
+        // All other methods delegate transparently
+        @Override
+        public org.apache.iceberg.AppendFiles newAppend() {
+            return delegate.newAppend();
+        }
+
+        @Override
+        public org.apache.iceberg.AppendFiles newFastAppend() {
+            return delegate.newFastAppend();
+        }
+
+        @Override
+        public org.apache.iceberg.RewriteFiles newRewrite() {
+            return delegate.newRewrite();
+        }
+
+        @Override
+        public org.apache.iceberg.RewriteManifests rewriteManifests() {
+            return delegate.rewriteManifests();
+        }
+
+        @Override
+        public org.apache.iceberg.OverwriteFiles newOverwrite() {
+            return delegate.newOverwrite();
+        }
+
+        @Override
+        public org.apache.iceberg.RowDelta newRowDelta() {
+            return delegate.newRowDelta();
+        }
+
+        @Override
+        public org.apache.iceberg.ReplacePartitions newReplacePartitions() {
+            return delegate.newReplacePartitions();
+        }
+
+        @Override
+        public org.apache.iceberg.DeleteFiles newDelete() {
+            return delegate.newDelete();
+        }
+
+        @Override
+        public org.apache.iceberg.UpdateProperties updateProperties() {
+            return delegate.updateProperties();
+        }
+
+        @Override
+        public org.apache.iceberg.UpdateSchema updateSchema() {
+            return delegate.updateSchema();
+        }
+
+        @Override
+        public org.apache.iceberg.UpdatePartitionSpec updateSpec() {
+            return delegate.updateSpec();
+        }
+
+        @Override
+        public org.apache.iceberg.UpdateLocation updateLocation() {
+            return delegate.updateLocation();
+        }
+
+        @Override
+        public org.apache.iceberg.ReplaceSortOrder replaceSortOrder() {
+            return delegate.replaceSortOrder();
+        }
+
+        @Override
+        public void commitTransaction() {
+            delegate.commitTransaction();
+        }
+
+        @Override
+        public org.apache.iceberg.Table table() {
+            return delegate.table();
+        }
     }
 }
