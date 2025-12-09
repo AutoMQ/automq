@@ -46,6 +46,11 @@ public interface WriteAheadLog {
     WALMetadata metadata();
 
     /**
+     * Get WAL config URI string. We could use the uri to reconstruct the WAL instance.
+     */
+    String uri();
+
+    /**
      * Append data to log, note append may be out of order.
      * ex. when sequence append R1 R2 , R2 maybe complete before R1.
      * {@link ByteBuf#release()} will be called whatever append success or not.
