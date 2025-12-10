@@ -18,8 +18,8 @@ package org.apache.kafka.common.network;
 
 import org.apache.kafka.test.TestUtils;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
@@ -29,7 +29,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ScatteringByteChannel;
 import java.util.Queue;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class NetworkReceiveTest {
 
