@@ -95,7 +95,11 @@ public class ConfirmWal implements WriteAheadLog {
                 }
                 logger.info("Using the old config {} for recovering", oldNodeMetadata);
                 currentWalConfigs = oldNodeMetadata.getWalConfig();
-                this.wal = buildRecoverWal(oldNodeMetadata.getWalConfig(), oldNodeMetadata.getNodeEpoch()).get();
+                // We should use the new nodeEpoch here.
+                // Consider the case: the node re-bootstraps between new wal start and register to NodeManager in reset.
+                //  The wal epoch is already set to the new nodeEpoch.
+                //  So we need to use the new nodeEpoch to recover the data.
+                this.wal = buildRecoverWal(oldNodeMetadata.getWalConfig(), nodeEpoch).get();
             }
 
 
@@ -185,8 +189,8 @@ public class ConfirmWal implements WriteAheadLog {
     private CompletableFuture<? extends WriteAheadLog> buildRecoverWal(String kraftWalConfigs, long nodeEpoch) {
         IdURI uri = IdURI.parse(kraftWalConfigs);
         CompletableFuture<Void> cf = walHandle
-            .acquirePermission(nodeId, nodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(true));
-        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).openMode(OpenMode.FAILOVER).build()), executor);
+            .acquirePermission(nodeId, nodeEpoch, uri, new WalHandle.AcquirePermissionOptions().failoverMode(failoverMode));
+        return cf.thenApplyAsync(nil -> factory.build(uri, BuildOptions.builder().nodeEpoch(nodeEpoch).openMode(failoverMode ? OpenMode.FAILOVER : OpenMode.READ_WRITE).build()), executor);
     }
 
     private CompletableFuture<? extends WriteAheadLog> buildWal(String kraftWalConfigs) {
