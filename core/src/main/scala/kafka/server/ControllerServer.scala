@@ -28,7 +28,7 @@ import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata._
-import kafka.server.streamaspect.{ElasticControllerApis, FingerPrintControlManagerProvider}
+import kafka.server.streamaspect.ElasticControllerApis
 import kafka.utils.{CoreUtils, Logging}
 import kafka.zk.{KafkaZkClient, ZkMigrationClient}
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -38,7 +38,7 @@ import org.apache.kafka.common.security.token.delegation.internals.DelegationTok
 import org.apache.kafka.common.utils.LogContext
 import org.apache.kafka.common.{ClusterResource, Endpoint, Reconfigurable, Uuid}
 import org.apache.kafka.controller.metrics.{ControllerMetadataMetricsPublisher, QuorumControllerMetrics}
-import org.apache.kafka.controller.{FPCManager, QuorumController, QuorumControllerExtension, QuorumFeatures}
+import org.apache.kafka.controller.{QuorumController, QuorumControllerExtension, QuorumFeatures}
 import org.apache.kafka.image.publisher.{ControllerRegistrationsPublisher, MetadataPublisher}
 import org.apache.kafka.metadata.authorizer.ClusterMetadataAuthorizer
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata
@@ -134,7 +134,6 @@ class ControllerServer(
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
 
   var autoBalancerManager: AutoBalancerService = _
-  @volatile var fpcManager: FPCManager = _
 
 
   protected def buildAutoBalancerManager: AutoBalancerService = {
@@ -186,7 +185,6 @@ class ControllerServer(
       registrationsPublisher = new ControllerRegistrationsPublisher()
 
       incarnationId = Uuid.randomUuid()
-      fpcManager = FingerPrintControlManagerProvider.get()
 
       val apiVersionManager = new SimpleApiVersionManager(
         ListenerType.CONTROLLER,
@@ -295,15 +293,13 @@ class ControllerServer(
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer()).
-          setFPCManager(fpcManager).
+          setFPCManager(sharedServer.fpcManager).
           // AutoMQ inject end
           setUncleanLeaderElectionCheckIntervalMs(config.uncleanLeaderElectionCheckIntervalMs).
           setInterBrokerListenerName(config.interBrokerListenerName.value()).
           setEligibleLeaderReplicasEnabled(config.elrEnabled)
       }
       controller = controllerBuilder.build()
-//      fingerPrintControlManager = FingerPrintControlManagerProvider.get()
-      fpcManager = FingerPrintControlManagerProvider.getAndInitForController(controller, controller.clusterControl())
 
       // If we are using a ClusterMetadataAuthorizer, requests to add or remove ACLs must go
       // through the controller.

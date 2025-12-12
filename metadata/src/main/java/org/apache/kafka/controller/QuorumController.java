@@ -27,7 +27,6 @@ import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.BrokerIdNotRegisteredException;
 import org.apache.kafka.common.errors.InvalidRequestException;
 import org.apache.kafka.common.errors.NotControllerException;
-import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.errors.StaleBrokerEpochException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
 import org.apache.kafka.common.message.AllocateProducerIdsRequestData;
@@ -193,7 +192,6 @@ import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -1376,7 +1374,6 @@ public final class QuorumController implements Controller {
         }
     }
 
-//nick01 check-01
     class CompleteActivationEvent implements ControllerWriteOperation<Void> {
         @Override
         public ControllerResult<Void> generateRecordsAndResult() {
@@ -1388,24 +1385,10 @@ public final class QuorumController implements Controller {
                     zkMigrationEnabled,
                     bootstrapMetadata,
                     featureControl);
-                //v2
+                //Inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                if (fpcManager != null) {
-                    if (!fpcManager.recordExists()) {
-                        log.info("start writing fingerprint records");
-                        long now = time.milliseconds();
-                        byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
-                            .putLong(now)
-                            .array();
-
-                        KVRecord record = new KVRecord().setKeyValues(List.of(
-                            new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes)
-                        ));
-                        ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
-                        all.add(fingerPrint);
-                    }
-                }
                 log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
+                //inject end
                 return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
                 throw fatalFaultHandler.handleFault("exception while completing controller " +
@@ -1423,6 +1406,8 @@ public final class QuorumController implements Controller {
             maybeScheduleNextBalancePartitionLeaders();
             maybeScheduleNextElectUncleanLeaders();
             maybeScheduleNextWriteNoOpRecord();
+            // Inject start
+            maybeScheduleWriteFingerprint();
         }
     }
 
@@ -1689,6 +1674,34 @@ public final class QuorumController implements Controller {
         }
     }
 
+    private static final String MAYBE_WRITE_FINGERPRINT = "maybeWriteFingerprint";
+
+    private void maybeScheduleWriteFingerprint() {
+        if (fpcManager == null) {
+            return;
+        }
+        ControllerWriteEvent<Void> event = new ControllerWriteEvent<>(
+            MAYBE_WRITE_FINGERPRINT,
+            () -> {
+                List<ApiMessageAndVersion> records = new ArrayList<>();
+                if (!fpcManager.recordExists()) {
+                    log.info("start writing fingerprint records");
+                    long now = time.milliseconds();
+                    byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
+                        .putLong(now)
+                        .array();
+                    KVRecord.KeyValue timeValue = new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes);
+                    KVRecord record = new KVRecord().setKeyValues(List.of(timeValue));
+                    ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
+                    records.add(fingerPrint);
+                }
+                return ControllerResult.atomicOf(records, null);
+            },
+            EnumSet.of(DOES_NOT_UPDATE_QUEUE_TIME)
+        );
+        queue.append(event);
+    }
+
     /**
      * Apply the metadata record to its corresponding in-memory state(s)
      *
@@ -1711,11 +1724,8 @@ public final class QuorumController implements Controller {
         logReplayTracker.replay(message);
         MetadataRecordType type = MetadataRecordType.fromId(message.apiKey());
         // AutoMQ for Kafka inject start
-        if (fpcManager != null) {
-            fpcManager.replayConfigRecord(message);
-        }
         boolean extensionMatch = extension.replay(type, message, snapshotId, offset);
-        // AutoMQ for Kafka inject end nick
+        // AutoMQ for Kafka inject end
         switch (type) {
             case REGISTER_BROKER_RECORD:
                 clusterControl.replay((RegisterBrokerRecord) message, offset);
@@ -1731,6 +1741,11 @@ public final class QuorumController implements Controller {
                 break;
             case CONFIG_RECORD:
                 configurationControl.replay((ConfigRecord) message);
+                //Inject start
+                if (fpcManager != null) {
+                    fpcManager.replayConfigRecord(message);
+                }
+                //inject end
                 break;
             case PARTITION_CHANGE_RECORD:
                 replicationControl.replay((PartitionChangeRecord) message);
@@ -2499,7 +2514,7 @@ public final class QuorumController implements Controller {
             () -> replicationControl.listPartitionReassignments(request.topics(),
                 offsetControl.lastStableOffset()));
     }
-//nickalter
+
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> legacyAlterConfigs(
         ControllerRequestContext context,
@@ -2510,25 +2525,24 @@ public final class QuorumController implements Controller {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
 
-        //inject start
-        if (null != fpcManager) {
-            log.info("legacyAlterConfigs automq inject executed");
-            fpcManager.legacyUpdateDynamicConfig(newConfigs);
-            if (!fpcManager.checkLicense()) {
-                log.warn("License validation failed in legacyAlterConfigs");
-                // Return error for each ConfigResource
-                Map<ConfigResource, ApiError> errors = new HashMap<>();
-                for (ConfigResource resource : newConfigs.keySet()) {
-                    errors.put(resource, new ApiError(Errors.POLICY_VIOLATION,
-                        "License validation failed. Configuration update is not allowed."));
-                }
-                return CompletableFuture.completedFuture(errors);
-            }
-
-        }
-        //inject end
-
         return appendWriteEvent("legacyAlterConfigs", context.deadlineNs(), () -> {
+            //Inject start
+            if (fpcManager != null && fpcManager.legacyUpdateDynamicConfig(newConfigs)) {
+                if (fpcManager.checkLicense()) {
+                    fpcManager.start();
+                    log.info("legacyAlterConfigs automq inject executed");
+                } else {
+                    log.warn("License validation failed in legacyAlterConfigs");
+                    // Return error for each ConfigResource
+                    Map<ConfigResource, ApiError> errors = new HashMap<>();
+                    for (ConfigResource resource : newConfigs.keySet()) {
+                        errors.put(resource, new ApiError(Errors.POLICY_VIOLATION,
+                            "License validation failed. Configuration update is not allowed."));
+                    }
+                    return ControllerResult.of(Collections.emptyList(), errors);
+                }
+            }
+            //inject end
             ControllerResult<Map<ConfigResource, ApiError>> result =
                 configurationControl.legacyAlterConfigs(newConfigs, false);
             if (validateOnly) {
@@ -2594,7 +2608,6 @@ public final class QuorumController implements Controller {
     }
     // AutoMQ for Kafka inject end
 
-//nickregister check-03
     @Override
     public CompletableFuture<BrokerRegistrationReply> registerBroker(
         ControllerRequestContext context,
@@ -2604,16 +2617,6 @@ public final class QuorumController implements Controller {
         // populate finalized features map with latest known kraft version for validation
         Map<String, Short> controllerFeatures = new HashMap<>(featureControl.finalizedFeatures(Long.MAX_VALUE).featureMap());
         controllerFeatures.put(KRaftVersion.FEATURE_NAME, raftClient.kraftVersion().featureLevel());
-        //inject start
-        if (null != fpcManager) {
-            if (!fpcManager.checkLicense()) {
-                log.warn("License validation failed in registerBroker for brokerId: {}", request.brokerId());
-                return CompletableFuture.failedFuture(new PolicyViolationException(
-                    "License validation failed. Broker registration is not allowed."));
-            }
-        }
-        //inject end
-
         return appendWriteEvent("registerBroker", context.deadlineNs(),
             () -> {
                 ControllerResult<BrokerRegistrationReply> result = clusterControl.

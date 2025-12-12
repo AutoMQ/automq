@@ -21,7 +21,7 @@ import com.automq.opentelemetry.AutoMQTelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
-import kafka.server.streamaspect.FingerPrintControlManagerProvider
+import kafka.server.streamaspect.FPCManagerProvider
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
@@ -286,7 +286,7 @@ class SharedServer(
 
         // AutoMQ inject start
         telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
-        fpcManager = FingerPrintControlManagerProvider.get()
+        fpcManager = FPCManagerProvider.get()
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
@@ -413,6 +413,10 @@ class SharedServer(
       if (telemetryManager != null) {
         CoreUtils.swallow(telemetryManager.shutdown(), this)
         telemetryManager = null
+      }
+      if (fpcManager != null) {
+        CoreUtils.swallow(fpcManager.close(), this)
+        fpcManager = null
       }
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false

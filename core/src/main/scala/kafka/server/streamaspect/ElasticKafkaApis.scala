@@ -92,7 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
-  private val fpcManager: FPCManager = FingerPrintControlManagerProvider.get();
+  private val fpcManager: FPCManager = FPCManagerProvider.get();
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.

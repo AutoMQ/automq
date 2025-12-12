@@ -20,12 +20,10 @@
 package kafka.automq.controller;
 
 import kafka.automq.failover.FailoverControlManager;
-import kafka.server.streamaspect.FingerPrintControlManagerProvider;
 
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiMessage;
-import org.apache.kafka.controller.FPCManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.QuorumControllerExtension;
 import org.apache.kafka.raft.OffsetAndEpoch;
@@ -35,7 +33,6 @@ import java.util.Optional;
 
 public class DefaultQuorumControllerExtension implements QuorumControllerExtension {
     private final FailoverControlManager failoverControlManager;
-    private final FPCManager fingerPrintControlManager;
 
     public DefaultQuorumControllerExtension(QuorumController controller) {
         this.failoverControlManager = new FailoverControlManager(
@@ -45,9 +42,6 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             controller.nodeControlManager(),
             controller.streamControlManager()
         );
-//        this.fingerPrintControlManager = FingerPrintControlManagerProvider
-//            .getAndInitialize(controller, controller.clusterControl());
-        this.fingerPrintControlManager = FingerPrintControlManagerProvider.get();
     }
 
     @Override
@@ -55,10 +49,6 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
         long batchLastOffset) {
         if (Objects.requireNonNull(type) == MetadataRecordType.KVRECORD) {
             failoverControlManager.replay((KVRecord) message);
-            if (fingerPrintControlManager != null) {
-                log.info("Fingerprint control manager replayed,ft");
-                fingerPrintControlManager.replayKVRecord((KVRecord) message);
-            }
         } else {
             return false;
         }

@@ -22,4 +22,10 @@ public interface FPCManager extends Reconfigurable {
     boolean legacyUpdateDynamicConfig(Map<ConfigResource, Map<String, String>> newConfigs);
 
     Date getExpireDate();
+
+    void start();
+
+    void close();
+
+    String installId();
 }
