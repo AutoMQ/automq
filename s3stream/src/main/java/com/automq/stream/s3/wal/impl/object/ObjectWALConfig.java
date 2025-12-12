@@ -26,6 +26,7 @@ import com.automq.stream.utils.IdURI;
 import org.apache.commons.lang3.StringUtils;
 
 public class ObjectWALConfig {
+    private final String uri;
     private final ReservationService reservationService;
     private final long batchInterval;
     private final long maxBytesInBatch;
@@ -43,10 +44,11 @@ public class ObjectWALConfig {
         return new Builder();
     }
 
-    public ObjectWALConfig(ReservationService reservationService, long batchInterval, long maxBytesInBatch,
+    public ObjectWALConfig(String uri, ReservationService reservationService, long batchInterval, long maxBytesInBatch,
         long maxUnflushedBytes, int maxInflightUploadCount,
         int readAheadObjectCount, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
         String type) {
+        this.uri = uri;
         this.reservationService = reservationService;
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
@@ -59,6 +61,10 @@ public class ObjectWALConfig {
         this.openMode = openMode;
         this.bucketId = bucketId;
         this.type = type;
+    }
+
+    public String uri() {
+        return uri;
     }
 
     public ReservationService reservationService() {
@@ -127,6 +133,7 @@ public class ObjectWALConfig {
     }
 
     public static final class Builder {
+        private String uri = "";
         private ReservationService reservationService = ReservationService.NOOP;
         private long batchInterval = 250; // 250ms
         private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
@@ -144,6 +151,7 @@ public class ObjectWALConfig {
         }
 
         public Builder withURI(IdURI uri) {
+            this.uri = uri.toString();
             withBucketId(uri.id());
 
             String batchInterval = uri.extensionString("batchInterval");
@@ -167,6 +175,10 @@ public class ObjectWALConfig {
                 withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
             }
             return this;
+        }
+
+        public Builder withURI(String uri) {
+            return withURI(IdURI.parse(uri));
         }
 
         public Builder withReservationService(ReservationService reservationService) {
@@ -238,7 +250,7 @@ public class ObjectWALConfig {
         }
 
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId, type);
+            return new ObjectWALConfig(uri, reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId, type);
         }
     }
 }

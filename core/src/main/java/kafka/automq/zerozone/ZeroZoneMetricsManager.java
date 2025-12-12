@@ -50,9 +50,9 @@ public class ZeroZoneMetricsManager {
         .build());
 
     private static final Metrics.HistogramBundle ROUTER_LATENCY = Metrics.instance().histogram(PREFIX + "router_latency", "ZeroZone route latency", "nanoseconds");
-    public static final DeltaHistogram APPEND_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "append_channel"));
-    public static final DeltaHistogram PROXY_REQUEST_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "proxy_request"));
-    public static final DeltaHistogram GET_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "in", AttributeKey.stringKey("stage"), "get_channel"));
+    public static final DeltaHistogram APPEND_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "append_channel"));
+    public static final DeltaHistogram PROXY_REQUEST_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "proxy_request"));
+    public static final DeltaHistogram GET_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "in", AttributeKey.stringKey("stage"), "get_channel"));
 
     public static void recordRouterOutBytes(int toNodeId, int bytes) {
         try {

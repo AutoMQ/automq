@@ -17,7 +17,7 @@
   "apiKey": 516,
   "type": "response",
   "name": "AutomqGetPartitionSnapshotResponse",
-  "validVersions": "0-1",
+  "validVersions": "0-2",
   "flexibleVersions": "0+",
   "fields": [
     { "name": "ErrorCode", "type": "int16", "versions": "0+", "about": "The top level response error code" },
@@ -51,6 +51,13 @@
       "type": "string",
       "versions": "1+",
       "about": "The confirm WAL config."
+    },
+    {
+      "name": "ConfirmWalDeltaData",
+      "type": "bytes",
+      "versions": "2+",
+      "nullableVersions": "2+",
+      "about": "The confirm WAL delta data between two end offsets. It's an optional field. If not present, the client should read the delta from WAL"
     }
   ],
   "commonStructs": [

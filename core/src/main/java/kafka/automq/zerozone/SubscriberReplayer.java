@@ -43,6 +43,8 @@ import java.util.concurrent.Executors;
 import java.util.function.LongConsumer;
 import java.util.stream.Collectors;
 
+import static kafka.automq.partition.snapshot.ConfirmWalDataDelta.decodeDeltaRecords;
+
 class SubscriberReplayer {
     private static final Logger LOGGER = LoggerFactory.getLogger(SubscriberReplayer.class);
     private static final ExecutorService CLOSE_EXECUTOR = Executors.newCachedThreadPool();
@@ -64,7 +66,7 @@ class SubscriberReplayer {
         this.metadataCache = metadataCache;
     }
 
-    public void onNewWalEndOffset(String walConfig, RecordOffset endOffset) {
+    public void onNewWalEndOffset(String walConfig, RecordOffset endOffset, byte[] walDeltaData) {
         if (wal == null) {
             this.wal = confirmWALProvider.readOnly(walConfig, node.id());
         }
@@ -77,11 +79,14 @@ class SubscriberReplayer {
             return;
         }
         // The replayer will ensure the order of replay
-        this.lastDataLoadCf = wal.thenCompose(w -> replayer.replay(w, startOffset, endOffset).thenAccept(nil -> {
+        this.lastDataLoadCf = wal.thenCompose(w -> replayer.replay(w, startOffset, endOffset, decodeDeltaRecords(walDeltaData)).thenAccept(nil -> {
             if (LOGGER.isTraceEnabled()) {
                 LOGGER.trace("replay {} confirm wal [{}, {})", node, startOffset, endOffset);
             }
-        }));
+        })).exceptionally(ex -> {
+            LOGGER.error("[UNEXPECTED] replay confirm wal fail", ex);
+            return null;
+        });
     }
 
     public CompletableFuture<Void> relayObject() {

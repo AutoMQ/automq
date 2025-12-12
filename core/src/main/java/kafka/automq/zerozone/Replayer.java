@@ -20,6 +20,7 @@
 package kafka.automq.zerozone;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
 
@@ -37,6 +38,6 @@ public interface Replayer {
      * Replay WAL to snapshot-read cache.
      * If the record in WAL is a linked record, it will decode the linked record to the real record.
      */
-    CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset);
+    CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset, List<StreamRecordBatch> walRecords);
 
 }

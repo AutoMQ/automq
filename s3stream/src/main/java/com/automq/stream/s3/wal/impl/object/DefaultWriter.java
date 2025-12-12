@@ -71,6 +71,7 @@ import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.OBJECT_PATH_OFFSET_DELIMITER;
+import static com.automq.stream.s3.wal.impl.object.ObjectUtils.ceilAlignOffset;
 
 public class DefaultWriter implements Writer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWriter.class);
@@ -589,9 +590,18 @@ public class DefaultWriter implements Writer {
             if (ex != null) {
                 records.forEach(record -> record.future.completeExceptionally(ex));
             } else {
-                records.forEach(record -> record.future.complete(
-                    new DefaultAppendResult(DefaultRecordOffset.of(config.epoch(), record.offset, record.size))
-                ));
+                for (int idx = 0; idx < records.size(); idx++) {
+                    Record record = records.get(idx);
+                    // Requests for data starting at or beyond objectSize will return a 416 error.
+                    // So we jump the last record's nextOffset to the ceil-aligned offset.
+                    long nextOffset = (idx == records.size() - 1) ? ceilAlignOffset(record.offset + record.size) : record.offset + record.size;
+                    record.future.complete(
+                        new DefaultAppendResult(
+                            DefaultRecordOffset.of(config.epoch(), record.offset, record.size),
+                            DefaultRecordOffset.of(config.epoch(), nextOffset, 0)
+                        )
+                    );
+                }
             }
             completeCf.complete(null);
         }

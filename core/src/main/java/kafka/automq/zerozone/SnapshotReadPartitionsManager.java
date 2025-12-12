@@ -366,8 +366,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
             replayer.reset();
         }
 
-        void onNewWalEndOffset(String walConfig, RecordOffset endOffset) {
-            replayer.onNewWalEndOffset(walConfig, endOffset);
+        void onNewWalEndOffset(String walConfig, RecordOffset endOffset, byte[] walDeltaData) {
+            replayer.onNewWalEndOffset(walConfig, endOffset, walDeltaData);
         }
 
         void onNewOperationBatch(OperationBatch batch) {
