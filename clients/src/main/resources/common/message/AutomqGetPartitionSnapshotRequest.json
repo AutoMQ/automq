@@ -20,7 +20,7 @@
     "broker"
   ],
   "name": "AutomqGetPartitionSnapshotRequest",
-  "validVersions": "0-1",
+  "validVersions": "0-2",
   "flexibleVersions": "0+",
   "fields": [
     {
