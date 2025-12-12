@@ -1,4 +1,6 @@
 # A Diskless Kafka® on S3, Offering 10x Cost Savings and Scaling in Seconds.
+> 💡 *Note: This small update improves readability for new users trying AutoMQ for the first time.*
+
 
 <div align="center">
 <p align="center">
@@ -86,6 +88,8 @@
 - [AutoMQ Helps CaoCao Mobility Address Kafka Scalability During Holidays](https://www.automq.com/blog/automq-helps-caocao-mobility-address-kafka-scalability-issues-during-mid-autumn-and-national-day?utm_source=github_automq)
 
 ## ⛄ Get started with AutoMQ
+If you're new to AutoMQ, start with the single-node Docker setup. It is the easiest way to understand how AutoMQ works before exploring cluster mode.
+
 
 > [!Tip]
 > Deploying a production-ready AutoMQ cluster is challenging. This Quick Start is only for evaluating AutoMQ features and is not suitable for production use. For production deployment best practices, please [contact](https://www.automq.com/contact) our community for support.
