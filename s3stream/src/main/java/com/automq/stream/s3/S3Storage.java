@@ -88,9 +88,11 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import io.netty.buffer.ByteBuf;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
+import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
@@ -111,6 +113,7 @@ public class S3Storage implements Storage {
 
     protected final Config config;
     private final WriteAheadLog deltaWAL;
+    private final ConfirmWAL confirmWAL;
     /**
      * WAL log cache
      */
@@ -185,7 +188,8 @@ public class S3Storage implements Storage {
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
-        Context.instance().confirmWAL(new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit)));
+        this.confirmWAL = new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit));
+        Context.instance().confirmWAL(this.confirmWAL);
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
@@ -529,7 +533,7 @@ public class S3Storage implements Storage {
         for (WalWriteRequest request : backoffRecords) {
             request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
         }
-        FutureUtil.suppress(() -> delayTrim.close(), LOGGER);
+        suppress(() -> delayTrim.close(), LOGGER);
         deltaWAL.shutdownGracefully();
         backgroundExecutor.shutdown();
         try {
@@ -592,9 +596,7 @@ public class S3Storage implements Storage {
                     appendCf = deltaWAL.append(new TraceContext(context), streamRecord);
                 } else {
                     StreamRecordBatch record = request.record;
-                    // TODO: add StreamRecordBatch attr to represent the link record.
-                    StreamRecordBatch linkStreamRecord = new StreamRecordBatch(record.getStreamId(), record.getEpoch(),
-                        record.getBaseOffset(), -record.getCount(), context.linkRecord());
+                    StreamRecordBatch linkStreamRecord = toLinkRecord(record, context.linkRecord().retain());
                     appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
                 }
 
@@ -615,14 +617,23 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(e);
             return false;
         }
-        appendCf.whenComplete((rst, ex) -> {
+        appendCf.thenAccept(rst -> {
+            request.offset = rst.recordOffset();
+            // Execute the ConfirmWAL#append before run callback.
+            if (request.context.linkRecord() == null) {
+                this.confirmWAL.onAppend(request.record, rst.recordOffset(), rst.nextOffset());
+            } else {
+                StreamRecordBatch linkRecord = toLinkRecord(request.record, request.context.linkRecord());
+                this.confirmWAL.onAppend(linkRecord, rst.recordOffset(), rst.nextOffset());
+                linkRecord.release();
+            }
+            handleAppendCallback(request);
+        }).whenComplete((nil, ex) -> {
             if (ex != null) {
-                LOGGER.error("append WAL fail, request {}", request, ex);
+                LOGGER.error("append WAL fail", ex);
                 storageFailureHandler.handle(ex);
                 return;
             }
-            request.offset = rst.recordOffset();
-            handleAppendCallback(request);
         });
         return false;
     }
@@ -1058,6 +1069,12 @@ public class S3Storage implements Storage {
             }
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
         }
+    }
+
+    static StreamRecordBatch toLinkRecord(StreamRecordBatch origin, ByteBuf link) {
+        StreamRecordBatch record = new StreamRecordBatch(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link);
+        record.encoded();
+        return record;
     }
 
     public static class DeltaWALUploadTaskContext {

@@ -20,15 +20,19 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.S3Storage.LazyCommit;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 
 public class ConfirmWAL {
     private final WriteAheadLog log;
     private final Function<LazyCommit, CompletableFuture<Void>> commitHandle;
+    private final List<AppendListener> appendListeners = new CopyOnWriteArrayList<>();
 
     public ConfirmWAL(WriteAheadLog log, Function<LazyCommit, CompletableFuture<Void>> commitHandle) {
         this.log = log;
@@ -54,6 +58,25 @@ public class ConfirmWAL {
 
     public CompletableFuture<Void> commit(long lazyLingerMs) {
         return commit(lazyLingerMs, true);
+    }
+
+    public ListenerHandle addAppendListener(AppendListener listener) {
+        appendListeners.add(listener);
+        return () -> appendListeners.remove(listener);
+    }
+
+    public void onAppend(StreamRecordBatch record, RecordOffset recordOffset, RecordOffset nextOffset) {
+        for (AppendListener listener : appendListeners) {
+            listener.onAppend(record, recordOffset, nextOffset);
+        }
+    }
+
+    public interface AppendListener {
+        void onAppend(StreamRecordBatch record, RecordOffset recordOffset, RecordOffset nextOffset);
+    }
+
+    public interface ListenerHandle {
+        void close();
     }
 
 }
