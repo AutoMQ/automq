@@ -25,6 +25,8 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.ScatteringByteChannel;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * A size delimited Receive that consists of a 4 byte network-ordered size N followed by N bytes of content
@@ -36,13 +38,28 @@ public class NetworkReceive implements Receive {
     private static final Logger log = LoggerFactory.getLogger(NetworkReceive.class);
     private static final ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
 
+    // Thread-safe pool for reusing 4-byte size buffers
+    private static final Queue<ByteBuffer> SIZE_BUFFER_POOL = new ConcurrentLinkedQueue<>();
+    private static final int SIZE_BUFFER_POOL_CAPACITY = 512;
+
+    // Tiered memory pool buckets for common payload sizes
+    private static final int[] BUCKET_SIZES = {1024, 4096, 16384, 65536, 262144, 1048576};
+    private static final Queue<?>[] BUCKET_POOLS = new Queue[BUCKET_SIZES.length];
+
+    static {
+        // Initialize bucket pools
+        for (int i = 0; i < BUCKET_SIZES.length; i++) {
+            BUCKET_POOLS[i] = new ConcurrentLinkedQueue<>();
+        }
+    }
+
     private final String source;
-    private final ByteBuffer size;
+    private ByteBuffer size;
     private final int maxSize;
     private final MemoryPool memoryPool;
     private int requestedBufferSize = -1;
     private ByteBuffer buffer;
-
+    private int bufferBucketIndex = -1;
 
     public NetworkReceive(String source, ByteBuffer buffer) {
         this(UNLIMITED, source);
@@ -59,7 +76,7 @@ public class NetworkReceive implements Receive {
 
     public NetworkReceive(int maxSize, String source, MemoryPool memoryPool) {
         this.source = source;
-        this.size = ByteBuffer.allocate(4);
+        this.size = acquireSizeBuffer();
         this.buffer = null;
         this.maxSize = maxSize;
         this.memoryPool = memoryPool;
@@ -67,6 +84,90 @@ public class NetworkReceive implements Receive {
 
     public NetworkReceive() {
         this(UNKNOWN_SOURCE);
+    }
+
+    /**
+     * Acquires a 4-byte buffer from the pool or creates a new one
+     */
+    private static ByteBuffer acquireSizeBuffer() {
+        ByteBuffer pooled = SIZE_BUFFER_POOL.poll();
+        if (pooled != null) {
+            pooled.clear();
+            return pooled;
+        }
+        return ByteBuffer.allocate(4);
+    }
+
+    /**
+     * Returns a 4-byte buffer to the pool
+     */
+    private static void releaseSizeBuffer(ByteBuffer buffer) {
+        if (SIZE_BUFFER_POOL.size() < SIZE_BUFFER_POOL_CAPACITY) {
+            buffer.clear();
+            SIZE_BUFFER_POOL.offer(buffer);
+        }
+    }
+
+    /**
+     * Finds the appropriate bucket index for a given size
+     */
+    private static int findBucketIndex(int size) {
+        for (int i = 0; i < BUCKET_SIZES.length; i++) {
+            if (size <= BUCKET_SIZES[i]) {
+                return i;
+            }
+        }
+
+        // Size exceeds all buckets, use memoryPool directly
+        return -1; 
+    }
+
+    /**
+     * Acquires a buffer from the tiered pool or memoryPool
+     */
+    @SuppressWarnings("unchecked")
+    private ByteBuffer acquirePayloadBuffer(int size) {
+        int bucketIndex = findBucketIndex(size);
+
+        if (bucketIndex >= 0) {
+            Queue<ByteBuffer> bucketPool = (Queue<ByteBuffer>) BUCKET_POOLS[bucketIndex];
+            ByteBuffer pooled = bucketPool.poll();
+            if (pooled != null) {
+                pooled.clear();
+                this.bufferBucketIndex = bucketIndex;
+                return pooled;
+            }
+        }
+
+        // Fall back to memoryPool for large sizes or if bucket pool is empty
+        ByteBuffer allocated = memoryPool.tryAllocate(size);
+        if (allocated != null) {
+            this.bufferBucketIndex = bucketIndex;
+        }
+        return allocated;
+    }
+
+    /**
+     * Releases a buffer back to the tiered pool
+     */
+    @SuppressWarnings("unchecked")
+    private void releasePayloadBuffer(ByteBuffer buffer) {
+        if (buffer == null || buffer == EMPTY_BUFFER) {
+            return;
+        }
+
+        if (bufferBucketIndex >= 0 && bufferBucketIndex < BUCKET_POOLS.length) {
+            Queue<ByteBuffer> bucketPool = (Queue<ByteBuffer>) BUCKET_POOLS[bufferBucketIndex];
+            int maxPoolSize = 128; // Limit pool size to prevent memory buildup
+            if (bucketPool.size() < maxPoolSize) {
+                buffer.clear();
+                bucketPool.offer(buffer);
+                return;
+            }
+        }
+
+        // Fall back to memoryPool release
+        memoryPool.release(buffer);
     }
 
     @Override
@@ -100,7 +201,7 @@ public class NetworkReceive implements Receive {
             }
         }
         if (buffer == null && requestedBufferSize != -1) { // we know the size we want but haven't been able to allocate it yet
-            buffer = memoryPool.tryAllocate(requestedBufferSize);
+            buffer = acquirePayloadBuffer(requestedBufferSize);
             if (buffer == null)
                 log.trace("Broker low on memory - could not allocate buffer of size {} for source {}", requestedBufferSize, source);
         }
@@ -124,12 +225,19 @@ public class NetworkReceive implements Receive {
         return buffer != null;
     }
 
-
     @Override
     public void close() throws IOException {
-        if (buffer != null && buffer != EMPTY_BUFFER) {
-            memoryPool.release(buffer);
+        // Release payload buffer to tiered pool
+        if (buffer != null) {
+            releasePayloadBuffer(buffer);
             buffer = null;
+            bufferBucketIndex = -1;
+        }
+
+        // Release size buffer to pool
+        if (size != null) {
+            releaseSizeBuffer(size);
+            size = null;
         }
     }
 
@@ -150,5 +258,4 @@ public class NetworkReceive implements Receive {
     public int size() {
         return payload().limit() + size.limit();
     }
-
 }
