@@ -147,7 +147,7 @@ public class ByteBufAlloc {
             if (MEMORY_USAGE_DETECT) {
                 LongAdder counter;
 
-                if (type > MAX_TYPE_NUMBER) {
+                if (type >= MAX_TYPE_NUMBER || type < 0) {
                     counter = UNKNOWN_USAGE_STATS;
                 } else {
                     counter = USAGE_STATS[type];
