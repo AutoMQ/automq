@@ -191,6 +191,7 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 import org.slf4j.Logger;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -1387,6 +1388,21 @@ public final class QuorumController implements Controller {
                     featureControl);
                 //Inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
+                if (fpcManager != null) {
+                    if (!fpcManager.recordExists()) {
+                        log.info("start writing fingerprint records");
+                        long now = time.milliseconds();
+                        byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
+                            .putLong(now)
+                            .array();
+
+                        KVRecord record = new KVRecord().setKeyValues(List.of(
+                            new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes)
+                        ));
+                        ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
+                        all.add(fingerPrint);
+                    }
+                }
                 log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
                 //inject end
                 return ControllerResult.atomicOf(all, null);
@@ -1407,7 +1423,7 @@ public final class QuorumController implements Controller {
             maybeScheduleNextElectUncleanLeaders();
             maybeScheduleNextWriteNoOpRecord();
             // Inject start
-            maybeScheduleWriteFingerprint();
+//            maybeScheduleWriteFingerprint();
         }
     }
 
@@ -1684,16 +1700,22 @@ public final class QuorumController implements Controller {
             MAYBE_WRITE_FINGERPRINT,
             () -> {
                 List<ApiMessageAndVersion> records = new ArrayList<>();
-                if (!fpcManager.recordExists()) {
+                if (!fpcManager.hasGenesisAnchor()) {
                     log.info("start writing fingerprint records");
                     long now = time.milliseconds();
                     byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
                         .putLong(now)
                         .array();
                     KVRecord.KeyValue timeValue = new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes);
-                    KVRecord record = new KVRecord().setKeyValues(List.of(timeValue));
-                    ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
-                    records.add(fingerPrint);
+                    KVRecord timeRecord = new KVRecord().setKeyValues(List.of(timeValue));
+                    ApiMessageAndVersion timeMessage = new ApiMessageAndVersion(timeRecord, (short) 0);
+                    records.add(timeMessage);
+
+                    String installId = fpcManager.installId();
+                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.install_id").setValue(installId.getBytes(StandardCharsets.UTF_8));
+                    KVRecord insRecord = new KVRecord().setKeyValues(List.of(insValue));
+                    ApiMessageAndVersion insMessage = new ApiMessageAndVersion(insRecord, (short) 0);
+                    records.add(insMessage);
                 }
                 return ControllerResult.atomicOf(records, null);
             },

@@ -19,6 +19,8 @@ public interface FPCManager extends Reconfigurable {
 
     boolean recordExists();
 
+    boolean hasGenesisAnchor();
+
     boolean legacyUpdateDynamicConfig(Map<ConfigResource, Map<String, String>> newConfigs);
 
     Date getExpireDate();
