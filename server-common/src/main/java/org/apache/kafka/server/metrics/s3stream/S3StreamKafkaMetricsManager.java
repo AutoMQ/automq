@@ -140,6 +140,7 @@ public class S3StreamKafkaMetricsManager {
     // License metrics
     private static ObservableLongGauge licenseExpiryTimestampMetrics = new NoopObservableLongGauge();
     private static ObservableLongGauge licenseDaysRemainingMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge nodeVcpuCountMetrics = new NoopObservableLongGauge();
 
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
@@ -338,13 +339,13 @@ public class S3StreamKafkaMetricsManager {
     private static void initLicenseMetrics(Meter meter, String prefix) {
         licenseExpiryTimestampMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
                 .setDescription("The expiry timestamp of the license")
-                .setUnit("milliseconds")
+                .setUnit("seconds")
                 .ofLongs()
                 .buildWithCallback(result -> {
                     if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                         Date expireDate = licenseExpireDateSupplier.get();
                         if (expireDate != null) {
-                            result.record(expireDate.getTime(), metricsConfig.getBaseAttributes());
+                            result.record(expireDate.getTime() / 1000, metricsConfig.getBaseAttributes());
                         }
                     }
                 });
@@ -360,6 +361,15 @@ public class S3StreamKafkaMetricsManager {
                             long daysRemaining = (expireDate.getTime() - System.currentTimeMillis()) / (1000 * 3600 * 24);
                             result.record(daysRemaining, metricsConfig.getBaseAttributes());
                         }
+                    }
+                });
+
+        nodeVcpuCountMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.NODE_VCPU_COUNT_METRIC_NAME)
+                .setDescription("The number of vCPUs available on this node")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        result.record(Runtime.getRuntime().availableProcessors(), metricsConfig.getBaseAttributes());
                     }
                 });
     }

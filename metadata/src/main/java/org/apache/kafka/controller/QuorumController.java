@@ -1388,20 +1388,22 @@ public final class QuorumController implements Controller {
                     featureControl);
                 //Inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                if (fpcManager != null) {
-                    if (!fpcManager.recordExists()) {
-                        log.info("start writing fingerprint records");
-                        long now = time.milliseconds();
-                        byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
-                            .putLong(now)
-                            .array();
+                if (fpcManager != null && !fpcManager.hasGenesisAnchor()) {
+                    log.info("start writing fingerprint records");
+                    long now = time.milliseconds();
+                    byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
+                        .putLong(now)
+                        .array();
+                    KVRecord.KeyValue timeValue = new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes);
+                    KVRecord timeRecord = new KVRecord().setKeyValues(List.of(timeValue));
+                    ApiMessageAndVersion timeMessage = new ApiMessageAndVersion(timeRecord, (short) 0);
+                    all.add(timeMessage);
 
-                        KVRecord record = new KVRecord().setKeyValues(List.of(
-                            new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes)
-                        ));
-                        ApiMessageAndVersion fingerPrint = new ApiMessageAndVersion(record, (short) 0);
-                        all.add(fingerPrint);
-                    }
+                    String installId = fpcManager.installId();
+                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.install_id").setValue(installId.getBytes(StandardCharsets.UTF_8));
+                    KVRecord insRecord = new KVRecord().setKeyValues(List.of(insValue));
+                    ApiMessageAndVersion insMessage = new ApiMessageAndVersion(insRecord, (short) 0);
+                    all.add(insMessage);
                 }
                 log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
                 //inject end
@@ -1691,7 +1693,7 @@ public final class QuorumController implements Controller {
     }
 
     private static final String MAYBE_WRITE_FINGERPRINT = "maybeWriteFingerprint";
-
+//Inject
     private void maybeScheduleWriteFingerprint() {
         if (fpcManager == null) {
             return;

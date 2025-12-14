@@ -64,4 +64,5 @@ public class S3StreamKafkaMetricsConstants {
     // License
     public static final String LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME = "license_expiry_timestamp";
     public static final String LICENSE_DAYS_REMAINING_METRIC_NAME = "license_days_remaining";
+    public static final String NODE_VCPU_COUNT_METRIC_NAME = "node_vcpu_count";
 }
