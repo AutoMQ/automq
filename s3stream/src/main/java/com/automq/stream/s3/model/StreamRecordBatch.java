@@ -20,52 +20,51 @@
 package com.automq.stream.s3.model;
 
 import com.automq.stream.ByteBufSeqAlloc;
-import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
 
-import io.netty.buffer.ByteBuf;
+import java.nio.ByteBuffer;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+
+import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
+import static com.automq.stream.s3.StreamRecordBatchCodec.BASE_OFFSET_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.EPOCH_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.HEADER_SIZE;
+import static com.automq.stream.s3.StreamRecordBatchCodec.LAST_OFFSET_DELTA_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.MAGIC_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.MAGIC_V0;
+import static com.automq.stream.s3.StreamRecordBatchCodec.PAYLOAD_LENGTH_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.PAYLOAD_POS;
+import static com.automq.stream.s3.StreamRecordBatchCodec.STREAM_ID_POS;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {
     private static final int OBJECT_OVERHEAD = 48 /* fields */ + 48 /* ByteBuf payload */ + 48 /* ByteBuf encoded */;
     private static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(ENCODE_RECORD, 8);
-    private final long streamId;
-    private final long epoch;
+    private static final ByteBufSeqAlloc DECODE_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 8);
+    // Cache the frequently used fields
     private final long baseOffset;
     private final int count;
-    private ByteBuf payload;
-    private ByteBuf encoded;
 
-    public StreamRecordBatch(long streamId, long epoch, long baseOffset, int count, ByteBuf payload) {
-        this.streamId = streamId;
-        this.epoch = epoch;
-        this.baseOffset = baseOffset;
-        this.count = count;
-        this.payload = payload;
+    final ByteBuf encoded;
+
+    private StreamRecordBatch(ByteBuf encoded) {
+        this.encoded = encoded;
+        this.baseOffset = encoded.getLong(encoded.readerIndex() + BASE_OFFSET_POS);
+        this.count = encoded.getInt(encoded.readerIndex() + LAST_OFFSET_DELTA_POS);
     }
 
     public ByteBuf encoded() {
-        return encoded(ENCODE_ALLOC);
-    }
-
-    public ByteBuf encoded(ByteBufSeqAlloc alloc) {
-        // TODO: keep the ref count
-        if (encoded == null) {
-            encoded = StreamRecordBatchCodec.encode(this, alloc);
-            ByteBuf oldPayload = payload;
-            payload = encoded.slice(encoded.readerIndex() + encoded.readableBytes() - payload.readableBytes(), payload.readableBytes());
-            oldPayload.release();
-        }
-        return encoded.duplicate();
+        return encoded.slice();
     }
 
     public long getStreamId() {
-        return streamId;
+        return encoded.getLong(encoded.readerIndex() + STREAM_ID_POS);
     }
 
     public long getEpoch() {
-        return epoch;
+        return encoded.getLong(encoded.readerIndex() + EPOCH_POS);
     }
 
     public long getBaseOffset() {
@@ -73,6 +72,8 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     }
 
     public long getLastOffset() {
+        long baseOffset = getBaseOffset();
+        int count = getCount();
         if (count > 0) {
             return baseOffset + count;
         } else {
@@ -86,11 +87,11 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     }
 
     public ByteBuf getPayload() {
-        return payload;
+        return encoded.slice(encoded.readerIndex() + PAYLOAD_POS, encoded.readableBytes() - HEADER_SIZE);
     }
 
     public int size() {
-        return payload.readableBytes();
+        return encoded.getInt(encoded.readerIndex() + PAYLOAD_LENGTH_POS);
     }
 
     public int occupiedSize() {
@@ -98,41 +99,29 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     }
 
     public void retain() {
-        if (encoded != null) {
-            encoded.retain();
-        } else {
-            payload.retain();
-        }
+        encoded.retain();
     }
 
     public void release() {
-        if (encoded != null) {
-            encoded.release();
-        } else {
-            payload.release();
-        }
+        encoded.release();
     }
 
     @Override
     public int compareTo(StreamRecordBatch o) {
-        int rst = Long.compare(streamId, o.streamId);
+        int rst = Long.compare(getStreamId(), o.getStreamId());
         if (rst != 0) {
             return rst;
         }
-        rst = Long.compare(epoch, o.epoch);
-        if (rst != 0) {
-            return rst;
-        }
-        return Long.compare(baseOffset, o.baseOffset);
+        return Long.compare(getBaseOffset(), o.getBaseOffset());
     }
 
     @Override
     public String toString() {
         return "StreamRecordBatch{" +
-            "streamId=" + streamId +
-            ", epoch=" + epoch +
-            ", baseOffset=" + baseOffset +
-            ", count=" + count +
+            "streamId=" + getStreamId() +
+            ", epoch=" + getEpoch() +
+            ", baseOffset=" + getBaseOffset() +
+            ", count=" + getCount() +
             ", size=" + size() + '}';
     }
 
@@ -144,5 +133,68 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
     @Override
     public boolean isGreaterThan(Long value) {
         return getBaseOffset() > value;
+    }
+
+    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuffer payload) {
+        return of(streamId, epoch, baseOffset, count, Unpooled.wrappedBuffer(payload), ENCODE_ALLOC);
+    }
+
+    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuffer payload, ByteBufSeqAlloc alloc) {
+        return of(streamId, epoch, baseOffset, count, Unpooled.wrappedBuffer(payload), alloc);
+    }
+
+    /**
+     * StreamRecordBatch.of expects take the owner of the payload.
+     * The payload will be copied to the new StreamRecordBatch and released.
+     */
+    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuf payload) {
+        return of(streamId, epoch, baseOffset, count, payload, ENCODE_ALLOC);
+    }
+
+    /**
+     * StreamRecordBatch.of expects take the owner of the payload.
+     * The payload will be copied to the new StreamRecordBatch and released.
+     */
+    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuf payload,
+        ByteBufSeqAlloc alloc) {
+        int totalLength = HEADER_SIZE + payload.readableBytes();
+        ByteBuf buf = alloc.byteBuffer(totalLength);
+        buf.writeByte(MAGIC_V0);
+        buf.writeLong(streamId);
+        buf.writeLong(epoch);
+        buf.writeLong(baseOffset);
+        buf.writeInt(count);
+        buf.writeInt(payload.readableBytes());
+        buf.writeBytes(payload);
+        payload.release();
+        return new StreamRecordBatch(buf);
+    }
+
+    public static StreamRecordBatch parse(ByteBuf buf, boolean duplicated) {
+        return parse(buf, duplicated, DECODE_ALLOC);
+    }
+
+    /**
+     * Won't release the input ByteBuf.
+     * - If duplicated is true, the returned StreamRecordBatch has its own copy of the data.
+     * - If duplicated is false, the returned StreamRecordBatch shares and retains the data buffer with the input.
+     */
+    public static StreamRecordBatch parse(ByteBuf buf, boolean duplicated, ByteBufSeqAlloc alloc) {
+        int readerIndex = buf.readerIndex();
+        byte magic = buf.getByte(readerIndex + MAGIC_POS);
+        if (magic != MAGIC_V0) {
+            throw new RuntimeException("Invalid magic byte " + magic);
+        }
+        int payloadSize = buf.getInt(readerIndex + PAYLOAD_LENGTH_POS);
+        int encodedSize = PAYLOAD_POS + payloadSize;
+        if (duplicated) {
+            ByteBuf encoded = alloc.byteBuffer(encodedSize);
+            buf.readBytes(encoded, encodedSize);
+            return new StreamRecordBatch(encoded);
+        } else {
+            ByteBuf encoded = buf.retainedSlice(readerIndex, encodedSize);
+            buf.skipBytes(encodedSize);
+            return new StreamRecordBatch(encoded);
+        }
     }
 }

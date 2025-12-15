@@ -20,7 +20,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.StreamRecordBatchCodec;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.RecoverResult;
@@ -259,7 +259,11 @@ public class RecoverIterator implements Iterator<RecoverResult> {
         long offset = header.getRecordBodyOffset() - RECORD_HEADER_SIZE;
         int size = recordBuf.readableBytes() + RECORD_HEADER_SIZE;
 
-        return new RecoverResultImpl(StreamRecordBatchCodec.decode(recordBuf), DefaultRecordOffset.of(getEpoch(offset), offset, size));
+        try {
+            return new RecoverResultImpl(StreamRecordBatch.parse(recordBuf, false), DefaultRecordOffset.of(getEpoch(offset), offset, size));
+        } finally {
+            recordBuf.release();
+        }
     }
 
     private long getEpoch(long offset) {

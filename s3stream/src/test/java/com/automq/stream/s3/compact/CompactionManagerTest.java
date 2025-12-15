@@ -350,9 +350,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20));
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(1024));
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(1024));
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -430,9 +430,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20));
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(1024));
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(1024));
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -462,9 +462,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 200, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(200));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(200));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20));
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(200));
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(200));
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -741,7 +741,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(objectId, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 80, TestUtils.random(80));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_0, 0, 0, 80, TestUtils.random(80));
             objectWriter.write(STREAM_0, List.of(r1));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
@@ -757,7 +757,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, objectStorage, 1024, 1024);
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_0, 0, 80, 120, TestUtils.random(120));
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_0, 0, 80, 120, TestUtils.random(120));
             objectWriter.write(STREAM_0, List.of(r2));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(

@@ -20,7 +20,6 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.Constants;
-import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -138,9 +137,6 @@ public class ObjectUtils {
         if (header.getMagicCode() != RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE) {
             throw new IllegalStateException("Invalid magic code in record header.");
         }
-        int length = header.getRecordBodyLength();
-        StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.sliceRetainDecode(dataBuffer.slice(dataBuffer.readerIndex(), length));
-        dataBuffer.skipBytes(length);
-        return streamRecordBatch;
+        return StreamRecordBatch.parse(dataBuffer, false);
     }
 }
