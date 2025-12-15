@@ -106,7 +106,7 @@ public class ObjectReaderTest {
         // make index block bigger than 1M
         int streamCount = 2 * 1024 * 1024 / 40;
         for (int i = 0; i < streamCount; i++) {
-            StreamRecordBatch r = new StreamRecordBatch(i, 0, i, 1, TestUtils.random(1));
+            StreamRecordBatch r = StreamRecordBatch.of(i, 0, i, 1, TestUtils.random(1));
             objectWriter.write(i, List.of(r));
         }
         objectWriter.close().get();
@@ -122,11 +122,11 @@ public class ObjectReaderTest {
         ObjectStorage objectStorage = new MemoryObjectStorage();
         ByteBuf buf = ByteBufAlloc.byteBuffer(0);
         buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
-            new StreamRecordBatch(233L, 0, 10, 1, TestUtils.random(100)),
-            new StreamRecordBatch(233L, 0, 11, 2, TestUtils.random(100))
+            StreamRecordBatch.of(233L, 0, 10, 1, TestUtils.random(100)),
+            StreamRecordBatch.of(233L, 0, 11, 2, TestUtils.random(100))
         )).buffer());
         buf.writeBytes(new ObjectWriter.DataBlock(233L, List.of(
-            new StreamRecordBatch(233L, 0, 13, 1, TestUtils.random(100))
+            StreamRecordBatch.of(233L, 0, 13, 1, TestUtils.random(100))
         )).buffer());
         int indexPosition = buf.readableBytes();
         new DataBlockIndex(233L, 10, 4, 3, 0, buf.readableBytes()).encode(buf);
@@ -193,6 +193,6 @@ public class ObjectReaderTest {
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
-        return new StreamRecordBatch(streamId, 0, offset, count, TestUtils.random(payloadSize));
+        return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize));
     }
 }

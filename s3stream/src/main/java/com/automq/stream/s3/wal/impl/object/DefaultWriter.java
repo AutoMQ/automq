@@ -478,7 +478,7 @@ public class DefaultWriter implements Writer {
             trimOffset.set(inclusiveTrimRecordOffset);
             // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
             // So we use a fake record to trigger the wal object upload.
-            persistTrimOffsetCf = append(new StreamRecordBatch(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
+            persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
                 Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {

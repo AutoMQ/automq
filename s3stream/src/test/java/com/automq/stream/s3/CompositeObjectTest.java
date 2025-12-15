@@ -130,7 +130,7 @@ public class CompositeObjectTest {
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, ByteBuf buf) {
-        return new StreamRecordBatch(streamId, 0, offset, count, buf);
+        return StreamRecordBatch.of(streamId, 0, offset, count, buf);
     }
 
     ByteBuf genBuf(byte data, int length) {
