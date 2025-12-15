@@ -135,9 +135,8 @@ public class ConfirmWalDataDeltaTest {
     }
 
     int onAppend(long recordBaseOffset) {
-        StreamRecordBatch record = new StreamRecordBatch(1, 2, recordBaseOffset, 1, Unpooled.wrappedBuffer(new byte[1024]));
+        StreamRecordBatch record = StreamRecordBatch.of(1, 2, recordBaseOffset, 1, Unpooled.wrappedBuffer(new byte[1024]));
         nextWalOffset = walOffset + record.encoded().readableBytes();
-        record.encoded();
         delta.onAppend(
             record,
             DefaultRecordOffset.of(1, walOffset, record.encoded().readableBytes()),

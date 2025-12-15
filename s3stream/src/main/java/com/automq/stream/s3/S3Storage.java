@@ -554,8 +554,6 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord) {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        // encoded before append to free heap ByteBuf.
-        streamRecord.encoded();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, null, cf, context);
         append0(context, writeRequest, false);
         return cf.whenComplete((nil, ex) -> {
@@ -596,7 +594,7 @@ public class S3Storage implements Storage {
                     appendCf = deltaWAL.append(new TraceContext(context), streamRecord);
                 } else {
                     StreamRecordBatch record = request.record;
-                    StreamRecordBatch linkStreamRecord = toLinkRecord(record, context.linkRecord().retain());
+                    StreamRecordBatch linkStreamRecord = toLinkRecord(record, context.linkRecord().retainedSlice());
                     appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
                 }
 
@@ -1072,9 +1070,7 @@ public class S3Storage implements Storage {
     }
 
     static StreamRecordBatch toLinkRecord(StreamRecordBatch origin, ByteBuf link) {
-        StreamRecordBatch record = new StreamRecordBatch(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link);
-        record.encoded();
-        return record;
+        return StreamRecordBatch.of(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link);
     }
 
     public static class DeltaWALUploadTaskContext {

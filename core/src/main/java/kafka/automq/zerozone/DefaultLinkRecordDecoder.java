@@ -31,7 +31,6 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 
 public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecordDecoder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultLinkRecordDecoder.class);
@@ -61,11 +60,8 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                     recordBatch.setLastOffset(linkRecord.lastOffset());
                     recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
                     recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
-                    StreamRecordBatch streamRecordBatch = new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
-                        -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
-                    // The buf will be release after the finally block, so we need copy the data by #encoded.
-                    streamRecordBatch.encoded(SnapshotReadCache.ENCODE_ALLOC);
-                    return streamRecordBatch;
+                    return StreamRecordBatch.of(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
+                        -src.getCount(), records.buffer(), SnapshotReadCache.ENCODE_ALLOC);
                 } finally {
                     buf.release();
                 }

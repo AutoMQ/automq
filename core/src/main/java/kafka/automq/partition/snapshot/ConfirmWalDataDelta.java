@@ -22,7 +22,6 @@ package kafka.automq.partition.snapshot;
 import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData;
 
 import com.automq.stream.s3.ConfirmWAL;
-import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 
@@ -184,8 +183,7 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
         List<StreamRecordBatch> records = new ArrayList<>();
         ByteBuf buf = Unpooled.wrappedBuffer(data);
         while (buf.readableBytes() > 0) {
-            StreamRecordBatch record = StreamRecordBatchCodec.sliceRetainDecode(buf);
-            record.encoded();
+            StreamRecordBatch record = StreamRecordBatch.parse(buf, false);
             records.add(record);
         }
         return records;

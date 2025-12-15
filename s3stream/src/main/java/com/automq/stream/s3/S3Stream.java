@@ -215,7 +215,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
             return FutureUtil.failedFuture(new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is not writable"));
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
-        StreamRecordBatch streamRecordBatch = new StreamRecordBatch(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
+        StreamRecordBatch streamRecordBatch = StreamRecordBatch.of(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
         CompletableFuture<AppendResult> cf = storage.append(context, streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);
@@ -522,6 +522,8 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
         private static RecordBatch convert(StreamRecordBatch streamRecordBatch, boolean pooledBuf) {
             ByteBuffer buf;
+            // We shouldn't access the StreamRecordBatch after release it.
+            int count = streamRecordBatch.getCount();
             if (pooledBuf) {
                 buf = streamRecordBatch.getPayload().nioBuffer();
             } else {
@@ -532,12 +534,12 @@ public class S3Stream implements Stream, StreamMetadataListener {
             return new RecordBatch() {
                 @Override
                 public int count() {
-                    return streamRecordBatch.getCount();
+                    return count;
                 }
 
                 @Override
                 public long baseTimestamp() {
-                    return streamRecordBatch.getEpoch();
+                    return 0;
                 }
 
                 @Override
