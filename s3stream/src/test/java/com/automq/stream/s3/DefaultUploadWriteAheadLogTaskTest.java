@@ -76,13 +76,13 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            new StreamRecordBatch(233, 0, 10, 2, random(512)),
-            new StreamRecordBatch(233, 0, 12, 2, random(128)),
-            new StreamRecordBatch(233, 0, 14, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512)),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128)),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512))
         ));
         map.put(234L, List.of(
-            new StreamRecordBatch(234, 0, 20, 2, random(128)),
-            new StreamRecordBatch(234, 0, 22, 2, random(128))
+            StreamRecordBatch.of(234, 0, 20, 2, random(128)),
+            StreamRecordBatch.of(234, 0, 22, 2, random(128))
         ));
 
         Config config = new Config()
@@ -161,9 +161,9 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            new StreamRecordBatch(233, 0, 10, 2, random(512)),
-            new StreamRecordBatch(233, 0, 12, 2, random(128)),
-            new StreamRecordBatch(233, 0, 14, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512)),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128)),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512))
         ));
         Config config = new Config()
             .objectBlockSize(16 * 1024 * 1024)
@@ -195,10 +195,10 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            new StreamRecordBatch(233, 0, 10, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512))
         ));
         map.put(234L, List.of(
-            new StreamRecordBatch(234, 0, 20, 2, random(128))
+            StreamRecordBatch.of(234, 0, 20, 2, random(128))
         ));
 
         Config config = new Config()

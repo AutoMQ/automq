@@ -32,6 +32,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
@@ -286,7 +287,16 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).toList());
-                    records.forEach(r -> r.encoded(ENCODE_ALLOC));
+                    ListIterator<StreamRecordBatch> it = records.listIterator();
+                    while (it.hasNext()) {
+                        StreamRecordBatch record = it.next();
+                        try {
+                            // Copy the record to the SeqAlloc to reduce fragmentation.
+                            it.set(StreamRecordBatch.parse(record.encoded(), true, ENCODE_ALLOC));
+                        } finally {
+                            record.release();
+                        }
+                    }
                     loadCf.complete(null);
                 });
             }).whenComplete((rst, ex) -> {

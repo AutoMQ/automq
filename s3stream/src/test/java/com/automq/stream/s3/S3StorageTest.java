@@ -86,7 +86,7 @@ public class S3StorageTest {
     Config config;
 
     private static StreamRecordBatch newRecord(long streamId, long offset) {
-        return new StreamRecordBatch(streamId, 0, offset, 1, random(1));
+        return StreamRecordBatch.of(streamId, 0, offset, 1, random(1));
     }
 
     @BeforeEach
@@ -109,13 +109,13 @@ public class S3StorageTest {
         Mockito.when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(resp));
 
         CompletableFuture<Void> cf1 = storage.append(
-            new StreamRecordBatch(233, 1, 10, 1, random(100))
+            StreamRecordBatch.of(233, 1, 10, 1, random(100))
         );
         CompletableFuture<Void> cf2 = storage.append(
-            new StreamRecordBatch(233, 1, 11, 2, random(100))
+            StreamRecordBatch.of(233, 1, 11, 2, random(100))
         );
         CompletableFuture<Void> cf3 = storage.append(
-            new StreamRecordBatch(234, 3, 100, 1, random(100))
+            StreamRecordBatch.of(234, 3, 100, 1, random(100))
         );
 
         cf1.get(3, TimeUnit.SECONDS);
