@@ -30,49 +30,86 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 
+import static kafka.automq.utils.ClientUtils.isSecurityKey;
 import static scala.jdk.javaapi.CollectionConverters.asJava;
 
 public class ClientUtils {
     public static Properties clusterClientBaseConfig(KafkaConfig kafkaConfig) {
         ListenerName listenerName = kafkaConfig.interBrokerListenerName();
-
         List<EndPoint> endpoints = asJava(kafkaConfig.effectiveAdvertisedBrokerListeners());
-        Optional<EndPoint> endpointOpt = endpoints.stream().filter(e -> listenerName.equals(e.listenerName())).findFirst();
-        if (endpointOpt.isEmpty()) {
-            throw new IllegalArgumentException("Cannot find " + listenerName + " in endpoints " + endpoints);
-        }
+        
+        EndPoint endpoint = endpoints.stream()
+            .filter(e -> listenerName.equals(e.listenerName()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException(
+                "Cannot find " + listenerName + " in endpoints " + endpoints));
 
-        EndPoint endpoint = endpointOpt.get();
         SecurityProtocol securityProtocol = kafkaConfig.interBrokerSecurityProtocol();
         Map<String, Object> parsedConfigs = kafkaConfig.valuesWithPrefixOverride(listenerName.configPrefix());
-
+        
         // mirror ChannelBuilders#channelBuilderConfigs
         kafkaConfig.originals().entrySet().stream()
             .filter(entry -> !parsedConfigs.containsKey(entry.getKey()))
-            // exclude already parsed listener prefix configs
-            .filter(entry -> !(entry.getKey().startsWith(listenerName.configPrefix())
-                && parsedConfigs.containsKey(entry.getKey().substring(listenerName.configPrefix().length()))))
-            // exclude keys like `{mechanism}.some.prop` if "listener.name." prefix is present and key `some.prop` exists in parsed configs.
-            .filter(entry -> !parsedConfigs.containsKey(entry.getKey().substring(entry.getKey().indexOf('.') + 1)))
+            .filter(entry -> !isExcludedListenerConfig(entry, listenerName, parsedConfigs))
+            .filter(entry -> !isMechanismConfigShadowed(entry, parsedConfigs))
             .forEach(entry -> parsedConfigs.put(entry.getKey(), entry.getValue()));
 
         Properties clientConfig = new Properties();
+        populateSecurityConfigs(clientConfig, parsedConfigs, listenerName);
+        populateSaslConfigs(clientConfig, kafkaConfig, listenerName);
+        
+        clientConfig.put("security.protocol", securityProtocol.toString());
+        clientConfig.put("bootstrap.servers", endpoint.host() + ":" + endpoint.port());
+        return clientConfig;
+    }
+
+    private static boolean isExcludedListenerConfig(Map.Entry<String, Object> entry, 
+                                                   ListenerName listenerName, 
+                                                   Map<String, Object> parsedConfigs) {
+        String key = entry.getKey();
+        String prefix = listenerName.configPrefix();
+        if (!key.startsWith(prefix)) return false;
+        
+        String suffixKey = key.substring(prefix.length());
+        return parsedConfigs.containsKey(suffixKey);
+    }
+
+    private static boolean isMechanismConfigShadowed(Map.Entry<String, Object> entry, 
+                                                    Map<String, Object> parsedConfigs) {
+        String key = entry.getKey();
+        int dotIndex = key.indexOf('.');
+        if (dotIndex < 0) return false;
+        
+        return parsedConfigs.containsKey(key.substring(dotIndex + 1));
+    }
+
+    private static void populateSecurityConfigs(Properties clientConfig, 
+                                               Map<String, Object> parsedConfigs, 
+                                               ListenerName listenerName) {
         parsedConfigs.entrySet().stream()
-            .filter(entry -> entry.getValue() != null)
+            .filter(ClientUtils::hasNonNullValue)
             .filter(entry -> isSecurityKey(entry.getKey(), listenerName))
             .forEach(entry -> clientConfig.put(entry.getKey(), entry.getValue()));
+    }
 
+    private static void populateSaslConfigs(Properties clientConfig, 
+                                           KafkaConfig kafkaConfig, 
+                                           ListenerName listenerName) {
         String interBrokerSaslMechanism = kafkaConfig.saslMechanismInterBrokerProtocol();
-        if (interBrokerSaslMechanism != null && !interBrokerSaslMechanism.isEmpty()) {
-            kafkaConfig.originalsWithPrefix(listenerName.saslMechanismConfigPrefix(interBrokerSaslMechanism)).entrySet().stream()
-                .filter(entry -> entry.getValue() != null)
-                .forEach(entry -> clientConfig.put(entry.getKey(), entry.getValue()));
-            clientConfig.putIfAbsent("sasl.mechanism", interBrokerSaslMechanism);
+        if (interBrokerSaslMechanism == null || interBrokerSaslMechanism.isEmpty()) {
+            return;
         }
 
-        clientConfig.put("security.protocol", securityProtocol.toString());
-        clientConfig.put("bootstrap.servers", String.format("%s:%d", endpoint.host(), endpoint.port()));
-        return clientConfig;
+        kafkaConfig.originalsWithPrefix(listenerName.saslMechanismConfigPrefix(interBrokerSaslMechanism))
+            .entrySet().stream()
+            .filter(ClientUtils::hasNonNullValue)
+            .forEach(entry -> clientConfig.put(entry.getKey(), entry.getValue()));
+            
+        clientConfig.putIfAbsent("sasl.mechanism", interBrokerSaslMechanism);
+    }
+
+    private static boolean hasNonNullValue(Map.Entry<String, ?> entry) {
+        return entry.getValue() != null;
     }
 
     // Filter out non-security broker options (e.g. compression.type, log.retention.hours) so internal clients
@@ -83,5 +120,4 @@ public class ClientUtils {
             || key.startsWith("security.")
             || key.startsWith(listenerName.configPrefix());
     }
-
 }
