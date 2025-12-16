@@ -181,7 +181,7 @@ public class FailoverControlManager implements AutoCloseable {
                 node.getNodeId(),
                 // There are node epochs in both streamControlManager and nodeControlManager, and they are the same in most cases.
                 // However, in some rare cases, the node epoch in streamControlManager may be updated earlier than the node epoch in nodeControlManager.
-                // So we use the node epoch in nodeControlManager as the source of truth.
+                // So we use the node epoch in streamControlManager as the source of truth.
                 nodeEpochMap.get(node.getNodeId()),
                 node.getWalConfig(),
                 node.getTags(),

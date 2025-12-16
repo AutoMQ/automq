@@ -46,7 +46,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
@@ -84,7 +83,7 @@ public class LogCache {
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
-        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, s -> 0);
+        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
     }
@@ -221,15 +220,7 @@ public class LogCache {
         try {
             LogCacheBlock block = activeBlock;
             block.lastRecordOffset = lastRecordOffset;
-            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, streamId -> {
-                StreamCache previousStreamCache = block.map.get(streamId);
-                if (previousStreamCache != null) {
-                    // Let the initial capacity be 10% larger than the previous block's stream cache to avoid frequent resizing.
-                    return previousStreamCache.count() * 10 / 9;
-                } else {
-                    return 0;
-                }
-            });
+            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
             blocks.add(activeBlock);
             blockCount.set(blocks.size());
             return block;
@@ -436,19 +427,17 @@ public class LogCache {
         private final long createdTimestamp = System.currentTimeMillis();
         private final AtomicLong size = new AtomicLong();
         private final List<FreeListener> freeListeners = new ArrayList<>();
-        private final Function<Long, Integer> streamRecordsCapacityHint;
         volatile boolean free;
         private RecordOffset lastRecordOffset;
 
-        public LogCacheBlock(long maxSize, int maxStreamCount, Function<Long, Integer> streamRecordsCapacityHint) {
+        public LogCacheBlock(long maxSize, int maxStreamCount) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
             this.maxSize = maxSize;
             this.maxStreamCount = maxStreamCount;
-            this.streamRecordsCapacityHint = streamRecordsCapacityHint;
         }
 
         public LogCacheBlock(long maxSize) {
-            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, s -> 0);
+            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT);
         }
 
         public long blockId() {
@@ -462,7 +451,7 @@ public class LogCache {
         public boolean put(StreamRecordBatch recordBatch) {
             map.compute(recordBatch.getStreamId(), (id, cache) -> {
                 if (cache == null) {
-                    cache = new StreamCache(streamRecordsCapacityHint.apply(id));
+                    cache = new StreamCache();
                 }
                 cache.add(recordBatch);
                 return cache;
@@ -587,8 +576,8 @@ public class LogCache {
         long endOffset = NOOP_OFFSET;
         Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
 
-        public StreamCache(int initialCapacity) {
-            this.records = new ArrayList<>(initialCapacity);
+        public StreamCache() {
+            this.records = new ArrayList<>();
         }
 
         synchronized void add(StreamRecordBatch recordBatch) {

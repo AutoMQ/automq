@@ -19,10 +19,10 @@
 
 package com.automq.stream.s3.wal.impl;
 
-import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.DefaultAppendResult;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -70,6 +70,11 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
     }
 
     @Override
+    public String uri() {
+        return "0@mem://?";
+    }
+
+    @Override
     public CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) {
         if (full) {
             streamRecordBatch.release();
@@ -82,17 +87,23 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
         buffer.writeBytes(streamRecordBatch.encoded());
         streamRecordBatch.release();
         dataMap.put(offset, buffer);
-        return CompletableFuture.completedFuture(() -> DefaultRecordOffset.of(0, offset, 0));
+        return CompletableFuture.completedFuture(new DefaultAppendResult(
+            DefaultRecordOffset.of(0, offset, 0),
+            DefaultRecordOffset.of(0, offset + 1, 0)
+        ));
     }
 
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
-        return CompletableFuture.completedFuture(StreamRecordBatchCodec.decode(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), true));
+        return CompletableFuture.completedFuture(StreamRecordBatch.parse(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), false));
     }
 
     @Override
     public CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset) {
-        List<StreamRecordBatch> list = dataMap.subMap(DefaultRecordOffset.of(startOffset).offset(), true, DefaultRecordOffset.of(endOffset).offset(), false).values().stream().map(StreamRecordBatchCodec::decode).collect(Collectors.toList());
+        List<StreamRecordBatch> list = dataMap
+            .subMap(DefaultRecordOffset.of(startOffset).offset(), true, DefaultRecordOffset.of(endOffset).offset(), false)
+            .values().stream()
+            .map(buf -> StreamRecordBatch.parse(buf, false)).collect(Collectors.toList());
         return CompletableFuture.completedFuture(list);
     }
 
@@ -108,7 +119,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
             .map(e -> (RecoverResult) new RecoverResult() {
                 @Override
                 public StreamRecordBatch record() {
-                    return StreamRecordBatchCodec.decode(e.getValue());
+                    return StreamRecordBatch.parse(e.getValue(), false);
                 }
 
                 @Override
@@ -122,6 +133,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
 
     @Override
     public CompletableFuture<Void> reset() {
+        dataMap.forEach((offset, buf) -> buf.release());
         dataMap.clear();
         return CompletableFuture.completedFuture(null);
     }

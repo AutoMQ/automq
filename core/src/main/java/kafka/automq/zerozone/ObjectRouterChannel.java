@@ -83,11 +83,10 @@ public class ObjectRouterChannel implements RouterChannel {
     }
 
     CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data) {
-        StreamRecordBatch record = new StreamRecordBatch(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data);
-        record.encoded();
-        record.retain();
+        StreamRecordBatch record = StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data);
         for (; ; ) {
             try {
+                record.retain();
                 return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
                     readLock.lock();
                     try {

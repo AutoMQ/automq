@@ -128,7 +128,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
         this.checksumAlgorithm = checksumAlgorithm;
 
-        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency());
+        long apiCallTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"));
+        long apiCallAttemptTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"));
+
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency(), apiCallTimeoutMs, apiCallAttemptTimeoutMs);
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
     }
@@ -413,7 +416,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
-        List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency) {
+                                        List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency, long apiCallTimeoutMs, long apiCallAttemptTimeoutMs) {
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
@@ -427,14 +430,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         builder.httpClient(httpClient);
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
-        builder.overrideConfiguration(clientOverrideConfiguration());
+        builder.overrideConfiguration(clientOverrideConfiguration(apiCallTimeoutMs, apiCallAttemptTimeoutMs));
         return builder.build();
     }
 
-    protected ClientOverrideConfiguration clientOverrideConfiguration() {
+    protected ClientOverrideConfiguration clientOverrideConfiguration(long apiCallTimeoutMs, long apiCallAttemptTimeoutMs) {
         return ClientOverrideConfiguration.builder()
-            .apiCallTimeout(Duration.ofSeconds(30))
-            .apiCallAttemptTimeout(Duration.ofSeconds(10))
+            .apiCallTimeout(Duration.ofMillis(apiCallTimeoutMs))
+            .apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeoutMs))
             .build();
     }
 

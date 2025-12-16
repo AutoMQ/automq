@@ -90,21 +90,21 @@ public class StreamReaderTest {
         // object=6 [24, 29)
         // object=7 [29, 34)
         objects.put(0L, MockObject.builder(0, BLOCK_SIZE_THRESHOLD).mockDelay(100).write(STREAM_ID, List.of(
-            new StreamRecordBatch(STREAM_ID, 0, 0, 1, TestUtils.random(1))
+            StreamRecordBatch.of(STREAM_ID, 0, 0, 1, TestUtils.random(1))
         )).build());
         objects.put(1L, MockObject.builder(1L, 1).mockDelay(100).write(STREAM_ID, List.of(
-            new StreamRecordBatch(STREAM_ID, 0, 1, 1, TestUtils.random(19)),
-            new StreamRecordBatch(STREAM_ID, 0, 2, 1, TestUtils.random(10)),
-            new StreamRecordBatch(STREAM_ID, 0, 3, 1, TestUtils.random(10))
+            StreamRecordBatch.of(STREAM_ID, 0, 1, 1, TestUtils.random(19)),
+            StreamRecordBatch.of(STREAM_ID, 0, 2, 1, TestUtils.random(10)),
+            StreamRecordBatch.of(STREAM_ID, 0, 3, 1, TestUtils.random(10))
         )).build());
         for (int i = 0; i < 6; i++) {
             long offset = 4 + i * 5;
             objects.put(i + 2L, MockObject.builder(i + 2L, BLOCK_SIZE_THRESHOLD).mockDelay(100).write(STREAM_ID, List.of(
-                new StreamRecordBatch(STREAM_ID, 0, offset, 1, TestUtils.random(1024 * 1024 / 4)),
-                new StreamRecordBatch(STREAM_ID, 0, offset + 1, 1, TestUtils.random(1024 * 1024 / 4)),
-                new StreamRecordBatch(STREAM_ID, 0, offset + 2, 1, TestUtils.random(1024 * 1024 / 4)),
-                new StreamRecordBatch(STREAM_ID, 0, offset + 3, 1, TestUtils.random(1024 * 1024 / 4)),
-                new StreamRecordBatch(STREAM_ID, 0, offset + 4, 1, TestUtils.random(1024 * 1024 / 4))
+                StreamRecordBatch.of(STREAM_ID, 0, offset, 1, TestUtils.random(1024 * 1024 / 4)),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 1, 1, TestUtils.random(1024 * 1024 / 4)),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 2, 1, TestUtils.random(1024 * 1024 / 4)),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 3, 1, TestUtils.random(1024 * 1024 / 4)),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 4, 1, TestUtils.random(1024 * 1024 / 4))
             )).build());
         }
 
