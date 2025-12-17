@@ -27,7 +27,7 @@ public interface FPCManager extends Reconfigurable {
 
     void start();
 
-    void close();
+    void shutdown();
 
     String installId();
 }

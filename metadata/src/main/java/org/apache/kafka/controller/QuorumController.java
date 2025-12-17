@@ -1389,7 +1389,6 @@ public final class QuorumController implements Controller {
                 //Inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
                 if (fpcManager != null && !fpcManager.hasGenesisAnchor()) {
-                    log.info("start writing fingerprint records");
                     long now = time.milliseconds();
                     byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
                         .putLong(now)
@@ -1400,12 +1399,12 @@ public final class QuorumController implements Controller {
                     all.add(timeMessage);
 
                     String installId = fpcManager.installId();
-                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.install_id").setValue(installId.getBytes(StandardCharsets.UTF_8));
+                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.fpc").setValue(installId.getBytes(StandardCharsets.UTF_8));
                     KVRecord insRecord = new KVRecord().setKeyValues(List.of(insValue));
                     ApiMessageAndVersion insMessage = new ApiMessageAndVersion(insRecord, (short) 0);
                     all.add(insMessage);
+                    log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
                 }
-                log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
                 //inject end
                 return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {

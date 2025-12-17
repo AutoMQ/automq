@@ -415,7 +415,7 @@ class SharedServer(
         telemetryManager = null
       }
       if (fpcManager != null) {
-        CoreUtils.swallow(fpcManager.close(), this)
+        CoreUtils.swallow(fpcManager.shutdown(), this)
         fpcManager = null
       }
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
