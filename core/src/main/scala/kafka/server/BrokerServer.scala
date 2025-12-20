@@ -21,8 +21,8 @@ import com.automq.stream.s3.S3Storage
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
-import kafka.automq.license.FPCListener
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.license.LicenseListener
 import kafka.automq.table.TableManager
 import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultLinkRecordDecoder, DefaultRouterChannelProvider, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
@@ -584,7 +584,8 @@ class BrokerServer(
       })
 
       newFailoverListener(ElasticLogManager.INSTANCE.get.client)
-      newFPCListener()
+
+      newLicenseListener()
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -901,7 +902,7 @@ class BrokerServer(
     failoverListener
   }
 
-  protected def newFPCListener(): FPCListener = {
+  protected def newLicenseListener(): LicenseListener = {
     null
   }
   // AutoMQ inject end

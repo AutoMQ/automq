@@ -17,10 +17,10 @@
 package kafka.server;
 
 import kafka.automq.table.metric.TableTopicMetricsManager;
-import kafka.server.streamaspect.FPCManagerProvider;
+import kafka.server.streamaspect.LicenseManagerProvider;
 
 import org.apache.kafka.common.config.types.Password;
-import org.apache.kafka.controller.FPCManager;
+import org.apache.kafka.controller.LicenseManager;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
@@ -96,12 +96,12 @@ public final class TelemetrySupport {
             }
         });
 
-        // Set license expiry date supplier - dynamically fetches from FPCManager
+        // Set license expiry date supplier - dynamically fetches from LicenseManager
         S3StreamKafkaMetricsManager.setLicenseExpireDateSupplier(() -> {
             try {
-                FPCManager fpcManager = FPCManagerProvider.get();
-                if (fpcManager != null) {
-                    return fpcManager.getExpireDate();
+                LicenseManager licenseManager = LicenseManagerProvider.get();
+                if (licenseManager != null) {
+                    return licenseManager.getExpireDate();
                 }
                 return null;
             } catch (Exception e) {

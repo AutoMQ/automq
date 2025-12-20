@@ -4,16 +4,21 @@ import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 
-public interface FPCManager extends Reconfigurable {
+public interface LicenseManager extends Reconfigurable {
 
-    boolean checkLicense();
+    String describeLicense();
+    String exportClusterManifest();
 
-    boolean replayKVRecord(KVRecord record);
+    boolean checkLicense(String license);
+
+    boolean replay(KVRecord record);
 
     boolean replayConfigRecord(ApiMessage record);
 
@@ -30,4 +35,6 @@ public interface FPCManager extends Reconfigurable {
     void shutdown();
 
     String installId();
+
+    List<ApiMessageAndVersion> getRecordsToAppend(String license);
 }

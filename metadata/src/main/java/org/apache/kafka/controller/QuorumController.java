@@ -62,12 +62,16 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
+import org.apache.kafka.common.message.DescribeLicenseRequestData;
+import org.apache.kafka.common.message.DescribeLicenseResponseData;
 import org.apache.kafka.common.message.DescribeStreamsRequestData;
 import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
+import org.apache.kafka.common.message.ExportClusterManifestRequestData;
+import org.apache.kafka.common.message.ExportClusterManifestResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
@@ -87,6 +91,8 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
+import org.apache.kafka.common.message.UpdateLicenseRequestData;
+import org.apache.kafka.common.message.UpdateLicenseResponseData;
 import org.apache.kafka.common.metadata.AbortTransactionRecord;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -190,8 +196,6 @@ import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.slf4j.Logger;
 
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -293,7 +297,7 @@ public final class QuorumController implements Controller {
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
-        private FPCManager fpcManager = null;
+        private LicenseManager licenseManager = null;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -461,8 +465,8 @@ public final class QuorumController implements Controller {
             return this;
         }
 
-        public Builder setFPCManager(FPCManager fpcManager) {
-            this.fpcManager = fpcManager;
+        public Builder setLicenseManager(LicenseManager licenseManager) {
+            this.licenseManager = licenseManager;
             return this;
         }
         // AutoMQ for Kafka inject end
@@ -538,7 +542,7 @@ public final class QuorumController implements Controller {
                     streamClient,
                     quorumVoters,
                     extension,
-                    fpcManager,
+                    licenseManager,
                     // AutoMQ inject end
                     uncleanLeaderElectionCheckIntervalMs,
                     interBrokerListenerName
@@ -1388,22 +1392,11 @@ public final class QuorumController implements Controller {
                     featureControl);
                 //Inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                if (fpcManager != null && !fpcManager.hasGenesisAnchor()) {
-                    long now = time.milliseconds();
-                    byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
-                        .putLong(now)
-                        .array();
-                    KVRecord.KeyValue timeValue = new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes);
-                    KVRecord timeRecord = new KVRecord().setKeyValues(List.of(timeValue));
-                    ApiMessageAndVersion timeMessage = new ApiMessageAndVersion(timeRecord, (short) 0);
-                    all.add(timeMessage);
-
-                    String installId = fpcManager.installId();
-                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.fpc").setValue(installId.getBytes(StandardCharsets.UTF_8));
-                    KVRecord insRecord = new KVRecord().setKeyValues(List.of(insValue));
-                    ApiMessageAndVersion insMessage = new ApiMessageAndVersion(insRecord, (short) 0);
-                    all.add(insMessage);
-                    log.info("Active Controller elected complete, fpcManager is {}", fpcManager);
+                if (licenseManager != null && !licenseManager.hasGenesisAnchor()) {
+                    List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend("");
+                    all.addAll(recordsToAppend);
+                    licenseManager.start();
+                    log.info("Active Controller elected complete, licenseManager is {}", licenseManager);
                 }
                 //inject end
                 return ControllerResult.atomicOf(all, null);
@@ -1423,8 +1416,6 @@ public final class QuorumController implements Controller {
             maybeScheduleNextBalancePartitionLeaders();
             maybeScheduleNextElectUncleanLeaders();
             maybeScheduleNextWriteNoOpRecord();
-            // Inject start
-//            maybeScheduleWriteFingerprint();
         }
     }
 
@@ -1691,39 +1682,6 @@ public final class QuorumController implements Controller {
         }
     }
 
-    private static final String MAYBE_WRITE_FINGERPRINT = "maybeWriteFingerprint";
-//Inject
-    private void maybeScheduleWriteFingerprint() {
-        if (fpcManager == null) {
-            return;
-        }
-        ControllerWriteEvent<Void> event = new ControllerWriteEvent<>(
-            MAYBE_WRITE_FINGERPRINT,
-            () -> {
-                List<ApiMessageAndVersion> records = new ArrayList<>();
-                if (!fpcManager.hasGenesisAnchor()) {
-                    log.info("start writing fingerprint records");
-                    long now = time.milliseconds();
-                    byte[] timestampBytes = ByteBuffer.allocate(Long.BYTES)
-                        .putLong(now)
-                        .array();
-                    KVRecord.KeyValue timeValue = new KVRecord.KeyValue().setKey("__a.e.l.expiration").setValue(timestampBytes);
-                    KVRecord timeRecord = new KVRecord().setKeyValues(List.of(timeValue));
-                    ApiMessageAndVersion timeMessage = new ApiMessageAndVersion(timeRecord, (short) 0);
-                    records.add(timeMessage);
-
-                    String installId = fpcManager.installId();
-                    KVRecord.KeyValue insValue = new KVRecord.KeyValue().setKey("__a.e.l.install_id").setValue(installId.getBytes(StandardCharsets.UTF_8));
-                    KVRecord insRecord = new KVRecord().setKeyValues(List.of(insValue));
-                    ApiMessageAndVersion insMessage = new ApiMessageAndVersion(insRecord, (short) 0);
-                    records.add(insMessage);
-                }
-                return ControllerResult.atomicOf(records, null);
-            },
-            EnumSet.of(DOES_NOT_UPDATE_QUEUE_TIME)
-        );
-        queue.append(event);
-    }
 
     /**
      * Apply the metadata record to its corresponding in-memory state(s)
@@ -1764,11 +1722,6 @@ public final class QuorumController implements Controller {
                 break;
             case CONFIG_RECORD:
                 configurationControl.replay((ConfigRecord) message);
-                //Inject start
-                if (fpcManager != null) {
-                    fpcManager.replayConfigRecord(message);
-                }
-                //inject end
                 break;
             case PARTITION_CHANGE_RECORD:
                 replicationControl.replay((PartitionChangeRecord) message);
@@ -1880,8 +1833,8 @@ public final class QuorumController implements Controller {
                 topicDeletionManager.replay(record);
                 nodeControlManager.replay(record);
                 routerChannelEpochControlManager.replay(record);
-                if (fpcManager != null) {
-                    fpcManager.replayKVRecord(record);
+                if (licenseManager != null) {
+                    licenseManager.replay(record);
                 }
                 break;
             }
@@ -2158,7 +2111,7 @@ public final class QuorumController implements Controller {
 
     private final QuorumControllerExtension extension;
 //nick
-    private final FPCManager fpcManager;
+    private final LicenseManager licenseManager;
     // AutoMQ for Kafka inject end
 
     private QuorumController(
@@ -2197,7 +2150,7 @@ public final class QuorumController implements Controller {
         StreamClient streamClient,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension,
-        FPCManager fpcManager,
+        LicenseManager licenseManager,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,
@@ -2331,7 +2284,7 @@ public final class QuorumController implements Controller {
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
         this.extension = extension.apply(this);
-        this.fpcManager = fpcManager;
+        this.licenseManager = licenseManager;
 
 
         // set the nodeControlManager here to avoid circular dependency
@@ -2549,23 +2502,6 @@ public final class QuorumController implements Controller {
         }
 
         return appendWriteEvent("legacyAlterConfigs", context.deadlineNs(), () -> {
-            //Inject start
-            if (fpcManager != null && fpcManager.legacyUpdateDynamicConfig(newConfigs)) {
-                if (fpcManager.checkLicense()) {
-                    fpcManager.start();
-                    log.info("legacyAlterConfigs automq inject executed");
-                } else {
-                    log.warn("License validation failed in legacyAlterConfigs");
-                    // Return error for each ConfigResource
-                    Map<ConfigResource, ApiError> errors = new HashMap<>();
-                    for (ConfigResource resource : newConfigs.keySet()) {
-                        errors.put(resource, new ApiError(Errors.POLICY_VIOLATION,
-                            "License validation failed. Configuration update is not allowed."));
-                    }
-                    return ControllerResult.of(Collections.emptyList(), errors);
-                }
-            }
-            //inject end
             ControllerResult<Map<ConfigResource, ApiError>> result =
                 configurationControl.legacyAlterConfigs(newConfigs, false);
             if (validateOnly) {
@@ -2976,6 +2912,106 @@ public final class QuorumController implements Controller {
             new DeleteKVsResponseData().setDeleteKVResponses(
                 batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
         );
+    }
+
+    @Override
+    public CompletableFuture<DescribeLicenseResponseData> describeLicense(
+        ControllerRequestContext context,
+        DescribeLicenseRequestData request
+    ) {
+        if (licenseManager == null) {
+            return CompletableFuture.completedFuture(
+                new DescribeLicenseResponseData()
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setLicense("")
+                    .setThrottleTimeMs(0)
+            );
+        }
+
+        return appendReadEvent("describeLicense", context.deadlineNs(), () -> {
+            String license = licenseManager.describeLicense();
+            return new DescribeLicenseResponseData()
+                .setErrorCode(Errors.NONE.code())
+                .setLicense(license)
+                .setThrottleTimeMs(0);
+        });
+    }
+
+    @Override
+    public CompletableFuture<UpdateLicenseResponseData> updateLicense(
+        ControllerRequestContext context,
+        UpdateLicenseRequestData request
+    ) {
+        log.info("updateLicense executed");
+        if (licenseManager == null) {
+            return CompletableFuture.completedFuture(
+                new UpdateLicenseResponseData()
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setErrorMessage("License management is not supported")
+                    .setThrottleTimeMs(0)
+            );
+        }
+        String license = request.license();
+        if (license == null || license.isEmpty()) {
+            return CompletableFuture.completedFuture(
+                new UpdateLicenseResponseData()
+                    .setErrorCode(Errors.INVALID_REQUEST.code())
+                    .setErrorMessage("License can not be null or empty")
+                    .setThrottleTimeMs(0)
+            );
+        }
+
+        if (!licenseManager.checkLicense(license)) {
+            return CompletableFuture.completedFuture(
+                new UpdateLicenseResponseData()
+                    .setErrorCode(Errors.POLICY_VIOLATION.code())
+                    .setErrorMessage("license check failed")
+                    .setThrottleTimeMs(0)
+            );
+        }
+
+        return appendWriteEvent("updateLicense", context.deadlineNs(), () -> {
+            try {
+                List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend(license);
+
+                UpdateLicenseResponseData response = new UpdateLicenseResponseData()
+                    .setErrorCode(Errors.NONE.code())
+                    .setErrorMessage("")
+                    .setThrottleTimeMs(0);
+
+                return ControllerResult.of(recordsToAppend, response);
+            } catch (Exception e) {
+                log.error("Failed to process license update", e);
+                UpdateLicenseResponseData response = new UpdateLicenseResponseData()
+                    .setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code())
+                    .setErrorMessage("Failed to process update: " + e.getMessage())
+                    .setThrottleTimeMs(0);
+                return ControllerResult.of(Collections.emptyList(), response);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<ExportClusterManifestResponseData> exportClusterManifest(
+        ControllerRequestContext context,
+        ExportClusterManifestRequestData request
+    ) {
+        if (licenseManager == null) {
+            return CompletableFuture.completedFuture(
+                new ExportClusterManifestResponseData()
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setManifest("")
+                    .setThrottleTimeMs(0)
+            );
+        }
+        log.debug("exportClusterManifest executed");
+        return appendReadEvent("exportClusterManifest", context.deadlineNs(), () -> {
+            String manifest = licenseManager.exportClusterManifest();
+            return new ExportClusterManifestResponseData()
+                .setErrorCode(Errors.NONE.code())
+                .setManifest(manifest)
+                .setThrottleTimeMs(0);
+        });
     }
 
     @Override

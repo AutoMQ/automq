@@ -19,24 +19,24 @@ package kafka.server.streamaspect;
 
 
 
-import org.apache.kafka.controller.FPCManager;
+import org.apache.kafka.controller.LicenseManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ServiceLoader;
 
-public final class FPCManagerProvider {
-    private static final Logger LOG = LoggerFactory.getLogger(FPCManagerProvider.class);
+public final class LicenseManagerProvider {
+    private static final Logger LOG = LoggerFactory.getLogger(LicenseManagerProvider.class);
     private static final Object INIT_LOCK = new Object();
 
-    private static volatile FPCManager cachedInstance;
+    private static volatile LicenseManager cachedInstance;
 
-    private FPCManagerProvider() {
+    private LicenseManagerProvider() {
     }
 
-    public static FPCManager get() {
-        FPCManager current = cachedInstance;
+    public static LicenseManager get() {
+        LicenseManager current = cachedInstance;
         if (current == null) {
             synchronized (INIT_LOCK) {
                 current = cachedInstance;
@@ -48,13 +48,13 @@ public final class FPCManagerProvider {
         return current;
     }
 
-    private static FPCManager loadService() {
+    private static LicenseManager loadService() {
         try {
-            ServiceLoader<FPCManager> loader =
-                ServiceLoader.load(FPCManager.class, FPCManager.class.getClassLoader());
+            ServiceLoader<LicenseManager> loader =
+                ServiceLoader.load(LicenseManager.class, LicenseManager.class.getClassLoader());
 
-            FPCManager first = null;
-            for (FPCManager impl : loader) {
+            LicenseManager first = null;
+            for (LicenseManager impl : loader) {
                 if (first != null) {
                     LOG.warn("Multiple FingerPrintControlManagerV1 implementations found. Using {}", first.getClass().getName());
                     break;

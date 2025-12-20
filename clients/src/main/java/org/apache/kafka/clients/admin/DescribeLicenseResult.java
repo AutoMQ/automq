@@ -1,6 +1,4 @@
 /*
- * Copyright 2025, AutoMQ HK Limited.
- *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -17,9 +15,28 @@
  * limitations under the License.
  */
 
-package kafka.automq.license;
+package org.apache.kafka.clients.admin;
 
-import org.apache.kafka.image.publisher.MetadataPublisher;
+import org.apache.kafka.common.KafkaFuture;
+import org.apache.kafka.common.annotation.InterfaceStability;
 
-public interface FPCListener extends MetadataPublisher {
+/**
+ * The result of the {@link Admin#describeLicense(DescribeLicenseOptions)} call.
+ *
+ * The API of this class is evolving, see {@link Admin} for details.
+ */
+@InterfaceStability.Evolving
+public class DescribeLicenseResult {
+    private final KafkaFuture<String> future;
+
+    DescribeLicenseResult(KafkaFuture<String> future) {
+        this.future = future;
+    }
+
+    /**
+     * Return a future which returns the current license.
+     */
+    public KafkaFuture<String> license() {
+        return future;
+    }
 }

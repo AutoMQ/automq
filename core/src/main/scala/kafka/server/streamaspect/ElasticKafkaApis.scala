@@ -33,7 +33,7 @@ import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.controller.FPCManager
+import org.apache.kafka.controller.LicenseManager
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -92,7 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
-  private val fpcManager: FPCManager = FPCManagerProvider.get();
+  private val licenseManager: LicenseManager = LicenseManagerProvider.get();
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -472,8 +472,8 @@ class ElasticKafkaApis(
     val versionId = request.header.apiVersion
     val clientId = request.header.clientId
     val fetchRequest = request.body[FetchRequest]
-    if (!fetchRequest.isFromFollower && fpcManager != null && !fpcManager.checkLicense()) {
-//      logger.info("Consumer is not allowed to fetch data due to license!");
+    if (!fetchRequest.isFromFollower && licenseManager != null && !licenseManager.checkLicense("")) {
+//      logger.info("Consumer is not allowed to fetch data due to license!")
       val emptyResponse = FetchResponse.of(
         Errors.NONE,
         0,
@@ -483,8 +483,8 @@ class ElasticKafkaApis(
       requestChannel.sendResponse(request, emptyResponse, None)
       return
     }
-//    if (!fetchRequest.isFromFollower && fpcManager != null && !fpcManager.checkLicense()) {
-//      logger.info("Consumer is not allowed to fetch data due to license!");
+//    if (!fetchRequest.isFromFollower && licenseManager != null && !licenseManager.checkLicense()) {
+//      logger.info("Consumer is not allowed to fetch data due to license!")
 //      val emptyResponse = FetchResponse.of(
 //        Errors.NONE,
 //        0,
