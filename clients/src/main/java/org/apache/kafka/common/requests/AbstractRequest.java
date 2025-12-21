@@ -34,7 +34,9 @@ import org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
+import org.apache.kafka.common.requests.s3.DescribeLicenseRequest;
 import org.apache.kafka.common.requests.s3.DescribeStreamsRequest;
+import org.apache.kafka.common.requests.s3.ExportClusterManifestRequest;
 import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
@@ -42,6 +44,7 @@ import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.common.requests.s3.UpdateLicenseRequest;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -385,6 +388,12 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return DescribeStreamsRequest.parse(buffer, apiVersion);
             case AUTOMQ_UPDATE_GROUP:
                 return AutomqUpdateGroupRequest.parse(buffer, apiVersion);
+            case UPDATE_LICENSE:
+                return UpdateLicenseRequest.parse(buffer, apiVersion);
+            case DESCRIBE_LICENSE:
+                return DescribeLicenseRequest.parse(buffer, apiVersion);
+            case EXPORT_CLUSTER_MANIFEST:
+                return ExportClusterManifestRequest.parse(buffer, apiVersion);
             // AutoMQ for Kafka inject end
 
             case SHARE_GROUP_HEARTBEAT:

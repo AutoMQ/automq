@@ -2485,6 +2485,125 @@ public class KafkaAdminClient extends AdminClient {
         }, now);
         return new GetNextNodeIdResult(nodeIdFuture);
     }
+
+    @Override
+    public DescribeLicenseResult describeLicense(final DescribeLicenseOptions options) {
+        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("describeLicense", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider()) {
+
+            @Override
+            DescribeLicenseRequest.Builder createRequest(int timeoutMs) {
+                return new DescribeLicenseRequest.Builder(new DescribeLicenseRequestData());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final DescribeLicenseResponse response =
+                    (DescribeLicenseResponse) abstractResponse;
+                future.complete(response.data().license());
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new DescribeLicenseResult(future);
+    }
+
+    @Override
+    public UpdateLicenseResult updateLicense(final String license,
+                                             final UpdateLicenseOptions options) {
+        if (license == null || license.isEmpty()) {
+            throw new IllegalArgumentException("License can not be null or empty.");
+        }
+
+        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("updateLicense", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider(true)) {
+
+            @Override
+            UpdateLicenseRequest.Builder createRequest(int timeoutMs) {
+                return new UpdateLicenseRequest.Builder(
+                    new UpdateLicenseRequestData()
+                        .setLicense(license));
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final UpdateLicenseResponse response =
+                    (UpdateLicenseResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(null);
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new UpdateLicenseResult(future);
+    }
+
+    @Override
+    public ExportClusterManifestResult exportClusterManifest(final ExportClusterManifestOptions options) {
+        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("exportClusterManifest", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider(true)) {
+
+            @Override
+            ExportClusterManifestRequest.Builder createRequest(int timeoutMs) {
+                return new ExportClusterManifestRequest.Builder(new ExportClusterManifestRequestData());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final ExportClusterManifestResponse response =
+                    (ExportClusterManifestResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(response.data().manifest());
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception());
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new ExportClusterManifestResult(future);
+    }
     // AutoMQ for Kafka inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
@@ -4888,139 +5007,6 @@ public class KafkaAdminClient extends AdminClient {
         UpdateGroupHandler handler = new UpdateGroupHandler(groupId, groupSpec, logContext);
         invokeDriver(handler, future, options.timeoutMs);
         return new UpdateGroupResult(future.get(CoordinatorKey.byGroupId(groupId)));
-    }
-
-    @Override
-    public UpdateLicenseResult updateLicense(final String license,
-                                             final UpdateLicenseOptions options) {
-        if (license == null || license.isEmpty()) {
-            throw new IllegalArgumentException("License can not be null or empty.");
-        }
-
-        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
-
-        final long now = time.milliseconds();
-        final Call call = new Call("updateLicense", calcDeadlineMs(now, options.timeoutMs()),
-            new ControllerNodeProvider(true)) {
-
-            @Override
-            UpdateLicenseRequest.Builder createRequest(int timeoutMs) {
-                return new UpdateLicenseRequest.Builder(
-                    new UpdateLicenseRequestData()
-                        .setLicense(license));
-            }
-
-            @Override
-            void handleResponse(AbstractResponse abstractResponse) {
-                final UpdateLicenseResponse response =
-                    (UpdateLicenseResponse) abstractResponse;
-
-                Errors topLevelError = Errors.forCode(response.data().errorCode());
-                switch (topLevelError) {
-                    case NONE:
-                        future.complete(null);
-                        break;
-                    case NOT_CONTROLLER:
-                        handleNotControllerError(topLevelError);
-                        break;
-                    default:
-                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
-                        break;
-                }
-            }
-
-            @Override
-            void handleFailure(Throwable throwable) {
-                future.completeExceptionally(throwable);
-            }
-        };
-
-        runnable.call(call, now);
-        return new UpdateLicenseResult(future);
-    }
-
-    @Override
-    public DescribeLicenseResult describeLicense(final DescribeLicenseOptions options) {
-        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
-
-        final long now = time.milliseconds();
-        final Call call = new Call("describeLicense", calcDeadlineMs(now, options.timeoutMs()),
-            new ControllerNodeProvider(true)) {
-
-            @Override
-            DescribeLicenseRequest.Builder createRequest(int timeoutMs) {
-                return new DescribeLicenseRequest.Builder(new DescribeLicenseRequestData());
-            }
-
-            @Override
-            void handleResponse(AbstractResponse abstractResponse) {
-                final DescribeLicenseResponse response =
-                    (DescribeLicenseResponse) abstractResponse;
-
-                Errors topLevelError = Errors.forCode(response.data().errorCode());
-                switch (topLevelError) {
-                    case NONE:
-                        future.complete(response.data().license());
-                        break;
-                    case NOT_CONTROLLER:
-                        handleNotControllerError(topLevelError);
-                        break;
-                    default:
-                        future.completeExceptionally(topLevelError.exception());
-                        break;
-                }
-            }
-
-            @Override
-            void handleFailure(Throwable throwable) {
-                future.completeExceptionally(throwable);
-            }
-        };
-
-        runnable.call(call, now);
-        return new DescribeLicenseResult(future);
-    }
-
-    @Override
-    public ExportClusterManifestResult exportClusterManifest(final ExportClusterManifestOptions options) {
-        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
-
-        final long now = time.milliseconds();
-        final Call call = new Call("exportClusterManifest", calcDeadlineMs(now, options.timeoutMs()),
-            new ControllerNodeProvider(true)) {
-
-            @Override
-            ExportClusterManifestRequest.Builder createRequest(int timeoutMs) {
-                return new ExportClusterManifestRequest.Builder(new ExportClusterManifestRequestData());
-            }
-
-            @Override
-            void handleResponse(AbstractResponse abstractResponse) {
-                final ExportClusterManifestResponse response =
-                    (ExportClusterManifestResponse) abstractResponse;
-
-                Errors topLevelError = Errors.forCode(response.data().errorCode());
-                switch (topLevelError) {
-                    case NONE:
-                        future.complete(response.data().manifest());
-                        break;
-                    case NOT_CONTROLLER:
-                        handleNotControllerError(topLevelError);
-                        break;
-                    default:
-                        future.completeExceptionally(topLevelError.exception());
-                        break;
-                }
-            }
-
-            @Override
-            void handleFailure(Throwable throwable) {
-                future.completeExceptionally(throwable);
-            }
-        };
-
-        runnable.call(call, now);
-        return new ExportClusterManifestResult(future);
     }
 
     private <K, V> void invokeDriver(

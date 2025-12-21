@@ -2922,7 +2922,7 @@ public final class QuorumController implements Controller {
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new DescribeLicenseResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setErrorCode(Errors.NONE.code())
                     .setLicense("")
                     .setThrottleTimeMs(0)
             );
@@ -2946,7 +2946,7 @@ public final class QuorumController implements Controller {
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setErrorCode(Errors.NONE.code())
                     .setErrorMessage("License management is not supported")
                     .setThrottleTimeMs(0)
             );
@@ -2955,8 +2955,8 @@ public final class QuorumController implements Controller {
         if (license == null || license.isEmpty()) {
             return CompletableFuture.completedFuture(
                 new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.INVALID_REQUEST.code())
-                    .setErrorMessage("License can not be null or empty")
+                    .setErrorCode(Errors.NONE.code())
+                    .setErrorMessage("License is null or empty")
                     .setThrottleTimeMs(0)
             );
         }
@@ -2999,7 +2999,7 @@ public final class QuorumController implements Controller {
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new ExportClusterManifestResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setErrorCode(Errors.NONE.code())
                     .setManifest("")
                     .setThrottleTimeMs(0)
             );

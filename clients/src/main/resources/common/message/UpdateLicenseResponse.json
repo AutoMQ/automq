@@ -7,7 +7,7 @@
     "fields": [
         { "name": "ErrorCode", "type": "int16", "versions": "0+" },
         { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+" },
-        { "name": "ErrorMessage", "type": "string", "versions": "0+" }
+        { "name": "ErrorMessage", "type": "string", "versions": "0+", "default": "" }
     ]
 }
 
