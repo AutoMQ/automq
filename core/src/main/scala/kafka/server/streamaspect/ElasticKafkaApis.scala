@@ -181,6 +181,9 @@ class ElasticKafkaApis(
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_UPDATE_GROUP => handleUpdateGroupRequest(request, requestLocal)
+        case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
+        case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
+        case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -210,7 +213,10 @@ class ElasticKafkaApis(
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.AUTOMQ_ZONE_ROUTER
            | ApiKeys.AUTOMQ_UPDATE_GROUP
-           | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleExtensionRequest(request, requestLocal)
+           | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT
+           | ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
