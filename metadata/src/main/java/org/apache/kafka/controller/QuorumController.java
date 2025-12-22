@@ -1390,15 +1390,14 @@ public final class QuorumController implements Controller {
                     zkMigrationEnabled,
                     bootstrapMetadata,
                     featureControl);
-                //Inject start
+                // AutoMQ for Kafka inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                if (licenseManager != null && !licenseManager.hasGenesisAnchor()) {
+                if (licenseManager != null && !licenseManager.initialized()) {
                     List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend("");
                     all.addAll(recordsToAppend);
                     licenseManager.start();
-                    log.info("Active Controller elected complete, licenseManager is {}", licenseManager);
                 }
-                //inject end
+                // AutoMQ for Kafka inject end
                 return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
                 throw fatalFaultHandler.handleFault("exception while completing controller " +

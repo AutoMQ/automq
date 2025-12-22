@@ -139,7 +139,7 @@ public class S3StreamKafkaMetricsManager {
 
     // License metrics
     private static ObservableLongGauge licenseExpiryTimestampMetrics = new NoopObservableLongGauge();
-    private static ObservableLongGauge licenseDaysRemainingMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge licenseSecondsRemainingMetrics = new NoopObservableLongGauge();
     private static ObservableLongGauge nodeVcpuCountMetrics = new NoopObservableLongGauge();
 
     public static void configure(MetricsConfig metricsConfig) {
@@ -339,27 +339,27 @@ public class S3StreamKafkaMetricsManager {
     private static void initLicenseMetrics(Meter meter, String prefix) {
         licenseExpiryTimestampMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
                 .setDescription("The expiry timestamp of the license")
+                .setUnit("milliseconds")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        Date expireDate = licenseExpireDateSupplier.get();
+                        if (expireDate != null) {
+                            result.record(expireDate.getTime(), metricsConfig.getBaseAttributes());
+                        }
+                    }
+                });
+
+        licenseSecondsRemainingMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_SECONDS_REMAINING_METRIC_NAME)
+                .setDescription("The remaining seconds until the license expires")
                 .setUnit("seconds")
                 .ofLongs()
                 .buildWithCallback(result -> {
                     if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
                         Date expireDate = licenseExpireDateSupplier.get();
                         if (expireDate != null) {
-                            result.record(expireDate.getTime() / 1000, metricsConfig.getBaseAttributes());
-                        }
-                    }
-                });
-
-        licenseDaysRemainingMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_DAYS_REMAINING_METRIC_NAME)
-                .setDescription("The remaining days until the license expires")
-                .setUnit("days")
-                .ofLongs()
-                .buildWithCallback(result -> {
-                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
-                        Date expireDate = licenseExpireDateSupplier.get();
-                        if (expireDate != null) {
-                            long daysRemaining = (expireDate.getTime() - System.currentTimeMillis()) / (1000 * 3600 * 24);
-                            result.record(daysRemaining, metricsConfig.getBaseAttributes());
+                            long secondsRemaining = (expireDate.getTime() - System.currentTimeMillis()) / 1000;
+                            result.record(secondsRemaining, metricsConfig.getBaseAttributes());
                         }
                     }
                 });

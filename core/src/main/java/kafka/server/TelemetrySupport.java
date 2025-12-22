@@ -96,7 +96,6 @@ public final class TelemetrySupport {
             }
         });
 
-        // Set license expiry date supplier - dynamically fetches from LicenseManager
         S3StreamKafkaMetricsManager.setLicenseExpireDateSupplier(() -> {
             try {
                 LicenseManager licenseManager = LicenseManagerProvider.get();
