@@ -254,7 +254,11 @@ public class S3Storage implements Storage {
 
         boolean first = true;
         try {
+            int walRecordCount = 0;
+            long startTime = System.currentTimeMillis();
+            LOGGER.info("[recover recoverContinuousRecords] start to read wal record.");
             while (it.hasNext() && !cacheBlock.isFull()) {
+                walRecordCount++;
                 RecoverResult recoverResult = it.next();
                 logEndOffset = recoverResult.recordOffset();
                 if (first) {
@@ -264,6 +268,9 @@ public class S3Storage implements Storage {
                 StreamRecordBatch streamRecordBatch = recoverResult.record();
                 processRecoveredRecord(streamRecordBatch, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
             }
+
+            LOGGER.info("[recover recoverContinuousRecords] end to read wal record, cost {}, walRecordCount {} ", System.currentTimeMillis() - startTime, walRecordCount);
+
         } catch (Throwable e) {
             // {@link RuntimeIOException} may be thrown by {@code it.next()}
             releaseAllRecords(streamDiscontinuousRecords.values());
@@ -276,7 +283,13 @@ public class S3Storage implements Storage {
 
         releaseDiscontinuousRecords(streamDiscontinuousRecords, logger);
         RecoveryBlockResult rst = filterOutInvalidStreams(cacheBlock, openingStreamEndOffsets);
-        return decodeLinkRecord(rst);
+
+        long startTime = System.currentTimeMillis();
+        LOGGER.info("[recover recoverContinuousRecords] start to decode link record.");
+        RecoveryBlockResult result = decodeLinkRecord(rst);
+        LOGGER.info("[recover recoverContinuousRecords] end to decode link record. cost {}.", System.currentTimeMillis() - startTime);
+
+        return result;
     }
 
     /**
@@ -411,6 +424,10 @@ public class S3Storage implements Storage {
         for (List<StreamRecordBatch> l : cacheBlock.records().values()) {
             size += l.size();
         }
+
+        int decodeCount = 0;
+        long startTime = System.currentTimeMillis();
+        LOGGER.info("[recover decodeLinkRecord] start to statistic decodeLinkRecord, size {}", size);
         List<CompletableFuture<Void>> futures = new ArrayList<>(size);
         for (Map.Entry<Long, List<StreamRecordBatch>> entry : cacheBlock.records().entrySet()) {
             List<StreamRecordBatch> records = entry.getValue();
@@ -423,10 +440,14 @@ public class S3Storage implements Storage {
                 futures.add(linkRecordDecoder.decode(record).thenAccept(r -> {
                     records.set(finalI, r);
                 }));
+                decodeCount++;
             }
         }
         try {
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
+
+            LOGGER.info("[recover decodeLinkRecord] statistic count cost {}, size {}, decodeCount {}", System.currentTimeMillis() - startTime, size, decodeCount);
+
             return recoverBlockRst;
         } catch (Throwable ex) {
             releaseAllRecords(cacheBlock.records().values());
@@ -469,23 +490,47 @@ public class S3Storage implements Storage {
      */
     void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws InterruptedException, ExecutionException {
+        long startTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] start to invoke recover0.");
         List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
+        long endGetOpeningStreamsTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] end to get opening stream, cost {} ms.", endGetOpeningStreamsTime - startTime);
+
         Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
         Iterator<RecoverResult> iterator = deltaWAL.recover();
 
         LogCache.LogCacheBlock cacheBlock;
         List<RuntimeException> exceptions = new ArrayList<>();
+
+        long iteratotStartTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] start to iterator wal.");
+        int loopCount = 0;
         do {
+            loopCount++;
+            long loopStartTime = System.currentTimeMillis();
+            LOGGER.info("[recover recover0] start to iterator wal inner, loop count {}.", loopCount);
             RecoveryBlockResult result = recoverContinuousRecords(iterator, streamEndOffsets, 1 << 29, logger);
+            long endIteratorWalTime = System.currentTimeMillis();
+            LOGGER.info("[recover recover0] end to iterator wal inner, loop count {}, cost {}", loopCount, endIteratorWalTime - loopStartTime);
             cacheBlock = result.cacheBlock;
             Optional.ofNullable(result.exception).ifPresent(exceptions::add);
             updateStreamEndOffsets(cacheBlock, streamEndOffsets);
             uploadRecoveredRecords(objectManager, cacheBlock, logger);
+            LOGGER.info("[recover recover0] end to upload record, loop count {}, cost {}", loopCount, System.currentTimeMillis() - loopStartTime);
         }
         while (cacheBlock.isFull());
 
+        long endloopTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] end to iterator wal offset and upload, cost {} ms. loopCount {}.", endloopTime - iteratotStartTime, loopCount);
+
         deltaWAL.reset().get();
+        long endResetTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] end to reset wal, cost {} ms.", endResetTime - endloopTime);
+
         closeStreams(streamManager, streams, streamEndOffsets, logger);
+
+        long endCloseStreamTime = System.currentTimeMillis();
+        LOGGER.info("[recover recover0] end to close stream, cost {} ms.", endCloseStreamTime - endResetTime);
 
         // fail it if there is any invalid stream.
         if (!exceptions.isEmpty()) {
