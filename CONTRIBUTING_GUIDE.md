@@ -9,6 +9,14 @@ or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or WeChat
 follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Suggested Onboarding Path for New Contributors
+
+If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
+This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
+
+After gaining familiarity, contributors who want to work on code can follow the steps in this guide to build and run AutoMQ locally.
+
+
 ## Code Contributions
 
 ### Finding or Reporting Issues
