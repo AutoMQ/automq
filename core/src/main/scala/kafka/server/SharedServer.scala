@@ -414,10 +414,6 @@ class SharedServer(
         CoreUtils.swallow(telemetryManager.shutdown(), this)
         telemetryManager = null
       }
-      if (licenseManager != null) {
-        CoreUtils.swallow(licenseManager.shutdown(), this)
-        licenseManager = null
-      }
       CoreUtils.swallow(AppInfoParser.unregisterAppInfo(MetricsPrefix, sharedServerConfig.nodeId.toString, metrics), this)
       started = false
     }

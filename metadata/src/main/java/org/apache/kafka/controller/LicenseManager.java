@@ -1,6 +1,5 @@
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
@@ -8,7 +7,7 @@ import java.util.Date;
 import java.util.List;
 
 
-public interface LicenseManager extends Reconfigurable {
+public interface LicenseManager {
 
     String describeLicense();
 
@@ -21,10 +20,6 @@ public interface LicenseManager extends Reconfigurable {
     boolean initialized();
 
     Date getExpireDate();
-
-    void start();
-
-    void shutdown();
 
     List<ApiMessageAndVersion> getRecordsToAppend(String license);
 }

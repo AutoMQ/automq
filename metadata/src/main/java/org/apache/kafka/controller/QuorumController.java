@@ -1395,7 +1395,6 @@ public final class QuorumController implements Controller {
                 if (licenseManager != null && !licenseManager.initialized()) {
                     List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend("");
                     all.addAll(recordsToAppend);
-                    licenseManager.start();
                 }
                 // AutoMQ for Kafka inject end
                 return ControllerResult.atomicOf(all, null);
