@@ -29,11 +29,15 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
-public class EventLoop extends Thread implements Executor {
+import io.netty.util.AbstractReferenceCounted;
+import io.netty.util.ReferenceCounted;
+
+public class EventLoop extends Thread implements Executor, ReferenceCounted {
     private final Logger logger;
-    private BlockingQueue<Runnable> tasks;
+    private final BlockingQueue<Runnable> tasks;
     private volatile boolean shutdown;
-    private CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
+    private final CompletableFuture<Void> shutdownCf = new CompletableFuture<>();
+    private final InnerRefCounted innerRefCounted = new InnerRefCounted();
 
     static final Runnable WAKEUP_TASK = new Runnable() {
         @Override
@@ -111,4 +115,51 @@ public class EventLoop extends Thread implements Executor {
         }
     }
 
+    @Override
+    public int refCnt() {
+        return innerRefCounted.refCnt();
+    }
+
+    @Override
+    public ReferenceCounted retain() {
+        return innerRefCounted.retain();
+    }
+
+    @Override
+    public ReferenceCounted retain(int increment) {
+        return innerRefCounted.retain(increment);
+    }
+
+    @Override
+    public ReferenceCounted touch() {
+        return innerRefCounted.touch();
+    }
+
+    @Override
+    public ReferenceCounted touch(Object hint) {
+        return innerRefCounted.touch(hint);
+    }
+
+    @Override
+    public boolean release() {
+        return innerRefCounted.release();
+    }
+
+    @Override
+    public boolean release(int decrement) {
+        return innerRefCounted.release(decrement);
+    }
+
+    class InnerRefCounted extends AbstractReferenceCounted {
+
+        @Override
+        protected void deallocate() {
+            shutdownGracefully();
+        }
+
+        @Override
+        public ReferenceCounted touch(Object hint) {
+            return EventLoop.this;
+        }
+    }
 }
