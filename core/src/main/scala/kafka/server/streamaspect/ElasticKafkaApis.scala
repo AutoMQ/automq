@@ -478,13 +478,16 @@ class ElasticKafkaApis(
     val clientId = request.header.clientId
     val fetchRequest = request.body[FetchRequest]
     if (!fetchRequest.isFromFollower && licenseManager != null && !licenseManager.checkLicense("")) {
-      val emptyResponse = FetchResponse.of(
-        Errors.NONE,
-        0,
-        fetchRequest.metadata.sessionId(),
-        new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
-      )
-      requestChannel.sendResponse(request, emptyResponse, None)
+      val topicNames = if (fetchRequest.version() >= 13) metadataCache.topicIdsToNames() else Collections.emptyMap[Uuid, String]()
+      val fetchData = fetchRequest.fetchData(topicNames)
+      val responseData = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
+      
+      fetchData.forEach { (topicIdPartition, _) =>
+        responseData.put(topicIdPartition, FetchResponse.partitionResponse(topicIdPartition, Errors.TOPIC_AUTHORIZATION_FAILED))
+      }
+      
+      val response = FetchResponse.of(Errors.NONE, 0, fetchRequest.metadata.sessionId(), responseData)
+      requestChannel.sendResponse(request, response, None)
       return
     }
     val topicNames =
