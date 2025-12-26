@@ -8,7 +8,7 @@ import kafka.server.{ApiVersionManager, ControllerApis, KafkaConfig, RequestLoca
 import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
 import org.apache.kafka.common.errors.ApiException
 import org.apache.kafka.common.internals.FatalExitError
-import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
+import org.apache.kafka.common.message.{DeleteKVsResponseData, DescribeLicenseResponseData, ExportClusterManifestResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData, UpdateLicenseResponseData}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.requests.s3._
@@ -51,6 +51,9 @@ class ElasticControllerApis(
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
+        case ApiKeys.UPDATE_LICENSE => handleUpdateLicense(request)
+        case ApiKeys.DESCRIBE_LICENSE => handleDescribeLicense(request)
+        case ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExportClusterManifest(request)
         case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
         case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
@@ -99,6 +102,9 @@ class ElasticControllerApis(
            | ApiKeys.GET_KVS
            | ApiKeys.PUT_KVS
            | ApiKeys.DELETE_KVS
+           | ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST
            | ApiKeys.AUTOMQ_REGISTER_NODE
            | ApiKeys.AUTOMQ_GET_NODES
            | ApiKeys.GET_NEXT_NODE_ID
@@ -356,6 +362,72 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DeleteKVsResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleUpdateLicense(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val updateLicenseRequest = request.body[UpdateLicenseRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.updateLicense(context, updateLicenseRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new UpdateLicenseResponse(new UpdateLicenseResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new UpdateLicenseResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleDescribeLicense(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val describeLicenseRequest = request.body[DescribeLicenseRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.describeLicense(context, describeLicenseRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new DescribeLicenseResponse(new DescribeLicenseResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new DescribeLicenseResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleExportClusterManifest(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val exportClusterManifestRequest = request.body[ExportClusterManifestRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.exportClusterManifest(context, exportClusterManifestRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (result == null) {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new ExportClusterManifestResponse(new ExportClusterManifestResponseData().
+              setThrottleTimeMs(requestThrottleMs).
+              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+          })
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new ExportClusterManifestResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

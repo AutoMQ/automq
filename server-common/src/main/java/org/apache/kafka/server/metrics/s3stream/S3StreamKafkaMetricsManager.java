@@ -131,6 +131,17 @@ public class S3StreamKafkaMetricsManager {
      */
     private static Supplier<String> certChainSupplier = () -> null;
 
+    /**
+     * Supplier for license expiry date.
+     * Returns the expiry date of the license, or null if no license is configured.
+     */
+    private static Supplier<Date> licenseExpireDateSupplier = () -> null;
+
+    // License metrics
+    private static ObservableLongGauge licenseExpiryTimestampMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge licenseSecondsRemainingMetrics = new NoopObservableLongGauge();
+    private static ObservableLongGauge nodeVcpuCountMetrics = new NoopObservableLongGauge();
+
     public static void configure(MetricsConfig metricsConfig) {
         synchronized (BASE_ATTRIBUTES_LISTENERS) {
             S3StreamKafkaMetricsManager.metricsConfig = metricsConfig;
@@ -147,6 +158,7 @@ public class S3StreamKafkaMetricsManager {
         initLogAppendMetrics(meter, prefix);
         initPartitionStatusStatisticsMetrics(meter, prefix);
         initBackPressureMetrics(meter, prefix);
+        initLicenseMetrics(meter, prefix);
         try {
             initCertMetrics(meter, prefix);
         } catch (Exception e) {
@@ -320,6 +332,44 @@ public class S3StreamKafkaMetricsManager {
                         states.forEach((state, value) -> {
                             result.record(value, BACK_PRESSURE_STATE_ATTRIBUTES.get(state));
                         });
+                    }
+                });
+    }
+
+    private static void initLicenseMetrics(Meter meter, String prefix) {
+        licenseExpiryTimestampMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
+                .setDescription("The expiry timestamp of the license")
+                .setUnit("milliseconds")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        Date expireDate = licenseExpireDateSupplier.get();
+                        if (expireDate != null) {
+                            result.record(expireDate.getTime(), metricsConfig.getBaseAttributes());
+                        }
+                    }
+                });
+
+        licenseSecondsRemainingMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_SECONDS_REMAINING_METRIC_NAME)
+                .setDescription("The remaining seconds until the license expires")
+                .setUnit("seconds")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        Date expireDate = licenseExpireDateSupplier.get();
+                        if (expireDate != null) {
+                            long secondsRemaining = (expireDate.getTime() - System.currentTimeMillis()) / 1000;
+                            result.record(secondsRemaining, metricsConfig.getBaseAttributes());
+                        }
+                    }
+                });
+
+        nodeVcpuCountMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.NODE_VCPU_COUNT_METRIC_NAME)
+                .setDescription("The number of vCPUs available on this node")
+                .ofLongs()
+                .buildWithCallback(result -> {
+                    if (MetricsLevel.INFO.isWithin(metricsConfig.getMetricsLevel())) {
+                        result.record(Runtime.getRuntime().availableProcessors(), metricsConfig.getBaseAttributes());
                     }
                 });
     }
@@ -515,5 +565,9 @@ public class S3StreamKafkaMetricsManager {
 
     public static void setCertChainSupplier(Supplier<String> certChainSupplier) {
         S3StreamKafkaMetricsManager.certChainSupplier = certChainSupplier;
+    }
+
+    public static void setLicenseExpireDateSupplier(Supplier<Date> licenseExpireDateSupplier) {
+        S3StreamKafkaMetricsManager.licenseExpireDateSupplier = licenseExpireDateSupplier;
     }
 }

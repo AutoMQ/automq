@@ -292,6 +292,7 @@ class ControllerServer(
           setStreamClient(streamClient).
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
+          setLicenseManager(sharedServer.licenseManager).
           setReplicaPlacer(replicaPlacer())
       }
       controller = controllerBuilder.build()

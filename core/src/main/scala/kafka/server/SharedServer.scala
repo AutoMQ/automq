@@ -21,11 +21,13 @@ import com.automq.opentelemetry.AutoMQTelemetryManager
 import kafka.raft.KafkaRaftManager
 import kafka.server.Server.MetricsPrefix
 import kafka.server.metadata.BrokerServerMetrics
+import kafka.server.streamaspect.LicenseManagerProvider
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.es.ElasticStreamSwitch
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.utils.{AppInfoParser, LogContext, Time}
+import org.apache.kafka.controller.LicenseManager
 import org.apache.kafka.controller.metrics.ControllerMetadataMetrics
 import org.apache.kafka.image.MetadataProvenance
 import org.apache.kafka.image.loader.MetadataLoader
@@ -110,6 +112,7 @@ class SharedServer(
   // AutoMQ for Kafka injection start
   ElasticStreamSwitch.setSwitch(sharedServerConfig.elasticStreamEnabled)
   @volatile var telemetryManager: AutoMQTelemetryManager = _
+  @volatile var licenseManager: LicenseManager = _
   // AutoMQ for Kafka injection end
   
   @volatile var metrics: Metrics = _metrics
@@ -283,6 +286,7 @@ class SharedServer(
         
         // AutoMQ inject start
         telemetryManager = buildTelemetryManager(sharedServerConfig, clusterId)
+        licenseManager = LicenseManagerProvider.get()
         // AutoMQ inject end
 
         val _raftManager = new KafkaRaftManager[ApiMessageAndVersion](
