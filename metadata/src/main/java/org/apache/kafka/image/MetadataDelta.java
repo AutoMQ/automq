@@ -61,7 +61,6 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.server.common.MetadataVersion;
 
 import java.util.Optional;
-
 /**
  * A change to the broker metadata image.
  */
@@ -240,7 +239,6 @@ public final class MetadataDelta {
         }
         return kvDelta;
     }
-
     // AutoMQ for Kafka inject end
 
     @SuppressWarnings("checkstyle:javaNCSS")
