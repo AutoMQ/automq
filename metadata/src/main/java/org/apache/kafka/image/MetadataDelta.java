@@ -62,7 +62,6 @@ import org.apache.kafka.server.common.MetadataVersion;
 
 import java.util.Optional;
 
-
 /**
  * A change to the broker metadata image.
  */
@@ -546,7 +545,6 @@ public final class MetadataDelta {
     public void replay(S3StreamEndOffsetsRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
-
     // AutoMQ for Kafka inject end
 
     /**

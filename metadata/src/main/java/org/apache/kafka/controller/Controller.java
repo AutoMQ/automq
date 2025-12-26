@@ -632,7 +632,7 @@ public interface Controller extends AclMutator, AutoCloseable {
     );
 
     /**
-     * Export cluster identity manifest.
+     * Export cluster manifest.
      */
     CompletableFuture<ExportClusterManifestResponseData> exportClusterManifest(
         ControllerRequestContext context,

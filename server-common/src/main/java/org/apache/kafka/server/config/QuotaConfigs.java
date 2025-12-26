@@ -119,7 +119,6 @@ public class QuotaConfigs {
     public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG = "broker.quota.white.list.listener";
     public static final String CLUSTER_QUOTA_TOPIC_COUNT_CONFIG = "cluster.quota.topic.count";
     public static final String CLUSTER_QUOTA_PARTITION_COUNT_CONFIG = "cluster.quota.partition.count";
-    public static final String BROKER_FETCH_DISABLED_CONFIG = "broker.fetch.disabled";
 
     public static final String BROKER_QUOTA_ENABLED_DOC = "Enable broker quota.";
     public static final String BROKER_QUOTA_PRODUCE_BYTES_DOC = "The maximum bytes send by producer in single window.";
@@ -131,7 +130,6 @@ public class QuotaConfigs {
     public static final String BROKER_QUOTA_WHITE_LIST_LISTENER_DOC = "Broker quota white list for listener name.";
     public static final String CLUSTER_QUOTA_TOPIC_COUNT_DOC = "The maximum topic count in cluster.";
     public static final String CLUSTER_QUOTA_PARTITION_COUNT_DOC = "The maximum partition count in cluster.";
-    public static final String BROKER_FETCH_DISABLED_DOC = "Disable client (consumer) fetch requests at broker level. Follower fetches are not affected.";
     // AutoMQ inject end
 
     public static final int IP_CONNECTION_RATE_DEFAULT = Integer.MAX_VALUE;
@@ -190,9 +188,7 @@ public class QuotaConfigs {
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_USER_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_CLIENT_ID_DOC)
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_DOC)
-                .define(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_DOC)
-                .define(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_DOC)
-                .define(QuotaConfigs.BROKER_FETCH_DISABLED_CONFIG, ConfigDef.Type.BOOLEAN, false, MEDIUM, QuotaConfigs.BROKER_FETCH_DISABLED_DOC);
+                .define(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_DOC);
                  // AutoMQ inject start
     }
 

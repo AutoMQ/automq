@@ -21,14 +21,10 @@ import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.raft.OffsetAndEpoch;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.util.Optional;
 
 public interface QuorumControllerExtension {
     QuorumControllerExtension NOOP = (type, message, snapshotId, batchLastOffset) -> false;
-    Logger log = LoggerFactory.getLogger(QuorumControllerExtension.class);
 
     boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset);
 }

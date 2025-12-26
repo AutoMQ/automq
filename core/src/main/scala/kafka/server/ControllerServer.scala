@@ -135,7 +135,6 @@ class ControllerServer(
 
   var autoBalancerManager: AutoBalancerService = _
 
-
   protected def buildAutoBalancerManager: AutoBalancerService = {
     new AutoBalancerManager(time, config.props, controller, raftManager.client)
   }

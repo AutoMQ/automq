@@ -13,7 +13,7 @@ public interface LicenseManager {
 
     String exportClusterManifest();
 
-    boolean checkLicense(String license);
+    boolean checkLicense(String license, boolean isUpdate);
 
     boolean replay(KVRecord record);
 

@@ -1680,7 +1680,6 @@ public final class QuorumController implements Controller {
         }
     }
 
-
     /**
      * Apply the metadata record to its corresponding in-memory state(s)
      *
@@ -2108,7 +2107,7 @@ public final class QuorumController implements Controller {
     private final RouterChannelEpochControlManager routerChannelEpochControlManager;
 
     private final QuorumControllerExtension extension;
-//nick
+
     private final LicenseManager licenseManager;
     // AutoMQ for Kafka inject end
 
@@ -2440,18 +2439,15 @@ public final class QuorumController implements Controller {
         return appendReadEvent("getFinalizedFeatures", context.deadlineNs(),
             () -> featureControl.finalizedFeatures(offsetControl.lastStableOffset()));
     }
-
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> incrementalAlterConfigs(
         ControllerRequestContext context,
         Map<ConfigResource, Map<String, Entry<OpType, String>>> configChanges,
         boolean validateOnly
     ) {
-        log.info("incrementalAlterConfigs excuted");
         if (configChanges.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
-
         return appendWriteEvent("incrementalAlterConfigs", context.deadlineNs(), () -> {
             ControllerResult<Map<ConfigResource, ApiError>> result =
                 configurationControl.incrementalAlterConfigs(configChanges, false);
@@ -2488,17 +2484,14 @@ public final class QuorumController implements Controller {
             () -> replicationControl.listPartitionReassignments(request.topics(),
                 offsetControl.lastStableOffset()));
     }
-
     @Override
     public CompletableFuture<Map<ConfigResource, ApiError>> legacyAlterConfigs(
         ControllerRequestContext context,
         Map<ConfigResource, Map<String, String>> newConfigs, boolean validateOnly
     ) {
-        log.info("legacyAlterConfigs executed");
         if (newConfigs.isEmpty()) {
             return CompletableFuture.completedFuture(Collections.emptyMap());
         }
-
         return appendWriteEvent("legacyAlterConfigs", context.deadlineNs(), () -> {
             ControllerResult<Map<ConfigResource, ApiError>> result =
                 configurationControl.legacyAlterConfigs(newConfigs, false);
@@ -2570,7 +2563,6 @@ public final class QuorumController implements Controller {
         ControllerRequestContext context,
         BrokerRegistrationRequestData request
     ) {
-        log.info("QuorumController#registerBroker excuted");
         // populate finalized features map with latest known kraft version for validation
         Map<String, Short> controllerFeatures = new HashMap<>(featureControl.finalizedFeatures(Long.MAX_VALUE).featureMap());
         controllerFeatures.put(KRaftVersion.FEATURE_NAME, raftClient.kraftVersion().featureLevel());
@@ -2920,12 +2912,11 @@ public final class QuorumController implements Controller {
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new DescribeLicenseResponseData()
-                    .setErrorCode(Errors.NONE.code())
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
                     .setLicense("")
                     .setThrottleTimeMs(0)
             );
         }
-
         return appendReadEvent("describeLicense", context.deadlineNs(), () -> {
             String license = licenseManager.describeLicense();
             return new DescribeLicenseResponseData()
@@ -2940,26 +2931,16 @@ public final class QuorumController implements Controller {
         ControllerRequestContext context,
         UpdateLicenseRequestData request
     ) {
-        log.info("updateLicense executed");
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.NONE.code())
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
                     .setErrorMessage("License management is not supported")
                     .setThrottleTimeMs(0)
             );
         }
         String license = request.license();
-        if (license == null || license.isEmpty()) {
-            return CompletableFuture.completedFuture(
-                new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.NONE.code())
-                    .setErrorMessage("License is null or empty")
-                    .setThrottleTimeMs(0)
-            );
-        }
-
-        if (!licenseManager.checkLicense(license)) {
+        if (!licenseManager.checkLicense(license, true)) {
             return CompletableFuture.completedFuture(
                 new UpdateLicenseResponseData()
                     .setErrorCode(Errors.POLICY_VIOLATION.code())
@@ -2967,16 +2948,13 @@ public final class QuorumController implements Controller {
                     .setThrottleTimeMs(0)
             );
         }
-
         return appendWriteEvent("updateLicense", context.deadlineNs(), () -> {
             try {
                 List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend(license);
-
                 UpdateLicenseResponseData response = new UpdateLicenseResponseData()
                     .setErrorCode(Errors.NONE.code())
                     .setErrorMessage("")
                     .setThrottleTimeMs(0);
-
                 return ControllerResult.of(recordsToAppend, response);
             } catch (Exception e) {
                 log.error("Failed to process license update", e);
@@ -2997,12 +2975,11 @@ public final class QuorumController implements Controller {
         if (licenseManager == null) {
             return CompletableFuture.completedFuture(
                 new ExportClusterManifestResponseData()
-                    .setErrorCode(Errors.NONE.code())
+                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
                     .setManifest("")
                     .setThrottleTimeMs(0)
             );
         }
-        log.debug("exportClusterManifest executed");
         return appendReadEvent("exportClusterManifest", context.deadlineNs(), () -> {
             String manifest = licenseManager.exportClusterManifest();
             return new ExportClusterManifestResponseData()

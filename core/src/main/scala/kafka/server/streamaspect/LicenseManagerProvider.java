@@ -1,4 +1,6 @@
 /*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -52,19 +54,16 @@ public final class LicenseManagerProvider {
         try {
             ServiceLoader<LicenseManager> loader =
                 ServiceLoader.load(LicenseManager.class, LicenseManager.class.getClassLoader());
-
             LicenseManager first = null;
             for (LicenseManager impl : loader) {
                 if (first != null) {
-                    LOG.warn("Multiple FingerPrintControlManagerV1 implementations found. Using {}", first.getClass().getName());
                     break;
                 }
                 first = impl;
-                LOG.info("Loaded FingerPrintControlManagerV1 implementation: {}", first.getClass().getName());
             }
             return first;
         } catch (Throwable t) {
-            LOG.error("Failed to load FingerPrintControlManagerV1 implementation", t);
+            LOG.error("Failed to load LicenseManager implementation", t);
             return null;
         }
     }
