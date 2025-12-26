@@ -78,6 +78,11 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
+    public String uri() {
+        return config.uri();
+    }
+
+    @Override
     public CompletableFuture<AppendResult> append(TraceContext context,
         StreamRecordBatch streamRecordBatch) throws OverCapacityException {
         return writer.append(streamRecordBatch);

@@ -19,11 +19,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.ByteBufSeqAlloc;
-import com.automq.stream.s3.model.StreamRecordBatch;
-
-import io.netty.buffer.ByteBuf;
-
 public class StreamRecordBatchCodec {
     public static final byte MAGIC_V0 = 0x22;
     public static final int HEADER_SIZE =
@@ -33,64 +28,11 @@ public class StreamRecordBatchCodec {
             + 8 // baseOffset
             + 4 // lastOffsetDelta
             + 4; // payload length
-
-    public static ByteBuf encode(StreamRecordBatch streamRecord, ByteBufSeqAlloc alloc) {
-        int totalLength = HEADER_SIZE + streamRecord.size(); // payload
-        // use sequential allocator to avoid memory fragmentation
-        ByteBuf buf = alloc.byteBuffer(totalLength);
-        buf.writeByte(MAGIC_V0);
-        buf.writeLong(streamRecord.getStreamId());
-        buf.writeLong(streamRecord.getEpoch());
-        buf.writeLong(streamRecord.getBaseOffset());
-        buf.writeInt(streamRecord.getCount());
-        buf.writeInt(streamRecord.size());
-        buf.writeBytes(streamRecord.getPayload().duplicate());
-        return buf;
-    }
-
-    /**
-     * Decode a stream record batch from a byte buffer and move the reader index.
-     * The returned stream record batch does NOT share the payload buffer with the input buffer.
-     */
-    public static StreamRecordBatch duplicateDecode(ByteBuf buf) {
-        byte magic = buf.readByte(); // magic
-        if (magic != MAGIC_V0) {
-            throw new RuntimeException("Invalid magic byte " + magic);
-        }
-        long streamId = buf.readLong();
-        long epoch = buf.readLong();
-        long baseOffset = buf.readLong();
-        int lastOffsetDelta = buf.readInt();
-        int payloadLength = buf.readInt();
-        ByteBuf payload = ByteBufAlloc.byteBuffer(payloadLength, ByteBufAlloc.DECODE_RECORD);
-        buf.readBytes(payload);
-        return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
-    }
-
-    /**
-     * Decode a stream record batch from a byte buffer and move the reader index.
-     * The returned stream record batch shares the payload buffer with the input buffer.
-     */
-    public static StreamRecordBatch decode(ByteBuf buf, boolean retain) {
-        byte magic = buf.readByte(); // magic
-        if (magic != MAGIC_V0) {
-            throw new RuntimeException("Invalid magic byte " + magic);
-        }
-        long streamId = buf.readLong();
-        long epoch = buf.readLong();
-        long baseOffset = buf.readLong();
-        int lastOffsetDelta = buf.readInt();
-        int payloadLength = buf.readInt();
-        ByteBuf payload = retain ? buf.retainedSlice(buf.readerIndex(), payloadLength) : buf.slice(buf.readerIndex(), payloadLength);
-        buf.skipBytes(payloadLength);
-        return new StreamRecordBatch(streamId, epoch, baseOffset, lastOffsetDelta, payload);
-    }
-
-    public static StreamRecordBatch decode(ByteBuf buf) {
-        return decode(buf, false);
-    }
-
-    public static StreamRecordBatch sliceRetainDecode(ByteBuf buf) {
-        return decode(buf, true);
-    }
+    public static final int MAGIC_POS = 0;
+    public static final int STREAM_ID_POS = 1;
+    public static final int EPOCH_POS = STREAM_ID_POS + 8;
+    public static final int BASE_OFFSET_POS = EPOCH_POS + 8;
+    public static final int LAST_OFFSET_DELTA_POS = BASE_OFFSET_POS + 8;
+    public static final int PAYLOAD_LENGTH_POS = LAST_OFFSET_DELTA_POS + 4;
+    public static final int PAYLOAD_POS = PAYLOAD_LENGTH_POS + 4;
 }

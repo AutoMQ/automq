@@ -457,7 +457,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSlice;
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
-                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
+                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes, e);
                             throw new RuntimeException(e);
                         }
                     });

@@ -200,14 +200,25 @@ public abstract class AbstractTypeAdapter<S> implements TypeAdapter<S> {
         if (sourceValue instanceof Temporal) return sourceValue;
         if (sourceValue instanceof Date) {
             Instant instant = ((Date) sourceValue).toInstant();
-            return DateTimeUtil.timestamptzFromMicros(DateTimeUtil.microsFromInstant(instant));
+            long micros = DateTimeUtil.microsFromInstant(instant);
+            return targetType.shouldAdjustToUTC()
+                    ? DateTimeUtil.timestamptzFromMicros(micros)
+                    : DateTimeUtil.timestampFromMicros(micros);
         }
         if (sourceValue instanceof String) {
             Instant instant = Instant.parse(sourceValue.toString());
-            return DateTimeUtil.timestamptzFromMicros(DateTimeUtil.microsFromInstant(instant));
+            long micros = DateTimeUtil.microsFromInstant(instant);
+            return targetType.shouldAdjustToUTC()
+                    ? DateTimeUtil.timestamptzFromMicros(micros)
+                    : DateTimeUtil.timestampFromMicros(micros);
         }
         if (sourceValue instanceof Number) {
-            return DateTimeUtil.timestamptzFromMicros(((Number) sourceValue).longValue());
+            // Assume the number represents microseconds since epoch
+            // Subclasses should override to handle milliseconds or other units based on logical type
+            long micros = ((Number) sourceValue).longValue();
+            return targetType.shouldAdjustToUTC()
+                    ? DateTimeUtil.timestamptzFromMicros(micros)
+                    : DateTimeUtil.timestampFromMicros(micros);
         }
         throw new IllegalArgumentException("Cannot convert " + sourceValue.getClass().getSimpleName() + " to " + targetType.typeId());
     }

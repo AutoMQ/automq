@@ -157,7 +157,7 @@ public interface AsyncSender {
                         if (NetworkClientUtils.isReady(networkClient, node, now)) {
                             connectingStates.remove(node);
                             Request request = queue.poll();
-                            ClientRequest clientRequest = networkClient.newClientRequest(Integer.toString(node.id()), request.requestBuilder, now, true, 10000, new RequestCompletionHandler() {
+                            ClientRequest clientRequest = networkClient.newClientRequest(Integer.toString(node.id()), request.requestBuilder, now, true, 30000, new RequestCompletionHandler() {
                                 @Override
                                 public void onComplete(ClientResponse response) {
                                     request.cf.complete(response);

@@ -46,7 +46,7 @@ public class ObjectReaderLRUCacheTest {
 
     private void writeStream(int streamCount, ObjectWriter objectWriter) {
         for (int i = 0; i < streamCount; i++) {
-            StreamRecordBatch r = new StreamRecordBatch(i, 0, i, 1, TestUtils.random(1));
+            StreamRecordBatch r = StreamRecordBatch.of(i, 0, i, 1, TestUtils.random(1));
             objectWriter.write(i, List.of(r));
         }
     }

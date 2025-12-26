@@ -80,7 +80,7 @@ public class S3StreamTest {
     }
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
-        StreamRecordBatch record = new StreamRecordBatch(0, 0, start, (int) (end - start), TestUtils.random(size));
+        StreamRecordBatch record = StreamRecordBatch.of(0, 0, start, (int) (end - start), TestUtils.random(size));
         return new ReadDataBlock(List.of(record), CacheAccessType.DELTA_WAL_CACHE_HIT);
     }
 }

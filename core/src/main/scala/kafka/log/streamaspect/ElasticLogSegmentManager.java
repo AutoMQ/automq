@@ -92,7 +92,9 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenApply(rst -> null);
+        return asyncPersistLogMeta().thenAccept(rst ->
+            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE)
+        );
     }
 
     public ElasticLogSegment remove(long baseOffset) {

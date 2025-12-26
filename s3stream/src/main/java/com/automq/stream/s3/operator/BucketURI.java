@@ -40,6 +40,8 @@ public class BucketURI {
     private static final String REGION_KEY = "region";
     public static final String ACCESS_KEY_KEY = "accessKey";
     public static final String SECRET_KEY_KEY = "secretKey";
+    public static final String API_CALL_TIMEOUT_KEY = "apiCallTimeoutMs";
+    public static final String API_CALL_ATTEMPT_TIMEOUT_KEY = "apiCallAttemptTimeoutMs";
     private static final String EMPTY_STRING = "";
     private final short bucketId;
     private final String protocol;

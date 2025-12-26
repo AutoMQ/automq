@@ -1502,7 +1502,7 @@ class Partition(val topicPartition: TopicPartition,
   }
 
   private def doAppendRecordsToFollowerOrFutureReplica(records: MemoryRecords, isFuture: Boolean): Option[LogAppendInfo] = {
-    if (isFuture) {
+    val rst = if (isFuture) {
       // The read lock is needed to handle race condition if request handler thread tries to
       // remove future replica after receiving AlterReplicaLogDirsRequest.
       inReadLock(leaderIsrUpdateLock) {
@@ -1517,6 +1517,11 @@ class Partition(val topicPartition: TopicPartition,
         Some(localLogOrException.appendAsFollower(records))
       }
     }
+    // AutoMQ inject start
+    notifyAppendListener(records)
+    newAppendListener.onNewAppend(topicPartition, localLogOrException.logEndOffset)
+    // AutoMQ inject end
+    rst
   }
 
   def appendRecordsToFollowerOrFutureReplica(records: MemoryRecords, isFuture: Boolean): Option[LogAppendInfo] = {

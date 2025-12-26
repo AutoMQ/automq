@@ -22,6 +22,7 @@ package kafka.automq.zerozone;
 import com.automq.stream.Context;
 import com.automq.stream.s3.cache.SnapshotReadCache;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
 
@@ -38,8 +39,8 @@ public class DefaultReplayer implements Replayer {
     }
 
     @Override
-    public CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset) {
-        return snapshotReadCache().replay(confirmWAL, startOffset, endOffset);
+    public CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset, List<StreamRecordBatch> walRecords) {
+        return snapshotReadCache().replay(confirmWAL, startOffset, endOffset, walRecords);
     }
 
     private SnapshotReadCache snapshotReadCache() {

@@ -152,6 +152,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             forceConsume(size);
             cf.complete(null);
         } else {
+            boolean satisfied = false;
             lock.lock();
             try {
                 if (availableTokens.get() <= 0 || !queuedCallbacks.isEmpty()) {
@@ -159,10 +160,13 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
                     condition.signalAll();
                 } else {
                     reduceToken(size);
-                    cf.complete(null);
+                    satisfied = true;
                 }
             } finally {
                 lock.unlock();
+            }
+            if (satisfied) {
+                cf.complete(null);
             }
         }
         return cf;

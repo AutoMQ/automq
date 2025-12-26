@@ -603,7 +603,7 @@ public interface ObjectReader extends AsyncMeasurable {
                         buf.skipBytes(4);
                     }
                     currentBlockRecordCount.decrementAndGet();
-                    return copy ? StreamRecordBatchCodec.duplicateDecode(buf) : StreamRecordBatchCodec.sliceRetainDecode(buf);
+                    return StreamRecordBatch.parse(buf, copy);
                 }
 
                 @Override

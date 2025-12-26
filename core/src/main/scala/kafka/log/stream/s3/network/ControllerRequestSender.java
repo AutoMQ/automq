@@ -31,6 +31,8 @@ import org.apache.kafka.common.requests.s3.AbstractBatchResponse;
 import org.apache.kafka.server.ControllerRequestCompletionHandler;
 import org.apache.kafka.server.NodeToControllerChannelManager;
 
+import com.automq.stream.utils.Systems;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,7 +52,9 @@ import io.netty.util.concurrent.DefaultThreadFactory;
 
 public class ControllerRequestSender {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
-    private static final long MAX_RETRY_DELAY_MS = 10 * 1000; // 10s
+
+    private static final long MAX_RETRY_DELAY_MS = Systems.getEnvLong("AUTOMQ_CONTROLLER_REQUEST_MAX_RETRY_DELAY_MS", 10L * 1000); // 10s
+
     private final RetryPolicyContext retryPolicyContext;
 
     private final NodeToControllerChannelManager channelManager;

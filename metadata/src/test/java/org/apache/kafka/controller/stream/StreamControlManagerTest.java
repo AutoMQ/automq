@@ -1537,7 +1537,7 @@ public class StreamControlManagerTest {
             objectWriter.write(
                 range.streamId(),
                 List.of(
-                    new StreamRecordBatch(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1))
+                    StreamRecordBatch.of(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1))
                 )
             )
         );

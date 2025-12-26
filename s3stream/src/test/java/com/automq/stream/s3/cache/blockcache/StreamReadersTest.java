@@ -61,11 +61,11 @@ public class StreamReadersTest {
         // Create mock objects for testing with different offset ranges
         // Object 1: STREAM_ID_1 offset 0-2
         objects.put(1L, MockObject.builder(1L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_1, List.of(
-            new StreamRecordBatch(STREAM_ID_1, 0, 0, 2, TestUtils.random(100))
+            StreamRecordBatch.of(STREAM_ID_1, 0, 0, 2, TestUtils.random(100))
         )).build());
         // Object 2: STREAM_ID_2 offset 0-1
         objects.put(2L, MockObject.builder(2L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_2, List.of(
-            new StreamRecordBatch(STREAM_ID_2, 0, 0, 1, TestUtils.random(100))
+            StreamRecordBatch.of(STREAM_ID_2, 0, 0, 1, TestUtils.random(100))
         )).build());
 
         objectManager = mock(ObjectManager.class);

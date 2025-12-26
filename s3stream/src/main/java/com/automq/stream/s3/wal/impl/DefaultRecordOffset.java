@@ -101,4 +101,10 @@ public class DefaultRecordOffset implements RecordOffset {
     public int hashCode() {
         return Objects.hash(epoch, offset, size);
     }
+
+    @Override
+    public int compareTo(RecordOffset o) {
+        DefaultRecordOffset other = DefaultRecordOffset.of(o);
+        return Long.compare(this.offset, other.offset);
+    }
 }

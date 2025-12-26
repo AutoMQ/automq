@@ -125,6 +125,7 @@ public class ProtobufRegistryConverterTest {
             }
             repeated Nested f_nested_list = 24;
             map<string, Nested> f_string_nested_map = 25;
+            map<string, google.protobuf.Timestamp> f_string_timestamp_map = 28;
         }
         """;
 
@@ -261,6 +262,13 @@ public class ProtobufRegistryConverterTest {
 
         Timestamp timestamp = Timestamp.newBuilder().setSeconds(1_234_567_890L).setNanos(987_000_000).build();
         builder.setField(descriptor.findFieldByName("f_timestamp"), timestamp);
+
+        Descriptors.FieldDescriptor timestampMapField = descriptor.findFieldByName("f_string_timestamp_map");
+        Descriptors.Descriptor timestampEntryDescriptor = timestampMapField.getMessageType();
+        Timestamp timestamp1 = Timestamp.newBuilder().setSeconds(1_600_000_000L).setNanos(123_000_000).build();
+        Timestamp timestamp2 = Timestamp.newBuilder().setSeconds(1_700_000_000L).setNanos(456_000_000).build();
+        builder.addRepeatedField(timestampMapField, mapEntry(timestampEntryDescriptor, "ts1", timestamp1));
+        builder.addRepeatedField(timestampMapField, mapEntry(timestampEntryDescriptor, "ts2", timestamp2));
 
         return builder.build();
     }
@@ -411,6 +419,17 @@ public class ProtobufRegistryConverterTest {
                 entry -> ((GenericRecord) entry.get("value")).get("name").toString()
             ));
         assertEquals(Map.of("nk1", "nested-name", "nk2", "nested-name-2"), nestedMap);
+
+        List<?> timestampMapEntries = (List<?>) getField(record, "f_string_timestamp_map", "fStringTimestampMap");
+        Map<String, Long> timestampMap = timestampMapEntries.stream()
+            .map(GenericRecord.class::cast)
+            .collect(Collectors.toMap(
+                entry -> entry.get("key").toString(),
+                entry -> (Long) entry.get("value")
+            ));
+        long expectedMicros1 = 1_600_000_000_000_000L + 123_000;
+        long expectedMicros2 = 1_700_000_000_000_000L + 456_000;
+        assertEquals(Map.of("ts1", expectedMicros1, "ts2", expectedMicros2), timestampMap);
     }
 
     private static void assertNestedAndTimestamp(GenericRecord record) {

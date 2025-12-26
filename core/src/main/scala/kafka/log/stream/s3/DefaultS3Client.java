@@ -27,7 +27,7 @@ import kafka.log.stream.s3.node.NodeManagerStub;
 import kafka.log.stream.s3.node.NoopNodeManager;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
-import kafka.log.stream.s3.wal.BootstrapWalV1;
+import kafka.log.stream.s3.wal.ConfirmWal;
 import kafka.log.stream.s3.wal.DefaultWalFactory;
 import kafka.server.BrokerServer;
 
@@ -215,7 +215,7 @@ public class DefaultS3Client implements Client {
         String clusterId = brokerServer.clusterId();
         WalHandle walHandle = new DefaultWalHandle(clusterId);
         WalFactory factory = new DefaultWalFactory(config.nodeId(), config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
-        return new BootstrapWalV1(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
+        return new ConfirmWal(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
     }
 
     protected ObjectStorage newMainObjectStorage() {
@@ -276,7 +276,7 @@ public class DefaultS3Client implements Client {
                 WalHandle walHandle = new DefaultWalHandle(clusterId);
                 WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
                 NodeManager nodeManager = new NodeManagerStub(requestSender, nodeId, nodeEpoch, Collections.emptyMap());
-                return new BootstrapWalV1(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
+                return new ConfirmWal(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
             }
         }, (wal, sm, om, logger) -> {
             try {
