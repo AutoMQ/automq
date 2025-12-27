@@ -1417,9 +1417,6 @@ public class MembershipManagerImpl implements MembershipManager {
                 methodName.fullyQualifiedMethodName(),
                 e
             );
-        }
-
-
             future.completeExceptionally(e);
         } else {
             log.debug(
