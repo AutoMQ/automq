@@ -1413,11 +1413,10 @@ public class MembershipManagerImpl implements MembershipManager {
         if (error.isPresent()) {
             Exception e = error.get();
             log.warn(
-                "The {} method completed with an error ({}); signaling to continue to the next phase of rebalance",
+                "Rebalance step failed in method={}, proceeding to next phase",
                 methodName.fullyQualifiedMethodName(),
-                e.getMessage()
+                e
             );
-
             future.completeExceptionally(e);
         } else {
             log.debug(
