@@ -401,7 +401,8 @@ class ElasticControllerApis(
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DescribeLicenseResponse(new DescribeLicenseResponseData().
               setThrottleTimeMs(requestThrottleMs).
-              setErrorCode(UNKNOWN_SERVER_ERROR.code))
+              setErrorCode(UNKNOWN_SERVER_ERROR.code).
+              setErrorMessage(UNKNOWN_SERVER_ERROR.message))
           })
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {

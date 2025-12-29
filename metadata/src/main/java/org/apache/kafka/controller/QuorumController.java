@@ -2913,6 +2913,7 @@ public final class QuorumController implements Controller {
             return CompletableFuture.completedFuture(
                 new DescribeLicenseResponseData()
                     .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                    .setErrorMessage("License management is not supported")
                     .setLicense("")
                     .setThrottleTimeMs(0)
             );

@@ -2503,7 +2503,18 @@ public class KafkaAdminClient extends AdminClient {
             void handleResponse(AbstractResponse abstractResponse) {
                 final DescribeLicenseResponse response =
                     (DescribeLicenseResponse) abstractResponse;
-                future.complete(response.data().license());
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(response.data().license());
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
+                        break;
+                }
             }
 
             @Override

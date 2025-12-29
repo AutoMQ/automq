@@ -158,7 +158,7 @@ public class S3StreamKafkaMetricsManager {
         initLogAppendMetrics(meter, prefix);
         initPartitionStatusStatisticsMetrics(meter, prefix);
         initBackPressureMetrics(meter, prefix);
-        initLicenseMetrics(meter, prefix);
+        initLicenseMetrics(meter);
         try {
             initCertMetrics(meter, prefix);
         } catch (Exception e) {
@@ -336,8 +336,8 @@ public class S3StreamKafkaMetricsManager {
                 });
     }
 
-    private static void initLicenseMetrics(Meter meter, String prefix) {
-        licenseExpiryTimestampMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
+    private static void initLicenseMetrics(Meter meter) {
+        licenseExpiryTimestampMetrics = meter.gaugeBuilder(S3StreamKafkaMetricsConstants.LICENSE_EXPIRY_TIMESTAMP_METRIC_NAME)
                 .setDescription("The expiry timestamp of the license")
                 .setUnit("milliseconds")
                 .ofLongs()
@@ -350,7 +350,7 @@ public class S3StreamKafkaMetricsManager {
                     }
                 });
 
-        licenseSecondsRemainingMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.LICENSE_SECONDS_REMAINING_METRIC_NAME)
+        licenseSecondsRemainingMetrics = meter.gaugeBuilder(S3StreamKafkaMetricsConstants.LICENSE_SECONDS_REMAINING_METRIC_NAME)
                 .setDescription("The remaining seconds until the license expires")
                 .setUnit("seconds")
                 .ofLongs()
@@ -364,7 +364,7 @@ public class S3StreamKafkaMetricsManager {
                     }
                 });
 
-        nodeVcpuCountMetrics = meter.gaugeBuilder(prefix + S3StreamKafkaMetricsConstants.NODE_VCPU_COUNT_METRIC_NAME)
+        nodeVcpuCountMetrics = meter.gaugeBuilder(S3StreamKafkaMetricsConstants.NODE_VCPU_COUNT_METRIC_NAME)
                 .setDescription("The number of vCPUs available on this node")
                 .ofLongs()
                 .buildWithCallback(result -> {
