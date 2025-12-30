@@ -29,6 +29,7 @@ import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.utils.AsyncSemaphore;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
@@ -84,8 +85,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     final Logger logger;
     private final float maxMergeReadSparsityRate;
     private final int currentIndex;
-    private final Semaphore inflightReadLimiter;
-    private final Semaphore inflightWriteLimiter;
+    private final AsyncSemaphore inflightReadLimiter;
+    private final AsyncSemaphore inflightWriteLimiter;
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
@@ -153,8 +154,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.bucketURI = bucketURI;
         this.currentIndex = currentIndex;
         this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
-        this.inflightWriteLimiter = new Semaphore(maxObjectStorageConcurrency);
-        this.inflightReadLimiter = readWriteIsolate ? new Semaphore(maxObjectStorageConcurrency) : inflightWriteLimiter;
+        this.inflightWriteLimiter = new AsyncSemaphore(maxObjectStorageConcurrency);
+        this.inflightReadLimiter = readWriteIsolate ? new AsyncSemaphore(maxObjectStorageConcurrency) : inflightWriteLimiter;
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter != null ? networkInboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter != null ? networkOutboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.checkS3ApiMode = checkS3ApiMode;
@@ -174,8 +175,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (!manualMergeRead) {
             scheduler.scheduleWithFixedDelay(this::tryMergeRead, 5, 5, TimeUnit.MILLISECONDS);
         }
-        S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(inflightReadLimiter::availablePermits, currentIndex);
-        S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(inflightWriteLimiter::availablePermits, currentIndex);
+        S3StreamMetricsManager.registerInflightS3ReadQuotaSupplier(() -> (int) inflightReadLimiter.permits(), currentIndex);
+        S3StreamMetricsManager.registerInflightS3WriteQuotaSupplier(() -> (int) inflightWriteLimiter.permits(), currentIndex);
 
         this.deleteObjectsAccumulator = newDeleteObjectsAccumulator();
 
@@ -765,7 +766,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private int availableReadPermit() {
-        return inflightReadLimiter.availablePermits();
+        return (int) inflightReadLimiter.permits();
     }
 
     CompletableFuture<ByteBuf> mergedRangeRead(ReadOptions options, String path, long start, long end) {
@@ -869,14 +870,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * @return retCf the retCf should be used as method return value to ensure release before following operations.
      */
     <T> CompletableFuture<T> acquireReadPermit(CompletableFuture<T> cf) {
-        // TODO: async acquire?
-        try {
-            TimerUtil timerUtil = new TimerUtil();
-            inflightReadLimiter.acquire();
+        CompletableFuture<T> newCf = new CompletableFuture<>();
+        TimerUtil timerUtil = new TimerUtil();
+
+        inflightReadLimiter.acquire(1, () -> {
             StorageOperationStats.getInstance().readS3LimiterStats(currentIndex).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            CompletableFuture<T> newCf = new CompletableFuture<>();
+
             cf.whenComplete((rst, ex) -> {
-                inflightReadLimiter.release();
                 readCallbackExecutor.execute(() -> {
                     if (ex != null) {
                         newCf.completeExceptionally(ex);
@@ -885,11 +885,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     }
                 });
             });
-            return newCf;
-        } catch (InterruptedException e) {
-            cf.completeExceptionally(e);
+
             return cf;
-        }
+        }, readCallbackExecutor);
+
+        return newCf;
     }
 
     /**
@@ -898,16 +898,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * @return retCf the retCf should be used as method return value to ensure release before following operations.
      */
     <T> CompletableFuture<T> acquireWritePermit(CompletableFuture<T> cf) {
-        // this future will be return by the caller
         CompletableFuture<T> newCf = new CompletableFuture<>();
+        TimerUtil timerUtil = new TimerUtil();
 
-        try {
-            TimerUtil timerUtil = new TimerUtil();
-            inflightWriteLimiter.acquire();
+        inflightWriteLimiter.acquire(1, () -> {
             StorageOperationStats.getInstance().writeS3LimiterStats(currentIndex).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
 
             cf.whenComplete((rst, ex) -> {
-                inflightWriteLimiter.release();
                 writeCallbackExecutor.execute(() -> {
                     if (ex != null) {
                         newCf.completeExceptionally(ex);
@@ -916,11 +913,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     }
                 });
             });
-            return newCf;
-        } catch (InterruptedException e) {
-            newCf.completeExceptionally(e);
-            return newCf;
-        }
+
+            return cf;
+        }, writeCallbackExecutor);
+
+        return newCf;
     }
 
     protected <T> boolean bucketCheck(int bucketId, CompletableFuture<T> cf) {
