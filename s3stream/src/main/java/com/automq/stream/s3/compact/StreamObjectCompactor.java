@@ -516,6 +516,7 @@ public class StreamObjectCompactor {
                 objectGroups.add(group);
                 group = new LinkedList<>();
                 groupSize = 0;
+                partCount = 0;
             }
             group.add(object);
             groupSize += object.objectSize();
