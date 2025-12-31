@@ -25,7 +25,7 @@ class OTLPMetricsExporterTest(Test):
         Create and configure Kafka service with OTLP metrics exporter enabled.
         """
         server_prop_overrides = [
-            ['s3.telemetry.metrics.exporter.uri', 'http://localhost:9090/opentelemetry/v1/metrics'],
+            ['s3.telemetry.metrics.exporter.uri', 'otlp://localhost:9090?endpoint=http://localhost:9090/opentelemetry/v1/metrics&protocol=http&compression=none'],
             ['s3.telemetry.metrics.exporter.report.interval.ms', '30000'],
             ['s3.wal.cache.size', str(256 * 1024 * 1024)],
             ['s3.wal.capacity', str(256 * 1024 * 1024)],
