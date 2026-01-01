@@ -1087,8 +1087,10 @@ private[kafka] class Processor(
                 }
               }
             }catch {
-              case e:IllegalStateException =>
-                warn(s"Channel already closed while processing response for $channelId",e)
+              case e: IllegalStateException =>
+                warn(s"Channel already closed while processing response for $channelId", e)
+              case e: Exception =>
+                warn(s"Unexpected error while unmuting channel $channelId", e)
             }
             // AutoMQ for Kafka inject end
 
@@ -1128,14 +1130,25 @@ private[kafka] class Processor(
     if (channel(connectionId).isEmpty) {
       warn(s"Attempting to send response via channel for which there is no open connection, connection id $connectionId")
       response.request.updateRequestMetrics(0L, response)
+      responseSend.release()
+      return
     }
     // Invoke send for closingChannel as well so that the send is failed and the channel closed properly and
     // removed from the Selector after discarding any pending staged receives.
     // `openOrClosingChannel` can be None if the selector closed the connection because it was idle for too long
     if (openOrClosingChannel(connectionId).isDefined) {
-      val send = new NetworkSend(connectionId, responseSend)
-      selector.send(send)
-      inflightResponses.put(send, response)
+      try {
+        val send = new NetworkSend(connectionId, responseSend)
+        selector.send(send)
+        inflightResponses.put(send, response)
+      } catch {
+        case e: IllegalStateException =>
+          warn(s"Failed to send response to $connectionId, channel may be closed", e)
+          responseSend.release()
+        case e: Exception =>
+          warn(s"Unexpected error sending response to $connectionId", e)
+          responseSend.release()
+      }
     } else {
       responseSend.release()
     }
@@ -1215,8 +1228,9 @@ private[kafka] class Processor(
               }
             }
           case None =>
-            // This should never happen since completed receives are processed immediately after `poll()`
-            throw new IllegalStateException(s"Channel ${receive.source} removed from selector before processing completed receive")
+            // Channel was removed from selector before processing completed receive
+            // This can happen when client disconnects abruptly during request processing
+            warn(s"Channel ${receive.source} removed from selector before processing completed receive")
         }
       } catch {
         // note that even though we got an exception, we can assume that receive.source is valid.
@@ -1261,7 +1275,14 @@ private[kafka] class Processor(
               false
             }
             if (unmute) {
-              selector.unmute(channel.id)
+              try {
+                selector.unmute(channel.id)
+              } catch {
+                case e: IllegalStateException =>
+                  warn(s"Failed to unmute channel ${channel.id}, channel may be closed", e)
+                case e: Exception =>
+                  warn(s"Unexpected error unmuting channel ${channel.id}", e)
+              }
             }
           }
         })
