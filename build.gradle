@@ -2341,6 +2341,12 @@ project(':automq-metrics') {
     configProperties = checkstyleConfigProperties("import-control-server.xml")
   }
 
+  configurations {
+    all {
+      exclude group: 'io.opentelemetry', module: 'opentelemetry-exporter-sender-okhttp'
+    }
+  }
+    
   dependencies {
     // OpenTelemetry core dependencies
     api libs.opentelemetryJava8
@@ -2350,6 +2356,7 @@ project(':automq-metrics') {
     api libs.opentelemetryExporterLogging
     api libs.opentelemetryExporterProm
     api libs.opentelemetryExporterOTLP
+    api libs.opentelemetryExporterSenderJdk
     api libs.opentelemetryJmx
 
     // Logging dependencies
