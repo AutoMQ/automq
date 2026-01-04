@@ -143,6 +143,18 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
 - **Built-in Metrics Export**: Natively export Prometheus and OpenTelemetry metrics, supporting both push and pull. Ditch inefficient JMX and monitor your cluster with modern tools. Refer to [full metrics list](https://www.automq.com/docs/automq/observability/metrics?utm_source=github_automq) provided by AutoMQ.
 - **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
 
+## 👤 Who Should Use AutoMQ?
+
+AutoMQ is a good fit if you:
+
+- Run Apache Kafka in cloud environments and face high storage or cross-AZ traffic costs
+- Need fast scaling without complex partition reassignment
+- Want to reduce operational overhead of managing Kafka brokers and storage
+- Operate large-scale streaming workloads with variable traffic patterns
+
+AutoMQ may not be ideal for very small, static on-premise Kafka deployments
+where storage cost and scaling are not major concerns.
+
 ## ✨Architecture
 AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). We've introduced a new storage engine based on object storage, transforming the classic shared-nothing architecture into a shared storage architecture.
 
@@ -155,6 +167,19 @@ Regarding the architecture of AutoMQ, it is fundamentally different from Kafka. 
 - Rack-aware Router: Kafka has long faced cross-AZ traffic fees on AWS and GCP. Our shared storage architecture addresses this by using a rack-aware router to provide clients in different AZs with specific partition metadata, avoiding cross-AZ fees while exchanging data through object storage.
 
 For more on AutoMQ's architecture, visit [AutoMQ Architecture](https://www.automq.com/docs/automq/architecture/overview?utm_source=github_automq) or explore the source code directly.
+
+## ❓ Common Questions
+
+**Is AutoMQ a Kafka replacement?**  
+AutoMQ is Kafka-compatible and can replace Kafka in many cloud scenarios,
+while still supporting existing Kafka clients and tools.
+
+**Does AutoMQ require AWS S3 only?**  
+No. AutoMQ supports any S3-compatible object storage such as MinIO.
+
+**Is this suitable for production?**  
+Yes, but production deployments should follow official documentation
+and best practices or use the enterprise edition.
 
 ## 🌟 Stay Ahead
 Star AutoMQ on GitHub for instant updates on new releases.
