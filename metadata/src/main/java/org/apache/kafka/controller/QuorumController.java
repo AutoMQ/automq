@@ -2941,7 +2941,7 @@ public final class QuorumController implements Controller {
             );
         }
         String license = request.license();
-        if (!licenseManager.checkLicense(license, true)) {
+        if (!licenseManager.checkLicense(license)) {
             return CompletableFuture.completedFuture(
                 new UpdateLicenseResponseData()
                     .setErrorCode(Errors.POLICY_VIOLATION.code())
