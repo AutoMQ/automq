@@ -22,8 +22,9 @@ import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, Defau
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.license.LicenseListener
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultLinkRecordDecoder, DefaultRouterChannelProvider, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -583,6 +584,8 @@ class BrokerServer(
       })
 
       newFailoverListener(ElasticLogManager.INSTANCE.get.client)
+
+      newLicenseListener()
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -897,6 +900,10 @@ class BrokerServer(
     val failoverListener = new FailoverListener(config.nodeId, client)
     metadataLoader.installPublishers(util.List.of(failoverListener));
     failoverListener
+  }
+
+  protected def newLicenseListener(): LicenseListener = {
+    null
   }
   // AutoMQ inject end
 

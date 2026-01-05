@@ -1,0 +1,12 @@
+{
+    "apiKey": 519,
+    "type": "request",
+    "listeners": ["controller", "broker"],
+    "name": "UpdateLicenseRequest",
+    "validVersions": "0",
+    "flexibleVersions": "0+",
+    "fields": [
+        { "name": "License", "type": "string", "versions": "0+" }
+    ]
+}
+

@@ -1739,6 +1739,24 @@ public interface Admin extends AutoCloseable {
      * @return {@link UpdateGroupResult}
      */
     UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options);
+
+    default UpdateLicenseResult updateLicense(String license) {
+        return updateLicense(license, new UpdateLicenseOptions());
+    }
+
+    UpdateLicenseResult updateLicense(String license, UpdateLicenseOptions options);
+
+    default DescribeLicenseResult describeLicense() {
+        return describeLicense(new DescribeLicenseOptions());
+    }
+
+    DescribeLicenseResult describeLicense(DescribeLicenseOptions options);
+
+    default ExportClusterManifestResult exportClusterManifest() {
+        return exportClusterManifest(new ExportClusterManifestOptions());
+    }
+
+    ExportClusterManifestResult exportClusterManifest(ExportClusterManifestOptions options);
     // AutoMQ inject end
 
     /**

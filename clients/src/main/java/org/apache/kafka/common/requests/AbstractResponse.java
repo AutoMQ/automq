@@ -32,7 +32,9 @@ import org.apache.kafka.common.requests.s3.CommitStreamSetObjectResponse;
 import org.apache.kafka.common.requests.s3.CreateStreamsResponse;
 import org.apache.kafka.common.requests.s3.DeleteKVsResponse;
 import org.apache.kafka.common.requests.s3.DeleteStreamsResponse;
+import org.apache.kafka.common.requests.s3.DescribeLicenseResponse;
 import org.apache.kafka.common.requests.s3.DescribeStreamsResponse;
+import org.apache.kafka.common.requests.s3.ExportClusterManifestResponse;
 import org.apache.kafka.common.requests.s3.GetKVsResponse;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
@@ -40,6 +42,7 @@ import org.apache.kafka.common.requests.s3.OpenStreamsResponse;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectResponse;
 import org.apache.kafka.common.requests.s3.PutKVsResponse;
 import org.apache.kafka.common.requests.s3.TrimStreamsResponse;
+import org.apache.kafka.common.requests.s3.UpdateLicenseResponse;
 
 import java.nio.ByteBuffer;
 import java.util.Collection;
@@ -322,6 +325,12 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
                 return DescribeStreamsResponse.parse(responseBuffer, version);
             case AUTOMQ_UPDATE_GROUP:
                 return AutomqUpdateGroupResponse.parse(responseBuffer, version);
+            case UPDATE_LICENSE:
+                return UpdateLicenseResponse.parse(responseBuffer, version);
+            case DESCRIBE_LICENSE:
+                return DescribeLicenseResponse.parse(responseBuffer, version);
+            case EXPORT_CLUSTER_MANIFEST:
+                return ExportClusterManifestResponse.parse(responseBuffer, version);
 
             // AutoMQ for Kafka inject end
             case SHARE_GROUP_HEARTBEAT:

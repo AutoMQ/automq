@@ -1,0 +1,10 @@
+{
+    "apiKey": 520,
+    "type": "request",
+    "listeners": ["controller", "broker"],
+    "name": "DescribeLicenseRequest",
+    "validVersions": "0",
+    "flexibleVersions": "0+",
+    "fields": []
+}
+
