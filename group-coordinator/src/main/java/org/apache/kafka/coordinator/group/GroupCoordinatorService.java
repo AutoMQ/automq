@@ -28,8 +28,6 @@ import org.apache.kafka.common.message.ConsumerGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
 import org.apache.kafka.common.message.DeleteGroupsResponseData;
 import org.apache.kafka.common.message.DescribeGroupsResponseData;
-import org.apache.kafka.common.message.GetConsumerJoinAttemptsRequestData;
-import org.apache.kafka.common.message.GetConsumerJoinAttemptsResponseData;
 import org.apache.kafka.common.message.HeartbeatRequestData;
 import org.apache.kafka.common.message.HeartbeatResponseData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -1187,21 +1185,4 @@ public class GroupCoordinatorService implements GroupCoordinator {
         }
     }
 
-    // AutoMQ injection start
-    @Override
-    public CompletableFuture<GetConsumerJoinAttemptsResponseData> getConsumerJoinAttempts(
-        RequestContext context,
-        GetConsumerJoinAttemptsRequestData request,
-        BufferSupplier bufferSupplier
-    ) {
-        // Default implementation for open source kernel
-        // Returns an empty response indicating no join attempts recorded
-        GetConsumerJoinAttemptsResponseData response = new GetConsumerJoinAttemptsResponseData()
-            .setGroupId(request.groupId())
-            .setErrorCode(Errors.NONE.code())
-            .setErrorMessage(null);
-
-        return CompletableFuture.completedFuture(response);
-    }
-    // AutoMQ injection end
 }

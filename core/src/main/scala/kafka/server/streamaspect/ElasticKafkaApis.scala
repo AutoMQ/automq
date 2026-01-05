@@ -27,7 +27,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
-import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest, GetConsumerJoinAttemptsRequest, GetConsumerJoinAttemptsResponse}
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
 import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
@@ -179,7 +179,6 @@ class ElasticKafkaApis(
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_UPDATE_GROUP => handleUpdateGroupRequest(request, requestLocal)
-        case ApiKeys.GET_CONSUMER_JOIN_ATTEMPTS => handleGetConsumerJoinAttemptsRequest(request, requestLocal)
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -209,7 +208,6 @@ class ElasticKafkaApis(
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.AUTOMQ_ZONE_ROUTER
            | ApiKeys.AUTOMQ_UPDATE_GROUP
-           | ApiKeys.GET_CONSUMER_JOIN_ATTEMPTS
            | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
@@ -436,18 +434,6 @@ class ElasticKafkaApis(
             requestHelper.sendMaybeThrottle(request, updateGroupsRequest.getErrorResponse(ex))
           } else {
             requestHelper.sendMaybeThrottle(request, new AutomqUpdateGroupResponse(response))
-          }
-        })
-  }
-
-  def handleGetConsumerJoinAttemptsRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
-    val getConsumerJoinAttemptsRequest = request.body[GetConsumerJoinAttemptsRequest]
-    groupCoordinator.getConsumerJoinAttempts(request.context, getConsumerJoinAttemptsRequest.data(), requestLocal.bufferSupplier)
-        .whenComplete((response, ex) => {
-          if (ex != null) {
-            requestHelper.sendMaybeThrottle(request, getConsumerJoinAttemptsRequest.getErrorResponse(ex))
-          } else {
-            requestHelper.sendMaybeThrottle(request, new GetConsumerJoinAttemptsResponse(response))
           }
         })
   }

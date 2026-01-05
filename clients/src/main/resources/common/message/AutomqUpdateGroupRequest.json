@@ -40,6 +40,12 @@
       "type": "bool",
       "versions": "0+",
       "about": "Whether the group is promoted"
+    },
+    {
+      "name": "Verify",
+      "type": "bool",
+      "versions": "0+",
+      "about": "Whether to verify consumer join attempts before promoting"
     }
   ]
 }

@@ -24,8 +24,6 @@ import org.apache.kafka.common.message.ConsumerGroupHeartbeatRequestData;
 import org.apache.kafka.common.message.ConsumerGroupHeartbeatResponseData;
 import org.apache.kafka.common.message.DeleteGroupsResponseData;
 import org.apache.kafka.common.message.DescribeGroupsResponseData;
-import org.apache.kafka.common.message.GetConsumerJoinAttemptsRequestData;
-import org.apache.kafka.common.message.GetConsumerJoinAttemptsResponseData;
 import org.apache.kafka.common.message.HeartbeatRequestData;
 import org.apache.kafka.common.message.HeartbeatResponseData;
 import org.apache.kafka.common.message.JoinGroupRequestData;
@@ -432,22 +430,6 @@ public interface GroupCoordinator {
     CompletableFuture<AutomqUpdateGroupResponseData> updateGroup(
         RequestContext context,
         AutomqUpdateGroupRequestData request,
-        BufferSupplier bufferSupplier
-    );
-
-    /**
-     * Get consumer join attempts for a group
-     *
-     * @param context           The coordinator request context.
-     * @param request           The GetConsumerJoinAttemptsRequestData data.
-     * @param bufferSupplier    The buffer supplier tight to the request thread.
-     *
-     * @return  A future yielding the response.
-     *          The error code(s) of the response are set to indicate the error(s) occurred during the execution.
-     */
-    CompletableFuture<GetConsumerJoinAttemptsResponseData> getConsumerJoinAttempts(
-        RequestContext context,
-        GetConsumerJoinAttemptsRequestData request,
         BufferSupplier bufferSupplier
     );
     // AutoMQ injection end

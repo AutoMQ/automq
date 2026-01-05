@@ -89,6 +89,7 @@ public class UpdateGroupHandler extends AdminApiHandler.Batched<CoordinatorKey, 
                 .setLinkId(groupSpec.linkId())
                 .setGroupId(this.groupId.idValue)
                 .setPromoted(groupSpec.promoted())
+                .setVerify(groupSpec.verify())
         );
     }
 

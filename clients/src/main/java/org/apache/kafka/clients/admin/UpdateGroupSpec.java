@@ -24,6 +24,7 @@ import java.util.Objects;
 public class UpdateGroupSpec {
     private String linkId;
     private boolean promoted;
+    private boolean verify = false; // 新增：是否验证 join attempts
 
     public UpdateGroupSpec linkId(String linkId) {
         this.linkId = linkId;
@@ -35,12 +36,21 @@ public class UpdateGroupSpec {
         return this;
     }
 
+    public UpdateGroupSpec verify(boolean verify) {
+        this.verify = verify;
+        return this;
+    }
+
     public String linkId() {
         return linkId;
     }
 
     public boolean promoted() {
         return promoted;
+    }
+
+    public boolean verify() {
+        return verify;
     }
 
     @Override
@@ -50,12 +60,12 @@ public class UpdateGroupSpec {
         if (o == null || getClass() != o.getClass())
             return false;
         UpdateGroupSpec spec = (UpdateGroupSpec) o;
-        return promoted == spec.promoted && Objects.equals(linkId, spec.linkId);
+        return promoted == spec.promoted && verify == spec.verify && Objects.equals(linkId, spec.linkId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(linkId, promoted);
+        return Objects.hash(linkId, promoted, verify);
     }
 
     @Override
@@ -63,6 +73,7 @@ public class UpdateGroupSpec {
         return "UpdateGroupsSpec{" +
             "linkId='" + linkId + '\'' +
             ", promoted=" + promoted +
+            ", verify=" + verify +
             '}';
     }
 }
