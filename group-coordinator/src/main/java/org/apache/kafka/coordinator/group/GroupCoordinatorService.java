@@ -1184,5 +1184,4 @@ public class GroupCoordinatorService implements GroupCoordinator {
                 return handler.apply(apiError.error(), apiError.message());
         }
     }
-
 }

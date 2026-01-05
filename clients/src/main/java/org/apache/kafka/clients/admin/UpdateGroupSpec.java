@@ -24,7 +24,7 @@ import java.util.Objects;
 public class UpdateGroupSpec {
     private String linkId;
     private boolean promoted;
-    private boolean verify = false; // 新增：是否验证 join attempts
+    private boolean verify = false;
 
     public UpdateGroupSpec linkId(String linkId) {
         this.linkId = linkId;
