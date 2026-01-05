@@ -75,7 +75,6 @@ public final class MetadataImage {
     private final KVImage kv;
     // AutoMQ for Kafka inject end
 
-    @SuppressWarnings("checkstyle:ParameterNumber")
     public MetadataImage(
         MetadataProvenance provenance,
         FeaturesImage features,
