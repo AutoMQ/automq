@@ -24,6 +24,7 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
+import com.automq.stream.utils.Threads;
 import com.google.common.collect.Lists;
 
 import org.slf4j.Logger;
@@ -238,6 +239,7 @@ public class LogUploader implements LogRecorder {
                     break;
                 } catch (Exception e) {
                     LOGGER.error("Cleanup s3 logs failed", e);
+                    Threads.sleep(Duration.ofMinutes(1).toMillis());
                 }
             }
         }
