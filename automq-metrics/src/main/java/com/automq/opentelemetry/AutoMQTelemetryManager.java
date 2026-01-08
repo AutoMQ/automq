@@ -19,6 +19,7 @@
 
 package com.automq.opentelemetry;
 
+import com.automq.opentelemetry.exporter.DelegatingMetricReader;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
@@ -31,15 +32,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import org.apache.kafka.common.Reconfigurable;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
@@ -68,19 +74,24 @@ import io.opentelemetry.sdk.resources.Resource;
  * This class is responsible for initializing, configuring, and managing the lifecycle of all
  * telemetry components, including the OpenTelemetry SDK, metric exporters, and various metric sources.
  */
-public class AutoMQTelemetryManager {
+public class AutoMQTelemetryManager implements Reconfigurable {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQTelemetryManager.class);
+
+    // Reconfigurable config keys
+    public static final String EXPORTER_URI_CONFIG = "s3.telemetry.metrics.exporter.uri";
+    public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(EXPORTER_URI_CONFIG);
 
     // Singleton instance support
     private static volatile AutoMQTelemetryManager instance;
     private static final Object LOCK = new Object();
 
-    private final String exporterUri;
+    private volatile String exporterUri;
     private final String serviceName;
     private final String instanceId;
     private final MetricsExportConfig metricsExportConfig;
-    private final List<MetricReader> metricReaders = new ArrayList<>();
+    private DelegatingMetricReader delegatingReader;
     private final List<AutoCloseable> autoCloseableList;
+    private final Object reconfigureLock = new Object();
     private OpenTelemetrySdk openTelemetrySdk;
     private YammerMetricsReporter yammerReporter;
 
@@ -199,12 +210,13 @@ public class AutoMQTelemetryManager {
 
         // Configure exporters from URI
         MetricsExporterURI exporterURI = buildMetricsExporterURI(exporterUri, metricsExportConfig);
+        List<MetricReader> readers = new ArrayList<>();
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
-            MetricReader reader = exporter.asMetricReader();
-            metricReaders.add(reader);
-            SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(meterProviderBuilder, reader,
-                instrumentType -> metricCardinalityLimit);
+            readers.add(exporter.asMetricReader());
         }
+        this.delegatingReader = new DelegatingMetricReader(readers);
+        SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(meterProviderBuilder, delegatingReader,
+                instrumentType -> metricCardinalityLimit);
 
         return meterProviderBuilder.build();
     }
@@ -286,17 +298,38 @@ public class AutoMQTelemetryManager {
                 LOGGER.error("Failed to close auto closeable", e);
             }
         });
-        metricReaders.forEach(metricReader -> {
-            metricReader.forceFlush();
-            try {
-                metricReader.close();
-            } catch (IOException e) {
-                LOGGER.error("Failed to close metric reader", e);
-            }
-        });
         if (openTelemetrySdk != null) {
             openTelemetrySdk.close();
         }
+    }
+
+    public void reconfigure(String newExporterUri) {
+        synchronized (reconfigureLock) {
+            if (newExporterUri == null || newExporterUri.equals(this.exporterUri)) {
+                LOGGER.debug("Exporter URI unchanged, skipping reconfiguration");
+                return;
+            }
+            LOGGER.info("Reconfiguring metrics exporter from {} to {}", this.exporterUri, newExporterUri);
+            this.exporterUri = newExporterUri;
+            try {
+                MetricsExporterURI exporterURIParsed = buildMetricsExporterURI(newExporterUri, metricsExportConfig);
+                List<MetricsExporter> newExporters = exporterURIParsed.getMetricsExporters();
+                List<MetricReader> newReaders = new ArrayList<>();
+                for (MetricsExporter exporter : newExporters) {
+                    newReaders.add(exporter.asMetricReader());
+                }
+                if (this.delegatingReader != null) {
+                    this.delegatingReader.setDelegates(newReaders);
+                }
+                LOGGER.info("Metrics exporter reconfiguration completed successfully");
+            } catch (Exception e) {
+                LOGGER.error("Failed to reconfigure metrics exporter with URI: {}", newExporterUri, e);
+            }
+        }
+    }
+
+    public String getExporterUri() {
+        return this.exporterUri;
     }
 
     /**
@@ -326,5 +359,44 @@ public class AutoMQTelemetryManager {
             throw new IllegalStateException("TelemetryManager is not initialized. Call init() first.");
         }
         return this.openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
+    }
+
+    @Override
+    public Set<String> reconfigurableConfigs() {
+        return RECONFIGURABLE_CONFIGS;
+    }
+
+    @Override
+    public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
+        if (configs.containsKey(EXPORTER_URI_CONFIG)) {
+            Object value = configs.get(EXPORTER_URI_CONFIG);
+            String uri = value instanceof Password ? ((Password) value).value()
+                    : (value != null ? value.toString() : null);
+            if (uri != null && !uri.isBlank()) {
+                try {
+                    MetricsExporterURI.parse(uri, metricsExportConfig);
+                } catch (Exception e) {
+                    throw new ConfigException(EXPORTER_URI_CONFIG, uri, "Invalid exporter URI: " + e.getMessage());
+                }
+            }
+        }
+    }
+
+    @Override
+    public void reconfigure(Map<String, ?> configs) {
+        if (configs.containsKey(EXPORTER_URI_CONFIG)) {
+            Object value = configs.get(EXPORTER_URI_CONFIG);
+            String newUri;
+            if (value instanceof Password) {
+                newUri = ((Password) value).value();
+            } else {
+                newUri = value != null ? value.toString() : null;
+            }
+            reconfigure(newUri);
+        }
+    }
+
+    @Override
+    public void configure(Map<String, ?> configs) {
     }
 }
