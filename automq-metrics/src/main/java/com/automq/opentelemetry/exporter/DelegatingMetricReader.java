@@ -29,8 +29,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import io.opentelemetry.sdk.common.CompletableResultCode;
-import io.opentelemetry.sdk.common.export.MemoryMode;
-import io.opentelemetry.sdk.metrics.Aggregation;
 import io.opentelemetry.sdk.metrics.InstrumentType;
 import io.opentelemetry.sdk.metrics.data.AggregationTemporality;
 import io.opentelemetry.sdk.metrics.export.CollectionRegistration;
@@ -51,7 +49,7 @@ public class DelegatingMetricReader implements MetricReader {
     public void setDelegates(List<MetricReader> newDelegates) {
         synchronized (lock) {
             List<MetricReader> oldDelegates = this.delegates;
-            if (collectionRegistration != null && newDelegates != null) {
+            if (collectionRegistration != null) {
                 for (MetricReader reader : newDelegates) {
                     reader.register(collectionRegistration);
                 }

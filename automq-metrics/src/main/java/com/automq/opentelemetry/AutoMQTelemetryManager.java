@@ -19,6 +19,10 @@
 
 package com.automq.opentelemetry;
 
+import org.apache.kafka.common.Reconfigurable;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
+
 import com.automq.opentelemetry.exporter.DelegatingMetricReader;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
@@ -42,10 +46,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
-
-import org.apache.kafka.common.Reconfigurable;
-import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.config.types.Password;
 
 import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator;
