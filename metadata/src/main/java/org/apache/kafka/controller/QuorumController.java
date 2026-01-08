@@ -297,7 +297,6 @@ public final class QuorumController implements Controller {
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
-        private LicenseManager licenseManager = null;
         // AutoMQ for Kafka inject end
 
         public Builder(int nodeId, String clusterId) {
@@ -464,11 +463,6 @@ public final class QuorumController implements Controller {
             this.extension = extension;
             return this;
         }
-
-        public Builder setLicenseManager(LicenseManager licenseManager) {
-            this.licenseManager = licenseManager;
-            return this;
-        }
         // AutoMQ for Kafka inject end
 
         public Builder setUncleanLeaderElectionCheckIntervalMs(long uncleanLeaderElectionCheckIntervalMs) {
@@ -542,7 +536,6 @@ public final class QuorumController implements Controller {
                     streamClient,
                     quorumVoters,
                     extension,
-                    licenseManager,
                     // AutoMQ inject end
                     uncleanLeaderElectionCheckIntervalMs,
                     interBrokerListenerName
@@ -1392,10 +1385,7 @@ public final class QuorumController implements Controller {
                     featureControl);
                 // AutoMQ for Kafka inject start
                 List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                if (licenseManager != null && !licenseManager.initialized()) {
-                    List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend("");
-                    all.addAll(recordsToAppend);
-                }
+                all.addAll(extension.getActivationRecords());
                 // AutoMQ for Kafka inject end
                 return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
@@ -1831,9 +1821,6 @@ public final class QuorumController implements Controller {
                 topicDeletionManager.replay(record);
                 nodeControlManager.replay(record);
                 routerChannelEpochControlManager.replay(record);
-                if (licenseManager != null) {
-                    licenseManager.replay(record);
-                }
                 break;
             }
             case REMOVE_KVRECORD: {
@@ -2108,8 +2095,6 @@ public final class QuorumController implements Controller {
     private final RouterChannelEpochControlManager routerChannelEpochControlManager;
 
     private final QuorumControllerExtension extension;
-
-    private final LicenseManager licenseManager;
     // AutoMQ for Kafka inject end
 
 
@@ -2149,7 +2134,6 @@ public final class QuorumController implements Controller {
         StreamClient streamClient,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension,
-        LicenseManager licenseManager,
         // AutoMQ inject end
 
         long uncleanLeaderElectionCheckIntervalMs,
@@ -2283,8 +2267,6 @@ public final class QuorumController implements Controller {
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
         this.extension = extension.apply(this);
-        this.licenseManager = licenseManager;
-
 
         // set the nodeControlManager here to avoid circular dependency
         this.replicationControl.setNodeControlManager(nodeControlManager);
@@ -2914,22 +2896,17 @@ public final class QuorumController implements Controller {
         ControllerRequestContext context,
         DescribeLicenseRequestData request
     ) {
-        if (licenseManager == null) {
-            return CompletableFuture.completedFuture(
-                new DescribeLicenseResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                    .setErrorMessage("License management is not supported")
-                    .setLicense("")
-                    .setThrottleTimeMs(0)
-            );
+        Supplier<DescribeLicenseResponseData> supplier = extension.describeLicenseSupplier(context, request);
+        if (supplier != null) {
+            return appendReadEvent("describeLicense", context.deadlineNs(), supplier);
         }
-        return appendReadEvent("describeLicense", context.deadlineNs(), () -> {
-            String license = licenseManager.describeLicense();
-            return new DescribeLicenseResponseData()
-                .setErrorCode(Errors.NONE.code())
-                .setLicense(license)
-                .setThrottleTimeMs(0);
-        });
+        return CompletableFuture.completedFuture(
+            new DescribeLicenseResponseData()
+                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                .setErrorMessage("License management is not supported")
+                .setLicense("")
+                .setThrottleTimeMs(0)
+        );
     }
 
     @Override
@@ -2937,40 +2914,16 @@ public final class QuorumController implements Controller {
         ControllerRequestContext context,
         UpdateLicenseRequestData request
     ) {
-        if (licenseManager == null) {
-            return CompletableFuture.completedFuture(
-                new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                    .setErrorMessage("License management is not supported")
-                    .setThrottleTimeMs(0)
-            );
+        CompletableFuture<UpdateLicenseResponseData> result = extension.updateLicense(context, request);
+        if (result != null) {
+            return result;
         }
-        String license = request.license();
-        if (!licenseManager.checkLicense(license)) {
-            return CompletableFuture.completedFuture(
-                new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.POLICY_VIOLATION.code())
-                    .setErrorMessage("license check failed")
-                    .setThrottleTimeMs(0)
-            );
-        }
-        return appendWriteEvent("updateLicense", context.deadlineNs(), () -> {
-            try {
-                List<ApiMessageAndVersion> recordsToAppend = licenseManager.getRecordsToAppend(license);
-                UpdateLicenseResponseData response = new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.NONE.code())
-                    .setErrorMessage("")
-                    .setThrottleTimeMs(0);
-                return ControllerResult.of(recordsToAppend, response);
-            } catch (Exception e) {
-                log.error("Failed to process license update", e);
-                UpdateLicenseResponseData response = new UpdateLicenseResponseData()
-                    .setErrorCode(Errors.UNKNOWN_SERVER_ERROR.code())
-                    .setErrorMessage("Failed to process update: " + e.getMessage())
-                    .setThrottleTimeMs(0);
-                return ControllerResult.of(Collections.emptyList(), response);
-            }
-        });
+        return CompletableFuture.completedFuture(
+            new UpdateLicenseResponseData()
+                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                .setErrorMessage("License management is not supported")
+                .setThrottleTimeMs(0)
+        );
     }
 
     @Override
@@ -2978,21 +2931,16 @@ public final class QuorumController implements Controller {
         ControllerRequestContext context,
         ExportClusterManifestRequestData request
     ) {
-        if (licenseManager == null) {
-            return CompletableFuture.completedFuture(
-                new ExportClusterManifestResponseData()
-                    .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                    .setManifest("")
-                    .setThrottleTimeMs(0)
-            );
+        Supplier<ExportClusterManifestResponseData> supplier = extension.exportClusterManifestSupplier(context, request);
+        if (supplier != null) {
+            return appendReadEvent("exportClusterManifest", context.deadlineNs(), supplier);
         }
-        return appendReadEvent("exportClusterManifest", context.deadlineNs(), () -> {
-            String manifest = licenseManager.exportClusterManifest();
-            return new ExportClusterManifestResponseData()
-                .setErrorCode(Errors.NONE.code())
-                .setManifest(manifest)
-                .setThrottleTimeMs(0);
-        });
+        return CompletableFuture.completedFuture(
+            new ExportClusterManifestResponseData()
+                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
+                .setManifest("")
+                .setThrottleTimeMs(0)
+        );
     }
 
     @Override

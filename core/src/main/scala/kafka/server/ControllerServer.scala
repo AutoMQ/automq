@@ -292,7 +292,6 @@ class ControllerServer(
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer()).
-          setLicenseManager(sharedServer.licenseManager).
           // AutoMQ inject end
           setUncleanLeaderElectionCheckIntervalMs(config.uncleanLeaderElectionCheckIntervalMs).
           setInterBrokerListenerName(config.interBrokerListenerName.value()).

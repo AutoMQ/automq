@@ -1,5 +1,5 @@
 {
-    "apiKey": 520,
+    "apiKey": 518,
     "type": "request",
     "listeners": ["controller", "broker"],
     "name": "DescribeLicenseRequest",

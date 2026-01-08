@@ -17,14 +17,46 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.message.DescribeLicenseRequestData;
+import org.apache.kafka.common.message.DescribeLicenseResponseData;
+import org.apache.kafka.common.message.ExportClusterManifestRequestData;
+import org.apache.kafka.common.message.ExportClusterManifestResponseData;
+import org.apache.kafka.common.message.UpdateLicenseRequestData;
+import org.apache.kafka.common.message.UpdateLicenseResponseData;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.raft.OffsetAndEpoch;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 public interface QuorumControllerExtension {
-    QuorumControllerExtension NOOP = (type, message, snapshotId, batchLastOffset) -> false;
+    QuorumControllerExtension NOOP = new QuorumControllerExtension() { };
 
-    boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset);
+    default boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset) {
+        return false;
+    }
+
+    default CompletableFuture<UpdateLicenseResponseData> updateLicense(
+        ControllerRequestContext context, UpdateLicenseRequestData request) {
+        return null;
+    }
+
+    default Supplier<DescribeLicenseResponseData> describeLicenseSupplier(
+        ControllerRequestContext context, DescribeLicenseRequestData request) {
+        return null;
+    }
+
+    default Supplier<ExportClusterManifestResponseData> exportClusterManifestSupplier(
+        ControllerRequestContext context, ExportClusterManifestRequestData request) {
+        return null;
+    }
+
+    default List<ApiMessageAndVersion> getActivationRecords() {
+        return Collections.emptyList();
+    }
 }

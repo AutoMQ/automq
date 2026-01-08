@@ -1,5 +1,5 @@
 {
-    "apiKey": 521,
+    "apiKey": 519,
     "type": "request",
     "listeners": ["controller", "broker"],
     "name": "ExportClusterManifestRequest",

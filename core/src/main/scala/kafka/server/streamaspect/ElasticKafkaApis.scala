@@ -33,7 +33,6 @@ import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
-import org.apache.kafka.controller.LicenseManager
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.server.ClientMetricsManager
 import org.apache.kafka.server.authorizer.Authorizer
@@ -92,7 +91,6 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
-  private val licenseManager: LicenseManager = LicenseManagerProvider.get();
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -477,24 +475,19 @@ class ElasticKafkaApis(
     val versionId = request.header.apiVersion
     val clientId = request.header.clientId
     val fetchRequest = request.body[FetchRequest]
-    if (!fetchRequest.isFromFollower && licenseManager != null && !licenseManager.isValid) {
-      val topicNames = if (fetchRequest.version() >= 13) metadataCache.topicIdsToNames() else Collections.emptyMap[Uuid, String]()
-      val fetchData = fetchRequest.fetchData(topicNames)
-      val responseData = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
-
-      fetchData.forEach { (topicIdPartition, _) =>
-        responseData.put(topicIdPartition, FetchResponse.partitionResponse(topicIdPartition, Errors.CLUSTER_AUTHORIZATION_FAILED))
-      }
-
-      val response = FetchResponse.of(Errors.NONE, 0, fetchRequest.metadata.sessionId(), responseData)
-      requestChannel.sendResponse(request, response, None)
-      return
-    }
     val topicNames =
       if (fetchRequest.version() >= 13)
         metadataCache.topicIdsToNames()
       else
         Collections.emptyMap[Uuid, String]()
+
+    if (!fetchRequest.isFromFollower) {
+      val interceptResult = trafficInterceptor.interceptFetchRequest(fetchRequest, topicNames)
+      if (interceptResult.isPresent) {
+        requestChannel.sendResponse(request, interceptResult.get(), None)
+        return
+      }
+    }
 
     val fetchData = fetchRequest.fetchData(topicNames)
     val forgottenTopics = fetchRequest.forgottenTopics(topicNames)
