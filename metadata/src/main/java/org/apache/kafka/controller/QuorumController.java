@@ -1677,7 +1677,7 @@ public final class QuorumController implements Controller {
      * @param snapshotId        The snapshotId if this record is from a snapshot
      * @param offset            The offset of the record
      */
-    @SuppressWarnings({"checkstyle:javaNCSS", "checkstyle:MethodLength"})
+    @SuppressWarnings({"checkstyle:javaNCSS"})
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long offset) {
         if (log.isTraceEnabled()) {
             if (snapshotId.isPresent()) {
