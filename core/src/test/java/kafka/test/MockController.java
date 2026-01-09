@@ -59,16 +59,12 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
-import org.apache.kafka.common.message.DescribeLicenseRequestData;
-import org.apache.kafka.common.message.DescribeLicenseResponseData;
 import org.apache.kafka.common.message.DescribeStreamsRequestData;
 import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
-import org.apache.kafka.common.message.ExportClusterManifestRequestData;
-import org.apache.kafka.common.message.ExportClusterManifestResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
@@ -88,8 +84,7 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
-import org.apache.kafka.common.message.UpdateLicenseRequestData;
-import org.apache.kafka.common.message.UpdateLicenseResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
@@ -670,17 +665,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<DescribeLicenseResponseData> describeLicense(ControllerRequestContext context, DescribeLicenseRequestData request) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public CompletableFuture<UpdateLicenseResponseData> updateLicense(ControllerRequestContext context, UpdateLicenseRequestData request) {
-        throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public CompletableFuture<ExportClusterManifestResponseData> exportClusterManifest(ControllerRequestContext context, ExportClusterManifestRequestData request) {
+    public CompletableFuture<Object> handleLicenseExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
         throw new UnsupportedOperationException();
     }
 

@@ -45,7 +45,7 @@ public interface TrafficInterceptor {
 
     Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
 
-    default Optional<FetchResponse> interceptFetchRequest(
+    default Optional<FetchResponse> handleBeforeFetchRequest(
             FetchRequest fetchRequest,
             Map<Uuid, String> topicNames) {
         return Optional.empty();

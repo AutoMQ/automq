@@ -482,7 +482,7 @@ class ElasticKafkaApis(
         Collections.emptyMap[Uuid, String]()
 
     if (!fetchRequest.isFromFollower) {
-      val interceptResult = trafficInterceptor.interceptFetchRequest(fetchRequest, topicNames)
+      val interceptResult = trafficInterceptor.handleBeforeFetchRequest(fetchRequest, topicNames)
       if (interceptResult.isPresent) {
         requestChannel.sendResponse(request, interceptResult.get(), None)
         return

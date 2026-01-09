@@ -17,20 +17,17 @@
 
 package org.apache.kafka.controller;
 
-import org.apache.kafka.common.message.DescribeLicenseRequestData;
-import org.apache.kafka.common.message.DescribeLicenseResponseData;
-import org.apache.kafka.common.message.ExportClusterManifestRequestData;
-import org.apache.kafka.common.message.ExportClusterManifestResponseData;
-import org.apache.kafka.common.message.UpdateLicenseRequestData;
-import org.apache.kafka.common.message.UpdateLicenseResponseData;
 import org.apache.kafka.common.metadata.MetadataRecordType;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.controller.QuorumController.ControllerWriteOperation;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
@@ -41,22 +38,27 @@ public interface QuorumControllerExtension {
         return false;
     }
 
-    default CompletableFuture<UpdateLicenseResponseData> updateLicense(
-        ControllerRequestContext context, UpdateLicenseRequestData request) {
-        return null;
-    }
-
-    default Supplier<DescribeLicenseResponseData> describeLicenseSupplier(
-        ControllerRequestContext context, DescribeLicenseRequestData request) {
-        return null;
-    }
-
-    default Supplier<ExportClusterManifestResponseData> exportClusterManifestSupplier(
-        ControllerRequestContext context, ExportClusterManifestRequestData request) {
+    default CompletableFuture<Object> handleLicenseExtensionRequest(
+            ControllerRequestContext context,
+            ApiKeys apiKey,
+            Object requestData,
+            ReadEventAppender readEventAppender,
+            WriteEventAppender writeEventAppender) {
         return null;
     }
 
     default List<ApiMessageAndVersion> getActivationRecords() {
         return Collections.emptyList();
+    }
+
+    @FunctionalInterface
+    interface ReadEventAppender {
+        <T> CompletableFuture<T> appendReadEvent(String name, OptionalLong deadlineNs, Supplier<T> handler);
+    }
+
+    @FunctionalInterface
+    interface WriteEventAppender {
+        <T> CompletableFuture<T> appendWriteEvent(String name, OptionalLong deadlineNs,
+                                                  ControllerWriteOperation<T> op);
     }
 }

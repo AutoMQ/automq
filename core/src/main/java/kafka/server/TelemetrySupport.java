@@ -17,7 +17,6 @@
 package kafka.server;
 
 import kafka.automq.table.metric.TableTopicMetricsManager;
-import kafka.server.metrics.LicenseMetricsManager;
 
 import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.server.ProcessRole;
@@ -65,12 +64,10 @@ public final class TelemetrySupport {
             String.valueOf(config.nodeId()),
             AutoMQApplication.getBean(MetricsExportConfig.class)
         );
-        
         telemetryManager.setJmxConfigPaths(buildJmxConfigPaths(config));
         telemetryManager.init();
         telemetryManager.startYammerMetricsReporter(KafkaYammerMetrics.defaultRegistry());
         initializeMetrics(telemetryManager, config);
-        
         return telemetryManager;
     }
 
@@ -108,14 +105,12 @@ public final class TelemetrySupport {
         S3StreamKafkaMetricsManager.initMetrics(meter, KAFKA_METRICS_PREFIX);
 
         TableTopicMetricsManager.initMetrics(meter);
-        LicenseMetricsManager.initMetrics(meter);
     }
 
     private static MetricsLevel parseMetricsLevel(String rawLevel) {
         if (StringUtils.isBlank(rawLevel)) {
             return MetricsLevel.INFO;
         }
-        
         try {
             return MetricsLevel.valueOf(rawLevel.trim().toUpperCase(Locale.ENGLISH));
         } catch (IllegalArgumentException e) {
@@ -127,7 +122,6 @@ public final class TelemetrySupport {
     private static String buildJmxConfigPaths(KafkaConfig config) {
         List<String> paths = new ArrayList<>();
         paths.add(COMMON_JMX_PATH);
-        
         Set<ProcessRole> roles = config.processRoles();
         if (roles.contains(ProcessRole.BrokerRole)) {
             paths.add(BROKER_JMX_PATH);
@@ -135,7 +129,6 @@ public final class TelemetrySupport {
         if (roles.contains(ProcessRole.ControllerRole)) {
             paths.add(CONTROLLER_JMX_PATH);
         }
-        
         return String.join(",", paths);
     }
 }

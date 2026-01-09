@@ -62,16 +62,12 @@ import org.apache.kafka.common.message.DeleteKVsRequestData;
 import org.apache.kafka.common.message.DeleteKVsResponseData;
 import org.apache.kafka.common.message.DeleteStreamsRequestData;
 import org.apache.kafka.common.message.DeleteStreamsResponseData;
-import org.apache.kafka.common.message.DescribeLicenseRequestData;
-import org.apache.kafka.common.message.DescribeLicenseResponseData;
 import org.apache.kafka.common.message.DescribeStreamsRequestData;
 import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.message.ElectLeadersRequestData;
 import org.apache.kafka.common.message.ElectLeadersResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
 import org.apache.kafka.common.message.ExpireDelegationTokenResponseData;
-import org.apache.kafka.common.message.ExportClusterManifestRequestData;
-import org.apache.kafka.common.message.ExportClusterManifestResponseData;
 import org.apache.kafka.common.message.GetKVsRequestData;
 import org.apache.kafka.common.message.GetKVsResponseData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
@@ -91,8 +87,6 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
-import org.apache.kafka.common.message.UpdateLicenseRequestData;
-import org.apache.kafka.common.message.UpdateLicenseResponseData;
 import org.apache.kafka.common.metadata.AbortTransactionRecord;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -137,6 +131,7 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
@@ -1677,7 +1672,7 @@ public final class QuorumController implements Controller {
      * @param snapshotId        The snapshotId if this record is from a snapshot
      * @param offset            The offset of the record
      */
-    @SuppressWarnings({"checkstyle:javaNCSS"})
+    @SuppressWarnings("checkstyle:javaNCSS")
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long offset) {
         if (log.isTraceEnabled()) {
             if (snapshotId.isPresent()) {
@@ -2892,55 +2887,18 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<DescribeLicenseResponseData> describeLicense(
-        ControllerRequestContext context,
-        DescribeLicenseRequestData request
-    ) {
-        Supplier<DescribeLicenseResponseData> supplier = extension.describeLicenseSupplier(context, request);
-        if (supplier != null) {
-            return appendReadEvent("describeLicense", context.deadlineNs(), supplier);
-        }
-        return CompletableFuture.completedFuture(
-            new DescribeLicenseResponseData()
-                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                .setErrorMessage("License management is not supported")
-                .setLicense("")
-                .setThrottleTimeMs(0)
+    public CompletableFuture<Object> handleLicenseExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
+        CompletableFuture<Object> result = extension.handleLicenseExtensionRequest(
+            context,
+            apiKey,
+            requestData,
+            this::appendReadEvent,
+            this::appendWriteEvent
         );
-    }
-
-    @Override
-    public CompletableFuture<UpdateLicenseResponseData> updateLicense(
-        ControllerRequestContext context,
-        UpdateLicenseRequestData request
-    ) {
-        CompletableFuture<UpdateLicenseResponseData> result = extension.updateLicense(context, request);
         if (result != null) {
             return result;
         }
-        return CompletableFuture.completedFuture(
-            new UpdateLicenseResponseData()
-                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                .setErrorMessage("License management is not supported")
-                .setThrottleTimeMs(0)
-        );
-    }
-
-    @Override
-    public CompletableFuture<ExportClusterManifestResponseData> exportClusterManifest(
-        ControllerRequestContext context,
-        ExportClusterManifestRequestData request
-    ) {
-        Supplier<ExportClusterManifestResponseData> supplier = extension.exportClusterManifestSupplier(context, request);
-        if (supplier != null) {
-            return appendReadEvent("exportClusterManifest", context.deadlineNs(), supplier);
-        }
-        return CompletableFuture.completedFuture(
-            new ExportClusterManifestResponseData()
-                .setErrorCode(Errors.UNSUPPORTED_VERSION.code())
-                .setManifest("")
-                .setThrottleTimeMs(0)
-        );
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
