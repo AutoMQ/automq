@@ -32,14 +32,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -156,6 +163,83 @@ public class ProxyNodeMappingTest {
         assertEquals(List.of(3, 4, 5), rst.get("az1").keySet().stream().sorted().toList());
         assertEquals(2, rst.get("az2").size());
         assertEquals(List.of(1, 2), rst.get("az2").keySet().stream().sorted().toList());
+    }
+
+    @ParameterizedTest(name = "Test {index} {0}")
+    @MethodSource("testCalMain2proxyByRackV1Data")
+    public void testCalMain2proxyByRackV1(String name, Map<String, Integer> rack2nodeCount) {
+        AtomicInteger nodeIdAlloc = new AtomicInteger(0);
+        Map<String, List<BrokerRegistration>> nodesByRack = new HashMap<>();
+        rack2nodeCount.forEach((rack, count) -> {
+            List<BrokerRegistration> brokers = new ArrayList<>();
+            for (int i = 0; i < count; i++) {
+                int nodeId = nodeIdAlloc.getAndIncrement();
+                brokers.add(brokerRegistration(nodeId, rack, "127.0.0." + nodeId, 9092));
+            }
+            nodesByRack.put(rack, brokers);
+        });
+        Map<String, Map<Integer, BrokerRegistration>> rst = ProxyNodeMapping.calMain2proxyByRackV1(nodesByRack);
+        Map<String, Map<Integer, Integer>> rstConvert = new HashMap<>();
+        rst.forEach((r, m) ->
+            m.forEach((k, v) ->
+                rstConvert.computeIfAbsent(r, rack -> new HashMap<>()).put(k, v.id())));
+        verifyCalMain2proxyByRackV1(nodesByRack, rst);
+    }
+
+    static Stream<Arguments> testCalMain2proxyByRackV1Data() {
+        return Stream.of(
+            Arguments.of(
+                "basic",
+                Map.of("az1", 3, "az2", 3, "az3", 3)
+            ),
+            Arguments.of(
+                "rolling",
+                Map.of("az1", 10, "az2", 9, "az3", 10)
+            ),
+            Arguments.of(
+                "not balanced",
+                Map.of("az1", 4, "az2", 5, "az3", 6)
+            )
+        );
+    }
+
+    static void verifyCalMain2proxyByRackV1(Map<String, List<BrokerRegistration>> nodesByRack,
+        Map<String, Map<Integer, BrokerRegistration>> rst) {
+        List<String> racks = nodesByRack.keySet().stream().toList();
+        // Verify the main node has proxy node in other racks
+        nodesByRack.forEach((mainRack, brokers) ->
+            brokers.forEach(broker -> {
+                for (String proxyRack : racks) {
+                    if (proxyRack.equals(mainRack)) {
+                        continue;
+                    }
+                    assertTrue(rst.get(proxyRack).containsKey(broker.id()));
+                }
+            }));
+
+        // Verify the proxy workload is balanced.
+        rst.forEach((proxyRack, main2proxy) -> {
+            Map<Integer, Integer> proxyNodeId2Count = new HashMap<>();
+            main2proxy.values().forEach(proxyBroker -> proxyNodeId2Count.compute(proxyBroker.id(), (k, v) -> v == null ? 1 : v + 1));
+            int min = proxyNodeId2Count.values().stream().min(Integer::compareTo).get();
+            int max = proxyNodeId2Count.values().stream().max(Integer::compareTo).get();
+            assertTrue(max - min <= 1, "Proxy workload is not balanced in rack " + proxyRack + ": " + proxyNodeId2Count);
+        });
+
+        // Verify main-proxy dual
+        List<String> sortedRacks = nodesByRack.entrySet().stream()
+            .sorted(Comparator.comparingInt(o -> o.getValue().size()))
+            .map(Map.Entry::getKey).toList();
+        for (int i = 0; i < sortedRacks.size(); i++) {
+            String mainRack = sortedRacks.get(i);
+            for (int j = i + 1; j < sortedRacks.size(); j++) {
+                String proxyRack = sortedRacks.get(j);
+                nodesByRack.get(mainRack).forEach(mainNode -> {
+                    BrokerRegistration proxyNode = rst.get(proxyRack).get(mainNode.id());
+                    assertEquals(mainNode.id(), rst.get(mainRack).get(proxyNode.id()).id());
+                });
+            }
+        }
     }
 
     @Test
