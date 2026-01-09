@@ -20,6 +20,7 @@ package org.apache.kafka.controller;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.controller.QuorumController.ControllerWriteOperation;
 import org.apache.kafka.raft.OffsetAndEpoch;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -32,24 +33,40 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 
 public interface QuorumControllerExtension {
-    QuorumControllerExtension NOOP = new QuorumControllerExtension() { };
+    QuorumControllerExtension NOOP = new QuorumControllerExtension() {
+        @Override
+        public boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId,
+                long batchLastOffset) {
+            return false;
+        }
 
-    default boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long batchLastOffset) {
-        return false;
-    }
+        @Override
+        public CompletableFuture<AbstractResponse> handleExtensionRequest(
+                ControllerRequestContext context,
+                ApiKeys apiKey,
+                Object requestData,
+                ReadEventAppender readEventAppender,
+                WriteEventAppender writeEventAppender) {
+            return null;
+        }
 
-    default CompletableFuture<Object> handleLicenseExtensionRequest(
+        @Override
+        public List<ApiMessageAndVersion> getActivationRecords() {
+            return Collections.emptyList();
+        }
+    };
+
+    boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId,
+            long batchLastOffset);
+
+    CompletableFuture<AbstractResponse> handleExtensionRequest(
             ControllerRequestContext context,
             ApiKeys apiKey,
             Object requestData,
             ReadEventAppender readEventAppender,
-            WriteEventAppender writeEventAppender) {
-        return null;
-    }
+            WriteEventAppender writeEventAppender);
 
-    default List<ApiMessageAndVersion> getActivationRecords() {
-        return Collections.emptyList();
-    }
+    List<ApiMessageAndVersion> getActivationRecords();
 
     @FunctionalInterface
     interface ReadEventAppender {
@@ -59,6 +76,6 @@ public interface QuorumControllerExtension {
     @FunctionalInterface
     interface WriteEventAppender {
         <T> CompletableFuture<T> appendWriteEvent(String name, OptionalLong deadlineNs,
-                                                  ControllerWriteOperation<T> op);
+                ControllerWriteOperation<T> op);
     }
 }

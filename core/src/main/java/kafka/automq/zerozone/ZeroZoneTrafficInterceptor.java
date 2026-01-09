@@ -30,11 +30,13 @@ import kafka.server.streamaspect.ElasticReplicaManager;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.LogContext;
@@ -208,6 +210,11 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         String listenerName) {
         fillRackIfMissing(clientId);
         return mapping.getLeaderNode(leaderId, clientId, listenerName);
+    }
+
+    @Override
+    public boolean preHandleFetchRequest(FetchRequest fetchRequest, Map<Uuid, String> topicNames) {
+        return true;
     }
 
     @Override

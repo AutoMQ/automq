@@ -24,7 +24,6 @@ import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.requests.FetchRequest;
-import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
 import java.util.List;
@@ -45,10 +44,5 @@ public interface TrafficInterceptor {
 
     Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
 
-    default Optional<FetchResponse> handleBeforeFetchRequest(
-            FetchRequest fetchRequest,
-            Map<Uuid, String> topicNames) {
-        return Optional.empty();
-    }
-
+    boolean preHandleFetchRequest(FetchRequest fetchRequest, Map<Uuid, String> topicNames);
 }

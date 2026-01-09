@@ -136,6 +136,7 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
@@ -2887,8 +2888,8 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public CompletableFuture<Object> handleLicenseExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
-        CompletableFuture<Object> result = extension.handleLicenseExtensionRequest(
+    public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
+        CompletableFuture<AbstractResponse> result = extension.handleExtensionRequest(
             context,
             apiKey,
             requestData,

@@ -88,6 +88,7 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
@@ -665,7 +666,7 @@ public class MockController implements Controller {
     }
 
     @Override
-    public CompletableFuture<Object> handleLicenseExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
+    public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
         throw new UnsupportedOperationException();
     }
 

@@ -23,14 +23,17 @@ import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.network.ListenerName;
+import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
 import com.automq.stream.utils.FutureUtil;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -72,5 +75,10 @@ public class NoopTrafficInterceptor implements TrafficInterceptor {
         } else {
             return Optional.of(opt.get());
         }
+    }
+
+    @Override
+    public boolean preHandleFetchRequest(FetchRequest fetchRequest, Map<Uuid, String> topicNames) {
+        return true;
     }
 }

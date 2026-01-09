@@ -6,9 +6,9 @@ import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.{ApiVersionManager, ControllerApis, KafkaConfig, RequestLocal}
 import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
-import org.apache.kafka.common.errors.ApiException
+import org.apache.kafka.common.errors.{ApiException, UnsupportedVersionException}
 import org.apache.kafka.common.internals.FatalExitError
-import org.apache.kafka.common.message.{DeleteKVsResponseData, DescribeLicenseResponseData, ExportClusterManifestResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData, UpdateLicenseResponseData}
+import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse}
@@ -54,7 +54,7 @@ class ElasticControllerApis(
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
         case ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
-           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleLicenseExtensionRequest(request)
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request)
         case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
         case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
@@ -368,59 +368,24 @@ class ElasticControllerApis(
       }
   }
 
-  def handleLicenseExtensionRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
+  def handleExtensionRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val apiKey = request.header.apiKey
     val requestData = request.body[AbstractRequest].data()
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
-    controller.handleLicenseExtensionRequest (context, apiKey, requestData)
-      .handle[Unit] { (result, exception) =>
+    controller.handleExtensionRequest(context, apiKey, requestData)
+      .handle[Unit] { (response: AbstractResponse, exception) =>
         if (exception != null) {
           requestHelper.handleError(request, exception)
-        } else if (result == null) {
-          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            createErrorResponse(apiKey, requestThrottleMs)
-          })
+        } else if (response == null) {
+          requestHelper.handleError(request, new UnsupportedVersionException(s"Api ${apiKey} is not supported in this version"))
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
-            createSuccessResponse(apiKey, result, requestThrottleMs)
+            response.maybeSetThrottleTimeMs(requestThrottleMs)
+            response
           })
         }
       }
-  }
-
-  private def createErrorResponse(apiKey: ApiKeys, throttleTimeMs: Int): AbstractResponse = {
-    apiKey match {
-      case ApiKeys.UPDATE_LICENSE =>
-        new UpdateLicenseResponse(new UpdateLicenseResponseData()
-          .setThrottleTimeMs(throttleTimeMs)
-          .setErrorCode(UNKNOWN_SERVER_ERROR.code))
-      case ApiKeys.DESCRIBE_LICENSE =>
-        new DescribeLicenseResponse(new DescribeLicenseResponseData()
-          .setThrottleTimeMs(throttleTimeMs)
-          .setErrorCode(UNKNOWN_SERVER_ERROR.code)
-          .setErrorMessage(UNKNOWN_SERVER_ERROR.message))
-      case ApiKeys.EXPORT_CLUSTER_MANIFEST =>
-        new ExportClusterManifestResponse(new ExportClusterManifestResponseData()
-          .setThrottleTimeMs(throttleTimeMs)
-          .setErrorCode(UNKNOWN_SERVER_ERROR.code))
-      case _ => throw new ApiException(s"Unsupported ApiKey $apiKey for license extension")
-    }
-  }
-
-  private def createSuccessResponse(apiKey: ApiKeys, result: Object, throttleTimeMs: Int): AbstractResponse = {
-    apiKey match {
-      case ApiKeys.UPDATE_LICENSE =>
-        new UpdateLicenseResponse(result.asInstanceOf[UpdateLicenseResponseData]
-          .setThrottleTimeMs(throttleTimeMs))
-      case ApiKeys.DESCRIBE_LICENSE =>
-        new DescribeLicenseResponse(result.asInstanceOf[DescribeLicenseResponseData]
-          .setThrottleTimeMs(throttleTimeMs))
-      case ApiKeys.EXPORT_CLUSTER_MANIFEST =>
-        new ExportClusterManifestResponse(result.asInstanceOf[ExportClusterManifestResponseData]
-          .setThrottleTimeMs(throttleTimeMs))
-      case _ => throw new ApiException(s"Unsupported ApiKey $apiKey for license extension")
-    }
   }
 
   def handleRegisterNode(request: RequestChannel.Request): CompletableFuture[Unit] = {
