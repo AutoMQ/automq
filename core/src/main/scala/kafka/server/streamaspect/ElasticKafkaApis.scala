@@ -28,7 +28,7 @@ import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
@@ -487,7 +487,7 @@ class ElasticKafkaApis(
         val response = FetchResponse.of(
           Errors.NONE,
           throttleTimeMs,
-          if (fetchRequest.metadata().sessionId() != 0) fetchRequest.metadata().sessionId() else FetchMetadata.INVALID_SESSION_ID,
+          fetchRequest.metadata().sessionId(),
           new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
         )
         requestChannel.sendResponse(request, response, None)

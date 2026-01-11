@@ -64,10 +64,12 @@ public final class TelemetrySupport {
             String.valueOf(config.nodeId()),
             AutoMQApplication.getBean(MetricsExportConfig.class)
         );
+
         telemetryManager.setJmxConfigPaths(buildJmxConfigPaths(config));
         telemetryManager.init();
         telemetryManager.startYammerMetricsReporter(KafkaYammerMetrics.defaultRegistry());
         initializeMetrics(telemetryManager, config);
+
         return telemetryManager;
     }
 
@@ -111,6 +113,7 @@ public final class TelemetrySupport {
         if (StringUtils.isBlank(rawLevel)) {
             return MetricsLevel.INFO;
         }
+
         try {
             return MetricsLevel.valueOf(rawLevel.trim().toUpperCase(Locale.ENGLISH));
         } catch (IllegalArgumentException e) {
@@ -122,6 +125,7 @@ public final class TelemetrySupport {
     private static String buildJmxConfigPaths(KafkaConfig config) {
         List<String> paths = new ArrayList<>();
         paths.add(COMMON_JMX_PATH);
+
         Set<ProcessRole> roles = config.processRoles();
         if (roles.contains(ProcessRole.BrokerRole)) {
             paths.add(BROKER_JMX_PATH);
@@ -129,6 +133,7 @@ public final class TelemetrySupport {
         if (roles.contains(ProcessRole.ControllerRole)) {
             paths.add(CONTROLLER_JMX_PATH);
         }
+
         return String.join(",", paths);
     }
 }
