@@ -11,6 +11,25 @@ follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Suggested Onboarding Path for New Contributors
 
+## Quick Start for First-Time Contributors (Recommended)
+
+If you are new to AutoMQ, we recommend starting with the simplest path before diving into local builds.
+
+**Option 1: Quick exploration (recommended for beginners)**
+- Run AutoMQ using Docker as described in the README
+- Verify you can:
+  - Start the broker
+  - Create a topic
+  - Produce and consume messages
+- This helps you understand AutoMQ behavior without local environment setup
+
+**Option 2: Local development setup**
+- Follow the steps below to build and run AutoMQ locally
+- This path is recommended if you plan to contribute code or debug internals
+
+> Tip: If you encounter setup issues, check the “Local Debug with IDEA” and S3 configuration sections below.
+
+
 If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
 This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
 
@@ -60,6 +79,9 @@ Pull Request reviews are done on a regular basis.
 | Compiling requirements | JDK 17     |
 | Compiling requirements | Scala 2.13 |
 | Running requirements   | JDK 17     |
+
+> Note: At least 8GB RAM is recommended for local development and debugging.
+
 
 > Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
 
