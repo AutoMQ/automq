@@ -23,6 +23,7 @@ import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.automq.interceptor.TrafficInterceptor;
+import kafka.network.RequestChannel;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
@@ -30,7 +31,6 @@ import kafka.server.streamaspect.ElasticReplicaManager;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
@@ -213,7 +213,9 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     }
 
     @Override
-    public boolean preHandleFetchRequest(FetchRequest fetchRequest, Map<Uuid, String> topicNames) {
+    public boolean preHandleFetchRequest(FetchRequest fetchRequest,
+                                         RequestChannel.Request request,
+                                         RequestChannel requestChannel) {
         return true;
     }
 

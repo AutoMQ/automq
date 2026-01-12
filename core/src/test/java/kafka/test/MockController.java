@@ -667,7 +667,8 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
-        throw new UnsupportedOperationException();
+        return CompletableFuture.failedFuture(new UnsupportedOperationException(
+            String.format("ApiKey %s is not supported.", apiKey.name())));
     }
 
     @Override

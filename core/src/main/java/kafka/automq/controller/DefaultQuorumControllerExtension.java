@@ -30,9 +30,7 @@ import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.QuorumControllerExtension;
 import org.apache.kafka.raft.OffsetAndEpoch;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -64,11 +62,7 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
     @Override
     public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData,
                                                                       ReadEventAppender readEventAppender, WriteEventAppender writeEventAppender) {
-        return null;
-    }
-
-    @Override
-    public List<ApiMessageAndVersion> getActivationRecords() {
-        return List.of();
+        return CompletableFuture.failedFuture(new UnsupportedOperationException(
+            String.format("ApiKey %s is not supported.", apiKey.name())));
     }
 }

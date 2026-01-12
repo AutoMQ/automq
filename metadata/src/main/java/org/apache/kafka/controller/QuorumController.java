@@ -1372,18 +1372,13 @@ public final class QuorumController implements Controller {
         @Override
         public ControllerResult<Void> generateRecordsAndResult() {
             try {
-                ControllerResult<Void> base = ActivationRecordsGenerator.generate(
+                return ActivationRecordsGenerator.generate(
                     log::warn,
                     logReplayTracker.empty(),
                     offsetControl.transactionStartOffset(),
                     zkMigrationEnabled,
                     bootstrapMetadata,
                     featureControl);
-                // AutoMQ for Kafka inject start
-                List<ApiMessageAndVersion> all = new ArrayList<>(base.records());
-                all.addAll(extension.getActivationRecords());
-                // AutoMQ for Kafka inject end
-                return ControllerResult.atomicOf(all, null);
             } catch (Throwable t) {
                 throw fatalFaultHandler.handleFault("exception while completing controller " +
                     "activation", t);
@@ -2889,17 +2884,13 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
-        CompletableFuture<AbstractResponse> result = extension.handleExtensionRequest(
+        return extension.handleExtensionRequest(
             context,
             apiKey,
             requestData,
             this::appendReadEvent,
             this::appendWriteEvent
         );
-        if (result != null) {
-            return result;
-        }
-        return CompletableFuture.completedFuture(null);
     }
 
     @Override

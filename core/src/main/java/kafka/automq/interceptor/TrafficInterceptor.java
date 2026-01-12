@@ -19,15 +19,15 @@
 
 package kafka.automq.interceptor;
 
+import kafka.network.RequestChannel;
+
 import org.apache.kafka.common.Node;
-import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -44,5 +44,7 @@ public interface TrafficInterceptor {
 
     Optional<Node> getLeaderNode(int leaderId, ClientIdMetadata clientId, String listenerName);
 
-    boolean preHandleFetchRequest(FetchRequest fetchRequest, Map<Uuid, String> topicNames);
+    boolean preHandleFetchRequest(FetchRequest fetchRequest,
+                                  RequestChannel.Request request,
+                                  RequestChannel requestChannel);
 }

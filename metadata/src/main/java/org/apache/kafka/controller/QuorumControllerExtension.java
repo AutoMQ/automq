@@ -23,10 +23,7 @@ import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.controller.QuorumController.ControllerWriteOperation;
 import org.apache.kafka.raft.OffsetAndEpoch;
-import org.apache.kafka.server.common.ApiMessageAndVersion;
 
-import java.util.Collections;
-import java.util.List;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.CompletableFuture;
@@ -49,11 +46,6 @@ public interface QuorumControllerExtension {
                 WriteEventAppender writeEventAppender) {
             return null;
         }
-
-        @Override
-        public List<ApiMessageAndVersion> getActivationRecords() {
-            return Collections.emptyList();
-        }
     };
 
     boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId,
@@ -65,8 +57,6 @@ public interface QuorumControllerExtension {
             Object requestData,
             ReadEventAppender readEventAppender,
             WriteEventAppender writeEventAppender);
-
-    List<ApiMessageAndVersion> getActivationRecords();
 
     @FunctionalInterface
     interface ReadEventAppender {

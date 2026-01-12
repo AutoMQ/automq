@@ -482,15 +482,7 @@ class ElasticKafkaApis(
         Collections.emptyMap[Uuid, String]()
 
     if (!fetchRequest.isFromFollower) {
-      if (!trafficInterceptor.preHandleFetchRequest(fetchRequest, topicNames)) {
-        val throttleTimeMs = 5000
-        val response = FetchResponse.of(
-          Errors.NONE,
-          throttleTimeMs,
-          fetchRequest.metadata().sessionId(),
-          new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]()
-        )
-        requestChannel.sendResponse(request, response, None)
+      if (!trafficInterceptor.preHandleFetchRequest(fetchRequest, request, requestChannel)) {
         return
       }
     }
