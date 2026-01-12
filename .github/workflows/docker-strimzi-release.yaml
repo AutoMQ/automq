@@ -15,7 +15,7 @@ on:
 env:
   KAFKA_VERSION: "3.9.0"
   STRIMZI_REPO: "https://github.com/AutoMQ/strimzi-kafka-operator.git"
-  STRIMZI_BRANCH: "hotfix/access_operator_version"
+  STRIMZI_BRANCH: "main"
 
 jobs:
   strimzi-release:
