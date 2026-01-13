@@ -27,6 +27,7 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.metadata.BrokerRegistration;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.utils.Threads;
 
@@ -34,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -50,9 +52,11 @@ import thirdparty.com.github.jaskey.consistenthash.ConsistentHashRouter;
 /**
  * Maintain the relationship for main node and proxy node.
  */
+@SuppressWarnings({"NPathComplexity", "CyclomaticComplexity"})
 class ProxyNodeMapping {
     private static final Logger LOGGER = LoggerFactory.getLogger(ProxyNodeMapping.class);
     private static final String NOOP_RACK = "";
+    private static final String FAKE_RACK = "__AUTOMQ.F.R";
     private static final int DEFAULT_VIRTUAL_NODE_COUNT = 8;
     private final Node currentNode;
     private final String currentRack;
@@ -62,6 +66,7 @@ class ProxyNodeMapping {
 
     volatile Map<String /* proxy rack */, Map<Integer /* main nodeId */, BrokerRegistration /* proxy */>> main2proxyByRack = new HashMap<>();
     volatile boolean inited = false;
+    volatile boolean dualMapping = false;
 
     public ProxyNodeMapping(Node currentNode, String currentRack, String interBrokerListenerName,
         MetadataCache metadataCache) {
@@ -196,14 +201,17 @@ class ProxyNodeMapping {
     }
 
     public void onChange(MetadataDelta delta, MetadataImage image) {
+        AutoMQVersion version = image.features().autoMQVersion();
         if (!inited) {
             // When the main2proxyByRack is un-inited, we should force update.
             inited = true;
         } else {
-            if (delta.clusterDelta() == null || delta.clusterDelta().changedBrokers().isEmpty()) {
+            if ((delta.clusterDelta() == null || delta.clusterDelta().changedBrokers().isEmpty())
+                && version.isDualMappingSupported() == dualMapping) {
                 return;
             }
         }
+        dualMapping = version.isDualMappingSupported();
         // categorize the brokers by rack
         Map<String, List<BrokerRegistration>> rack2brokers = new HashMap<>();
         image.cluster().brokers().forEach((nodeId, node) -> {
@@ -218,7 +226,7 @@ class ProxyNodeMapping {
                 return list;
             });
         });
-        this.main2proxyByRack = calMain2proxyByRack(rack2brokers);
+        this.main2proxyByRack = dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
         logMapping(main2proxyByRack);
         notifyListeners(this.main2proxyByRack);
     }
@@ -238,7 +246,8 @@ class ProxyNodeMapping {
         });
     }
 
-    private List<MetadataResponseData.MetadataResponseTopic> withSnapshotReadFollowers(List<MetadataResponseData.MetadataResponseTopic> topics) {
+    private List<MetadataResponseData.MetadataResponseTopic> withSnapshotReadFollowers(
+        List<MetadataResponseData.MetadataResponseTopic> topics) {
         topics.forEach(metadataResponseTopic -> {
             metadataResponseTopic.partitions().forEach(metadataResponsePartition -> {
                 int leaderMainNodeId = metadataResponsePartition.leaderId();
@@ -259,6 +268,12 @@ class ProxyNodeMapping {
         return topics;
     }
 
+    /**
+     * Calculate the main to proxy mapping by rack:
+     * 1. For each rack, create a consistent hash router with all brokers in the rack as proxy nodes.
+     * 2. For each other rack, route its brokers to the proxy nodes in the current rack.
+     * 3. Balance the proxy node count.
+     */
     static Map<String, Map<Integer, BrokerRegistration>> calMain2proxyByRack(
         Map<String, List<BrokerRegistration>> rack2brokers) {
         rack2brokers.forEach((rack, brokers) -> brokers.sort(Comparator.comparingInt(BrokerRegistration::id)));
@@ -317,6 +332,110 @@ class ProxyNodeMapping {
     }
 
     /**
+     * Calculate the main to proxy mapping by rack - v1:
+     * 1. Create slots with size of max nodes in rack.
+     * 2. For each rack, create a consistent hash router with slots as proxy nodes.
+     * 3. For each rack, route its brokers to the slots.
+     * 4. Balance the slots.
+     * 5. For each slot, the nodes in the slot will proxy each other.
+     * 6. And for the slot which nodes' count less than rack count, we will find the least load proxy node
+     * in the missing rack to proxy the main nodes in the slot.
+     */
+    static Map<String, Map<Integer, BrokerRegistration>> calMain2proxyByRackV1(
+        Map<String, List<BrokerRegistration>> rack2brokers) {
+        rack2brokers.forEach((rack, brokers) -> brokers.sort(Comparator.comparingInt(BrokerRegistration::id)));
+        int maxNodesInRack = rack2brokers.values().stream().mapToInt(List::size).max().orElse(0);
+        if (maxNodesInRack == 0) {
+            return Collections.emptyMap();
+        }
+        List<String> racks = rack2brokers.keySet().stream().sorted().toList();
+        Map<Integer/* slot */, List<Integer>/* nodeId list */> slot2nodes = new HashMap<>();
+        for (String rack : racks) {
+            ConsistentHashRouter<ProxyNode> router = new ConsistentHashRouter<>();
+            List<ProxyNode> proxies = new ArrayList<>();
+            for (int i = 0; i < maxNodesInRack; i++) {
+                int slotId = -1 - i;
+                ProxyNode proxyNode = new ProxyNode(new BrokerRegistration.Builder().setId(slotId).build());
+                router.addNode(proxyNode, DEFAULT_VIRTUAL_NODE_COUNT);
+                proxies.add(proxyNode);
+            }
+            rack2brokers.get(rack).forEach(node -> {
+                ProxyNode proxyNode = router.routeNode(Integer.toString(node.id()));
+                proxyNode.mainNodeIds.add(node.id());
+            });
+            double avg = 1;
+            proxies.sort(Comparator.reverseOrder());
+            for (ProxyNode overloadProxy : proxies) {
+                if (overloadProxy.mainNodeIds.size() <= avg) {
+                    break;
+                }
+                // move overload proxy's main node to free node
+                for (int i = proxies.size() - 1; i >= 0 && overloadProxy.mainNodeIds.size() > avg; i--) {
+                    ProxyNode freeNode = proxies.get(i);
+                    if (freeNode.mainNodeIds.size() > avg - 1) {
+                        continue;
+                    }
+                    Integer mainNodeId = overloadProxy.mainNodeIds.remove(overloadProxy.mainNodeIds.size() - 1);
+                    freeNode.mainNodeIds.add(mainNodeId);
+                }
+            }
+            // try let controller only proxy controller
+            tryFreeController(proxies, avg);
+            proxies.forEach(slot ->
+                slot.mainNodeIds.forEach(nodeId ->
+                    slot2nodes.computeIfAbsent(slot.node.id(), k -> new ArrayList<>()).add(nodeId)
+                )
+            );
+        }
+        slot2nodes.forEach((slot, nodes) -> Collections.sort(nodes));
+
+        Map<String, Map<Integer, BrokerRegistration>> newMain2proxyByRack = new HashMap<>();
+        Map<Integer, BrokerRegistration> allNodes = new HashMap<>();
+        rack2brokers.forEach((rack, brokers) -> brokers.forEach(node -> allNodes.put(node.id(), node)));
+        Map<Integer/* proxy nodeId */, Integer/* proxy count */> proxyLoad = new HashMap<>();
+        int rackSize = racks.size();
+        for (int i = 0; i < maxNodesInRack; i++) {
+            int slotId = -1 - i;
+            List<Integer> nodesInSlot = slot2nodes.get(slotId);
+            for (Integer proxyNodeId : nodesInSlot) {
+                BrokerRegistration proxyNode = allNodes.get(proxyNodeId);
+                Map<Integer, BrokerRegistration> main2proxy = newMain2proxyByRack.computeIfAbsent(proxyNode.rack().orElse(NOOP_RACK), k -> new HashMap<>());
+                for (Integer mainNodeId : nodesInSlot) {
+                    if (Objects.equals(proxyNodeId, mainNodeId)) {
+                        continue;
+                    }
+                    proxyLoad.compute(proxyNodeId, (k, v) -> v == null ? 1 : v + 1);
+                    main2proxy.put(mainNodeId, proxyNode);
+                }
+            }
+        }
+        for (int i = 0; i < maxNodesInRack; i++) {
+            int slotId = -1 - i;
+            List<Integer> nodesInSlot = slot2nodes.get(slotId);
+            if (nodesInSlot.size() == rackSize) {
+                continue;
+            }
+            List<String> missingProxyRacks = new ArrayList<>(racks);
+            for (Integer nodeId : nodesInSlot) {
+                BrokerRegistration node = allNodes.get(nodeId);
+                missingProxyRacks.remove(node.rack().orElse(NOOP_RACK));
+            }
+            for (Integer mainNodeId : nodesInSlot) {
+                for (String proxyRack : missingProxyRacks) {
+                    // Find the least loaded proxy node in the missing rack
+                    @SuppressWarnings("OptionalGetWithoutIsPresent")
+                    BrokerRegistration proxyNode = rack2brokers.get(proxyRack).stream()
+                        .min(Comparator.comparingInt(o -> proxyLoad.get(o.id())))
+                        .get();
+                    newMain2proxyByRack.computeIfAbsent(proxyNode.rack().orElse(NOOP_RACK), k -> new HashMap<>()).put(mainNodeId, proxyNode);
+                    proxyLoad.compute(proxyNode.id(), (k, v) -> v == null ? 1 : v + 1);
+                }
+            }
+        }
+        return newMain2proxyByRack;
+    }
+
+    /**
      * Try to move the traffic from controller to broker.
      * - Let main node(controller) proxied by proxy node(controller).
      * - Let proxy node(controller) proxy less main node if possible.
@@ -359,8 +478,6 @@ class ProxyNodeMapping {
         }
     }
 
-
-
     static void logMapping(Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack) {
         StringBuilder sb = new StringBuilder();
         main2proxyByRack.forEach((rack, main2proxy) ->
@@ -398,7 +515,7 @@ class ProxyNodeMapping {
     }
 
     static boolean isController(int nodeId) {
-        return nodeId < 100;
+        return nodeId < 100 && nodeId >= -1;
     }
 
 }
