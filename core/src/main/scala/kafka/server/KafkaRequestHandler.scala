@@ -660,8 +660,12 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
   }
 
   def updatePartitionBytesIn(topicPartition: TopicPartition, size: Int): Unit = {
+    updatePartitionBytesIn(topicPartition, size, 1)
+  }
+
+  def updatePartitionBytesIn(topicPartition: TopicPartition, size: Int, count: Int): Unit = {
     val partitionMetrics = partitionStats.getAndMaybePut(topicPartition)
-    partitionMetrics.totalProduceRequestRate.mark()
+    partitionMetrics.totalProduceRequestRate.mark(count)
     partitionMetrics.bytesInRate.mark(size)
   }
 
