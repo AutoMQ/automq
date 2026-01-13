@@ -167,7 +167,7 @@ public class SnapshotReadCache {
         public CompletableFuture<Void> replay(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset,
             List<StreamRecordBatch> walRecords) {
             WalReplayTask task = new WalReplayTask(wal, startOffset, endOffset, walRecords);
-            while (!waitingLoadTasks.add(task)) {
+            while (!waitingLoadTasks.offer(task)) {
                 // The replay won't be called on the SnapshotReadCache.eventLoop, so there won't be a deadlock.
                 eventLoop.submit(this::clearOverloadedTask).join();
             }
