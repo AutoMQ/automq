@@ -25,8 +25,13 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import static org.apache.kafka.common.config.internals.BrokerSecurityConfigs.ALLOWED_SASL_OAUTHBEARER_URLS_CONFIG;
 
 /**
  * <code>ConfigurationUtils</code> is a utility class to perform basic configuration-related
@@ -228,4 +233,21 @@ public class ConfigurationUtils {
         return (T) configs.get(name);
     }
 
+    // make sure the url is in the "org.apache.kafka.sasl.oauthbearer.allowed.urls" system property
+    public void throwIfURLIsNotAllowed(String urlConfig) {
+        String allowedUrlsProp = System.getProperty(ALLOWED_SASL_OAUTHBEARER_URLS_CONFIG);
+        if (allowedUrlsProp == null) {
+            // by default, we accept all URLs
+            return;
+        }
+        Set<String> allowedUrlsList = Arrays.stream(allowedUrlsProp.split(","))
+                .map(String::trim)
+                .collect(Collectors.toSet());
+
+        String value = get(urlConfig);
+        if (!allowedUrlsList.contains(value)) {
+            throw new IllegalArgumentException(value + " is not allowed. Update system property '"
+                    + ALLOWED_SASL_OAUTHBEARER_URLS_CONFIG + "' to allow " + value);
+        }
+    }
 }

@@ -30,7 +30,7 @@ ext {
 
 // Add Scala version
 def defaultScala212Version = '2.12.19'
-def defaultScala213Version = '2.13.14'
+def defaultScala213Version = '2.13.15'
 if (hasProperty('scalaVersion')) {
   if (scalaVersion == '2.12') {
     versions["scala"] = defaultScala212Version
@@ -63,7 +63,7 @@ String mockitoVersion
 if (scalaVersion == "2.12")
   mockitoVersion = "4.9.0"
 else if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_11))
-  mockitoVersion = "5.10.0"
+  mockitoVersion = "5.14.2"
 else
   mockitoVersion = "4.11.0"
 
@@ -95,13 +95,13 @@ versions += [
   commonsIo: "2.14.0", // ZooKeeper dependency. Do not use, this is going away.
   commonsValidator: "1.7",
   dropwizardMetrics: "4.1.12.1",
-  gradle: "8.8",
+  gradle: "8.10.2",
   grgit: "4.1.1",
   httpclient: "4.5.14",
   jackson: "2.17.1",
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
-  jetty: "9.4.56.v20240826",
+  jetty: "9.4.57.v20241219",
   jersey: "2.39.1",
   jline: "3.25.1",
   jline: "3.25.1",
@@ -138,13 +138,13 @@ versions += [
   kafka_34: "3.4.1",
   kafka_35: "3.5.2",
   kafka_36: "3.6.2",
-  kafka_37: "3.7.1",
-  kafka_38: "3.8.0",
+  kafka_37: "3.7.2",
+  kafka_38: "3.8.1",
   // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
   lz4: "1.8.0",
   mavenArtifact: "3.9.6",
   metrics: "2.2.0",
-  netty: "4.1.111.Final",
+  netty: "4.1.119.Final",
   opentelemetryProto: "1.0.0-alpha",
   protobuf: "3.25.5", // a dependency of opentelemetryProto
   pcollections: "4.0.1",
@@ -161,7 +161,7 @@ versions += [
   slf4j: "1.7.36",
   jclOverSlf4j: "1.7.36",
   snappy: "1.1.10.5",
-  spotbugs: "4.8.0",
+  spotbugs: "4.8.6",
   zinc: "1.9.2",
   zookeeper: "3.8.4",
 

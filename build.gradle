@@ -39,10 +39,7 @@ plugins {
   id 'org.nosphere.apache.rat' version "0.8.1"
   id "io.swagger.core.v3.swagger-gradle-plugin" version "${swaggerVersion}"
 
-  // When updating the spotbugs gradle plugin, check if it already
-  // includes spotbugs version 4.7.4, in which case CVE-2022-42920 can
-  // be dropped from gradle/resources/dependencycheck-suppressions.xml
-  id "com.github.spotbugs" version '5.1.3' apply false
+  id "com.github.spotbugs" version '6.0.25' apply false
   id 'org.scoverage' version '8.0.3' apply false
   // Updating the shadow plugin version to 8.1.1 causes issue with signing and publishing the shadowed
   // artifacts - see https://github.com/johnrengelman/shadow/issues/901
@@ -1075,7 +1072,10 @@ project(':core') {
     testImplementation libs.bcpkix
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
     testImplementation libs.mockitoCore
+    // AutoMQ inject start
     testImplementation libs.guava
+    // AutoMQ inject end
+    testImplementation libs.jqwik
     testImplementation(libs.apacheda) {
       exclude group: 'xml-apis', module: 'xml-apis'
       // `mina-core` is a transitive dependency for `apacheds` and `apacheda`.
@@ -1329,6 +1329,12 @@ project(':core') {
     attributes(
       'Version': "${version}"
     )
+  }
+
+  test {
+    useJUnitPlatform {
+      includeEngines 'jqwik', 'junit-jupiter'
+    }
   }
 
   tasks.create(name: "copyDependantTestLibs", type: Copy) {
@@ -1709,6 +1715,7 @@ project(':clients') {
     testImplementation libs.jose4j
     testImplementation libs.junitJupiter
     testImplementation libs.reload4j
+    testImplementation libs.jqwik
     testImplementation libs.mockitoCore
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
 

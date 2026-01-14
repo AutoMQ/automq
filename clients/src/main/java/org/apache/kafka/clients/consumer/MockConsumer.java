@@ -34,6 +34,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -76,6 +77,8 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
     private boolean telemetryDisabled = false;
     private Uuid clientInstanceId;
     private int injectTimeoutExceptionCounter;
+
+    private long maxPollRecords = Long.MAX_VALUE;
 
     public MockConsumer(OffsetResetStrategy offsetResetStrategy) {
         this.subscriptions = new SubscriptionState(new LogContext(), offsetResetStrategy);
@@ -229,13 +232,21 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
 
         // update the consumed offset
         final Map<TopicPartition, List<ConsumerRecord<K, V>>> results = new HashMap<>();
-        final List<TopicPartition> toClear = new ArrayList<>();
+        long numPollRecords = 0L;
 
-        for (Map.Entry<TopicPartition, List<ConsumerRecord<K, V>>> entry : this.records.entrySet()) {
+        final Iterator<Map.Entry<TopicPartition, List<ConsumerRecord<K, V>>>> partitionsIter = this.records.entrySet().iterator();
+        while (partitionsIter.hasNext() && numPollRecords < this.maxPollRecords) {
+            Map.Entry<TopicPartition, List<ConsumerRecord<K, V>>> entry = partitionsIter.next();
+
             if (!subscriptions.isPaused(entry.getKey())) {
-                final List<ConsumerRecord<K, V>> recs = entry.getValue();
-                for (final ConsumerRecord<K, V> rec : recs) {
+                final Iterator<ConsumerRecord<K, V>> recIterator = entry.getValue().iterator();
+                while (recIterator.hasNext()) {
+                    if (numPollRecords >= this.maxPollRecords) {
+                        break;
+                    }
                     long position = subscriptions.position(entry.getKey()).offset;
+
+                    final ConsumerRecord<K, V> rec = recIterator.next();
 
                     if (beginningOffsets.get(entry.getKey()) != null && beginningOffsets.get(entry.getKey()) > position) {
                         throw new OffsetOutOfRangeException(Collections.singletonMap(entry.getKey(), position));
@@ -247,13 +258,18 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
                         SubscriptionState.FetchPosition newPosition = new SubscriptionState.FetchPosition(
                                 rec.offset() + 1, rec.leaderEpoch(), leaderAndEpoch);
                         subscriptions.position(entry.getKey(), newPosition);
+
+                        numPollRecords++;
+                        recIterator.remove();
                     }
                 }
-                toClear.add(entry.getKey());
+
+                if (entry.getValue().isEmpty()) {
+                    partitionsIter.remove();
+                }
             }
         }
 
-        toClear.forEach(records::remove);
         return new ConsumerRecords<>(results);
     }
 
@@ -273,6 +289,17 @@ public class MockConsumer<K, V> implements Consumer<K, V> {
     @Deprecated
     public synchronized void setException(KafkaException exception) {
         setPollException(exception);
+    }
+
+    /* Sets the maximum number of records returned in a single call to {@link #poll(Duration)}.
+     *
+     * @param maxPollRecords the max.poll.records.
+     */
+    public synchronized void setMaxPollRecords(long maxPollRecords) {
+        if (this.maxPollRecords < 1) {
+            throw new IllegalArgumentException("MaxPollRecords must be strictly superior to 0");
+        }
+        this.maxPollRecords = maxPollRecords;
     }
 
     public synchronized void setPollException(KafkaException exception) {

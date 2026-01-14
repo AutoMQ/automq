@@ -693,18 +693,21 @@ class BrokerServer(
         if (replicaManager != null)
           replicaManager.beginControlledShutdown()
 
-        lifecycleManager.beginControlledShutdown()
-        try {
-          val controlledShutdownTimeoutMs = deadline - time.milliseconds()
-          lifecycleManager.controlledShutdownFuture.get(controlledShutdownTimeoutMs, TimeUnit.MILLISECONDS)
-        } catch {
-          case _: TimeoutException =>
-            error("Timed out waiting for the controller to approve controlled shutdown")
-          case e: Throwable =>
-            error("Got unexpected exception waiting for controlled shutdown future", e)
+        if (lifecycleManager != null) {
+          lifecycleManager.beginControlledShutdown()
+          try {
+            val controlledShutdownTimeoutMs = deadline - time.milliseconds()
+            lifecycleManager.controlledShutdownFuture.get(controlledShutdownTimeoutMs, TimeUnit.MILLISECONDS)
+          } catch {
+            case _: TimeoutException =>
+              error("Timed out waiting for the controller to approve controlled shutdown")
+            case e: Throwable =>
+              error("Got unexpected exception waiting for controlled shutdown future", e)
+          }
         }
       }
-      lifecycleManager.beginShutdown()
+      if (lifecycleManager != null)
+        lifecycleManager.beginShutdown()
 
       // AutoMQ for Kafka inject start
       if (backPressureManager != null) {
@@ -774,18 +777,17 @@ class BrokerServer(
       if (clientToControllerChannelManager != null)
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
 
-      // AutoMQ for Kafka inject start
-      // Note that logs are closed in logManager.shutdown().
-      // Make sure these thread pools are shutdown after the log manager's shutdown.
-      // shutdown log and underling stream
-      if (logManager != null)
-        CoreUtils.swallow(logManager.shutdown(lifecycleManager.brokerEpoch), this)
+      // AutoMQ inject start
+      if (logManager != null) {
+        val brokerEpoch = if (lifecycleManager != null) lifecycleManager.brokerEpoch else -1
+        CoreUtils.swallow(logManager.shutdown(brokerEpoch), this)
+      }
 
       // log manager need clientToControllerChannelManager to send request to controller.
       if (clientToControllerChannelManager != null) {
         CoreUtils.swallow(clientToControllerChannelManager.shutdown(), this)
       }
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
 
       // Close remote log manager to give a chance to any of its underlying clients
@@ -802,9 +804,13 @@ class BrokerServer(
 
       isShuttingDown.set(false)
 
-      CoreUtils.swallow(lifecycleManager.close(), this)
+      if (lifecycleManager != null)
+        CoreUtils.swallow(lifecycleManager.close(), this)
+
       CoreUtils.swallow(config.dynamicConfig.clear(), this)
-      CoreUtils.swallow(clientMetricsManager.close(), this)
+      if (clientMetricsManager != null)
+        CoreUtils.swallow(clientMetricsManager.close(), this)
+
       sharedServer.stopForBroker()
       info("shut down completed")
     } catch {

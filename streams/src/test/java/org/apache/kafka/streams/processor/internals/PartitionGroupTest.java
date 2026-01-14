@@ -19,9 +19,11 @@ package org.apache.kafka.streams.processor.internals;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.header.internals.RecordHeaders;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.metrics.Sensor;
 import org.apache.kafka.common.metrics.stats.Value;
+import org.apache.kafka.common.record.TimestampType;
 import org.apache.kafka.common.serialization.Deserializer;
 import org.apache.kafka.common.serialization.IntegerDeserializer;
 import org.apache.kafka.common.serialization.IntegerSerializer;
@@ -45,6 +47,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.UUID;
 
@@ -557,6 +560,88 @@ public class PartitionGroupTest {
         assertThrows(IllegalStateException.class, () -> group.partitionTimestamp(partition1));
         assertThat(group.partitionTimestamp(partition2), equalTo(RecordQueue.UNKNOWN));
         assertThat(group.nextRecord(new RecordInfo(), time.milliseconds()), nullValue());  // all available records removed
+    }
+
+    @Test
+    public void shouldUpdateBufferSizeCorrectlyForSkippedRecords() {
+        final PartitionGroup group = new PartitionGroup(
+            logContext,
+            mkMap(mkEntry(partition1, queue1)),
+            tp -> OptionalLong.of(0L),
+            getValueSensor(metrics, lastLatenessValue),
+            enforcedProcessingSensor,
+            maxTaskIdleMs
+        );
+        final List<ConsumerRecord<byte[], byte[]>> list1 = Arrays.asList(
+            new ConsumerRecord<>("topic", 1, 1L, recordKey, recordValue),
+            new ConsumerRecord<>("topic", 1, 5L, recordKey, recordValue),
+            new ConsumerRecord<>(
+                "topic",
+                1,
+                -1, // offset as invalid timestamp
+                -1, // invalid timestamp
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                recordKey,
+                recordValue,
+                new RecordHeaders(),
+                Optional.empty()
+            ),
+            new ConsumerRecord<>(
+                "topic",
+                1,
+                11,
+                0,
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                new byte[0], // corrupted key
+                recordValue,
+                new RecordHeaders(),
+                Optional.empty()
+            ),
+            new ConsumerRecord<>(
+                "topic",
+                1,
+                -1, // offset as invalid timestamp
+                -1, // invalid timestamp
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                recordKey,
+                recordValue,
+                new RecordHeaders(),
+                Optional.empty()
+            ),
+            new ConsumerRecord<>(
+                "topic",
+                1,
+                13,
+                0,
+                TimestampType.CREATE_TIME,
+                0,
+                0,
+                recordKey,
+                new byte[0], // corrupted value
+                new RecordHeaders(),
+                Optional.empty()
+            ),
+            new ConsumerRecord<>("topic", 1, 20L, recordKey, recordValue)
+        );
+
+        group.addRawRecords(partition1, list1);
+        assertEquals(7, group.numBuffered());
+
+        group.nextRecord(new RecordInfo(), time.milliseconds());
+        assertEquals(6, group.numBuffered());
+
+        // drain corrupted records
+        group.nextRecord(new RecordInfo(), time.milliseconds());
+        assertEquals(1, group.numBuffered());
+
+        group.nextRecord(new RecordInfo(), time.milliseconds());
+        assertEquals(0, group.numBuffered());
     }
 
     @Test
