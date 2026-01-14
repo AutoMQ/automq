@@ -320,7 +320,6 @@ public class LogValidator {
         long maxTimestamp = RecordBatch.NO_TIMESTAMP;
         LongRef expectedInnerOffset = PrimitiveRef.ofLong(0);
         List<Record> validatedRecords = new ArrayList<>();
-        long offsetOfMaxTimestamp = -1;
         long initialOffset = offsetCounter.value;
 
         int uncompressedSizeInBytes = 0;
@@ -373,8 +372,6 @@ public class LogValidator {
 
                         if (record.timestamp() > maxTimestamp) {
                             maxTimestamp = record.timestamp();
-                            // The offset is only increased when it is a valid record
-                            offsetOfMaxTimestamp = initialOffset + validatedRecords.size();
                         }
 
                         // Some older clients do not implement the V1 internal offsets correctly.
@@ -415,7 +412,6 @@ public class LogValidator {
 
             if (timestampType == TimestampType.LOG_APPEND_TIME) {
                 maxTimestamp = now;
-                offsetOfMaxTimestamp = initialOffset;
             }
 
             if (toMagic >= RecordBatch.MAGIC_VALUE_V1)

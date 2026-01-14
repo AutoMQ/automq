@@ -1506,7 +1506,9 @@ class Partition(val topicPartition: TopicPartition,
     isFuture: Boolean,
     partitionLeaderEpoch: Int
   ): Option[LogAppendInfo] = {
-    if (isFuture) {
+    // AutoMQ inject start
+    val rst = if (isFuture) {
+    // AutoMQ inject end
       // The read lock is needed to handle race condition if request handler thread tries to
       // remove future replica after receiving AlterReplicaLogDirsRequest.
       inReadLock(leaderIsrUpdateLock) {

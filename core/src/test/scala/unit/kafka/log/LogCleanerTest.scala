@@ -17,7 +17,6 @@
 
 package kafka.log
 
-import kafka.common._
 import kafka.log.streamaspect.ElasticUnifiedLog
 import kafka.common.LogCleaningAbortedException
 import kafka.log.LogCleaner.{MaxBufferUtilizationPercentMetricName, MaxCleanTimeMetricName, MaxCompactionDelayMetricsName}
