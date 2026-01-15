@@ -32,7 +32,6 @@ import com.automq.stream.s3.wal.util.WALUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
@@ -42,6 +41,8 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -52,11 +53,12 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_WITHOUT
 public class RecoverIterator implements Iterator<RecoverResult> {
     private static final Logger LOGGER = LoggerFactory.getLogger(RecoverIterator.class);
     private final ObjectStorage objectStorage;
-    private final int readAheadObjectSize;
+    private final int maxReadaheadDataSize;
 
     private final long trimOffset;
     private final List<WALObject> objectList;
     private final Queue<CompletableFuture<byte[]>> readAheadQueue;
+    private final AtomicLong readaheadDataSize = new AtomicLong();
     private final TreeMap<Long /* epoch startOffset */, Long /* epoch */> startOffset2Epoch = new TreeMap<>();
 
     private RecoverResult nextRecord = null;
@@ -64,12 +66,12 @@ public class RecoverIterator implements Iterator<RecoverResult> {
     private ByteBuf dataBuffer = Unpooled.EMPTY_BUFFER;
 
     public RecoverIterator(List<WALObject> objectList, ObjectStorage objectStorage,
-        int readAheadObjectSize) {
+        int maxReadaheadDataSize) {
         this.trimOffset = getTrimOffset(objectList, objectStorage);
         this.objectList = getContinuousFromTrimOffset(objectList, trimOffset);
         this.objectStorage = objectStorage;
-        this.readAheadObjectSize = readAheadObjectSize;
-        this.readAheadQueue = new ArrayDeque<>(readAheadObjectSize);
+        this.maxReadaheadDataSize = maxReadaheadDataSize;
+        this.readAheadQueue = new LinkedBlockingQueue<>();
 
         long lastEpoch = -1L;
         for (WALObject object : objectList) {
@@ -79,10 +81,7 @@ public class RecoverIterator implements Iterator<RecoverResult> {
             }
         }
 
-        // Fill the read ahead queue.
-        for (int i = 0; i < readAheadObjectSize; i++) {
-            tryReadAhead();
-        }
+        tryReadAhead();
     }
 
     /**
@@ -169,6 +168,7 @@ public class RecoverIterator implements Iterator<RecoverResult> {
     private void loadNextBuffer() {
         // Please call hasNext() before calling loadNextBuffer().
         byte[] buffer = Objects.requireNonNull(readAheadQueue.poll()).join();
+        readaheadDataSize.addAndGet(-buffer.length);
         dataBuffer = Unpooled.wrappedBuffer(buffer);
 
         // Check header
@@ -177,7 +177,7 @@ public class RecoverIterator implements Iterator<RecoverResult> {
     }
 
     private void tryReadAhead() {
-        if (readAheadQueue.size() < readAheadObjectSize && nextIndex < objectList.size()) {
+        while (readaheadDataSize.get() < maxReadaheadDataSize && nextIndex < objectList.size()) {
             WALObject object = objectList.get(nextIndex++);
             ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(object.bucketId());
             CompletableFuture<byte[]> readFuture = objectStorage.rangeRead(options, object.path(), 0, object.length())
@@ -189,6 +189,7 @@ public class RecoverIterator implements Iterator<RecoverResult> {
                     return bytes;
                 });
             readAheadQueue.add(readFuture);
+            readaheadDataSize.addAndGet(object.length());
         }
     }
 
