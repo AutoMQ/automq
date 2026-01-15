@@ -45,7 +45,7 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
         RECONFIGURABLE_CONFIGS = Set.of(
             ZONE_CIDR_BLOCKS_CONFIG_KEY
         );
-        RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
+        // RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
     }
 
     @Override
