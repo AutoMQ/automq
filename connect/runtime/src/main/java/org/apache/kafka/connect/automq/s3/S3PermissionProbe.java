@@ -17,13 +17,14 @@
 
 package org.apache.kafka.connect.automq.s3;
 
+import org.apache.kafka.connect.automq.log.LogConfigConstants;
+import org.apache.kafka.connect.automq.metrics.MetricsConfigConstants;
+
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.kafka.connect.automq.log.LogConfigConstants;
-import org.apache.kafka.connect.automq.metrics.MetricsConfigConstants;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

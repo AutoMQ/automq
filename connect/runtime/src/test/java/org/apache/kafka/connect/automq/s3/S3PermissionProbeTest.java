@@ -17,11 +17,12 @@
 
 package org.apache.kafka.connect.automq.s3;
 
+import org.apache.kafka.connect.automq.log.LogConfigConstants;
+import org.apache.kafka.connect.automq.metrics.MetricsConfigConstants;
+
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 
-import org.apache.kafka.connect.automq.log.LogConfigConstants;
-import org.apache.kafka.connect.automq.metrics.MetricsConfigConstants;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
