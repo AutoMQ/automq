@@ -60,7 +60,7 @@ public final class S3PermissionProbe {
 
     public static ProbeResult probeMetrics(Map<String, String> workerProps) {
         String exporterUri = workerProps.get(MetricsConfigConstants.EXPORTER_URI_KEY);
-        if (!isOpsExporter(exporterUri)) {
+        if (!containsOpsExporter(exporterUri)) {
             // No S3 access needed for non-OPS exporters
             return NOT_REQUIRED;
         }
@@ -116,17 +116,26 @@ public final class S3PermissionProbe {
         }
     }
 
-    private static boolean isOpsExporter(String exporterUri) {
+    private static boolean containsOpsExporter(String exporterUri) {
         if (StringUtils.isBlank(exporterUri)) {
             return false;
         }
-        try {
-            URI uri = URI.create(exporterUri.trim());
-            return Objects.equals("ops", Optional.ofNullable(uri.getScheme()).map(String::toLowerCase).orElse(null));
-        } catch (Exception e) {
-            LOGGER.warn("Invalid automq.telemetry.exporter.uri '{}', assuming non-OPS exporter", exporterUri, e);
-            return false;
+        String[] exporters = exporterUri.split(",");
+        for (String exporter : exporters) {
+            String trimmed = exporter.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            try {
+                URI uri = URI.create(trimmed);
+                if (Objects.equals("ops", Optional.ofNullable(uri.getScheme()).map(String::toLowerCase).orElse(null))) {
+                    return true;
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Invalid automq.telemetry.exporter.uri entry '{}', assuming non-OPS exporter", trimmed, e);
+            }
         }
+        return false;
     }
 
     public static final class ProbeResult {

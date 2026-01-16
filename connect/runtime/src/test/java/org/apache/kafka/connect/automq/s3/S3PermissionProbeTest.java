@@ -93,6 +93,26 @@ public class S3PermissionProbeTest {
     }
 
     @Test
+    public void metricsProbeDetectsOpsExporterWhenNotFirst() {
+        Map<String, String> props = new HashMap<>();
+        props.put(MetricsConfigConstants.EXPORTER_URI_KEY, "prometheus://0.0.0.0:9090,ops://bucket");
+        props.put(MetricsConfigConstants.S3_BUCKET, "0@mem://metrics-bucket");
+        S3PermissionProbe.ProbeResult result = S3PermissionProbe.probeMetrics(props);
+        assertTrue(result.isRequired());
+        assertTrue(result.shouldInitialize());
+    }
+
+    @Test
+    public void metricsProbeFailsWhenOpsBucketMissingEvenIfOtherExportersConfigured() {
+        Map<String, String> props = new HashMap<>();
+        props.put(MetricsConfigConstants.EXPORTER_URI_KEY, "prometheus://localhost:9090, ops://bucket");
+        S3PermissionProbe.ProbeResult result = S3PermissionProbe.probeMetrics(props);
+        assertTrue(result.isRequired());
+        assertFalse(result.shouldInitialize());
+        assertNotNull(result.reason());
+    }
+
+    @Test
     public void readinessFailurePreventsInitialization() {
         Map<String, String> props = new HashMap<>();
         props.put(LogConfigConstants.LOG_S3_ENABLE_KEY, "true");
