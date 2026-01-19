@@ -19,6 +19,7 @@
 
 package com.automq.stream.api;
 
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
@@ -33,7 +34,7 @@ public interface LinkRecordDecoder {
      */
     int decodedSize(ByteBuf linkRecordBuf);
 
-    CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src);
+    CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc);
 
 
     class Noop implements LinkRecordDecoder {
@@ -44,7 +45,7 @@ public interface LinkRecordDecoder {
         }
 
         @Override
-        public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
+        public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc) {
             return CompletableFuture.failedFuture(new UnsupportedOperationException());
         }
     }
