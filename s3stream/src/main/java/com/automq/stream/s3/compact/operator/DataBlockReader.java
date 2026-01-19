@@ -209,7 +209,7 @@ public class DataBlockReader {
         if (throttleBucket == null) {
             return objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
                 // convert heap buffer to direct buffer
-                ByteBuf directBuf = DIRECT_ALLOC.byteBuffer(buf.readableBytes());
+                ByteBuf directBuf = DIRECT_ALLOC.alloc(buf.readableBytes());
                 directBuf.writeBytes(buf);
                 buf.release();
                 return directBuf;
@@ -219,7 +219,7 @@ public class DataBlockReader {
                 .thenCompose(v ->
                     objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
                         // convert heap buffer to direct buffer
-                        ByteBuf directBuf = DIRECT_ALLOC.byteBuffer(buf.readableBytes());
+                        ByteBuf directBuf = DIRECT_ALLOC.alloc(buf.readableBytes());
                         directBuf.writeBytes(buf);
                         buf.release();
                         return directBuf;

@@ -19,6 +19,8 @@
 
 package kafka.automq.zerozone;
 
+import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -46,6 +48,7 @@ import io.netty.buffer.ByteBuf;
 public class ObjectRouterChannel implements RouterChannel {
     private static final ExecutorService ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private static final long OVER_CAPACITY_RETRY_DELAY_MS = 1000L;
+    private static final ByteBufSeqAlloc ALLOC = new ByteBufSeqAlloc(ByteBufAlloc.ENCODE_RECORD, 4);
     private final Logger logger;
     private final AtomicLong mockOffset = new AtomicLong(0);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -83,7 +86,8 @@ public class ObjectRouterChannel implements RouterChannel {
     }
 
     CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data) {
-        StreamRecordBatch record = StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data);
+        // The record will be released after appending is done. Use the ALLOC to decrease the memory fragmentation.
+        StreamRecordBatch record = StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data, ALLOC);
         for (; ; ) {
             try {
                 record.retain();
