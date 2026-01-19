@@ -12,7 +12,7 @@ jobs:
     with:
       suite-id: "benchmarks"
       test-path: "tests/kafkatest/benchmarks"
-      runner: "e2e"
+      runner: "ubicloud-standard-8-arm"
   connect_e2e_1:
     name: "Run connect E2E Tests 1"
     uses: ./.github/workflows/e2e-run.yml
@@ -20,7 +20,7 @@ jobs:
     with:
       suite-id: "connect1"
       test-yaml: "tests/suites/connect_test_suite1.yml"
-      runner: "e2e"
+      runner: "ubicloud-standard-8-arm"
   connect_e2e_2:
     name: "Run connect E2E Tests 2"
     uses: ./.github/workflows/e2e-run.yml
@@ -28,7 +28,7 @@ jobs:
     with:
       suite-id: "connect2"
       test-yaml: "tests/suites/connect_test_suite2.yml"
-      runner: "e2e"
+      runner: "ubicloud-standard-8-arm"
   connect_e2e_3:
     name: "Run connect E2E Tests 3"
     uses: ./.github/workflows/e2e-run.yml
@@ -36,7 +36,7 @@ jobs:
     with:
       suite-id: "connect3"
       test-yaml: "tests/suites/connect_test_suite3.yml"
-      runner: "e2e"
+      runner: "ubicloud-standard-8-arm"
   streams_e2e:
     name: "Run streams E2E Tests"
     uses: ./.github/workflows/e2e-run.yml
@@ -44,10 +44,10 @@ jobs:
     with:
       suite-id: "streams"
       test-path: "tests/kafkatest/tests/streams"
-      runner: "e2e"
+      runner: "ubicloud-standard-8-arm"
   e2e_summary:
     name: "E2E Tests Summary"
-    runs-on: "e2e"
+    runs-on: "ubicloud-standard-8-arm"
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e ]
     steps:
