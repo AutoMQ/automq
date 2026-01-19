@@ -17,6 +17,7 @@
 package kafka.coordinator.group
 
 import java.util.{OptionalInt, Properties}
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import kafka.common.OffsetAndMetadata
 import kafka.server._
@@ -52,6 +53,14 @@ import scala.math.max
  * used by its callback.  The delayed callback may acquire the group lock
  * since the delayed operation is completed only if the group lock can be acquired.
  */
+
+// AutoMQ inject start
+trait GroupCoordinatorListener {
+  def onGroupLoaded(group: GroupMetadata): Unit
+  def onGroupUnloaded(groupId: String): Unit
+}
+// AutoMQ inject end
+
 class GroupCoordinator(
   val brokerId: Int,
   val groupConfig: GroupConfig,
@@ -91,6 +100,9 @@ class GroupCoordinator(
   this.logIdent = "[GroupCoordinator " + brokerId + "]: "
 
   private val isActive = new AtomicBoolean(false)
+  // AutoMQ inject start
+  private val groupCoordinatorListeners = new CopyOnWriteArrayList[GroupCoordinatorListener]()
+  // AutoMQ inject end
 
   def offsetsTopicConfigs: Properties = {
     val props = new Properties
@@ -1208,6 +1220,9 @@ class GroupCoordinator(
 
       removeSyncExpiration(group)
     }
+    // AutoMQ inject start
+    groupCoordinatorListeners.forEach(_.onGroupUnloaded(group.groupId))
+    // AutoMQ inject end
   }
 
   private def onGroupLoaded(group: GroupMetadata): Unit = {
@@ -1221,6 +1236,9 @@ class GroupCoordinator(
 
       group.allMemberMetadata.foreach(completeAndScheduleNextHeartbeatExpiration(group, _))
     }
+    // AutoMQ inject start
+    groupCoordinatorListeners.forEach(_.onGroupLoaded(group))
+    // AutoMQ inject end
   }
 
   /**
@@ -1743,6 +1761,12 @@ class GroupCoordinator(
   private def isCoordinatorForGroup(groupId: String) = groupManager.isGroupLocal(groupId)
 
   private def isCoordinatorLoadInProgress(groupId: String) = groupManager.isGroupLoading(groupId)
+
+  // AutoMQ inject start
+  def registerGroupCoordinatorListener(listener: GroupCoordinatorListener): Unit = {
+    groupCoordinatorListeners.add(listener)
+  }
+  // AutoMQ inject end
 }
 
 object GroupCoordinator {
