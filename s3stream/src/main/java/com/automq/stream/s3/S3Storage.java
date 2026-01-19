@@ -94,12 +94,14 @@ import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
 import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
+import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
-    private static final ByteBufSeqAlloc DECODE_LINK_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 1);
+    private static final ByteBufSeqAlloc DECODE_LINK_RECORD_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 1);
+    private static final ByteBufSupplier ENCODE_LINK_RECORD_INSTANT_ALLOC = new DefaultByteBufSupplier(ENCODE_RECORD);
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
 
@@ -423,7 +425,7 @@ public class S3Storage implements Storage {
                     continue;
                 }
                 int finalI = i;
-                futures.add(linkRecordDecoder.decode(record, DECODE_LINK_INSTANT_ALLOC).thenAccept(r -> {
+                futures.add(linkRecordDecoder.decode(record, DECODE_LINK_RECORD_INSTANT_ALLOC).thenAccept(r -> {
                     records.set(finalI, r);
                 }));
             }
@@ -1065,7 +1067,7 @@ public class S3Storage implements Storage {
     }
 
     static StreamRecordBatch toLinkRecord(StreamRecordBatch origin, ByteBuf link) {
-        return StreamRecordBatch.of(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link);
+        return StreamRecordBatch.of(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link, ENCODE_LINK_RECORD_INSTANT_ALLOC);
     }
 
     public static class DeltaWALUploadTaskContext {
