@@ -35,10 +35,12 @@ import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
+import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +52,7 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -59,6 +62,11 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
+    private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterInV2.class);
+    private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterInAppendPermitAcquireFailTimeNanos");
+    private static final int APPEND_PERMIT = RouterPermitLimiter.appendPermit();
+    private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_TICKET_SIZE", 256);
+    private static final Semaphore ROUTER_IN_APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT);
 
     static {
         // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
@@ -81,6 +89,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         }
     };
     private final Time time;
+    private final RouterPermitLimiter appendPermitLimiter;
 
     public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time) {
         this.channelProvider = channelProvider;
@@ -89,6 +98,14 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         this.localAppendHandler = kafkaApis::handleProduceAppendJavaCompatible;
         this.routerInProduceHandler = this.localAppendHandler;
         this.time = time;
+        this.appendPermitLimiter = new RouterPermitLimiter(
+            "[ROUTER_IN]",
+            time,
+            APPEND_PERMIT,
+            ROUTER_IN_APPEND_PERMIT_SEMAPHORE,
+            APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
+            LOGGER
+        );
 
         this.appendEventLoops = new EventLoop[Systems.CPU_CORES];
         for (int i = 0; i < appendEventLoops.length; i++) {
@@ -114,11 +131,17 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         long startNanos = time.nanoseconds();
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
+            int placeholderPermit = appendPermitLimiter.acquire(PLACEHOLDER_PERMIT);
+            AtomicInteger acquiredPermit = new AtomicInteger(placeholderPermit);
+            partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
             addToUnpackLinkQueue(partitionProduceRequest);
             partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
                 if (ex == null) {
-                    size.addAndGet(rst.readableBytes());
+                    int actualSize = rst.readableBytes();
+                    size.addAndGet(actualSize);
+                    int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
+                    acquiredPermit.addAndGet(acquireUpTo(extraSize));
                 }
                 handleUnpackLink();
                 ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
@@ -184,6 +207,10 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() ->
             FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
+    }
+
+    private int acquireUpTo(int size) {
+        return appendPermitLimiter.acquireUpTo(size);
     }
 
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append0(

@@ -33,8 +33,10 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 import com.automq.stream.utils.Threads;
+import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +62,11 @@ import io.netty.buffer.Unpooled;
 
 public class RouterOutV2 {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
+    private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterOutV2.class);
+    private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterOutAppendPermitAcquireFailTimeNanos");
+    private static final int APPEND_PERMIT = RouterPermitLimiter.appendPermit();
+    private static final Semaphore ROUTER_OUT_APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT);
+
     private final Node currentNode;
     private final RouterChannel routerChannel;
     private final Map<Node, Proxy> proxies = new ConcurrentHashMap<>();
@@ -68,6 +75,7 @@ public class RouterOutV2 {
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
+    private final RouterPermitLimiter appendPermitLimiter;
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, AsyncSender asyncSender, Time time) {
@@ -77,6 +85,14 @@ public class RouterOutV2 {
         this.localProxy = new LocalProxy(localRouterHandler);
         this.asyncSender = asyncSender;
         this.time = time;
+        this.appendPermitLimiter = new RouterPermitLimiter(
+            "[ROUTER_OUT]",
+            time,
+            APPEND_PERMIT,
+            ROUTER_OUT_APPEND_PERMIT_SEMAPHORE,
+            APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
+            LOGGER
+        );
     }
 
     public void handleProduceAppendProxy(ProduceRequestArgs args) {
@@ -96,6 +112,7 @@ public class RouterOutV2 {
             }
             short orderHint = orderHint(tp, args.clientId().connectionId());
             int recordSize = records.sizeInBytes();
+            int permit = appendPermitLimiter.acquire(recordSize);
             ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
             CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest)));
             CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
@@ -115,6 +132,11 @@ public class RouterOutV2 {
                 responseMap.put(tp, errorPartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                 return null;
             });
+            if (acks0) {
+                channelCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permit));
+            } else {
+                proxyCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permit));
+            }
             cfList.add(proxyCf);
         }
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
