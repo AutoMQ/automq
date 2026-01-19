@@ -20,6 +20,7 @@
 package com.automq.stream.s3.model;
 
 import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.s3.ByteBufSupplier;
 import com.automq.stream.utils.biniarysearch.ComparableItem;
 
 import java.nio.ByteBuffer;
@@ -139,7 +140,7 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
         return of(streamId, epoch, baseOffset, count, Unpooled.wrappedBuffer(payload), ENCODE_ALLOC);
     }
 
-    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuffer payload, ByteBufSeqAlloc alloc) {
+    public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuffer payload, ByteBufSupplier alloc) {
         return of(streamId, epoch, baseOffset, count, Unpooled.wrappedBuffer(payload), alloc);
     }
 
@@ -156,9 +157,9 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
      * The payload will be copied to the new StreamRecordBatch and released.
      */
     public static StreamRecordBatch of(long streamId, long epoch, long baseOffset, int count, ByteBuf payload,
-        ByteBufSeqAlloc alloc) {
+        ByteBufSupplier alloc) {
         int totalLength = HEADER_SIZE + payload.readableBytes();
-        ByteBuf buf = alloc.byteBuffer(totalLength);
+        ByteBuf buf = alloc.alloc(totalLength);
         buf.writeByte(MAGIC_V0);
         buf.writeLong(streamId);
         buf.writeLong(epoch);
@@ -188,7 +189,7 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
         int payloadSize = buf.getInt(readerIndex + PAYLOAD_LENGTH_POS);
         int encodedSize = PAYLOAD_POS + payloadSize;
         if (duplicated) {
-            ByteBuf encoded = alloc.byteBuffer(encodedSize);
+            ByteBuf encoded = alloc.alloc(encodedSize);
             buf.readBytes(encoded, encodedSize);
             return new StreamRecordBatch(encoded);
         } else {
