@@ -2,7 +2,7 @@ name: Nightly Main E2E tests
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 16 * * *'
+    - cron: '0 16 1,7,14,21,28 * *'
 
 jobs:
   main_e2e_1:
