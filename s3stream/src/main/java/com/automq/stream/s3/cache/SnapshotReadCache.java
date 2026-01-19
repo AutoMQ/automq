@@ -32,7 +32,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.ListIterator;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
@@ -50,9 +49,11 @@ import java.util.stream.Collectors;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
+import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 import static com.automq.stream.s3.ByteBufAlloc.SNAPSHOT_READ_CACHE;
 
 public class SnapshotReadCache {
+    public static final ByteBufSeqAlloc DECODE_LINK_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 8);
     public static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 8);
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
@@ -115,13 +116,16 @@ public class SnapshotReadCache {
                     // The LogCacheBlock doesn't accept discontinuous record batches.
                     cache.clearStreamRecords(streamId);
                 }
-                if (cache.put(batch)) {
+                // Copy the record to the SeqAlloc to reduce fragmentation.
+                StreamRecordBatch copy = StreamRecordBatch.parse(batch.encoded(), true, ENCODE_ALLOC);
+                batch.release();
+                if (cache.put(copy)) {
                     // the block is full
                     LogCache.LogCacheBlock cacheBlock = cache.archiveCurrentBlock();
                     cacheBlock.addFreeListener(cacheFreeListener);
                     cache.markFree(cacheBlock);
                 }
-                expectedNextOffset.set(batch.getLastOffset());
+                expectedNextOffset.set(copy.getLastOffset());
             }
         }
         PUT_INTO_CACHE_LATENCY.record(time.nanoseconds() - startNanos);
@@ -275,7 +279,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.decode(walRecord));
+                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC));
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
@@ -287,16 +291,6 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).toList());
-                    ListIterator<StreamRecordBatch> it = records.listIterator();
-                    while (it.hasNext()) {
-                        StreamRecordBatch record = it.next();
-                        try {
-                            // Copy the record to the SeqAlloc to reduce fragmentation.
-                            it.set(StreamRecordBatch.parse(record.encoded(), true, ENCODE_ALLOC));
-                        } finally {
-                            record.release();
-                        }
-                    }
                     loadCf.complete(null);
                 });
             }).whenComplete((rst, ex) -> {
