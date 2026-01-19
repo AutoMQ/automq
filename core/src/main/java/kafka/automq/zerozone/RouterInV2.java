@@ -65,7 +65,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterInV2.class);
     private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterInAppendPermitAcquireFailTimeNanos");
     private static final int APPEND_PERMIT = RouterPermitLimiter.appendPermit();
-    private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_TICKET_SIZE", 256);
+    private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_PLACEHOLDER_PERMIT", 256);
     private static final Semaphore ROUTER_IN_APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT);
 
     static {
@@ -133,20 +133,26 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
             int placeholderPermit = appendPermitLimiter.acquire(PLACEHOLDER_PERMIT);
             AtomicInteger acquiredPermit = new AtomicInteger(placeholderPermit);
+            // Note: responseCf is guaranteed to be completed AFTER unpackLinkCf callback (in handleUnpackLink -> append0 chain).
+            // Therefore, the release callback registered on responseCf will always see the fully updated acquiredPermit value.
             partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
-            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
-            addToUnpackLinkQueue(partitionProduceRequest);
-            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                if (ex == null) {
-                    int actualSize = rst.readableBytes();
-                    size.addAndGet(actualSize);
-                    int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
-                    acquiredPermit.addAndGet(acquireUpTo(extraSize));
-                }
-                handleUnpackLink();
-                ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
-            });
             subResponseList.add(partitionProduceRequest.responseCf);
+            try {
+                partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
+                addToUnpackLinkQueue(partitionProduceRequest);
+                partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
+                    if (ex == null) {
+                        int actualSize = rst.readableBytes();
+                        size.addAndGet(actualSize);
+                        int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
+                        acquiredPermit.addAndGet(acquireUpTo(extraSize));
+                    }
+                    handleUnpackLink();
+                    ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                });
+            } catch (Throwable t) {
+                partitionProduceRequest.responseCf.completeExceptionally(t);
+            }
         }
         return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
             AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();

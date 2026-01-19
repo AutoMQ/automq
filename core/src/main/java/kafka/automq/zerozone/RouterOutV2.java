@@ -112,7 +112,7 @@ public class RouterOutV2 {
             }
             short orderHint = orderHint(tp, args.clientId().connectionId());
             int recordSize = records.sizeInBytes();
-            int permit = appendPermitLimiter.acquire(recordSize);
+            int permits = appendPermitLimiter.acquire(recordSize);
             ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
             CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest)));
             CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
@@ -133,9 +133,9 @@ public class RouterOutV2 {
                 return null;
             });
             if (acks0) {
-                channelCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permit));
+                channelCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permits));
             } else {
-                proxyCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permit));
+                proxyCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permits));
             }
             cfList.add(proxyCf);
         }

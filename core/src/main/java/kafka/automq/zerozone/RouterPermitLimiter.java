@@ -65,8 +65,8 @@ public final class RouterPermitLimiter {
         );
     }
 
-    public int acquire(int permit) {
-        int need = Math.min(permit, maxPermits);
+    public int acquire(int permits) {
+        int need = Math.min(permits, maxPermits);
         if (need <= 0) {
             return 0;
         }
@@ -96,7 +96,7 @@ public final class RouterPermitLimiter {
         if (target <= 0) {
             return 0;
         }
-        while (true) {
+        for (int i = 0; i < 16; i++) {
             int available = semaphore.availablePermits();
             if (available <= 0) {
                 return 0;
@@ -106,6 +106,7 @@ public final class RouterPermitLimiter {
                 return toAcquire;
             }
         }
+        return 0;
     }
 
     public void release(int permits) {

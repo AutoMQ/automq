@@ -112,9 +112,10 @@ public class RouterPermitLimiterTest {
             .newHistogram("RouterPermitLimiterInterruptAcquireFailTimeNanos");
         RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 1, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
         Thread releaser = new Thread(() -> {
             try {
-                Thread.sleep(10);
+                latch.await();
             } catch (InterruptedException ignored) {
             }
             semaphore.release(1);
@@ -122,10 +123,13 @@ public class RouterPermitLimiterTest {
         releaser.start();
 
         Thread.currentThread().interrupt();
+        // ensure the acquire is blocked and then release the permit
+        new Thread(latch::countDown).start();
         limiter.acquire(1);
 
         assertTrue(Thread.currentThread().isInterrupted());
-        Thread.interrupted();
+        // clear the interrupted status
+        assertTrue(Thread.interrupted());
         releaser.join();
     }
 }
