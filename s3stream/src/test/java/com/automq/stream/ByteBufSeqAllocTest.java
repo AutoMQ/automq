@@ -35,20 +35,20 @@ public class ByteBufSeqAllocTest {
 
         AtomicReference<ByteBufSeqAlloc.HugeBuf> bufRef = alloc.hugeBufArray[Math.abs(Thread.currentThread().hashCode() % alloc.hugeBufArray.length)];
 
-        ByteBuf buf1 = alloc.byteBuffer(12);
+        ByteBuf buf1 = alloc.alloc(12);
         buf1.writeLong(1);
         buf1.writeInt(2);
 
-        ByteBuf buf2 = alloc.byteBuffer(20);
+        ByteBuf buf2 = alloc.alloc(20);
         buf2.writeLong(3);
         buf2.writeInt(4);
         buf2.writeLong(5);
 
-        ByteBuf buf3 = alloc.byteBuffer(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12 - 20 - 4);
+        ByteBuf buf3 = alloc.alloc(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12 - 20 - 4);
 
         ByteBuf oldHugeBuf = bufRef.get().buf;
 
-        ByteBuf buf4 = alloc.byteBuffer(16);
+        ByteBuf buf4 = alloc.alloc(16);
         buf4.writeLong(6);
         buf4.writeLong(7);
 
@@ -71,8 +71,8 @@ public class ByteBufSeqAllocTest {
 
         ByteBuf oldHugeBuf2 = bufRef.get().buf;
 
-        alloc.byteBuffer(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12).release();
-        alloc.byteBuffer(12).release();
+        alloc.alloc(ByteBufSeqAlloc.HUGE_BUF_SIZE - 12).release();
+        alloc.alloc(12).release();
         assertEquals(0, oldHugeBuf2.refCnt());
     }
 

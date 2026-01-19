@@ -343,7 +343,7 @@ public class DefaultWriter implements Writer {
                 record.offset = nextOffset;
                 lastRecordOffset = record.offset;
                 ByteBuf data = record.streamRecordBatch.encoded();
-                ByteBuf header = BYTE_BUF_ALLOC.byteBuffer(RECORD_HEADER_SIZE);
+                ByteBuf header = BYTE_BUF_ALLOC.alloc(RECORD_HEADER_SIZE);
                 header = WALUtil.generateHeader(data, header, 0, nextOffset);
                 nextOffset += record.size;
                 dataBuffer.addComponent(true, header);
