@@ -22,7 +22,7 @@ package kafka.automq.zerozone;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 
-import com.automq.stream.s3.cache.SnapshotReadCache;
+import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
@@ -46,7 +46,7 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
     }
 
     @Override
-    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
+    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();
@@ -61,7 +61,7 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                     recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
                     recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
                     return StreamRecordBatch.of(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
-                        -src.getCount(), records.buffer(), SnapshotReadCache.ENCODE_ALLOC);
+                        -src.getCount(), records.buffer(), alloc);
                 } finally {
                     buf.release();
                 }
