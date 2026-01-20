@@ -35,7 +35,6 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.TreeSet;
 import java.util.function.Function;
-import java.util.function.IntPredicate;
 import java.util.function.Supplier;
 
 import static org.apache.kafka.controller.BrokerControlState.CONTROLLED_SHUTDOWN;
@@ -633,8 +632,7 @@ public class BrokerHeartbeatManager {
     BrokerControlStates calculateNextBrokerState(int brokerId,
                                                  BrokerHeartbeatRequestData request,
                                                  long registerBrokerRecordOffset,
-                                                 Supplier<Boolean> hasLeaderships,
-                                                 IntPredicate shouldAllowUnfence) {
+                                                 Supplier<Boolean> hasLeaderships) {
         BrokerHeartbeatState broker = heartbeatStateOrThrow(brokerId);
         BrokerControlState currentState = currentBrokerState(broker);
         switch (currentState) {
@@ -645,13 +643,6 @@ public class BrokerHeartbeatManager {
                     return new BrokerControlStates(currentState, SHUTDOWN_NOW);
                 } else if (!request.wantFence()) {
                     if (request.currentMetadataOffset() >= registerBrokerRecordOffset) {
-                        // AutoMQ inject start
-                        if (!shouldAllowUnfence.test(brokerId)) {
-                            log.info("The request from broker {} to unfence has been denied " +
-                                "because the broker is blocked by AutoMQ policy.", brokerId);
-                            return new BrokerControlStates(currentState, FENCED);
-                        }
-                        // AutoMQ inject end
                         log.info("The request from broker {} to unfence has been granted " +
                                 "because it has caught up with the offset of its register " +
                                 "broker record {}.", brokerId, registerBrokerRecordOffset);
@@ -717,7 +708,7 @@ public class BrokerHeartbeatManager {
         }
     }
 
-    private BrokerHeartbeatState heartbeatStateOrThrow(int brokerId) {
+    BrokerHeartbeatState heartbeatStateOrThrow(int brokerId) {
         BrokerHeartbeatState broker = brokers.get(brokerId);
         if (broker == null) {
             throw new IllegalStateException("Broker " + brokerId + " is not registered.");

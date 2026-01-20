@@ -645,8 +645,8 @@ public interface Controller extends AclMutator, AutoCloseable {
         throw new UnsupportedOperationException();
     }
 
-    default boolean shouldRefreshBrokerSession(int brokerId) {
-        return true;
+    default boolean shouldSuppressBroker(int brokerId) {
+        return false;
     }
     // AutoMQ for Kafka inject end
 }

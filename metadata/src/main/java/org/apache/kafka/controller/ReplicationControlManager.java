@@ -1736,9 +1736,22 @@ public class ReplicationControlManager {
         long brokerEpoch = request.brokerEpoch();
         clusterControl.checkBrokerEpoch(brokerId, brokerEpoch);
         BrokerHeartbeatManager heartbeatManager = clusterControl.heartbeatManager();
+
+        // AutoMQ inject start
+        if (quorumController.shouldSuppressBroker(brokerId)) {
+            BrokerControlState currentState = heartbeatManager.currentBrokerState(
+                heartbeatManager.heartbeatStateOrThrow(brokerId));
+            boolean isCaughtUp = request.currentMetadataOffset() >= registerBrokerRecordOffset;
+            BrokerHeartbeatReply reply = new BrokerHeartbeatReply(isCaughtUp,
+                currentState.fenced(),
+                currentState.inControlledShutdown(),
+                currentState.shouldShutDown());
+            return ControllerResult.of(Collections.emptyList(), reply);
+        }
+        // AutoMQ inject end
+
         BrokerControlStates states = heartbeatManager.calculateNextBrokerState(brokerId,
-            request, registerBrokerRecordOffset, () -> brokersToIsrs.hasLeaderships(brokerId),
-            quorumController::shouldRefreshBrokerSession);
+            request, registerBrokerRecordOffset, () -> brokersToIsrs.hasLeaderships(brokerId));
         List<ApiMessageAndVersion> records = new ArrayList<>();
         if (states.current() != states.next()) {
             switch (states.next()) {
@@ -1754,13 +1767,9 @@ public class ReplicationControlManager {
                     break;
             }
         }
-
-        if (quorumController.shouldRefreshBrokerSession(brokerId)) {
-            heartbeatManager.touch(brokerId,
-                states.next().fenced(),
-                request.currentMetadataOffset());
-        }
-
+        heartbeatManager.touch(brokerId,
+            states.next().fenced(),
+            request.currentMetadataOffset());
         if (featureControl.metadataVersion().isDirectoryAssignmentSupported()) {
             handleDirectoriesOffline(brokerId, brokerEpoch, request.offlineLogDirs(), records);
         }

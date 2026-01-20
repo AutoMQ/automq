@@ -48,8 +48,8 @@ public interface QuorumControllerExtension {
         }
 
         @Override
-        public boolean shouldRefreshBrokerSession(int brokerId) {
-            return true;
+        public boolean shouldSuppressBroker(int brokerId) {
+            return false;
         }
     };
 
@@ -74,5 +74,5 @@ public interface QuorumControllerExtension {
                 ControllerWriteOperation<T> op);
     }
 
-    boolean shouldRefreshBrokerSession(int brokerId);
+    boolean shouldSuppressBroker(int brokerId);
 }

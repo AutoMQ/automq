@@ -67,7 +67,7 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
     }
 
     @Override
-    public boolean shouldRefreshBrokerSession(int brokerId) {
-        return true;
+    public boolean shouldSuppressBroker(int brokerId) {
+        return false;
     }
 }

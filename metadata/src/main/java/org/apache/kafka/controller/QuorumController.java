@@ -2909,8 +2909,8 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public boolean shouldRefreshBrokerSession(int brokerId) {
-        return extension.shouldRefreshBrokerSession(brokerId);
+    public boolean shouldSuppressBroker(int brokerId) {
+        return extension.shouldSuppressBroker(brokerId);
     }
     // AutoMQ for Kafka inject end
 
