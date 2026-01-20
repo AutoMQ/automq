@@ -20,7 +20,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ClientIdMetadata;
-import kafka.server.DynamicBrokerConfig;
+// import kafka.server.DynamicBrokerConfig;
 
 import kafka.server.KafkaConfig;
 import org.apache.kafka.common.Reconfigurable;
@@ -56,7 +56,7 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
     public DefaultClientRackProvider(KafkaConfig kafkaConfig) {
         this.kafkaConfig = kafkaConfig;
         // Read static config from server.properties on initialization
-        String staticValue = (String) kafkaConfig.originals().get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
+        final String staticValue = (String) kafkaConfig.originals().get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
         if (staticValue != null) {
             this.cidrMatcher = new CIDRMatcher(staticValue);
             LOGGER.info("Initialized with static zone CIDR blocks: {}", staticValue);
