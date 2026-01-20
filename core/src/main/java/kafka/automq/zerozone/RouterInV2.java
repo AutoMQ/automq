@@ -35,10 +35,12 @@ import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
+import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
+import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +61,12 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
+    private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterInV2.class);
+    private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterInAppendPermitAcquireFailTimeNanos");
+    private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
+        Math.min(1024, 100 * Math.max(1, (int) (Systems.HEAP_MEMORY_SIZE / (1024L * 1024 * 1024) / 6))) * 1024 * 1024
+    );
+    private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_PLACEHOLDER_PERMIT", 256);
 
     static {
         // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
@@ -81,6 +89,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         }
     };
     private final Time time;
+    private final RouterPermitLimiter appendPermitLimiter;
 
     public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time) {
         this.channelProvider = channelProvider;
@@ -89,6 +98,13 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         this.localAppendHandler = kafkaApis::handleProduceAppendJavaCompatible;
         this.routerInProduceHandler = this.localAppendHandler;
         this.time = time;
+        this.appendPermitLimiter = new RouterPermitLimiter(
+            "[ROUTER_IN]",
+            time,
+            APPEND_PERMIT,
+            APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
+            LOGGER
+        );
 
         this.appendEventLoops = new EventLoop[Systems.CPU_CORES];
         for (int i = 0; i < appendEventLoops.length; i++) {
@@ -114,12 +130,23 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         long startNanos = time.nanoseconds();
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
-            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
-            addToUnpackLinkQueue(partitionProduceRequest);
-            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
+            // Acquire placeholder permit upfront as admission control before data is fetched
+            int placeholderPermit = appendPermitLimiter.acquire(PLACEHOLDER_PERMIT);
+            AtomicInteger acquiredPermit = new AtomicInteger(placeholderPermit);
+            // Note: responseCf is guaranteed to be completed AFTER unpackLinkCf callback (in handleUnpackLink -> append0 chain).
+            // Therefore, the release callback registered on responseCf will always see the fully updated acquiredPermit value.
+            partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
+            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset).whenComplete((rst, ex) -> {
                 if (ex == null) {
-                    size.addAndGet(rst.readableBytes());
+                    int actualSize = rst.readableBytes();
+                    size.addAndGet(actualSize);
+                    // Try to acquire more permits based on actual data size (non-blocking)
+                    acquiredPermit.addAndGet(appendPermitLimiter.acquireUpTo(actualSize));
                 }
+            });
+            addToUnpackLinkQueue(partitionProduceRequest);
+            // trigger unpack processing and record metrics
+            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
                 handleUnpackLink();
                 ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
             });
