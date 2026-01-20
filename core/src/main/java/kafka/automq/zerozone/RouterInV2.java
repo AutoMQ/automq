@@ -130,20 +130,23 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         long startNanos = time.nanoseconds();
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
+            // Acquire placeholder permit upfront as admission control before data is fetched
             int placeholderPermit = appendPermitLimiter.acquire(PLACEHOLDER_PERMIT);
             AtomicInteger acquiredPermit = new AtomicInteger(placeholderPermit);
             // Note: responseCf is guaranteed to be completed AFTER unpackLinkCf callback (in handleUnpackLink -> append0 chain).
             // Therefore, the release callback registered on responseCf will always see the fully updated acquiredPermit value.
             partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
-            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
-            addToUnpackLinkQueue(partitionProduceRequest);
-            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
+            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset).whenComplete((rst, ex) -> {
                 if (ex == null) {
                     int actualSize = rst.readableBytes();
                     size.addAndGet(actualSize);
-                    int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
-                    acquiredPermit.addAndGet(appendPermitLimiter.acquireUpTo(extraSize));
+                    // Try to acquire more permits based on actual data size (non-blocking)
+                    acquiredPermit.addAndGet(appendPermitLimiter.acquireUpTo(actualSize));
                 }
+            });
+            addToUnpackLinkQueue(partitionProduceRequest);
+            // trigger unpack processing and record metrics
+            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
                 handleUnpackLink();
                 ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
             });
