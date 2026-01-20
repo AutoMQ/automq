@@ -23,7 +23,6 @@ import kafka.metrics.KafkaMetricsUtil$;
 
 import org.apache.kafka.common.utils.Time;
 
-import com.automq.stream.utils.Systems;
 import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
