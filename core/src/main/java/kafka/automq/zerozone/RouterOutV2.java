@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import com.automq.stream.utils.Systems;
 import kafka.automq.interceptor.ProduceRequestArgs;
 
 import org.apache.kafka.common.Node;
@@ -64,8 +65,9 @@ public class RouterOutV2 {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
     private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterOutV2.class);
     private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterOutAppendPermitAcquireFailTimeNanos");
-    private static final int APPEND_PERMIT = RouterPermitLimiter.appendPermit();
-    private static final Semaphore ROUTER_OUT_APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT);
+    private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
+        Math.min(1024, 100 * Math.max(1, (int) (Systems.HEAP_MEMORY_SIZE / (1024L * 1024 * 1024) / 6))) * 1024 * 1024
+    );
 
     private final Node currentNode;
     private final RouterChannel routerChannel;
@@ -89,7 +91,6 @@ public class RouterOutV2 {
             "[ROUTER_OUT]",
             time,
             APPEND_PERMIT,
-            ROUTER_OUT_APPEND_PERMIT_SEMAPHORE,
             APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
             LOGGER
         );

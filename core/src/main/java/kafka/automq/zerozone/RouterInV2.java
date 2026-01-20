@@ -52,7 +52,6 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
@@ -64,9 +63,10 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
     private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterInV2.class);
     private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterInAppendPermitAcquireFailTimeNanos");
-    private static final int APPEND_PERMIT = RouterPermitLimiter.appendPermit();
+    private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
+        Math.min(1024, 100 * Math.max(1, (int) (Systems.HEAP_MEMORY_SIZE / (1024L * 1024 * 1024) / 6))) * 1024 * 1024
+    );
     private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_PLACEHOLDER_PERMIT", 256);
-    private static final Semaphore ROUTER_IN_APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT);
 
     static {
         // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
@@ -102,7 +102,6 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             "[ROUTER_IN]",
             time,
             APPEND_PERMIT,
-            ROUTER_IN_APPEND_PERMIT_SEMAPHORE,
             APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
             LOGGER
         );
@@ -136,23 +135,19 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             // Note: responseCf is guaranteed to be completed AFTER unpackLinkCf callback (in handleUnpackLink -> append0 chain).
             // Therefore, the release callback registered on responseCf will always see the fully updated acquiredPermit value.
             partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
+            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
+            addToUnpackLinkQueue(partitionProduceRequest);
+            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
+                if (ex == null) {
+                    int actualSize = rst.readableBytes();
+                    size.addAndGet(actualSize);
+                    int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
+                    acquiredPermit.addAndGet(appendPermitLimiter.acquireUpTo(extraSize));
+                }
+                handleUnpackLink();
+                ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+            });
             subResponseList.add(partitionProduceRequest.responseCf);
-            try {
-                partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset);
-                addToUnpackLinkQueue(partitionProduceRequest);
-                partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                    if (ex == null) {
-                        int actualSize = rst.readableBytes();
-                        size.addAndGet(actualSize);
-                        int extraSize = Math.max(0, actualSize - PLACEHOLDER_PERMIT);
-                        acquiredPermit.addAndGet(acquireUpTo(extraSize));
-                    }
-                    handleUnpackLink();
-                    ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
-                });
-            } catch (Throwable t) {
-                partitionProduceRequest.responseCf.completeExceptionally(t);
-            }
         }
         return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
             AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();
@@ -213,10 +208,6 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() ->
             FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
-    }
-
-    private int acquireUpTo(int size) {
-        return appendPermitLimiter.acquireUpTo(size);
     }
 
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append0(

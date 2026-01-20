@@ -28,7 +28,7 @@ import com.yammer.metrics.core.Histogram;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Semaphore;
+import java.util.concurrent.CountDownLatch;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,87 +38,88 @@ public class RouterPermitLimiterTest {
     @Test
     public void testAcquireClampsToMaxPermits() {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(10);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterAcquireFailTimeNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 10, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 10, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
         int acquired = limiter.acquire(100);
 
         assertEquals(10, acquired);
-        assertEquals(0, semaphore.availablePermits());
+        // All permits consumed
+        assertEquals(0, limiter.acquireUpTo(1));
     }
 
     @Test
     public void testAcquireUpToUsesAvailablePermits() {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(5);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterAcquireUpToFailTimeNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 10, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 10, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
+        // Consume 5 permits first
+        limiter.acquire(5);
         int acquired = limiter.acquireUpTo(8);
 
         assertEquals(5, acquired);
-        assertEquals(0, semaphore.availablePermits());
+        assertEquals(0, limiter.acquireUpTo(1));
     }
 
     @Test
     public void testAcquireUpToClampsToMaxPermits() {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(10);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterAcquireUpToClampNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 3, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 3, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
         int acquired = limiter.acquireUpTo(8);
 
         assertEquals(3, acquired);
-        assertEquals(7, semaphore.availablePermits());
     }
 
     @Test
     public void testAcquireUpToReturnsZeroWhenNoPermits() {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(0);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterAcquireUpToNoPermitsNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 5, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 5, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
+        // Consume all permits
+        limiter.acquire(5);
         int acquired = limiter.acquireUpTo(4);
 
         assertEquals(0, acquired);
-        assertEquals(0, semaphore.availablePermits());
     }
 
     @Test
     public void testAcquireUpToIgnoresNonPositiveSize() {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(5);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterAcquireUpToNonPositiveNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 5, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 5, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
         assertEquals(0, limiter.acquireUpTo(0));
         assertEquals(0, limiter.acquireUpTo(-1));
-        assertEquals(5, semaphore.availablePermits());
+        // Permits should still be available
+        assertEquals(5, limiter.acquireUpTo(10));
     }
 
     @Test
     public void testAcquirePreservesInterrupt() throws Exception {
         Time time = new MockTime();
-        Semaphore semaphore = new Semaphore(0);
         Histogram hist = new KafkaMetricsGroup(RouterPermitLimiterTest.class)
             .newHistogram("RouterPermitLimiterInterruptAcquireFailTimeNanos");
-        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 1, semaphore, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
+        RouterPermitLimiter limiter = new RouterPermitLimiter("[TEST]", time, 1, hist, LoggerFactory.getLogger(RouterPermitLimiterTest.class));
 
-        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        // Consume the only permit
+        limiter.acquire(1);
+
+        CountDownLatch latch = new CountDownLatch(1);
         Thread releaser = new Thread(() -> {
             try {
                 latch.await();
             } catch (InterruptedException ignored) {
             }
-            semaphore.release(1);
+            limiter.release(1);
         });
         releaser.start();
 

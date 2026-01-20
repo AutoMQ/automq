@@ -47,22 +47,15 @@ public final class RouterPermitLimiter {
         String logPrefix,
         Time time,
         int maxPermits,
-        Semaphore semaphore,
         Histogram acquireFailTimeHist,
         Logger logger
     ) {
         this.logPrefix = logPrefix;
         this.time = time;
         this.maxPermits = maxPermits;
-        this.semaphore = semaphore;
+        this.semaphore = new Semaphore(maxPermits);
         this.acquireFailTimeHist = acquireFailTimeHist;
         this.logger = logger;
-    }
-
-    public static int appendPermit() {
-        return Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
-            Math.min(1024, 100 * Math.max(1, (int) (Systems.HEAP_MEMORY_SIZE / (1024L * 1024 * 1024) / 6))) * 1024 * 1024
-        );
     }
 
     public int acquire(int permits) {
