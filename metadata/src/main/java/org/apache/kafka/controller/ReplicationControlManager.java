@@ -1737,7 +1737,8 @@ public class ReplicationControlManager {
         clusterControl.checkBrokerEpoch(brokerId, brokerEpoch);
         BrokerHeartbeatManager heartbeatManager = clusterControl.heartbeatManager();
         BrokerControlStates states = heartbeatManager.calculateNextBrokerState(brokerId,
-            request, registerBrokerRecordOffset, () -> brokersToIsrs.hasLeaderships(brokerId));
+            request, registerBrokerRecordOffset, () -> brokersToIsrs.hasLeaderships(brokerId),
+            quorumController::shouldRefreshBrokerSession);
         List<ApiMessageAndVersion> records = new ArrayList<>();
         if (states.current() != states.next()) {
             switch (states.next()) {
@@ -1753,9 +1754,13 @@ public class ReplicationControlManager {
                     break;
             }
         }
-        heartbeatManager.touch(brokerId,
-            states.next().fenced(),
-            request.currentMetadataOffset());
+
+        if (quorumController.shouldRefreshBrokerSession(brokerId)) {
+            heartbeatManager.touch(brokerId,
+                states.next().fenced(),
+                request.currentMetadataOffset());
+        }
+
         if (featureControl.metadataVersion().isDirectoryAssignmentSupported()) {
             handleDirectoriesOffline(brokerId, brokerEpoch, request.offlineLogDirs(), records);
         }

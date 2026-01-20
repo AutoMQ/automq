@@ -2907,6 +2907,11 @@ public final class QuorumController implements Controller {
     public long lastStableOffset() {
         return offsetControl.lastStableOffset();
     }
+
+    @Override
+    public boolean shouldRefreshBrokerSession(int brokerId) {
+        return extension.shouldRefreshBrokerSession(brokerId);
+    }
     // AutoMQ for Kafka inject end
 
     // VisibleForTesting

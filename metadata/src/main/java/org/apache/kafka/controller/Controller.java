@@ -644,5 +644,9 @@ public interface Controller extends AclMutator, AutoCloseable {
     default long lastStableOffset() {
         throw new UnsupportedOperationException();
     }
+
+    default boolean shouldRefreshBrokerSession(int brokerId) {
+        return true;
+    }
     // AutoMQ for Kafka inject end
 }

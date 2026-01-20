@@ -46,6 +46,11 @@ public interface QuorumControllerExtension {
                 WriteEventAppender writeEventAppender) {
             return null;
         }
+
+        @Override
+        public boolean shouldRefreshBrokerSession(int brokerId) {
+            return true;
+        }
     };
 
     boolean replay(MetadataRecordType type, ApiMessage message, Optional<OffsetAndEpoch> snapshotId,
@@ -68,4 +73,6 @@ public interface QuorumControllerExtension {
         <T> CompletableFuture<T> appendWriteEvent(String name, OptionalLong deadlineNs,
                 ControllerWriteOperation<T> op);
     }
+
+    boolean shouldRefreshBrokerSession(int brokerId);
 }

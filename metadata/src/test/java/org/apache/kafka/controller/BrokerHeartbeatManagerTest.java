@@ -307,48 +307,48 @@ public class BrokerHeartbeatManagerTest {
 
         assertEquals(new BrokerControlStates(FENCED, SHUTDOWN_NOW),
             manager.calculateNextBrokerState(0,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false, id -> true));
         assertEquals(new BrokerControlStates(FENCED, UNFENCED),
             manager.calculateNextBrokerState(0,
                 new BrokerHeartbeatRequestData().setWantFence(false).
-                    setCurrentMetadataOffset(100), 100, () -> false));
+                    setCurrentMetadataOffset(100), 100, () -> false, id -> true));
         assertEquals(new BrokerControlStates(FENCED, FENCED),
             manager.calculateNextBrokerState(0,
                 new BrokerHeartbeatRequestData().setWantFence(false).
-                    setCurrentMetadataOffset(50), 100, () -> false));
+                    setCurrentMetadataOffset(50), 100, () -> false, id -> true));
         assertEquals(new BrokerControlStates(FENCED, FENCED),
             manager.calculateNextBrokerState(0,
-                new BrokerHeartbeatRequestData().setWantFence(true), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantFence(true), 100, () -> false, id -> true));
 
         assertEquals(new BrokerControlStates(UNFENCED, CONTROLLED_SHUTDOWN),
             manager.calculateNextBrokerState(1,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true, id -> true));
         assertEquals(new BrokerControlStates(UNFENCED, SHUTDOWN_NOW),
             manager.calculateNextBrokerState(1,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false, id -> true));
         assertEquals(new BrokerControlStates(UNFENCED, UNFENCED),
             manager.calculateNextBrokerState(1,
-                new BrokerHeartbeatRequestData().setWantFence(false), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantFence(false), 100, () -> false, id -> true));
 
         assertEquals(new BrokerControlStates(CONTROLLED_SHUTDOWN, CONTROLLED_SHUTDOWN),
             manager.calculateNextBrokerState(5,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true, id -> true));
         assertEquals(new BrokerControlStates(CONTROLLED_SHUTDOWN, CONTROLLED_SHUTDOWN),
             manager.calculateNextBrokerState(5,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false, id -> true));
         manager.fence(1);
         assertEquals(new BrokerControlStates(CONTROLLED_SHUTDOWN, SHUTDOWN_NOW),
             manager.calculateNextBrokerState(5,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> false, id -> true));
         assertEquals(new BrokerControlStates(CONTROLLED_SHUTDOWN, CONTROLLED_SHUTDOWN),
             manager.calculateNextBrokerState(5,
-                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true));
+                new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true, id -> true));
         assertEquals("Broker 6 is not registered.",
                 assertThrows(IllegalStateException.class,
-                        () -> manager.calculateNextBrokerState(6, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true)).getMessage());
+                        () -> manager.calculateNextBrokerState(6, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true, id -> true)).getMessage());
         assertEquals("Broker 7 is not registered.",
                 assertThrows(IllegalStateException.class,
-                        () -> manager.calculateNextBrokerState(7, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true)).getMessage());
+                        () -> manager.calculateNextBrokerState(7, new BrokerHeartbeatRequestData().setWantShutDown(true), 100, () -> true, id -> true)).getMessage());
     }
 
     @Test

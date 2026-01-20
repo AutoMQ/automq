@@ -65,4 +65,9 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
         return CompletableFuture.failedFuture(new UnsupportedOperationException(
             String.format("ApiKey %s is not supported.", apiKey.name())));
     }
+
+    @Override
+    public boolean shouldRefreshBrokerSession(int brokerId) {
+        return true;
+    }
 }
