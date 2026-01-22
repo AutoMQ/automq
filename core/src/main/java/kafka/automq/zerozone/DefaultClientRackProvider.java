@@ -18,11 +18,9 @@
  */
 
 package kafka.automq.zerozone;
-
 import kafka.automq.interceptor.ClientIdMetadata;
-// import kafka.server.DynamicBrokerConfig;
-
 import kafka.server.KafkaConfig;
+
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigException;
 
