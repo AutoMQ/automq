@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 import kafka.automq.interceptor.ClientIdMetadata;
+import kafka.server.DynamicBrokerConfig;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.Reconfigurable;
@@ -46,9 +47,7 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
         RECONFIGURABLE_CONFIGS = Set.of(
             ZONE_CIDR_BLOCKS_CONFIG_KEY
         );
-        // Not adding to AllDynamicConfigs to allow static config via server.properties
-        // (required for Strimzi/K8s operators). We read static config in constructor instead.
-        // RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
+        RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
     }
 
     public DefaultClientRackProvider(KafkaConfig kafkaConfig) {
