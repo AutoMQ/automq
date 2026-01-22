@@ -1,5 +1,19 @@
 name: Run E2E tests
 on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        required: true
+        type: string
+      suite-id:
+        required: true
+        type: string
+      test-yaml:
+        required: false
+        type: string
+      test-path:
+        required: false
+        type: string
   workflow_call:
     inputs:
       runner:
