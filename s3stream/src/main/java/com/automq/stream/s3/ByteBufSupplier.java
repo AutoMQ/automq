@@ -17,36 +17,12 @@
  * limitations under the License.
  */
 
-package com.automq.stream.api;
-
-import com.automq.stream.ByteBufSeqAlloc;
-import com.automq.stream.s3.model.StreamRecordBatch;
-
-import java.util.concurrent.CompletableFuture;
+package com.automq.stream.s3;
 
 import io.netty.buffer.ByteBuf;
 
-public interface LinkRecordDecoder {
-    LinkRecordDecoder NOOP = new Noop();
+public interface ByteBufSupplier {
 
-    /**
-     * Get the decoded record size
-     */
-    int decodedSize(ByteBuf linkRecordBuf);
+    ByteBuf alloc(int capacity);
 
-    CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc);
-
-
-    class Noop implements LinkRecordDecoder {
-
-        @Override
-        public int decodedSize(ByteBuf linkRecordBuf) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc) {
-            return CompletableFuture.failedFuture(new UnsupportedOperationException());
-        }
-    }
 }

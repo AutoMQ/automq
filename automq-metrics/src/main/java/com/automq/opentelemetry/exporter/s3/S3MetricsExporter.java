@@ -178,6 +178,7 @@ public class S3MetricsExporter implements MetricExporter {
                     break;
                 } catch (Exception e) {
                     LOGGER.error("Cleanup s3 metrics failed", e);
+                    Threads.sleep(Duration.ofMinutes(1).toMillis());
                 }
             }
         }
