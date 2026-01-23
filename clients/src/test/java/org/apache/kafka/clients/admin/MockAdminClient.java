@@ -1450,6 +1450,21 @@ public class MockAdminClient extends AdminClient {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public UpdateLicenseResult updateLicense(String license, UpdateLicenseOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public DescribeLicenseResult describeLicense(DescribeLicenseOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public ExportClusterManifestResult exportClusterManifest(ExportClusterManifestOptions options) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ inject end
 
 }

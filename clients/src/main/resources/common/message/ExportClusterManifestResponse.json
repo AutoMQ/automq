@@ -1,0 +1,12 @@
+{
+    "apiKey": 519,
+    "type": "response",
+    "name": "ExportClusterManifestResponse",
+    "validVersions": "0",
+    "flexibleVersions": "0+",
+    "fields": [
+        { "name": "ErrorCode", "type": "int16", "versions": "0+" },
+        { "name": "ThrottleTimeMs", "type": "int32", "versions": "0+" },
+        { "name": "Manifest", "type": "string", "versions": "0+", "default": "", "about": "The exported cluster identity manifest" }
+    ]
+}
