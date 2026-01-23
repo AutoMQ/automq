@@ -170,7 +170,7 @@ public class Deploy implements Callable<Integer> {
         sb.append("--override node.id=").append(node.getNodeId()).append(" ");
         sb.append("--override controller.quorum.voters=").append(getQuorumVoters(topo)).append(" ");
         sb.append("--override controller.quorum.bootstrap.servers=").append(getBootstrapServers(topo)).append(" ");
-        sb.append("--override advertised.listeners=").append("PLAINTEXT://").append(node.getHost()).append(":9092").append(" ");
+        sb.append("--override advertised.listeners=").append("PLAINTEXT://").append(node.getHost()).append(":").append(node.getPort()).append(" ");
     }
 
     private static void appendExtConfigsOverride(StringBuilder sb, String rawConfigs) {

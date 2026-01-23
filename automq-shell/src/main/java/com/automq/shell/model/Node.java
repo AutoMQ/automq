@@ -24,8 +24,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Node {
+    private static final int DEFAULT_PORT = 9092;
+
     private String host;
     private int nodeId = Constants.NOOP_NODE_ID;
+    private int port = DEFAULT_PORT;
 
     public String getHost() {
         return host;
@@ -41,5 +44,13 @@ public class Node {
 
     public void setNodeId(int nodeId) {
         this.nodeId = nodeId;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public void setPort(int port) {
+        this.port = port;
     }
 }

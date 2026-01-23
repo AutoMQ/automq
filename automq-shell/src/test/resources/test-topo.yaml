@@ -1,0 +1,21 @@
+global:
+  clusterId: 'test-cluster'
+  config: |
+    s3.data.buckets=0@s3://test-bucket?region=us-east-1
+    s3.ops.buckets=1@s3://test-bucket?region=us-east-1
+  envs:
+    - name: AWS_ACCESS_KEY_ID
+      value: 'test-key'
+    - name: AWS_SECRET_ACCESS_KEY
+      value: 'test-secret'
+controllers:
+  - host: 192.168.0.1
+    nodeId: 0
+    port: 19092
+  - host: 192.168.0.2
+    nodeId: 1
+    # no port set, use default 9092
+brokers:
+  - host: 192.168.0.5
+    nodeId: 1000
+    port: 29092
