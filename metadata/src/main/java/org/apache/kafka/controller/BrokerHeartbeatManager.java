@@ -617,6 +617,11 @@ public class BrokerHeartbeatManager {
         }
     }
 
+    public BrokerControlState currentBrokerState(int brokerId) {
+        BrokerHeartbeatState broker = heartbeatStateOrThrow(brokerId);
+        return currentBrokerState(broker);
+    }
+
     /**
      * Calculate the next broker state for a broker that just sent a heartbeat request.
      *

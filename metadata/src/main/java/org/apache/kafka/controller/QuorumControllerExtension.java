@@ -17,11 +17,13 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.controller.QuorumController.ControllerWriteOperation;
+import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.raft.OffsetAndEpoch;
 
 import java.util.Optional;
@@ -48,8 +50,9 @@ public interface QuorumControllerExtension {
         }
 
         @Override
-        public boolean shouldSuppressBroker(int brokerId) {
-            return false;
+        public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+                BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+            return Optional.empty();
         }
     };
 
@@ -74,5 +77,6 @@ public interface QuorumControllerExtension {
                 ControllerWriteOperation<T> op);
     }
 
-    boolean shouldSuppressBroker(int brokerId);
+    Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+        BrokerHeartbeatRequestData request, long registerBrokerRecordOffset);
 }

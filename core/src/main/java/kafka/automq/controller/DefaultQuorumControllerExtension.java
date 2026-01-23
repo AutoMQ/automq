@@ -21,14 +21,17 @@ package kafka.automq.controller;
 
 import kafka.automq.failover.FailoverControlManager;
 
+import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.controller.ControllerRequestContext;
+import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.QuorumControllerExtension;
+import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.raft.OffsetAndEpoch;
 
 import java.util.Objects;
@@ -67,7 +70,8 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
     }
 
     @Override
-    public boolean shouldSuppressBroker(int brokerId) {
-        return false;
+    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return Optional.empty();
     }
 }

@@ -1738,15 +1738,9 @@ public class ReplicationControlManager {
         BrokerHeartbeatManager heartbeatManager = clusterControl.heartbeatManager();
 
         // AutoMQ inject start
-        if (quorumController.shouldSuppressBroker(brokerId)) {
-            BrokerControlState currentState = heartbeatManager.currentBrokerState(
-                heartbeatManager.heartbeatStateOrThrow(brokerId));
-            boolean isCaughtUp = request.currentMetadataOffset() >= registerBrokerRecordOffset;
-            BrokerHeartbeatReply reply = new BrokerHeartbeatReply(isCaughtUp,
-                currentState.fenced(),
-                currentState.inControlledShutdown(),
-                currentState.shouldShutDown());
-            return ControllerResult.of(Collections.emptyList(), reply);
+        Optional<ControllerResult<BrokerHeartbeatReply>> denyResult = quorumController.maybeHandleDenyListedBroker(request, registerBrokerRecordOffset);
+        if (denyResult.isPresent()) {
+            return denyResult.get();
         }
         // AutoMQ inject end
 

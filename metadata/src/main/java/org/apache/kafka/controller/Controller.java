@@ -93,6 +93,7 @@ import org.apache.kafka.metadata.authorizer.AclMutator;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -645,8 +646,9 @@ public interface Controller extends AclMutator, AutoCloseable {
         throw new UnsupportedOperationException();
     }
 
-    default boolean shouldSuppressBroker(int brokerId) {
-        return false;
+    default Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return Optional.empty();
     }
     // AutoMQ for Kafka inject end
 }
