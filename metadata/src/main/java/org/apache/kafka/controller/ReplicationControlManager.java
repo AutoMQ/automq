@@ -1738,7 +1738,7 @@ public class ReplicationControlManager {
         BrokerHeartbeatManager heartbeatManager = clusterControl.heartbeatManager();
 
         // AutoMQ inject start
-        Optional<ControllerResult<BrokerHeartbeatReply>> denyResult = quorumController.maybeHandleDenyListedBroker(request, registerBrokerRecordOffset);
+        Optional<ControllerResult<BrokerHeartbeatReply>> denyResult = quorumController.maybeHandleBlockedBroker(request, registerBrokerRecordOffset);
         if (denyResult.isPresent()) {
             return denyResult.get();
         }

@@ -646,7 +646,7 @@ public interface Controller extends AclMutator, AutoCloseable {
         throw new UnsupportedOperationException();
     }
 
-    default Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+    default Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
         return Optional.empty();
     }

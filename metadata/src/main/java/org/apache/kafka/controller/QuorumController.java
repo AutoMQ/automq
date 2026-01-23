@@ -2909,9 +2909,9 @@ public final class QuorumController implements Controller {
     }
 
     @Override
-    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
-        return extension.maybeHandleDenyListedBroker(request, registerBrokerRecordOffset);
+        return extension.maybeHandleBlockedBroker(request, registerBrokerRecordOffset);
     }
     // AutoMQ for Kafka inject end
 

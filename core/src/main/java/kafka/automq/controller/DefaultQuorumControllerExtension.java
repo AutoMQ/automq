@@ -70,7 +70,7 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
     }
 
     @Override
-    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
         return Optional.empty();
     }

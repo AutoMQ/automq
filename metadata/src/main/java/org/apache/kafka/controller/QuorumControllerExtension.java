@@ -50,7 +50,7 @@ public interface QuorumControllerExtension {
         }
 
         @Override
-        public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+        public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
                 BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
             return Optional.empty();
         }
@@ -77,6 +77,6 @@ public interface QuorumControllerExtension {
                 ControllerWriteOperation<T> op);
     }
 
-    Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleDenyListedBroker(
+    Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
         BrokerHeartbeatRequestData request, long registerBrokerRecordOffset);
 }
