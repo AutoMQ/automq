@@ -170,7 +170,7 @@ class BrokerServer(
 
   var backPressureManager: BackPressureManager = _
 
-  val clientRackProvider = new DefaultClientRackProvider()
+  val clientRackProvider = new DefaultClientRackProvider(config)
   // init reconfigurable before startup
   config.addReconfigurable(clientRackProvider)
 
