@@ -21,6 +21,7 @@ package kafka.automq.zerozone;
 
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.RecordBatch;
 
 import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -58,8 +59,13 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                         .records());
                     MutableRecordBatch recordBatch = records.batches().iterator().next();
                     recordBatch.setLastOffset(linkRecord.lastOffset());
-                    recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
-                    recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
+                    byte magic = recordBatch.magic();
+                    if (magic > RecordBatch.MAGIC_VALUE_V0) {
+                        recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
+                    }
+                    if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                        recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
+                    }
                     return StreamRecordBatch.of(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
                         -src.getCount(), records.buffer(), alloc);
                 } finally {
