@@ -4,8 +4,6 @@ If you are a GSoC candidate, please check out our **Contributor Guidance** to le
 
 If a project is successfully selected, you will be allocated a primary mentor and supported by the rest of the team. If you are interested in learning more about a particular project idea please contact us using kaiming.wan@automq.com or on our [AutoMQ Slack channel](https://go.automq.com/slack).
 
----
-
 ## Idea 1: AutoMQ Table Topic Solution Workshop
 
 **Objective:**
@@ -32,8 +30,6 @@ How can AutoMQ Table Topic simplify real-time data architectures? In this projec
 **Difficulty:** Medium
 
 **Project Size:** 175 hours (Medium)
-
----
 
 ## Idea 2: Multi-Catalog Integration for AutoMQ Table Topic
 

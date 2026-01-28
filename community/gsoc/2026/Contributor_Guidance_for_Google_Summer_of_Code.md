@@ -10,8 +10,6 @@
 6. **Contributor Readiness:** Solving `good-first-issues` will show us that you can be a good GSoC contributor.
 7. **Mentor Interaction:** Reach out to and interact with mentors to discuss your solution and technical approach before submitting your final proposal.
 
----
-
 ## 1. Picking up and Working on Issues
 
 - **Progressive Difficulty:** If you feel confident, you are welcome to help with other non-labeled issues, though we suggest starting with an easier task to familiarize yourself with our workflow.
@@ -19,13 +17,9 @@
 - **The Value of Reviews:** We consider the quality of the reviews you leave on other contributors' PRs when evaluating your final proposal. Investigating an issue yourself—even if you don't solve it—helps you provide high-quality feedback. However, please refrain from "spammy" or low-effort reviews.
 - **Stuck? Reach Out:** If you find it difficult to claim an issue because others are faster, please message us on Slack. We will help find a suitable task for you.
 
----
-
 ## 2. Writing Your Proposal
 
 Your proposal should demonstrate a clear understanding of how you plan to approach the project idea. Don't worry about building a perfect minute-by-minute schedule for the entire summer; we will refine the timeline together once the official mentoring period begins.
-
----
 
 ## Proposal Template
 
