@@ -2,7 +2,7 @@
 
 If you are a GSoC candidate, please check out our **Contributor Guidance** to learn more about our project requirements, communication channels, and how to submit a successful proposal.
 
-If a project is successfully selected, you will be allocated a primary mentor and supported by the rest of the team. If you are interested in learning more about a particular project idea please contact us using kaiming.wan@automq.com or on our [AutoMQ Slack channel](https://automq.com/slack).
+If a project is successfully selected, you will be allocated a primary mentor and supported by the rest of the team. If you are interested in learning more about a particular project idea please contact us using kaiming.wan@automq.com or on our [AutoMQ Slack channel](https://go.automq.com/slack).
 
 ---
 
