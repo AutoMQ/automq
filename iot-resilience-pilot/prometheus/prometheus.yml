@@ -1,0 +1,23 @@
+# Prometheus configuration for IoT Burst Resilience Pilot
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Scrape Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Scrape the gateway metrics (custom endpoint)
+  - job_name: 'iot-gateway'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+
+  # AutoMQ JMX metrics (if exposed)
+  - job_name: 'automq'
+    static_configs:
+      - targets: ['automq:9092']
+    scrape_interval: 10s

@@ -1,0 +1,28 @@
+# Gateway Docker Image - Linux Optimized
+FROM python:3.11-slim-bookworm
+
+# Install build dependencies for lz4
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libc-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY main_optimized.py ./main.py
+
+# Non-root user for security
+RUN useradd -m -u 1000 gateway
+USER gateway
+
+# Expose ports
+EXPOSE 5000/udp
+EXPOSE 8080
+
+# Run optimized gateway
+CMD ["python", "-u", "main.py"]
