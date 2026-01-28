@@ -5,7 +5,7 @@
 1. **Read Official Guides:** Start by reading the [Contributor Guide](https://google.github.io/gsocguides/student/) written by the Google Summer of Code organizers.
 2. **Understand the Process:** Ensure you understand the GSoC timeline, application process, and the specific project you are applying for. We assume best intentions from all contributors throughout this period.
 3. **Join the Community:** Join our [Slack](https://go.automq.com/slack) and introduce yourself in the `#introduce` channel.
-4. **Start Early:** Begin drafting your proposal as early as possible using the template provided below. If you are new to AutoMQ, we highly recommend trying out our [Getting Started Guide](https://docs.automq.com/automq/getting-started) first.
+4. **Start Early:** Begin drafting your proposal as early as possible using the template provided below. If you are new to AutoMQ, we highly recommend trying out our [Getting Started Guide](https://www.automq.com/docs/automq/what-is-automq/overview) first.
 5. **Holistic Contribution:** We value all forms of contribution, including helping others on Slack, triaging GitHub issues, and reviewing pull requests. We prefer contributors who aim to support the community as a whole, not just the codebase.
 6. **Contributor Readiness:** Solving `good-first-issues` will show us that you can be a good GSoC contributor.
 7. **Mentor Interaction:** Reach out to and interact with mentors to discuss your solution and technical approach before submitting your final proposal.
