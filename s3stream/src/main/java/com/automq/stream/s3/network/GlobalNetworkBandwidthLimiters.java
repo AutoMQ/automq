@@ -29,6 +29,8 @@ public class GlobalNetworkBandwidthLimiters {
     private NetworkBandwidthLimiter inboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
     private NetworkBandwidthLimiter outboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
 
+    private GlobalNetworkBandwidthLimiters() {}
+
     public static GlobalNetworkBandwidthLimiters instance() {
         return INSTANCE;
     }

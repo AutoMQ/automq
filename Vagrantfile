@@ -59,7 +59,7 @@ jdk_major = '8'
 jdk_full = '8u202-linux-x64'
 
 local_config_file = File.join(File.dirname(__FILE__), "Vagrantfile.local")
-if File.exists?(local_config_file) then
+if File.exist?(local_config_file) then
   eval(File.read(local_config_file), binding, "Vagrantfile.local")
 end
 

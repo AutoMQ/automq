@@ -32,6 +32,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.errors.OffsetOutOfRangeException;
 import org.apache.kafka.common.errors.RetriableException;
+import org.apache.kafka.common.internals.SecurityManagerCompatibility;
 import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.metrics.Metrics;
 import org.apache.kafka.common.metrics.Quota;
@@ -98,7 +99,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.security.PrivilegedAction;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -330,19 +330,15 @@ public class RemoteLogManager implements Closeable {
         }
     }
 
-    @SuppressWarnings("removal")
     RemoteStorageManager createRemoteStorageManager() {
-        return java.security.AccessController.doPrivileged(new PrivilegedAction<RemoteStorageManager>() {
-            private final String classPath = rlmConfig.remoteStorageManagerClassPath();
-
-            public RemoteStorageManager run() {
-                if (classPath != null && !classPath.trim().isEmpty()) {
-                    ChildFirstClassLoader classLoader = new ChildFirstClassLoader(classPath, this.getClass().getClassLoader());
-                    RemoteStorageManager delegate = createDelegate(classLoader, rlmConfig.remoteStorageManagerClassName());
-                    return new ClassLoaderAwareRemoteStorageManager(delegate, classLoader);
-                } else {
-                    return createDelegate(this.getClass().getClassLoader(), rlmConfig.remoteStorageManagerClassName());
-                }
+        return SecurityManagerCompatibility.get().doPrivileged(() -> {
+            final String classPath = rlmConfig.remoteStorageManagerClassPath();
+            if (classPath != null && !classPath.trim().isEmpty()) {
+                ChildFirstClassLoader classLoader = new ChildFirstClassLoader(classPath, this.getClass().getClassLoader());
+                RemoteStorageManager delegate = createDelegate(classLoader, rlmConfig.remoteStorageManagerClassName());
+                return (RemoteStorageManager) new ClassLoaderAwareRemoteStorageManager(delegate, classLoader);
+            } else {
+                return createDelegate(this.getClass().getClassLoader(), rlmConfig.remoteStorageManagerClassName());
             }
         });
     }
@@ -353,19 +349,15 @@ public class RemoteLogManager implements Closeable {
         remoteLogStorageManager.configure(rsmProps);
     }
 
-    @SuppressWarnings("removal")
     RemoteLogMetadataManager createRemoteLogMetadataManager() {
-        return java.security.AccessController.doPrivileged(new PrivilegedAction<RemoteLogMetadataManager>() {
-            private final String classPath = rlmConfig.remoteLogMetadataManagerClassPath();
-
-            public RemoteLogMetadataManager run() {
-                if (classPath != null && !classPath.trim().isEmpty()) {
-                    ClassLoader classLoader = new ChildFirstClassLoader(classPath, this.getClass().getClassLoader());
-                    RemoteLogMetadataManager delegate = createDelegate(classLoader, rlmConfig.remoteLogMetadataManagerClassName());
-                    return new ClassLoaderAwareRemoteLogMetadataManager(delegate, classLoader);
-                } else {
-                    return createDelegate(this.getClass().getClassLoader(), rlmConfig.remoteLogMetadataManagerClassName());
-                }
+        return SecurityManagerCompatibility.get().doPrivileged(() -> {
+            final String classPath = rlmConfig.remoteLogMetadataManagerClassPath();
+            if (classPath != null && !classPath.trim().isEmpty()) {
+                ClassLoader classLoader = new ChildFirstClassLoader(classPath, this.getClass().getClassLoader());
+                RemoteLogMetadataManager delegate = createDelegate(classLoader, rlmConfig.remoteLogMetadataManagerClassName());
+                return (RemoteLogMetadataManager) new ClassLoaderAwareRemoteLogMetadataManager(delegate, classLoader);
+            } else {
+                return createDelegate(this.getClass().getClassLoader(), rlmConfig.remoteLogMetadataManagerClassName());
             }
         });
     }
@@ -1364,8 +1356,9 @@ public class RemoteLogManager implements Closeable {
         }
 
         private Optional<RetentionTimeData> buildRetentionTimeData(long retentionMs) {
-            return retentionMs > -1
-                    ? Optional.of(new RetentionTimeData(retentionMs, time.milliseconds() - retentionMs))
+            long cleanupUntilMs = time.milliseconds() - retentionMs;
+            return retentionMs > -1 && cleanupUntilMs >= 0
+                    ? Optional.of(new RetentionTimeData(retentionMs, cleanupUntilMs))
                     : Optional.empty();
         }
 
@@ -1610,25 +1603,26 @@ public class RemoteLogManager implements Closeable {
         }
 
         RemoteLogSegmentMetadata remoteLogSegmentMetadata = rlsMetadataOptional.get();
+        EnrichedRecordBatch enrichedRecordBatch = new EnrichedRecordBatch(null, 0);
         InputStream remoteSegInputStream = null;
         try {
             int startPos = 0;
-            RecordBatch firstBatch = null;
-
             //  Iteration over multiple RemoteSegmentMetadata is required in case of log compaction.
             //  It may be possible the offset is log compacted in the current RemoteLogSegmentMetadata
             //  And we need to iterate over the next segment metadata to fetch messages higher than the given offset.
-            while (firstBatch == null && rlsMetadataOptional.isPresent()) {
+            while (enrichedRecordBatch.batch == null && rlsMetadataOptional.isPresent()) {
                 remoteLogSegmentMetadata = rlsMetadataOptional.get();
                 // Search forward for the position of the last offset that is greater than or equal to the target offset
                 startPos = lookupPositionForOffset(remoteLogSegmentMetadata, offset);
                 remoteSegInputStream = remoteLogStorageManager.fetchLogSegment(remoteLogSegmentMetadata, startPos);
                 RemoteLogInputStream remoteLogInputStream = getRemoteLogInputStream(remoteSegInputStream);
-                firstBatch = findFirstBatch(remoteLogInputStream, offset);
-                if (firstBatch == null) {
+                enrichedRecordBatch = findFirstBatch(remoteLogInputStream, offset);
+                if (enrichedRecordBatch.batch == null) {
+                    Utils.closeQuietly(remoteSegInputStream, "RemoteLogSegmentInputStream");
                     rlsMetadataOptional = findNextSegmentMetadata(rlsMetadataOptional.get(), logOptional.get().leaderEpochCache());
                 }
             }
+            RecordBatch firstBatch = enrichedRecordBatch.batch;
             if (firstBatch == null)
                 return new FetchDataInfo(new LogOffsetMetadata(offset), MemoryRecords.EMPTY, false,
                         includeAbortedTxns ? Optional.of(Collections.emptyList()) : Optional.empty());
@@ -1659,8 +1653,9 @@ public class RemoteLogManager implements Closeable {
             }
             buffer.flip();
 
+            startPos = startPos + enrichedRecordBatch.skippedBytes;
             FetchDataInfo fetchDataInfo = new FetchDataInfo(
-                    new LogOffsetMetadata(offset, remoteLogSegmentMetadata.startOffset(), startPos),
+                    new LogOffsetMetadata(firstBatch.baseOffset(), remoteLogSegmentMetadata.startOffset(), startPos),
                     MemoryRecords.readableRecords(buffer));
             if (includeAbortedTxns) {
                 fetchDataInfo = addAbortedTransactions(firstBatch.baseOffset(), remoteLogSegmentMetadata, fetchDataInfo, logOptional.get());
@@ -1668,7 +1663,9 @@ public class RemoteLogManager implements Closeable {
 
             return fetchDataInfo;
         } finally {
-            Utils.closeQuietly(remoteSegInputStream, "RemoteLogSegmentInputStream");
+            if (enrichedRecordBatch.batch != null) {
+                Utils.closeQuietly(remoteSegInputStream, "RemoteLogSegmentInputStream");
+            }
         }
     }
     // for testing
@@ -1763,15 +1760,18 @@ public class RemoteLogManager implements Closeable {
     }
 
     // Visible for testing
-    RecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
-        RecordBatch nextBatch;
+    EnrichedRecordBatch findFirstBatch(RemoteLogInputStream remoteLogInputStream, long offset) throws IOException {
+        int skippedBytes = 0;
+        RecordBatch nextBatch = null;
         // Look for the batch which has the desired offset
         // We will always have a batch in that segment as it is a non-compacted topic.
         do {
+            if (nextBatch != null) {
+                skippedBytes += nextBatch.sizeInBytes();
+            }
             nextBatch = remoteLogInputStream.nextBatch();
         } while (nextBatch != null && nextBatch.lastOffset() < offset);
-
-        return nextBatch;
+        return new EnrichedRecordBatch(nextBatch, skippedBytes);
     }
 
     OffsetAndEpoch findHighestRemoteOffset(TopicIdPartition topicIdPartition, UnifiedLog log) throws RemoteStorageException {
@@ -2120,6 +2120,16 @@ public class RemoteLogManager implements Closeable {
                     "logSegment=" + logSegment +
                     ", nextSegmentOffset=" + nextSegmentOffset +
                     '}';
+        }
+    }
+
+    static class EnrichedRecordBatch {
+        private final RecordBatch batch;
+        private final int skippedBytes;
+
+        public EnrichedRecordBatch(RecordBatch batch, int skippedBytes) {
+            this.batch = batch;
+            this.skippedBytes = skippedBytes;
         }
     }
 }

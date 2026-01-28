@@ -112,8 +112,8 @@ ARG KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 #RUN mkdir -p "/opt/kafka-3.4.1" && chmod a+rw /opt/kafka-3.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.4.1"
 #RUN mkdir -p "/opt/kafka-3.5.2" && chmod a+rw /opt/kafka-3.5.2 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.5.2.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.5.2"
 #RUN mkdir -p "/opt/kafka-3.6.2" && chmod a+rw /opt/kafka-3.6.2 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.6.2.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.6.2"
-#RUN mkdir -p "/opt/kafka-3.7.1" && chmod a+rw /opt/kafka-3.7.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.7.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.7.1"
-#RUN mkdir -p "/opt/kafka-3.8.0" && chmod a+rw /opt/kafka-3.8.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.8.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.8.0"
+#RUN mkdir -p "/opt/kafka-3.7.2" && chmod a+rw /opt/kafka-3.7.2 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.7.2.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.7.2"
+#RUN mkdir -p "/opt/kafka-3.8.1" && chmod a+rw /opt/kafka-3.8.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-3.8.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-3.8.1"
 #
 #
 ## Streams test dependencies
@@ -139,8 +139,8 @@ ARG KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 #RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.4.1-test.jar" -o /opt/kafka-3.4.1/libs/kafka-streams-3.4.1-test.jar
 #RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.5.2-test.jar" -o /opt/kafka-3.5.2/libs/kafka-streams-3.5.2-test.jar
 #RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.6.2-test.jar" -o /opt/kafka-3.6.2/libs/kafka-streams-3.6.2-test.jar
-#RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.7.1-test.jar" -o /opt/kafka-3.7.1/libs/kafka-streams-3.7.1-test.jar
-#RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.8.0-test.jar" -o /opt/kafka-3.8.0/libs/kafka-streams-3.8.0-test.jar
+#RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.7.2-test.jar" -o /opt/kafka-3.7.2/libs/kafka-streams-3.7.2-test.jar
+#RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.8.1-test.jar" -o /opt/kafka-3.8.1/libs/kafka-streams-3.8.1-test.jar
 
 # The version of Kibosh to use for testing.
 # If you update this, also update vagrant/base.sh

@@ -45,6 +45,8 @@ public class Metrics {
     private MetricsConfig globalConfig;
     private final Queue<Setup> waitingSetups = new ConcurrentLinkedQueue<>();
 
+    private Metrics() {}
+
     public static Metrics instance() {
         return INSTANCE;
     }

@@ -104,8 +104,6 @@ class ElasticLogTest {
         log: ElasticLog = log,
         initialOffset: Long = 0L): Unit = {
         log.append(lastOffset = initialOffset + records.size - 1,
-            largestTimestamp = records.head.timestamp,
-            offsetOfMaxTimestamp = initialOffset,
             records = MemoryRecords.withRecords(initialOffset, Compression.NONE, 0, records.toList: _*))
     }
 

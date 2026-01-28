@@ -61,7 +61,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.mockito.Answers;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -203,8 +202,6 @@ public class TaskManagerTest {
     private Admin adminClient;
     @Mock
     private ProcessorStateManager stateManager;
-    @Mock(answer = Answers.RETURNS_DEEP_STUBS)
-    private ProcessorStateManager.StateStoreMetadata stateStore;
     final StateUpdater stateUpdater = mock(StateUpdater.class);
     final DefaultTaskManager schedulingTaskManager = mock(DefaultTaskManager.class);
 
@@ -1248,6 +1245,54 @@ public class TaskManagerTest {
     }
 
     @Test
+    public void shouldRetryInitializationWithBackoffWhenInitializationFails() {
+        final StreamTask task00 = statefulTask(taskId00, taskId00ChangelogPartitions)
+            .withInputPartitions(taskId00Partitions)
+            .inState(State.RESTORING).build();
+        final StandbyTask task01 = standbyTask(taskId01, taskId01ChangelogPartitions)
+            .withInputPartitions(taskId01Partitions)
+            .inState(State.RUNNING).build();
+        final TasksRegistry tasks = mock(TasksRegistry.class);
+        when(tasks.drainPendingTasksToInit()).thenReturn(mkSet(task00, task01));
+        doThrow(new LockException("Lock Exception!")).when(task00).initializeIfNeeded();
+        taskManager = setUpTaskManager(StreamsConfigUtils.ProcessingMode.AT_LEAST_ONCE, tasks, true);
+
+        taskManager.checkStateUpdater(time.milliseconds(), noOpResetter);
+
+        // task00 should not be initialized due to LockException, task01 should be initialized
+        verify(task00).initializeIfNeeded();
+        verify(task01).initializeIfNeeded();
+        verify(tasks).addPendingTasksToInit(
+            argThat(tasksToInit -> tasksToInit.contains(task00) && !tasksToInit.contains(task01))
+        );
+        verify(stateUpdater, never()).add(task00);
+        verify(stateUpdater).add(task01);
+
+        time.sleep(500);
+
+        taskManager.checkStateUpdater(time.milliseconds(), noOpResetter);
+
+        // task00 should not be initialized since the backoff period has not passed
+        verify(task00, times(1)).initializeIfNeeded();
+        verify(tasks, times(2)).addPendingTasksToInit(
+            argThat(tasksToInit -> tasksToInit.contains(task00))
+        );
+        verify(stateUpdater, never()).add(task00);
+
+        time.sleep(5000);
+
+        // task00 should call initialize since the backoff period has passed
+        doNothing().when(task00).initializeIfNeeded();
+        taskManager.checkStateUpdater(time.milliseconds(), noOpResetter);
+
+        verify(task00, times(2)).initializeIfNeeded();
+        verify(tasks, times(2)).addPendingTasksToInit(
+            argThat(tasksToInit -> tasksToInit.contains(task00))
+        );
+        verify(stateUpdater).add(task00);
+    }
+
+    @Test
     public void shouldRethrowRuntimeExceptionInInitTaskWithStateUpdater() {
         final StreamTask task00 = statefulTask(taskId00, taskId00ChangelogPartitions)
             .withInputPartitions(taskId00Partitions)
@@ -1669,6 +1714,8 @@ public class TaskManagerTest {
         assertEquals(mkSet(taskId00, taskId01), thrown.corruptedTasks());
         assertEquals("Tasks [0_1, 0_0] are corrupted and hence need to be re-initialized", thrown.getMessage());
     }
+
+    @Test
     public void shouldAddSubscribedTopicsFromAssignmentToTopologyMetadata() {
         final Map<TaskId, Set<TopicPartition>> activeTasksAssignment = mkMap(
             mkEntry(taskId01, mkSet(t1p1)),
@@ -3052,12 +3099,80 @@ public class TaskManagerTest {
 
         assertThat(task00.commitNeeded, is(false));
         assertThat(task00.commitPrepared, is(true));
-        assertThat(task00.commitNeeded, is(false));
+        assertThat(task01.commitNeeded, is(false));
         assertThat(task01.commitPrepared, is(true));
         assertThat(task02.commitPrepared, is(false));
         assertThat(task10.commitPrepared, is(false));
 
         verify(consumer).commitSync(expectedCommittedOffsets);
+    }
+
+    @Test
+    public void shouldNotCommitIfNoRevokedTasksNeedCommitting() {
+        final StateMachineTask task00 = new StateMachineTask(taskId00, taskId00Partitions, true, stateManager);
+
+        final StateMachineTask task01 = new StateMachineTask(taskId01, taskId01Partitions, true, stateManager);
+        task01.setCommitNeeded();
+
+        final StateMachineTask task02 = new StateMachineTask(taskId02, taskId02Partitions, true, stateManager);
+
+        final Map<TaskId, Set<TopicPartition>> assignmentActive = mkMap(
+            mkEntry(taskId00, taskId00Partitions),
+            mkEntry(taskId01, taskId01Partitions),
+            mkEntry(taskId02, taskId02Partitions)
+        );
+
+        when(consumer.assignment()).thenReturn(assignment);
+
+        when(activeTaskCreator.createTasks(any(), eq(assignmentActive)))
+            .thenReturn(asList(task00, task01, task02));
+
+        taskManager.handleAssignment(assignmentActive, Collections.emptyMap());
+        assertThat(taskManager.tryToCompleteRestoration(time.milliseconds(), null), is(true));
+        assertThat(task00.state(), is(Task.State.RUNNING));
+        assertThat(task01.state(), is(Task.State.RUNNING));
+        assertThat(task02.state(), is(Task.State.RUNNING));
+
+        taskManager.handleRevocation(taskId00Partitions);
+
+        assertThat(task00.commitPrepared, is(false));
+        assertThat(task01.commitPrepared, is(false));
+        assertThat(task02.commitPrepared, is(false));
+    }
+
+    @Test
+    public void shouldNotCommitIfNoRevokedTasksNeedCommittingWithEOSv2() {
+        final TaskManager taskManager = setUpTaskManager(ProcessingMode.EXACTLY_ONCE_V2, false);
+
+        final StateMachineTask task00 = new StateMachineTask(taskId00, taskId00Partitions, true, stateManager);
+
+        final StateMachineTask task01 = new StateMachineTask(taskId01, taskId01Partitions, true, stateManager);
+        task01.setCommitNeeded();
+
+        final StateMachineTask task02 = new StateMachineTask(taskId02, taskId02Partitions, true, stateManager);
+
+        final Map<TaskId, Set<TopicPartition>> assignmentActive = mkMap(
+            mkEntry(taskId00, taskId00Partitions),
+            mkEntry(taskId01, taskId01Partitions),
+            mkEntry(taskId02, taskId02Partitions)
+        );
+
+        when(consumer.assignment()).thenReturn(assignment);
+
+        when(activeTaskCreator.createTasks(any(), eq(assignmentActive)))
+            .thenReturn(asList(task00, task01, task02));
+
+        taskManager.handleAssignment(assignmentActive, Collections.emptyMap());
+        assertThat(taskManager.tryToCompleteRestoration(time.milliseconds(), null), is(true));
+        assertThat(task00.state(), is(Task.State.RUNNING));
+        assertThat(task01.state(), is(Task.State.RUNNING));
+        assertThat(task02.state(), is(Task.State.RUNNING));
+
+        taskManager.handleRevocation(taskId00Partitions);
+
+        assertThat(task00.commitPrepared, is(false));
+        assertThat(task01.commitPrepared, is(false));
+        assertThat(task02.commitPrepared, is(false));
     }
 
     @Test

@@ -273,7 +273,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             e.g: extra_env=['AUTOMQ_MEMORY_USAGE_DETECT=\"true\"']
         :param quorum_info_provider: A function that takes this KafkaService as an argument and returns a ServiceQuorumInfo. If this is None, then the ServiceQuorumInfo is generated from the test context
         :param use_new_coordinator: When true, use the new implementation of the group coordinator as per KIP-848. If this is None, the default existing group coordinator is used.
-        :param dynamicRaftQuorum: When true, the quorum uses kraft.version=1, controller_quorum_bootstrap_servers, and bootstraps the first controller using the standalone flag
+        :param dynamicRaftQuorum: When true, controller_quorum_bootstrap_servers, and bootstraps the first controller using the standalone flag
         """
 
         self.zk = zk
@@ -944,7 +944,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
             cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, config_property.CLUSTER_ID)
             if self.dynamicRaftQuorum:
-                cmd += " --feature kraft.version=1"
                 if self.node_quorum_info.has_controller_role:
                     if self.standalone_controller_bootstrapped:
                         cmd += " --no-initial-controllers"

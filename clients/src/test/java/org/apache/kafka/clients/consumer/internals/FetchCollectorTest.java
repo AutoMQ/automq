@@ -815,7 +815,7 @@ public class FetchCollectorTest {
 
             FetchMetricsAggregator metricsAggregator = new FetchMetricsAggregator(metricsManager, allPartitions);
             return new CompletedFetch(
-                    logContext,
+                    logContext.logger(CompletedFetch.class),
                     subscriptions,
                     BufferSupplier.create(),
                     topicPartition,

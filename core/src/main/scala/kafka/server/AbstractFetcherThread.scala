@@ -78,9 +78,12 @@ abstract class AbstractFetcherThread(name: String,
   /* callbacks to be defined in subclass */
 
   // process fetched data
-  protected def processPartitionData(topicPartition: TopicPartition,
-                                     fetchOffset: Long,
-                                     partitionData: FetchData): Option[LogAppendInfo]
+  protected def processPartitionData(
+    topicPartition: TopicPartition,
+    fetchOffset: Long,
+    partitionLeaderEpoch: Int,
+    partitionData: FetchData
+  ): Option[LogAppendInfo]
 
   protected def truncate(topicPartition: TopicPartition, truncationState: OffsetTruncationState): Unit
 
@@ -306,7 +309,8 @@ abstract class AbstractFetcherThread(name: String,
     }
   }
 
-  private def processFetchRequest(sessionPartitions: util.Map[TopicPartition, FetchRequest.PartitionData],
+  // visible for testing
+  private[server] def processFetchRequest(sessionPartitions: util.Map[TopicPartition, FetchRequest.PartitionData],
                                   fetchRequest: FetchRequest.Builder): Unit = {
     val partitionsWithError = mutable.Set[TopicPartition]()
     val divergingEndOffsets = mutable.Map.empty[TopicPartition, EpochEndOffset]
@@ -332,10 +336,15 @@ abstract class AbstractFetcherThread(name: String,
         responseData.forKeyValue { (topicPartition, partitionData) =>
           Option(partitionStates.stateValue(topicPartition)).foreach { currentFetchState =>
             // It's possible that a partition is removed and re-added or truncated when there is a pending fetch request.
-            // In this case, we only want to process the fetch response if the partition state is ready for fetch and
-            // the current offset is the same as the offset requested.
+            // In this case, we only want to process the fetch response if:
+            // - the partition state is ready for fetch
+            // - the current offset is the same as the offset requested
+            // - the current leader epoch is the same as the leader epoch requested
             val fetchPartitionData = sessionPartitions.get(topicPartition)
-            if (fetchPartitionData != null && fetchPartitionData.fetchOffset == currentFetchState.fetchOffset && currentFetchState.isReadyForFetch) {
+            if (fetchPartitionData != null &&
+                fetchPartitionData.fetchOffset == currentFetchState.fetchOffset &&
+                fetchPartitionData.currentLeaderEpoch.map[Boolean](_ == currentFetchState.currentLeaderEpoch).orElse(true) &&
+                currentFetchState.isReadyForFetch) {
               Errors.forCode(partitionData.errorCode) match {
                 case Errors.NONE =>
                   try {
@@ -350,10 +359,16 @@ abstract class AbstractFetcherThread(name: String,
                         .setLeaderEpoch(partitionData.divergingEpoch.epoch)
                         .setEndOffset(partitionData.divergingEpoch.endOffset)
                     } else {
-                      // Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                      /* Once we hand off the partition data to the subclass, we can't mess with it any more in this thread
+                       *
+                       * When appending batches to the log only append record batches up to the leader epoch when the FETCH
+                       * request was handled. This is done to make sure that logs are not inconsistent because of log
+                       * truncation and append after the FETCH request was handled. See KAFKA-18723 for more details.
+                       */
                       val logAppendInfoOpt = processPartitionData(
                         topicPartition,
                         currentFetchState.fetchOffset,
+                        currentFetchState.currentLeaderEpoch,
                         partitionData
                       )
 

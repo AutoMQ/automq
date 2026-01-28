@@ -26,6 +26,7 @@ import kafka.server.{BrokerTopicStats, RequestLocal}
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.InvalidConfigurationException
+import org.apache.kafka.common.errors.CorruptRecordException
 import org.apache.kafka.common.record.{MemoryRecords, Records}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
@@ -87,8 +88,9 @@ final class KafkaMetadataLog private (
   }
 
   override def appendAsLeader(records: Records, epoch: Int): LogAppendInfo = {
-    if (records.sizeInBytes == 0)
+    if (records.sizeInBytes == 0) {
       throw new IllegalArgumentException("Attempt to append an empty record set")
+    }
 
     handleAndConvertLogAppendInfo(
       log.appendAsLeader(records.asInstanceOf[MemoryRecords],
@@ -99,18 +101,20 @@ final class KafkaMetadataLog private (
     )
   }
 
-  override def appendAsFollower(records: Records): LogAppendInfo = {
-    if (records.sizeInBytes == 0)
+  override def appendAsFollower(records: Records, epoch: Int): LogAppendInfo = {
+    if (records.sizeInBytes == 0) {
       throw new IllegalArgumentException("Attempt to append an empty record set")
+    }
 
-    handleAndConvertLogAppendInfo(log.appendAsFollower(records.asInstanceOf[MemoryRecords]))
+    handleAndConvertLogAppendInfo(log.appendAsFollower(records.asInstanceOf[MemoryRecords], epoch))
   }
 
   private def handleAndConvertLogAppendInfo(appendInfo: internals.log.LogAppendInfo): LogAppendInfo = {
-    if (appendInfo.firstOffset != UnifiedLog.UnknownOffset)
+    if (appendInfo.firstOffset == UnifiedLog.UnknownOffset) {
+      throw new CorruptRecordException(s"Append failed unexpectedly $appendInfo")
+    } else {
       new LogAppendInfo(appendInfo.firstOffset, appendInfo.lastOffset)
-    else
-      throw new KafkaException(s"Append failed unexpectedly")
+    }
   }
 
   override def lastFetchedEpoch: Int = {

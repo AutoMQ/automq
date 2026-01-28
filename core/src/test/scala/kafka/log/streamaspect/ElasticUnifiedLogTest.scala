@@ -209,7 +209,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         assertHighWatermark(3L)
 
         // Update high watermark as follower
-        log.appendAsFollower(records(3L))
+        log.appendAsFollower(records(3L), 0)
         log.updateHighWatermark(6L)
         assertHighWatermark(6L)
 
@@ -363,6 +363,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
     @Test
     override def testRollSegmentThatAlreadyExists(): Unit = {
         val logConfig = LogTestUtils.createLogConfig(segmentMs = 1 * 60 * 60L)
+        val partitionLeaderEpoch = 0
 
         // create a log
         val log = createLog(logDir, logConfig)
@@ -376,7 +377,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         val records = TestUtils.records(
             List(new SimpleRecord(mockTime.milliseconds, "k1".getBytes, "v1".getBytes)),
             baseOffset = 0L, partitionLeaderEpoch = 0)
-        log.appendAsFollower(records)
+        log.appendAsFollower(records, 0)
         assertEquals(1, log.numberOfSegments, "Expect one segment.")
         assertEquals(0L, log.activeSegment.baseOffset)
 
@@ -384,7 +385,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         val records2 = TestUtils.records(
             List(new SimpleRecord(mockTime.milliseconds + 10, "k2".getBytes, "v2".getBytes)),
             baseOffset = 1L, partitionLeaderEpoch = 0)
-        log.appendAsFollower(records2)
+        log.appendAsFollower(records2, partitionLeaderEpoch)
 
         assertEquals(2, log.logEndOffset, "Expect two records in the log")
         assertEquals(0, LogTestUtils.readLog(log, 0, 1).records.batches.iterator.next().lastOffset)
@@ -400,7 +401,7 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         val records3 = TestUtils.records(
             List(new SimpleRecord(mockTime.milliseconds + 12, "k3".getBytes, "v3".getBytes)),
             baseOffset = 2L, partitionLeaderEpoch = 0)
-        log.appendAsFollower(records3)
+        log.appendAsFollower(records3, partitionLeaderEpoch)
         // AutoMQ don't have isolated offset index file
         assertEquals(2, LogTestUtils.readLog(log, 2, 1).records.batches.iterator.next().lastOffset)
         assertEquals(2, log.numberOfSegments, "Expect two segments.")

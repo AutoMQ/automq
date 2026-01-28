@@ -416,6 +416,7 @@ class PartitionTest extends AbstractPartitionTest {
   def testMakeFollowerWithWithFollowerAppendRecords(): Unit = {
     val appendSemaphore = new Semaphore(0)
     val mockTime = new MockTime()
+    val prevLeaderEpoch = 0
 
     partition = new Partition(
       topicPartition,
@@ -467,24 +468,38 @@ class PartitionTest extends AbstractPartitionTest {
     }
 
     partition.createLogIfNotExists(isNew = true, isFutureReplica = false, offsetCheckpoints, None)
+    var partitionState = new LeaderAndIsrPartitionState()
+      .setControllerEpoch(0)
+      .setLeader(2)
+      .setLeaderEpoch(prevLeaderEpoch)
+      .setIsr(List[Integer](0, 1, 2, brokerId).asJava)
+      .setPartitionEpoch(1)
+      .setReplicas(List[Integer](0, 1, 2, brokerId).asJava)
+      .setIsNew(false)
+    assertTrue(partition.makeFollower(partitionState, offsetCheckpoints, None))
 
     val appendThread = new Thread {
       override def run(): Unit = {
-        val records = createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes),
-          new SimpleRecord("k2".getBytes, "v2".getBytes)),
-          baseOffset = 0)
-        partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false)
+        val records = createRecords(
+          List(
+            new SimpleRecord("k1".getBytes, "v1".getBytes),
+            new SimpleRecord("k2".getBytes, "v2".getBytes)
+          ),
+          baseOffset = 0,
+          partitionLeaderEpoch = prevLeaderEpoch
+        )
+        partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, prevLeaderEpoch)
       }
     }
     appendThread.start()
     TestUtils.waitUntilTrue(() => appendSemaphore.hasQueuedThreads, "follower log append is not called.")
 
-    val partitionState = new LeaderAndIsrPartitionState()
+    partitionState = new LeaderAndIsrPartitionState()
       .setControllerEpoch(0)
       .setLeader(2)
-      .setLeaderEpoch(1)
+      .setLeaderEpoch(prevLeaderEpoch + 1)
       .setIsr(List[Integer](0, 1, 2, brokerId).asJava)
-      .setPartitionEpoch(1)
+      .setPartitionEpoch(2)
       .setReplicas(List[Integer](0, 1, 2, brokerId).asJava)
       .setIsNew(false)
     assertTrue(partition.makeFollower(partitionState, offsetCheckpoints, None))
@@ -524,15 +539,22 @@ class PartitionTest extends AbstractPartitionTest {
     // Write to the future replica as if the log had been compacted, and do not roll the segment
 
     val buffer = ByteBuffer.allocate(1024)
-    val builder = MemoryRecords.builder(buffer, RecordBatch.CURRENT_MAGIC_VALUE, Compression.NONE,
-      TimestampType.CREATE_TIME, 0L, RecordBatch.NO_TIMESTAMP, 0)
+    val builder = MemoryRecords.builder(
+      buffer,
+      RecordBatch.CURRENT_MAGIC_VALUE,
+      Compression.NONE,
+      TimestampType.CREATE_TIME,
+      0L, // baseOffset
+      RecordBatch.NO_TIMESTAMP,
+      0 // partitionLeaderEpoch
+    )
     builder.appendWithOffset(2L, new SimpleRecord("k1".getBytes, "v3".getBytes))
     builder.appendWithOffset(5L, new SimpleRecord("k2".getBytes, "v6".getBytes))
     builder.appendWithOffset(6L, new SimpleRecord("k3".getBytes, "v7".getBytes))
     builder.appendWithOffset(7L, new SimpleRecord("k4".getBytes, "v8".getBytes))
 
     val futureLog = partition.futureLocalLogOrException
-    futureLog.appendAsFollower(builder.build())
+    futureLog.appendAsFollower(builder.build(), 0)
 
     assertTrue(partition.maybeReplaceCurrentWithFutureReplica())
   }
@@ -934,6 +956,18 @@ class PartitionTest extends AbstractPartitionTest {
   def testAppendRecordsAsFollowerBelowLogStartOffset(): Unit = {
     partition.createLogIfNotExists(isNew = false, isFutureReplica = false, offsetCheckpoints, None)
     val log = partition.localLogOrException
+    val epoch = 1
+
+    // Start off as follower
+    val partitionState = new LeaderAndIsrPartitionState()
+      .setControllerEpoch(0)
+      .setLeader(1)
+      .setLeaderEpoch(epoch)
+      .setIsr(List[Integer](0, 1, 2, brokerId).asJava)
+      .setPartitionEpoch(1)
+      .setReplicas(List[Integer](0, 1, 2, brokerId).asJava)
+      .setIsNew(false)
+    partition.makeFollower(partitionState, offsetCheckpoints, None)
 
     val initialLogStartOffset = 5L
     partition.truncateFullyAndStartAt(initialLogStartOffset, isFuture = false)
@@ -943,9 +977,14 @@ class PartitionTest extends AbstractPartitionTest {
       s"Log start offset after truncate fully and start at $initialLogStartOffset:")
 
     // verify that we cannot append records that do not contain log start offset even if the log is empty
-    assertThrows(classOf[UnexpectedAppendOffsetException], () =>
+    assertThrows(
+      classOf[UnexpectedAppendOffsetException],
       // append one record with offset = 3
-      partition.appendRecordsToFollowerOrFutureReplica(createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 3L), isFuture = false)
+      () => partition.appendRecordsToFollowerOrFutureReplica(
+        createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 3L),
+        isFuture = false,
+        partitionLeaderEpoch = epoch
+      )
     )
     assertEquals(initialLogStartOffset, log.logEndOffset,
       s"Log end offset should not change after failure to append")
@@ -957,12 +996,16 @@ class PartitionTest extends AbstractPartitionTest {
                                      new SimpleRecord("k2".getBytes, "v2".getBytes),
                                      new SimpleRecord("k3".getBytes, "v3".getBytes)),
                                 baseOffset = newLogStartOffset)
-    partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false)
+    partition.appendRecordsToFollowerOrFutureReplica(records, isFuture = false, partitionLeaderEpoch = epoch)
     assertEquals(7L, log.logEndOffset, s"Log end offset after append of 3 records with base offset $newLogStartOffset:")
     assertEquals(newLogStartOffset, log.logStartOffset, s"Log start offset after append of 3 records with base offset $newLogStartOffset:")
 
     // and we can append more records after that
-    partition.appendRecordsToFollowerOrFutureReplica(createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 7L), isFuture = false)
+    partition.appendRecordsToFollowerOrFutureReplica(
+      createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 7L),
+      isFuture = false,
+      partitionLeaderEpoch = epoch
+    )
     assertEquals(8L, log.logEndOffset, s"Log end offset after append of 1 record at offset 7:")
     assertEquals(newLogStartOffset, log.logStartOffset, s"Log start offset not expected to change:")
 
@@ -970,11 +1013,18 @@ class PartitionTest extends AbstractPartitionTest {
     val records2 = createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes),
       new SimpleRecord("k2".getBytes, "v2".getBytes)),
       baseOffset = 3L)
-    assertThrows(classOf[UnexpectedAppendOffsetException], () => partition.appendRecordsToFollowerOrFutureReplica(records2, isFuture = false))
+    assertThrows(
+      classOf[UnexpectedAppendOffsetException],
+      () => partition.appendRecordsToFollowerOrFutureReplica(records2, isFuture = false, partitionLeaderEpoch = epoch)
+    )
     assertEquals(8L, log.logEndOffset, s"Log end offset should not change after failure to append")
 
     // we still can append to next offset
-    partition.appendRecordsToFollowerOrFutureReplica(createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 8L), isFuture = false)
+    partition.appendRecordsToFollowerOrFutureReplica(
+      createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 8L),
+      isFuture = false,
+      partitionLeaderEpoch = epoch
+    )
     assertEquals(9L, log.logEndOffset, s"Log end offset after append of 1 record at offset 8:")
     assertEquals(newLogStartOffset, log.logStartOffset, s"Log start offset not expected to change:")
   }
@@ -1057,9 +1107,13 @@ class PartitionTest extends AbstractPartitionTest {
 
   @Test
   def testAppendRecordsToFollowerWithNoReplicaThrowsException(): Unit = {
-    assertThrows(classOf[NotLeaderOrFollowerException], () =>
-      partition.appendRecordsToFollowerOrFutureReplica(
-           createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 0L), isFuture = false)
+    assertThrows(
+      classOf[NotLeaderOrFollowerException],
+      () => partition.appendRecordsToFollowerOrFutureReplica(
+        createRecords(List(new SimpleRecord("k1".getBytes, "v1".getBytes)), baseOffset = 0L),
+        isFuture = false,
+        partitionLeaderEpoch = 0
+      )
     )
   }
 
@@ -3514,13 +3568,16 @@ class PartitionTest extends AbstractPartitionTest {
     partition.createLogIfNotExists(isNew = true, isFutureReplica = false, offsetCheckpoints, topicId = None)
     assertTrue(partition.log.isDefined)
 
+    val replicas = Seq(brokerId, brokerId + 1)
+    val isr = replicas
+    val epoch = 0
     partition.makeLeader(
       new LeaderAndIsrPartitionState()
         .setControllerEpoch(0)
         .setLeader(brokerId)
-        .setLeaderEpoch(0)
-        .setIsr(List(brokerId, brokerId + 1).map(Int.box).asJava)
-        .setReplicas(List(brokerId, brokerId + 1).map(Int.box).asJava)
+        .setLeaderEpoch(epoch)
+        .setIsr(isr.map(Int.box).asJava)
+        .setReplicas(replicas.map(Int.box).asJava)
         .setPartitionEpoch(1)
         .setIsNew(true),
       offsetCheckpoints,
@@ -3551,7 +3608,8 @@ class PartitionTest extends AbstractPartitionTest {
 
     partition.appendRecordsToFollowerOrFutureReplica(
       records = records,
-      isFuture = true
+      isFuture = true,
+      partitionLeaderEpoch = epoch
     )
 
     listener.verify()
@@ -3696,9 +3754,9 @@ class PartitionTest extends AbstractPartitionTest {
     _topicId = None,
     keepPartitionMetadataFile = true) {
 
-    override def appendAsFollower(records: MemoryRecords): LogAppendInfo = {
+    override def appendAsFollower(records: MemoryRecords, epoch: Int): LogAppendInfo = {
       appendSemaphore.acquire()
-      val appendInfo = super.appendAsFollower(records)
+      val appendInfo = super.appendAsFollower(records, epoch)
       appendInfo
     }
   }

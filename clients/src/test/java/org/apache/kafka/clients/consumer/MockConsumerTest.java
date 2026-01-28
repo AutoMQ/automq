@@ -31,6 +31,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -188,6 +189,35 @@ public class MockConsumerTest {
         assertTrue(assigned.contains(topicPartitionList.get(1)));
         assertEquals(1, revoked.size());
         assertTrue(revoked.contains(topicPartitionList.get(0)));
+    }
+
+    @Test
+    public void shouldReturnMaxPollRecords() {
+        TopicPartition partition = new TopicPartition("test", 0);
+        consumer.assign(Collections.singleton(partition));
+        consumer.updateBeginningOffsets(Collections.singletonMap(partition, 0L));
+
+        IntStream.range(0, 10).forEach(offset -> {
+            consumer.addRecord(new ConsumerRecord<>("test", 0, offset, null, null));
+        });
+
+        consumer.setMaxPollRecords(2L);
+
+        ConsumerRecords<String, String> records;
+
+        records = consumer.poll(Duration.ofMillis(1));
+        assertEquals(2, records.count());
+
+        records = consumer.poll(Duration.ofMillis(1));
+        assertEquals(2, records.count());
+
+        consumer.setMaxPollRecords(Long.MAX_VALUE);
+
+        records = consumer.poll(Duration.ofMillis(1));
+        assertEquals(6, records.count());
+
+        records = consumer.poll(Duration.ofMillis(1));
+        assertTrue(records.isEmpty());
     }
 
 }
