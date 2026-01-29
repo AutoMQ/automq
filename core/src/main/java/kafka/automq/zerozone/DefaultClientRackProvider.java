@@ -23,6 +23,7 @@ import kafka.server.DynamicBrokerConfig;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.Reconfigurable;
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 
 import org.slf4j.Logger;
@@ -38,8 +39,10 @@ import java.util.Set;
 public class DefaultClientRackProvider implements ClientRackProvider, Reconfigurable {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultClientRackProvider.class);
     private static final String ZONE_CIDR_BLOCKS_CONFIG_KEY = "automq.zone.cidr.blocks";
+    private static final String ZONE_CIDR_BLOCKS_CONFIG_DOC = "The mapping of zone to CIDR blocks. Format: zone1@cidr1,cidr2<>zone2@cidr3,cidr4";
     private static final Set<String> RECONFIGURABLE_CONFIGS;
-    
+    public static final ConfigDef CONFIG_DEF = new ConfigDef();
+
     private final KafkaConfig kafkaConfig;
     private CIDRMatcher cidrMatcher = new CIDRMatcher("");
 
@@ -48,6 +51,7 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
             ZONE_CIDR_BLOCKS_CONFIG_KEY
         );
         RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
+        CONFIG_DEF.define(ZONE_CIDR_BLOCKS_CONFIG_KEY, ConfigDef.Type.STRING, null, ConfigDef.Importance.MEDIUM, ZONE_CIDR_BLOCKS_CONFIG_DOC);
     }
 
     public DefaultClientRackProvider(KafkaConfig kafkaConfig) {
