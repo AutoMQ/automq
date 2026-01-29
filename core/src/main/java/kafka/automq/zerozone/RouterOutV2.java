@@ -107,7 +107,7 @@ public class RouterOutV2 {
         boolean acks0 = args.requiredAcks() == (short) 0;
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
-            MemoryRecords records = entry.getValue();
+            MemoryRecords records = LegacyRecordConverter.maybeConvert(entry.getValue());
             Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
             if (node.id() == Node.noNode().id()) {
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
