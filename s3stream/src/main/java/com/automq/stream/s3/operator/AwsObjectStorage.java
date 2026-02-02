@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -57,6 +58,7 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
@@ -309,21 +311,48 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .delete(Delete.builder().objects(toDeleteKeys).build())
             .build();
 
+        return doDeleteObjectsWithRetry(request, 0);
+    }
+
+    private CompletableFuture<Void> doDeleteObjectsWithRetry(DeleteObjectsRequest request, int retryCount) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        this.writeS3Client.deleteObjects(request)
-            .thenAccept(resp -> {
+        writeS3Client.deleteObjects(request).whenComplete((resp, ex) -> {
+            if (ex == null) {
                 try {
                     checkDeleteObjectsResponse(resp);
                     cf.complete(null);
-                } catch (Throwable ex) {
-                    cf.completeExceptionally(ex);
+                } catch (Throwable t) {
+                    cf.completeExceptionally(t);
                 }
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
-            });
+                return;
+            }
+
+            Throwable cause = FutureUtil.cause(ex);
+            if (!isDeleteThrottled(cause)) {
+                cf.completeExceptionally(cause);
+                return;
+            }
+
+            int delay = retryDelay(S3Operation.DELETE_OBJECTS, retryCount);
+            scheduler.schedule(() -> doDeleteObjectsWithRetry(request, retryCount + 1)
+                .whenComplete((r, e) -> {
+                    if (e != null) {
+                        cf.completeExceptionally(e);
+                    } else {
+                        cf.complete(null);
+                    }
+                }), delay, TimeUnit.MILLISECONDS);
+        });
         return cf;
+    }
+
+    private static boolean isDeleteThrottled(Throwable ex) {
+        if (ex instanceof S3Exception) {
+            S3Exception s3Ex = (S3Exception) ex;
+            return s3Ex.statusCode() == HttpStatusCode.THROTTLING
+                || s3Ex.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE;
+        }
+        return ex instanceof TimeoutException;
     }
 
     @Override
@@ -438,6 +467,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return ClientOverrideConfiguration.builder()
             .apiCallTimeout(Duration.ofMillis(apiCallTimeoutMs))
             .apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeoutMs))
+            .retryStrategy(RetryMode.STANDARD)
             .build();
     }
 
