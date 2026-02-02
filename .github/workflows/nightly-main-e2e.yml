@@ -85,11 +85,19 @@ jobs:
       suite-id: "streams"
       test-path: "tests/kafkatest/tests/streams"
       runner: "ubicloud-standard-8-arm-ubuntu-2204"
+  automq_e2e:
+    name: "Run AutoMQ E2E Tests"
+    uses: ./.github/workflows/e2e-run.yml
+    if: ${{ github.repository_owner == 'AutoMQ' }}
+    with:
+      suite-id: "automq"
+      test-path: "tests/suites/automq_test_suite1.yml"
+      runner: "ubicloud-standard-8-arm-ubuntu-2204"
   e2e_summary:
     runs-on: "ubicloud-standard-8-arm-ubuntu-2204"
     name: "E2E Tests Summary"
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
-    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e ]
+    needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e, automq_e2e ]
     steps:
       - name: Report results
         run: python3 tests/report_e2e_results.py
@@ -97,5 +105,5 @@ jobs:
           CURRENT_REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           WEB_HOOK_URL: ${{ secrets.E2E_REPORT_WEB_HOOK_URL }}
-          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}}"
+          DATA_MAP: "{\"main_e2e_1\": ${{ toJSON(needs.main_e2e_1.outputs) }}, \"main_e2e_2\": ${{ toJSON(needs.main_e2e_2.outputs) }}, \"main_e2e_3\": ${{ toJSON(needs.main_e2e_3.outputs) }}, \"main_e2e_4\": ${{ toJSON(needs.main_e2e_4.outputs) }}, \"main_e2e_5\": ${{ toJSON(needs.main_e2e_5.outputs) }}, \"benchmarks_e2e\": ${{ toJSON(needs.benchmarks_e2e.outputs) }}, \"connect_e2e_1\": ${{ toJSON(needs.connect_e2e_1.outputs) }}, \"connect_e2e_2\": ${{ toJSON(needs.connect_e2e_2.outputs) }}, \"connect_e2e_3\": ${{ toJSON(needs.connect_e2e_3.outputs) }}, \"streams_e2e\": ${{ toJSON(needs.streams_e2e.outputs) }}, \"automq_e2e\": ${{ toJSON(needs.automq_e2e.outputs) }}}"
           REPORT_TITLE_PREFIX: "Main"
