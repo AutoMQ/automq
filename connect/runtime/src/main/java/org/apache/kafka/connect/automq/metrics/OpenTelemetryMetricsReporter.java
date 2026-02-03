@@ -81,7 +81,9 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private static final String EXCLUDE_PATTERN_CONFIG = "opentelemetry.metrics.exclude.pattern";
     
     private static final String DEFAULT_PREFIX = "kafka";
-    
+
+    private static AutoMQTelemetryManager telemetryManager;
+
     private boolean enabled = true;
     private String metricPrefix = DEFAULT_PREFIX;
     private String includePattern = null;
@@ -99,8 +101,9 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         int intervalMs = Integer.parseInt(props.getProperty(MetricsConfigConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
         BucketURI metricsBucket = getMetricsBucket(props);
         List<Pair<String, String>> baseLabels = getBaseLabels(props);
-        
-        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
+
+        telemetryManager = new AutoMQTelemetryManager(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
+        telemetryManager.init();
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
     }
 
@@ -171,7 +174,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         try {
             // Get the OpenTelemetry meter from AutoMQTelemetryManager
             // This assumes the telemetry manager is already initialized
-            meter = AutoMQTelemetryManager.getInstance().getMeter();
+            meter = telemetryManager.getMeter();
             if (meter == null) {
                 LOGGER.warn("AutoMQTelemetryManager is not initialized, OpenTelemetry metrics will not be available");
                 enabled = false;

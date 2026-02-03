@@ -25,6 +25,7 @@ public final class FinalizedFeatures {
     private final MetadataVersion metadataVersion;
     private final Map<String, Short> finalizedFeatures;
     private final long finalizedFeaturesEpoch;
+    private final boolean kraftMode;
 
     public static FinalizedFeatures fromKRaftVersion(MetadataVersion version) {
         return new FinalizedFeatures(version, Collections.emptyMap(), -1, true);
@@ -39,6 +40,7 @@ public final class FinalizedFeatures {
         this.metadataVersion = metadataVersion;
         this.finalizedFeatures = new HashMap<>(finalizedFeatures);
         this.finalizedFeaturesEpoch = finalizedFeaturesEpoch;
+        this.kraftMode = kraftMode;
         // In KRaft mode, we always include the metadata version in the features map.
         // In ZK mode, we never include it.
         if (kraftMode) {
@@ -81,5 +83,20 @@ public final class FinalizedFeatures {
                 ", finalizedFeatures=" + finalizedFeatures +
                 ", finalizedFeaturesEpoch=" + finalizedFeaturesEpoch +
                 ")";
+    }
+
+    public FinalizedFeatures setFinalizedLevel(String key, short level) {
+        if (level == (short) 0) {
+            return this;
+        } else {
+            Map<String, Short> newFinalizedFeatures = new HashMap<>(finalizedFeatures);
+            newFinalizedFeatures.put(key, level);
+            return new FinalizedFeatures(
+                metadataVersion,
+                newFinalizedFeatures,
+                finalizedFeaturesEpoch,
+                kraftMode
+            );
+        }
     }
 }

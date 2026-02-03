@@ -195,8 +195,7 @@ class ElasticLog(val metaStream: MetaStream,
         }
     }
 
-    override private[log] def append(lastOffset: Long, largestTimestamp: Long, offsetOfMaxTimestamp: Long,
-        records: MemoryRecords): Unit = {
+    override private[log] def append(lastOffset: Long, records: MemoryRecords): Unit = {
         val activeSegment = segments.activeSegment
         val startTimestamp = time.nanoseconds()
 
@@ -208,7 +207,7 @@ class ElasticLog(val metaStream: MetaStream,
             APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
         }
 
-        activeSegment.append(lastOffset, largestTimestamp, offsetOfMaxTimestamp, records)
+        activeSegment.append(lastOffset, records)
 
         APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
         val endOffset = lastOffset + 1

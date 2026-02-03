@@ -34,6 +34,8 @@ public class LogicalMapProtobufData extends ProtobufData {
     private static final LogicalMapProtobufData INSTANCE = new LogicalMapProtobufData();
     private static final Schema NULL = Schema.create(Schema.Type.NULL);
 
+    private LogicalMapProtobufData() {}
+
     public static LogicalMapProtobufData get() {
         return INSTANCE;
     }

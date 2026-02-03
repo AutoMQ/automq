@@ -221,35 +221,38 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     @Override
     public void append(
         long largestOffset,
-        long largestTimestampMs,
-        long offsetOfMaxTimestamp,
         MemoryRecords records) throws IOException {
         if (records.sizeInBytes() > 0) {
             if (LOGGER.isTraceEnabled()) {
-                LOGGER.trace("Inserting {} bytes at end offset {} at position {} with largest timestamp {} at offset {}",
-                    records.sizeInBytes(), largestOffset, log.sizeInBytes(), largestTimestampMs, offsetOfMaxTimestamp);
+                LOGGER.trace("Inserting {} bytes at end offset {} at position {}",
+                    records.sizeInBytes(), largestOffset, log.sizeInBytes());
             }
-            int physicalPosition = log.sizeInBytes();
-            if (physicalPosition == 0) {
-                rollingBasedTimestamp = OptionalLong.of(largestTimestampMs);
-                meta.firstBatchTimestamp(largestTimestampMs);
-            }
-
+            boolean firstRecords = log.sizeInBytes() == 0;
             ensureOffsetInRange(largestOffset);
 
             // append the messages
             long appendedBytes = log.append(records, largestOffset + 1);
             LOGGER.trace("Appended {} to {} at end offset {}", appendedBytes, log, largestOffset);
-            // Update the in memory max timestamp and corresponding offset.
-            if (largestTimestampMs > maxTimestampSoFar()) {
-                maxTimestampAndOffsetSoFar = new TimestampOffset(largestTimestampMs, offsetOfMaxTimestamp);
+
+            for (RecordBatch batch : records.batches()) {
+                long batchMaxTimestamp = batch.maxTimestamp();
+                if (firstRecords) {
+                    rollingBasedTimestamp = OptionalLong.of(batchMaxTimestamp);
+                    meta.firstBatchTimestamp(batchMaxTimestamp);
+                    firstRecords = false;
+                }
+                long batchLastOffset = batch.lastOffset();
+                if (batchMaxTimestamp > maxTimestampSoFar()) {
+                    maxTimestampAndOffsetSoFar = new TimestampOffset(batchMaxTimestamp, batchLastOffset);
+                }
+
+                if (bytesSinceLastIndexEntry > indexIntervalBytes) {
+                    timeIndex().maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
+                    bytesSinceLastIndexEntry = 0;
+                }
+                int sizeInBytes = batch.sizeInBytes();
+                bytesSinceLastIndexEntry += sizeInBytes;
             }
-            // append an entry to the index (if needed)
-            if (bytesSinceLastIndexEntry > indexIntervalBytes) {
-                timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
-                bytesSinceLastIndexEntry = 0;
-            }
-            bytesSinceLastIndexEntry += records.sizeInBytes();
         }
         meta.lastModifiedTimestamp(System.currentTimeMillis());
     }

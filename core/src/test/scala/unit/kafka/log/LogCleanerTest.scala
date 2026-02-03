@@ -17,8 +17,9 @@
 
 package kafka.log
 
-import kafka.common._
 import kafka.log.streamaspect.ElasticUnifiedLog
+import kafka.common.LogCleaningAbortedException
+import kafka.log.LogCleaner.{MaxBufferUtilizationPercentMetricName, MaxCleanTimeMetricName, MaxCompactionDelayMetricsName}
 import kafka.server.{BrokerTopicStats, KafkaConfig}
 import kafka.utils.{CoreUtils, Logging, Pool, TestUtils}
 import org.apache.kafka.common.TopicPartition
@@ -1451,7 +1452,8 @@ class LogCleanerTest extends Logging {
       }
 
       // AutoMQ inject end
-      log.appendAsFollower(records)
+      
+      log.appendAsFollower(records, Int.MaxValue)
       assertEquals(i + 1, log.numberOfSegments)
     }
 
@@ -1519,7 +1521,7 @@ class LogCleanerTest extends Logging {
     }
     // AutoMQ inject end
 
-    log.appendAsFollower(records)
+    log.appendAsFollower(records, Int.MaxValue)
     log.appendAsLeader(TestUtils.singletonRecords(value = "hello".getBytes, key = "hello".getBytes), leaderEpoch = 0)
 
     // AutoMQ inject start
@@ -1581,14 +1583,14 @@ class LogCleanerTest extends Logging {
     val log = makeLog(config = LogConfig.fromProps(logConfig.originals, logProps))
 
     val record1 = messageWithOffset("hello".getBytes, "hello".getBytes, 0)
-    log.appendAsFollower(record1)
+    log.appendAsFollower(record1, Int.MaxValue)
     val record2 = messageWithOffset("hello".getBytes, "hello".getBytes, 1)
-    log.appendAsFollower(record2)
+    log.appendAsFollower(record2, Int.MaxValue)
     log.roll(Some(Int.MaxValue/2)) // starting a new log segment at offset Int.MaxValue/2
     val record3 = messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue/2)
-    log.appendAsFollower(record3)
+    log.appendAsFollower(record3, Int.MaxValue)
     val record4 = messageWithOffset("hello".getBytes, "hello".getBytes, Int.MaxValue.toLong + 1)
-    log.appendAsFollower(record4)
+    log.appendAsFollower(record4, Int.MaxValue)
 
     assertTrue(log.logEndOffset - 1 - log.logStartOffset > Int.MaxValue, "Actual offset range should be > Int.MaxValue")
 
@@ -1912,8 +1914,8 @@ class LogCleanerTest extends Logging {
     val noDupSetOffset = 50
     val noDupSet = noDupSetKeys zip (noDupSetOffset until noDupSetOffset + noDupSetKeys.size)
 
-    log.appendAsFollower(invalidCleanedMessage(dupSetOffset, dupSet, codec))
-    log.appendAsFollower(invalidCleanedMessage(noDupSetOffset, noDupSet, codec))
+    log.appendAsFollower(invalidCleanedMessage(dupSetOffset, dupSet, codec), Int.MaxValue)
+    log.appendAsFollower(invalidCleanedMessage(noDupSetOffset, noDupSet, codec), Int.MaxValue)
 
     log.roll()
 
@@ -1996,7 +1998,7 @@ class LogCleanerTest extends Logging {
       log.roll(Some(11L))
 
       // active segment record
-      log.appendAsFollower(messageWithOffset(1015, 1015, 11L))
+      log.appendAsFollower(messageWithOffset(1015, 1015, 11L), Int.MaxValue)
 
       val (nextDirtyOffset, _) = cleaner.clean(LogToClean(log.topicPartition, log, 0L, log.activeSegment.baseOffset, needCompactionNow = true))
       assertEquals(log.activeSegment.baseOffset, nextDirtyOffset,
@@ -2015,7 +2017,7 @@ class LogCleanerTest extends Logging {
       log.roll(Some(30L))
 
       // active segment record
-      log.appendAsFollower(messageWithOffset(1015, 1015, 30L))
+      log.appendAsFollower(messageWithOffset(1015, 1015, 30L), Int.MaxValue)
 
       val (nextDirtyOffset, _) = cleaner.clean(LogToClean(log.topicPartition, log, 0L, log.activeSegment.baseOffset, needCompactionNow = true))
       assertEquals(log.activeSegment.baseOffset, nextDirtyOffset,
@@ -2074,9 +2076,165 @@ class LogCleanerTest extends Logging {
     }
   }
 
+  @Test
+  def testMaxBufferUtilizationPercentMetric(): Unit = {
+    val logCleaner = new LogCleaner(
+      new CleanerConfig(true),
+      logDirs = Array(TestUtils.tempDir(), TestUtils.tempDir()),
+      logs = new Pool[TopicPartition, UnifiedLog](),
+      logDirFailureChannel = new LogDirFailureChannel(1),
+      time = time
+    )
+
+    def assertMaxBufferUtilizationPercent(expected: Int): Unit = {
+      val gauge = logCleaner.metricsGroup.newGauge(MaxBufferUtilizationPercentMetricName,
+        () => (logCleaner.maxOverCleanerThreads(_.lastStats.bufferUtilization) * 100).toInt)
+      assertEquals(expected, gauge.value())
+    }
+
+    try {
+      // No CleanerThreads
+      assertMaxBufferUtilizationPercent(0)
+
+      val cleaners = logCleaner.cleaners
+
+      val cleaner1 = new logCleaner.CleanerThread(1)
+      cleaner1.lastStats = new CleanerStats(time)
+      cleaner1.lastStats.bufferUtilization = 0.75
+      cleaners += cleaner1
+
+      val cleaner2 = new logCleaner.CleanerThread(2)
+      cleaner2.lastStats = new CleanerStats(time)
+      cleaner2.lastStats.bufferUtilization = 0.85
+      cleaners += cleaner2
+
+      val cleaner3 = new logCleaner.CleanerThread(3)
+      cleaner3.lastStats = new CleanerStats(time)
+      cleaner3.lastStats.bufferUtilization = 0.65
+      cleaners += cleaner3
+
+      // expect the gauge value to reflect the maximum bufferUtilization
+      assertMaxBufferUtilizationPercent(85)
+
+      // Update bufferUtilization and verify the gauge value updates
+      cleaner1.lastStats.bufferUtilization = 0.9
+      assertMaxBufferUtilizationPercent(90)
+
+      // All CleanerThreads have the same bufferUtilization
+      cleaners.foreach(_.lastStats.bufferUtilization = 0.5)
+      assertMaxBufferUtilizationPercent(50)
+    } finally {
+      logCleaner.shutdown()
+    }
+  }
+
+  @Test
+  def testMaxCleanTimeMetric(): Unit = {
+    val logCleaner = new LogCleaner(
+      new CleanerConfig(true),
+      logDirs = Array(TestUtils.tempDir(), TestUtils.tempDir()),
+      logs = new Pool[TopicPartition, UnifiedLog](),
+      logDirFailureChannel = new LogDirFailureChannel(1),
+      time = time
+    )
+
+    def assertMaxCleanTime(expected: Int): Unit = {
+      val gauge = logCleaner.metricsGroup.newGauge(MaxCleanTimeMetricName,
+        () => logCleaner.maxOverCleanerThreads(_.lastStats.elapsedSecs).toInt)
+      assertEquals(expected, gauge.value())
+    }
+
+    try {
+      // No CleanerThreads
+      assertMaxCleanTime(0)
+
+      val cleaners = logCleaner.cleaners
+
+      val cleaner1 = new logCleaner.CleanerThread(1)
+      cleaner1.lastStats = new CleanerStats(time)
+      cleaner1.lastStats.endTime = cleaner1.lastStats.startTime + 1000L
+      cleaners += cleaner1
+
+      val cleaner2 = new logCleaner.CleanerThread(2)
+      cleaner2.lastStats = new CleanerStats(time)
+      cleaner2.lastStats.endTime = cleaner2.lastStats.startTime + 2000L
+      cleaners += cleaner2
+
+      val cleaner3 = new logCleaner.CleanerThread(3)
+      cleaner3.lastStats = new CleanerStats(time)
+      cleaner3.lastStats.endTime = cleaner3.lastStats.startTime + 3000L
+      cleaners += cleaner3
+
+      // expect the gauge value to reflect the maximum cleanTime
+      assertMaxCleanTime(3)
+
+      // Update cleanTime and verify the gauge value updates
+      cleaner1.lastStats.endTime = cleaner1.lastStats.startTime + 4000L
+      assertMaxCleanTime(4)
+
+      // All CleanerThreads have the same cleanTime
+      cleaners.foreach(cleaner => cleaner.lastStats.endTime = cleaner.lastStats.startTime + 1500L)
+      assertMaxCleanTime(1)
+    } finally {
+      logCleaner.shutdown()
+    }
+  }
+
+  @Test
+  def testMaxCompactionDelayMetrics(): Unit = {
+    val logCleaner = new LogCleaner(
+      new CleanerConfig(true),
+      logDirs = Array(TestUtils.tempDir(), TestUtils.tempDir()),
+      logs = new Pool[TopicPartition, UnifiedLog](),
+      logDirFailureChannel = new LogDirFailureChannel(1),
+      time = time
+    )
+
+    def assertMaxCompactionDelay(expected: Int): Unit = {
+      val gauge = logCleaner.metricsGroup.newGauge(MaxCompactionDelayMetricsName,
+        () => (logCleaner.maxOverCleanerThreads(_.lastPreCleanStats.maxCompactionDelayMs.toDouble) / 1000).toInt)
+      assertEquals(expected, gauge.value())
+    }
+
+    try {
+      // No CleanerThreads
+      assertMaxCompactionDelay(0)
+
+      val cleaners = logCleaner.cleaners
+
+      val cleaner1 = new logCleaner.CleanerThread(1)
+      cleaner1.lastStats = new CleanerStats(time)
+      cleaner1.lastPreCleanStats.maxCompactionDelayMs = 1000L
+      cleaners += cleaner1
+
+      val cleaner2 = new logCleaner.CleanerThread(2)
+      cleaner2.lastStats = new CleanerStats(time)
+      cleaner2.lastPreCleanStats.maxCompactionDelayMs = 2000L
+      cleaners += cleaner2
+
+      val cleaner3 = new logCleaner.CleanerThread(3)
+      cleaner3.lastStats = new CleanerStats(time)
+      cleaner3.lastPreCleanStats.maxCompactionDelayMs = 3000L
+      cleaners += cleaner3
+
+      // expect the gauge value to reflect the maximum CompactionDelay
+      assertMaxCompactionDelay(3)
+
+      // Update CompactionDelay and verify the gauge value updates
+      cleaner1.lastPreCleanStats.maxCompactionDelayMs = 4000L
+      assertMaxCompactionDelay(4)
+
+      // All CleanerThreads have the same CompactionDelay
+      cleaners.foreach(_.lastPreCleanStats.maxCompactionDelayMs = 1500L)
+      assertMaxCompactionDelay(1)
+    } finally {
+      logCleaner.shutdown()
+    }
+  }
+
   private def writeToLog(log: UnifiedLog, keysAndValues: Iterable[(Int, Int)], offsetSeq: Iterable[Long]): Iterable[Long] = {
     for (((key, value), offset) <- keysAndValues.zip(offsetSeq))
-      yield log.appendAsFollower(messageWithOffset(key, value, offset)).lastOffset
+      yield log.appendAsFollower(messageWithOffset(key, value, offset), Int.MaxValue).lastOffset
   }
 
   private def invalidCleanedMessage(initialOffset: Long,

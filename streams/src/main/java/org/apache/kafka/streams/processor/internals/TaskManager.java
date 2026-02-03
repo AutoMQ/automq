@@ -28,6 +28,7 @@ import org.apache.kafka.common.Metric;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.TimeoutException;
+import org.apache.kafka.common.utils.ExponentialBackoff;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.streams.errors.LockException;
@@ -103,6 +104,8 @@ public class TaskManager {
 
     // includes assigned & initialized tasks and unassigned tasks we locked temporarily during rebalance
     private final Set<TaskId> lockedTaskDirectories = new HashSet<>();
+
+    private Map<TaskId, BackoffRecord> taskIdToBackoffRecord = new HashMap<>();
 
     private final ActiveTaskCreator activeTaskCreator;
     private final StandbyTaskCreator standbyTaskCreator;
@@ -1007,14 +1010,22 @@ public class TaskManager {
     }
 
     private void addTaskToStateUpdater(final Task task) {
+        final long nowMs = time.milliseconds();
         try {
-            task.initializeIfNeeded();
-            stateUpdater.add(task);
+            if (canTryInitializeTask(task.id(), nowMs)) {
+                task.initializeIfNeeded();
+                taskIdToBackoffRecord.remove(task.id());
+                stateUpdater.add(task);
+            } else {
+                log.trace("Task {} is still not allowed to retry acquiring the state directory lock", task.id());
+                tasks.addPendingTasksToInit(Collections.singleton(task));
+            }
         } catch (final LockException lockException) {
             // The state directory may still be locked by another thread, when the rebalance just happened.
             // Retry in the next iteration.
             log.info("Encountered lock exception. Reattempting locking the state in the next iteration.", lockException);
             tasks.addPendingTasksToInit(Collections.singleton(task));
+            updateOrCreateBackoffRecord(task.id(), nowMs);
         }
     }
 
@@ -1066,12 +1077,16 @@ public class TaskManager {
         final Set<TaskId> lockedTaskIds = activeRunningTaskIterable().stream().map(Task::id).collect(Collectors.toSet());
         maybeLockTasks(lockedTaskIds);
 
+        boolean revokedTasksNeedCommit = false;
         for (final Task task : activeRunningTaskIterable()) {
             if (remainingRevokedPartitions.containsAll(task.inputPartitions())) {
                 // when the task input partitions are included in the revoked list,
                 // this is an active task and should be revoked
+
                 revokedActiveTasks.add(task);
                 remainingRevokedPartitions.removeAll(task.inputPartitions());
+
+                revokedTasksNeedCommit |= task.commitNeeded();
             } else if (task.commitNeeded()) {
                 commitNeededActiveTasks.add(task);
             }
@@ -1085,11 +1100,9 @@ public class TaskManager {
                          "have been cleaned up by the handleAssignment callback.", remainingRevokedPartitions);
         }
 
-        prepareCommitAndAddOffsetsToMap(revokedActiveTasks, consumedOffsetsPerTask);
-
-        // if we need to commit any revoking task then we just commit all of those needed committing together
-        final boolean shouldCommitAdditionalTasks = !consumedOffsetsPerTask.isEmpty();
-        if (shouldCommitAdditionalTasks) {
+        if (revokedTasksNeedCommit) {
+            prepareCommitAndAddOffsetsToMap(revokedActiveTasks, consumedOffsetsPerTask);
+            // if we need to commit any revoking task then we just commit all of those needed committing together
             prepareCommitAndAddOffsetsToMap(commitNeededActiveTasks, consumedOffsetsPerTask);
         }
 
@@ -1098,10 +1111,12 @@ public class TaskManager {
         // as such we just need to skip those dirty tasks in the checkpoint
         final Set<Task> dirtyTasks = new HashSet<>();
         try {
-            // in handleRevocation we must call commitOffsetsOrTransaction() directly rather than
-            // commitAndFillInConsumedOffsetsAndMetadataPerTaskMap() to make sure we don't skip the
-            // offset commit because we are in a rebalance
-            taskExecutor.commitOffsetsOrTransaction(consumedOffsetsPerTask);
+            if (revokedTasksNeedCommit) {
+                // in handleRevocation we must call commitOffsetsOrTransaction() directly rather than
+                // commitAndFillInConsumedOffsetsAndMetadataPerTaskMap() to make sure we don't skip the
+                // offset commit because we are in a rebalance
+                taskExecutor.commitOffsetsOrTransaction(consumedOffsetsPerTask);
+            }
         } catch (final TaskCorruptedException e) {
             log.warn("Some tasks were corrupted when trying to commit offsets, these will be cleaned and revived: {}",
                      e.corruptedTasks());
@@ -1134,7 +1149,7 @@ public class TaskManager {
             }
         }
 
-        if (shouldCommitAdditionalTasks) {
+        if (revokedTasksNeedCommit) {
             for (final Task task : commitNeededActiveTasks) {
                 if (!dirtyTasks.contains(task)) {
                     try {
@@ -1770,7 +1785,6 @@ public class TaskManager {
             return standbyTasksInTaskRegistry;
         }
     }
-
     // For testing only.
     int commitAll() {
         return commit(tasks.allTasks());
@@ -2116,5 +2130,38 @@ public class TaskManager {
     // for testing only
     void addTask(final Task task) {
         tasks.addTask(task);
+    }
+
+    private boolean canTryInitializeTask(final TaskId taskId, final long nowMs) {
+        return !taskIdToBackoffRecord.containsKey(taskId) || taskIdToBackoffRecord.get(taskId).canAttempt(nowMs);
+    }
+
+    private void updateOrCreateBackoffRecord(final TaskId taskId, final long nowMs) {
+        if (taskIdToBackoffRecord.containsKey(taskId)) {
+            taskIdToBackoffRecord.get(taskId).recordAttempt(nowMs);
+        } else {
+            taskIdToBackoffRecord.put(taskId, new BackoffRecord(nowMs));
+        }
+    }
+
+    public static class BackoffRecord {
+        private long attempts;
+        private long lastAttemptMs;
+        private static final ExponentialBackoff EXPONENTIAL_BACKOFF = new ExponentialBackoff(1000, 2, 10000, 0.5);
+
+
+        public BackoffRecord(final long nowMs) {
+            this.attempts = 1;
+            this.lastAttemptMs = nowMs;
+        }
+
+        public void recordAttempt(final long nowMs) {
+            this.attempts++;
+            this.lastAttemptMs = nowMs;
+        }
+
+        public boolean canAttempt(final long nowMs) {
+            return nowMs - lastAttemptMs >= EXPONENTIAL_BACKOFF.backoff(attempts);
+        }
     }
 }

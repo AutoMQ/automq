@@ -71,10 +71,6 @@ import io.opentelemetry.sdk.resources.Resource;
 public class AutoMQTelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQTelemetryManager.class);
 
-    // Singleton instance support
-    private static volatile AutoMQTelemetryManager instance;
-    private static final Object LOCK = new Object();
-
     private final String exporterUri;
     private final String serviceName;
     private final String instanceId;
@@ -104,55 +100,6 @@ public class AutoMQTelemetryManager {
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
         SLF4JBridgeHandler.install();
-    }
-
-    /**
-     * Gets the singleton instance of AutoMQTelemetryManager.
-     * Returns null if no instance has been initialized.
-     *
-     * @return the singleton instance, or null if not initialized
-     */
-    public static AutoMQTelemetryManager getInstance() {
-        return instance;
-    }
-
-    /**
-     * Initializes the singleton instance with the given configuration.
-     * This method should be called before any other components try to access the instance.
-     *
-     * @param exporterUri   The metrics exporter URI.
-     * @param serviceName   The service name to be used in telemetry data.
-     * @param instanceId    The unique instance ID for this service instance.
-     * @param metricsExportConfig The metrics configuration.
-     * @return the initialized singleton instance
-     */
-    public static AutoMQTelemetryManager initializeInstance(String exporterUri, String serviceName, String instanceId, MetricsExportConfig metricsExportConfig) {
-        if (instance == null) {
-            synchronized (LOCK) {
-                if (instance == null) {
-                    AutoMQTelemetryManager newInstance = new AutoMQTelemetryManager(exporterUri, serviceName, instanceId, metricsExportConfig);
-                    newInstance.init();
-                    instance = newInstance;
-                    LOGGER.info("AutoMQTelemetryManager singleton instance initialized");
-                }
-            }
-        }
-        return instance;
-    }
-
-    /**
-     * Shuts down the singleton instance and releases all resources.
-     */
-    public static void shutdownInstance() {
-        if (instance != null) {
-            synchronized (LOCK) {
-                if (instance != null) {
-                    instance.shutdown();
-                    instance = null;
-                    LOGGER.info("AutoMQTelemetryManager singleton instance shutdown");
-                }
-            }
-        }
     }
 
     /**
