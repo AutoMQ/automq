@@ -65,8 +65,10 @@ public class RouterOutV2 {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
     private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterOutV2.class);
     private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterOutAppendPermitAcquireFailTimeNanos");
+    // Disabled by default to avoid blocking request-handler threads.
+    // Blocking handlers prevents AUTOMQ_ZONE_ROUTER processing, causing produce requests to fail continuously.
     private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
-        Math.min(1024, 100 * Math.max(1, (int) (Systems.HEAP_MEMORY_SIZE / (1024L * 1024 * 1024) / 6))) * 1024 * 1024
+        Integer.MAX_VALUE
     );
 
     private final Node currentNode;
@@ -105,7 +107,7 @@ public class RouterOutV2 {
         boolean acks0 = args.requiredAcks() == (short) 0;
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
-            MemoryRecords records = entry.getValue();
+            MemoryRecords records = LegacyRecordConverter.maybeConvert(entry.getValue());
             Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
             if (node.id() == Node.noNode().id()) {
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));

@@ -483,7 +483,7 @@ class KRaftMetadataCache(
     val image = _currentImage
     val result = new mutable.HashMap[Int, Node]()
     Option(image.topics().getTopic(tp.topic())).foreach { topic =>
-      topic.partitions().values().forEach { partition =>
+      Option(topic.partitions().get(tp.partition())).foreach { partition =>
         partition.replicas.foreach { replicaId =>
           val broker = image.cluster().broker(replicaId)
           if (broker != null && !broker.fenced()) {
@@ -614,7 +614,10 @@ class KRaftMetadataCache(
   override def features(): FinalizedFeatures = {
     val image = _currentImage
     val finalizedFeatures = new java.util.HashMap[String, java.lang.Short](image.features().finalizedVersions())
-    finalizedFeatures.put(KRaftVersion.FEATURE_NAME, kraftVersionSupplier.get().featureLevel())
+    val kraftVersionLevel = kraftVersionSupplier.get().featureLevel()
+    if (kraftVersionLevel > 0) {
+      finalizedFeatures.put(KRaftVersion.FEATURE_NAME, kraftVersionLevel)
+    }
 
     new FinalizedFeatures(image.features().metadataVersion(),
       finalizedFeatures,

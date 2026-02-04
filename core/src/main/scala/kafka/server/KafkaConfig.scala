@@ -21,6 +21,7 @@ import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.AutoMQConfig
+import kafka.automq.zerozone.DefaultClientRackProvider
 
 import java.util
 import java.util.concurrent.TimeUnit
@@ -99,6 +100,7 @@ object KafkaConfig {
   AutoMQConfig.define(configDef)
   AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  DefaultClientRackProvider.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   // AutoMQ inject end
 
 
@@ -867,17 +869,42 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   }
 
   def effectiveAdvertisedControllerListeners: Seq[EndPoint] = {
-    val controllerAdvertisedListeners = advertisedListeners.filter(l => controllerListenerNames.contains(l.listenerName.value()))
+    val advertisedListenersProp = getString(SocketServerConfigs.ADVERTISED_LISTENERS_CONFIG)
+    val controllerAdvertisedListeners = if (advertisedListenersProp != null) {
+      CoreUtils.listenerListToEndPoints(advertisedListenersProp, effectiveListenerSecurityProtocolMap, requireDistinctPorts=false)
+        .filter(l => controllerListenerNames.contains(l.listenerName.value()))
+    } else {
+      Seq.empty
+    }
     val controllerListenersValue = controllerListeners
 
     controllerListenerNames.flatMap { name =>
       controllerAdvertisedListeners
         .find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name)))
-        .orElse(controllerListenersValue.find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name))))
+        .orElse(
+          // If users don't define advertised.listeners, the advertised controller listeners inherit from listeners configuration
+          // which match listener names in controller.listener.names.
+          // Removing "0.0.0.0" host to avoid validation errors. This is to be compatible with the old behavior before 3.9.
+          // The null or "" host does a reverse lookup in ListenerInfo#withWildcardHostnamesResolved.
+          controllerListenersValue
+            .find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name)))
+            .map(endpoint => if (endpoint.host == "0.0.0.0") {
+              new EndPoint(null, endpoint.port, endpoint.listenerName, endpoint.securityProtocol)
+            } else {
+              endpoint
+            })
+        )
     }
   }
 
   def effectiveAdvertisedBrokerListeners: Seq[EndPoint] = {
+    val advertisedListenersProp = getString(SocketServerConfigs.ADVERTISED_LISTENERS_CONFIG)
+    val advertisedListeners = if (advertisedListenersProp != null) {
+      CoreUtils.listenerListToEndPoints(advertisedListenersProp, effectiveListenerSecurityProtocolMap, requireDistinctPorts=false)
+    } else {
+      listeners
+    }
+    // Only expose broker listeners
     advertisedListeners.filter(l => {
       if (!controllerListenerNames.contains(l.listenerName.value())) {
         true
@@ -889,16 +916,6 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
         false
       }
     })
-  }
-
-  // Use advertised listeners if defined, fallback to listeners otherwise
-  private def advertisedListeners: Seq[EndPoint] = {
-    val advertisedListenersProp = getString(SocketServerConfigs.ADVERTISED_LISTENERS_CONFIG)
-    if (advertisedListenersProp != null) {
-      CoreUtils.listenerListToEndPoints(advertisedListenersProp, effectiveListenerSecurityProtocolMap, requireDistinctPorts=false)
-    } else {
-      listeners
-    }
   }
 
   private def getInterBrokerListenerNameAndSecurityProtocol: (ListenerName, SecurityProtocol) = {

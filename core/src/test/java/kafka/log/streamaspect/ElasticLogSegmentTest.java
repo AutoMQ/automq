@@ -93,7 +93,7 @@ public class ElasticLogSegmentTest {
     public void testReadBeforeFirstOffset() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(40);
         MemoryRecords ms = records(40, "hello", "there", "little", "bee");
-        seg.append(43, RecordBatch.NO_TIMESTAMP, -1L, ms);
+        seg.append(43, ms);
         Records read = seg.read(31, 300).records;
         checkEquals(ms.records().iterator(), read.records().iterator());
     }
@@ -102,7 +102,7 @@ public class ElasticLogSegmentTest {
     public void testReadAfterLast() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(40);
         MemoryRecords ms = records(40, "hello", "there");
-        seg.append(41, RecordBatch.NO_TIMESTAMP, -1L, ms);
+        seg.append(41, ms);
         FetchDataInfo read = seg.read(52, 200);
         assertNull(read, "Read beyond the last offset in the segment should give null");
     }
@@ -111,7 +111,7 @@ public class ElasticLogSegmentTest {
     public void testReadFromGap() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(40);
         MemoryRecords ms = records(40, "hello", "there");
-        seg.append(41, RecordBatch.NO_TIMESTAMP, -1L, ms);
+        seg.append(41, ms);
         FetchDataInfo read = seg.read(35, 200);
         checkEquals(ms.records().iterator(), read.records.records().iterator());
     }
@@ -159,7 +159,7 @@ public class ElasticLogSegmentTest {
         ElasticLogSegment seg = createOrLoadSegment(40, 2 * records(0, "hello").sizeInBytes() - 1, Time.SYSTEM);
         var offset = 40;
         for (int i = 0; i < numMessages; i++) {
-            seg.append(offset, offset, offset, records(offset, "hello"));
+            seg.append(offset, records(offset, "hello"));
             offset += 1;
         }
         assertEquals(offset, seg.readNextOffset());
@@ -174,7 +174,7 @@ public class ElasticLogSegmentTest {
         ElasticLogSegment seg = createOrLoadSegment(40, messageSize * 2 - 1, Time.SYSTEM);
         // Produce some messages
         for (int i = 40; i < 50; i++) {
-            seg.append(i, i * 10, i, records(i, "msg" + i));
+            seg.append(i, records(i, "msg" + i));
         }
 
         assertEquals(490, seg.largestTimestamp());
@@ -196,7 +196,7 @@ public class ElasticLogSegmentTest {
     public void testNextOffsetCalculation() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(40);
         assertEquals(40, seg.readNextOffset());
-        seg.append(52, RecordBatch.NO_TIMESTAMP, -1L, records(50, "hello", "there", "you"));
+        seg.append(52, records(50, "hello", "there", "you"));
         assertEquals(53, seg.readNextOffset());
     }
 
@@ -211,25 +211,22 @@ public class ElasticLogSegmentTest {
         long pid2 = 10L;
 
         // append transactional records from pid1
-        segment.append(101L, RecordBatch.NO_TIMESTAMP,
-            100L, MemoryRecords.withTransactionalRecords(100L, Compression.NONE,
+        segment.append(101L, MemoryRecords.withTransactionalRecords(100L, Compression.NONE,
                 pid1, producerEpoch, sequence, partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // append transactional records from pid2
-        segment.append(103L, RecordBatch.NO_TIMESTAMP, 102L, MemoryRecords.withTransactionalRecords(102L, Compression.NONE,
+        segment.append(103L, MemoryRecords.withTransactionalRecords(102L, Compression.NONE,
             pid2, producerEpoch, sequence, partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // append non-transactional records
-        segment.append(105L, RecordBatch.NO_TIMESTAMP, 104L, MemoryRecords.withRecords(104L, Compression.NONE,
+        segment.append(105L, MemoryRecords.withRecords(104L, Compression.NONE,
             partitionLeaderEpoch, new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         // abort the transaction from pid2 (note LSO should be 100L since the txn from pid1 has not completed)
-        segment.append(106L, RecordBatch.NO_TIMESTAMP,
-            106L, endTxnRecords(ControlRecordType.ABORT, pid2, producerEpoch, 106L));
+        segment.append(106L, endTxnRecords(ControlRecordType.ABORT, pid2, producerEpoch, 106L));
 
         // commit the transaction from pid1
-        segment.append(107L, RecordBatch.NO_TIMESTAMP,
-            107L, endTxnRecords(ControlRecordType.COMMIT, pid1, producerEpoch, 107L));
+        segment.append(107L, endTxnRecords(ControlRecordType.COMMIT, pid1, producerEpoch, 107L));
 
         ProducerStateManager stateManager = newProducerStateManager();
         segment.recover(stateManager, Optional.empty());
@@ -271,20 +268,16 @@ public class ElasticLogSegmentTest {
         ElasticLeaderEpochCheckpoint checkpoint = new ElasticLeaderEpochCheckpoint(new ElasticLeaderEpochCheckpointMeta(0, new ArrayList<>()), meta -> {
         });
         LeaderEpochFileCache cache = new LeaderEpochFileCache(topicPartition, checkpoint, new MockScheduler(Time.SYSTEM));
-        seg.append(105L, RecordBatch.NO_TIMESTAMP,
-            104L, MemoryRecords.withRecords(104L, Compression.NONE, 0,
+        seg.append(105L, MemoryRecords.withRecords(104L, Compression.NONE, 0,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
-        seg.append(107L, RecordBatch.NO_TIMESTAMP,
-            106L, MemoryRecords.withRecords(106L, Compression.NONE, 1,
+        seg.append(107L, MemoryRecords.withRecords(106L, Compression.NONE, 1,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
-        seg.append(109L, RecordBatch.NO_TIMESTAMP,
-            108L, MemoryRecords.withRecords(108L, Compression.NONE, 1,
+        seg.append(109L, MemoryRecords.withRecords(108L, Compression.NONE, 1,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
-        seg.append(111L, RecordBatch.NO_TIMESTAMP,
-            110, MemoryRecords.withRecords(110L, Compression.NONE, 2,
+        seg.append(111L, MemoryRecords.withRecords(110L, Compression.NONE, 2,
                 new SimpleRecord("a".getBytes()), new SimpleRecord("b".getBytes())));
 
         seg.recover(newProducerStateManager(), Optional.of(cache));
@@ -307,9 +300,9 @@ public class ElasticLogSegmentTest {
         ElasticLogSegment seg = createOrLoadSegment(40, 10, Time.SYSTEM);
 
         MemoryRecords ms = records(40, "hello", "there");
-        seg.append(41, RecordBatch.NO_TIMESTAMP, -1L, ms);
+        seg.append(41, ms);
         MemoryRecords ms2 = records(42, "alpha", "beta");
-        seg.append(43, RecordBatch.NO_TIMESTAMP, -1L, ms2);
+        seg.append(43, ms2);
         FetchDataInfo read = seg.read(42, 200);
         checkEquals(ms2.records().iterator(), read.records.records().iterator());
         int oldSize = seg.size();

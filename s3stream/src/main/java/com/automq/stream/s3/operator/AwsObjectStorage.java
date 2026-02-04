@@ -404,7 +404,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     protected List<AwsCredentialsProvider> credentialsProviders0(BucketURI bucketURI) {
-        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.create());
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.builder().build());
     }
 
     private String range(long start, long end) {

@@ -52,8 +52,6 @@ import org.apache.kafka.streams.processor.internals.metrics.ThreadMetrics;
 import org.apache.kafka.streams.state.internals.ThreadCache;
 
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -794,7 +792,7 @@ public class StreamTask extends AbstractTask implements ProcessorNodePunctuator,
 
             // after processing this record, if its partition queue's buffered size has been
             // decreased to the threshold, we can then resume the consumption on this partition
-            if (recordInfo.queue().size() == maxBufferedSize) {
+            if (recordInfo.queue().size() <= maxBufferedSize) {
                 partitionsToResume.add(partition);
             }
 
@@ -884,18 +882,6 @@ public class StreamTask extends AbstractTask implements ProcessorNodePunctuator,
         processTimeMs = 0L;
     }
 
-    private String getStacktraceString(final Throwable e) {
-        String stacktrace = null;
-        try (final StringWriter stringWriter = new StringWriter();
-             final PrintWriter printWriter = new PrintWriter(stringWriter)) {
-            e.printStackTrace(printWriter);
-            stacktrace = stringWriter.toString();
-        } catch (final IOException ioe) {
-            log.error("Encountered error extracting stacktrace from this exception", ioe);
-        }
-        return stacktrace;
-    }
-
     /**
      * @throws IllegalStateException if the current node is not null
      * @throws TaskMigratedException if the task producer got fenced (EOS only)
@@ -938,7 +924,10 @@ public class StreamTask extends AbstractTask implements ProcessorNodePunctuator,
             throw createStreamsException(node.name(), e.getCause());
         } catch (final TaskCorruptedException | TaskMigratedException e) {
             throw e;
-        } catch (final RuntimeException processingException) {
+        } catch (final Exception processingException) {
+            // while Java distinguishes checked vs unchecked exceptions, other languages
+            // like Scala or Kotlin do not, and thus we need to catch `Exception`
+            // (instead of `RuntimeException`) to work well with those languages
             final ErrorHandlerContext errorHandlerContext = new DefaultErrorHandlerContext(
                 null,
                 recordContext.topic(),
@@ -956,7 +945,10 @@ public class StreamTask extends AbstractTask implements ProcessorNodePunctuator,
                     processingExceptionHandler.handle(errorHandlerContext, null, processingException),
                     "Invalid ProcessingExceptionHandler response."
                 );
-            } catch (final RuntimeException fatalUserException) {
+            } catch (final Exception fatalUserException) {
+                // while Java distinguishes checked vs unchecked exceptions, other languages
+                // like Scala or Kotlin do not, and thus we need to catch `Exception`
+                // (instead of `RuntimeException`) to work well with those languages
                 log.error(
                     "Processing error callback failed after processing error for record: {}",
                     errorHandlerContext,
@@ -1074,10 +1066,13 @@ public class StreamTask extends AbstractTask implements ProcessorNodePunctuator,
     @Override
     public Map<TopicPartition, Long> purgeableOffsets() {
         final Map<TopicPartition, Long> purgeableConsumedOffsets = new HashMap<>();
-        for (final Map.Entry<TopicPartition, Long> entry : consumedOffsets.entrySet()) {
+        for (final Map.Entry<TopicPartition, Long> entry : committedOffsets.entrySet()) {
             final TopicPartition tp = entry.getKey();
             if (topology.isRepartitionTopic(tp.topic())) {
-                purgeableConsumedOffsets.put(tp, entry.getValue() + 1);
+                // committedOffsets map is initialized at -1 so no purging until there's a committed offset
+                if (entry.getValue() > -1) {
+                    purgeableConsumedOffsets.put(tp, entry.getValue());
+                }
             }
         }
 
