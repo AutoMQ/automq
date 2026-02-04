@@ -17,8 +17,9 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -28,11 +29,11 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
     private final List<S3StreamSetObject> list;
 
     public SortedStreamSetObjectsList(SortedStreamSetObjects source) {
-        this.list = new LinkedList<>(source.list());
+        this.list = new ArrayList<>(source.list());
     }
 
     public SortedStreamSetObjectsList() {
-        this.list = new LinkedList<>();
+        this.list = new ArrayList<>();
     }
 
     /**
@@ -40,7 +41,8 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
      * @param list the list of S3StreamSetObjects, must guarantee that the list is sorted
      */
     public SortedStreamSetObjectsList(List<S3StreamSetObject> list) {
-        this.list = list;
+        // Use ArrayList for efficient random access required by binary search
+        this.list = list instanceof ArrayList ? list : new ArrayList<>(list);
     }
 
     @Override
@@ -70,22 +72,48 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
     @Override
     public boolean add(S3StreamSetObject s3StreamSetObject) {
-        // TODO: optimize by binary search
-        for (int index = 0; index < this.list.size(); index++) {
-            S3StreamSetObject current = this.list.get(index);
-            if (s3StreamSetObject.compareTo(current) <= 0) {
-                this.list.add(index, s3StreamSetObject);
-                return true;
-            }
+        // Use binary search to find the insertion point in O(log n) time
+        int index = Collections.binarySearch(this.list, s3StreamSetObject);
+        if (index < 0) {
+            // binarySearch returns (-(insertion point) - 1) when element is not found
+            index = -(index + 1);
         }
-        this.list.add(s3StreamSetObject);
+        this.list.add(index, s3StreamSetObject);
         return true;
     }
 
     @Override
     public boolean remove(Object o) {
-        // TODO: optimize by binary search
-        return this.list.remove(o);
+        if (!(o instanceof S3StreamSetObject)) {
+            return false;
+        }
+        S3StreamSetObject target = (S3StreamSetObject) o;
+        // Use binary search to find the element in O(log n) time
+        int index = Collections.binarySearch(this.list, target);
+        if (index >= 0) {
+            // Found the element at the exact position, but we need to verify it's the same object
+            // since compareTo compares by orderId, but equals compares by objectId
+            S3StreamSetObject found = this.list.get(index);
+            if (found.equals(target)) {
+                this.list.remove(index);
+                return true;
+            }
+            // If not equal, search linearly around the found position for objects with the same orderId
+            // This handles the case where multiple objects have the same orderId
+            for (int i = index - 1; i >= 0 && this.list.get(i).compareTo(target) == 0; i--) {
+                if (this.list.get(i).equals(target)) {
+                    this.list.remove(i);
+                    return true;
+                }
+            }
+            for (int i = index + 1; i < this.list.size() && this.list.get(i).compareTo(target) == 0; i++) {
+                if (this.list.get(i).equals(target)) {
+                    this.list.remove(i);
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
 
