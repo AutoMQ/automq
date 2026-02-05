@@ -248,6 +248,7 @@ object RequestConvertToJson {
       case res: AutomqGetNodesResponse => AutomqGetNodesResponseDataJsonConverter.write(res.data, version)
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
       case res: AutomqZoneRouterResponse => AutomqZoneRouterResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqGetPartitionSnapshotResponse => AutomqGetPartitionSnapshotResponseDataJsonConverter.write(res.data, version)
       case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       
