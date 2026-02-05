@@ -134,7 +134,7 @@ class AutoMQBrokerTelemetryTest(Test):
                 assert label in metrics_output, f"Expected label '{label}' absent from metrics output"
 
         if "# HELP" not in metrics_output and "# TYPE" not in metrics_output:
-            self.logger.warning("Metrics output missing HELP/TYPE comments – format may not follow Prometheus conventions")
+            self.logger.warning("Metrics output missing HELP/TYPE comments")
 
     def _list_s3_objects(self, prefix):
         objects, _ = self.kafka.get_bucket_objects()
@@ -169,6 +169,25 @@ class AutoMQBrokerTelemetryTest(Test):
     # ------------------------------------------------------------------
     # Tests
     # ------------------------------------------------------------------
+
+    def _assert_invalid_label_rejection(self, node, current_port):
+        invalid_labels = [
+            "invalid_no_value",
+            "key1=value1,invalid_label",
+            "=no_key",
+        ]
+        for invalid_label in invalid_labels:
+            config_command = (
+                f"{self.kafka.path.script('kafka-configs.sh', node)} "
+                f"--bootstrap-server {self.kafka.bootstrap_servers()} "
+                f"--entity-type brokers --entity-default "
+                f"--alter "
+                f"--add-config 's3.telemetry.metrics.base.labels=[{invalid_label}]'"
+            )
+            node.account.ssh_output(config_command, allow_fail=True)
+            assert self._metrics_ready(node, current_port), \
+                f"Metrics should still be available on port {current_port} after invalid config: {invalid_label}"
+
 
     @cluster(num_nodes=4)
     def test_prometheus_metrics_exporter(self):
@@ -277,4 +296,69 @@ class AutoMQBrokerTelemetryTest(Test):
 
         finally:
             self.num_brokers = original_num_brokers
+            self._stop_kafka()
+
+    @cluster(num_nodes=4)
+    def test_dynamic_telemetry_reconfiguration(self):
+        ports = [9464, 9465, 9466]
+        labels_list = [
+            "env=dev,team=platform",
+            "env=staging,team=platform,region=us-east",
+            "env=prod,team=platform,region=us-west"
+        ]
+
+        server_overrides = [
+            ["s3.telemetry.metrics.exporter.uri", f"prometheus://0.0.0.0:{ports[0]}"],
+            ["s3.telemetry.metrics.base.labels", labels_list[0]]
+        ]
+
+        self._start_kafka(server_overrides=server_overrides)
+
+        try:
+            # Verify initial state and TracerSupplier
+            self._wait_for_metrics_available(port=ports[0])
+            for node in self.kafka.nodes:
+                self._assert_prometheus_metrics(self._fetch_metrics(node, port=ports[0]),
+                                                expected_labels=['env="dev"', 'team="platform"'])
+                assert 'region=' not in self._fetch_metrics(node, port=ports[0]), "Initial metrics should not contain 'region' label"
+
+            # Test invalid label formats are rejected
+            self._assert_invalid_label_rejection(self.kafka.nodes[0], ports[0])
+
+            # Perform multiple valid reconfigurations
+            for i in range(1, len(ports)):
+                prev_port = ports[i - 1]
+                new_port = ports[i]
+                new_labels = labels_list[i]
+
+                config_command = (
+                    f"{self.kafka.path.script('kafka-configs.sh', self.kafka.nodes[0])} "
+                    f"--bootstrap-server {self.kafka.bootstrap_servers()} "
+                    f"--entity-type brokers --entity-default "
+                    f"--alter "
+                    f"--add-config 's3.telemetry.metrics.exporter.uri=prometheus://0.0.0.0:{new_port},"
+                    f"s3.telemetry.metrics.base.labels=[{new_labels}]'"
+                )
+                self.kafka.nodes[0].account.ssh(config_command)
+                self._wait_for_metrics_available(port=new_port, timeout_sec=60)
+
+                for node in self.kafka.nodes:
+                    output = self._fetch_metrics(node, port=new_port)
+                    for label_pair in new_labels.split(','):
+                        key, value = label_pair.split('=')
+                        expected_label = f'{key}="{value}"'
+                        assert expected_label in output, f"Expected label '{expected_label}' not found"
+                    wait_until(
+                        lambda n=node, p=prev_port: not self._metrics_ready(n, p),
+                        timeout_sec=30, backoff_sec=2,
+                        err_msg=f"Old port {prev_port} should be closed"
+                    )
+    
+            # Final verification: metrics not empty
+            for node in self.kafka.nodes:
+                metric_count = len([line for line in self._fetch_metrics(node, port=ports[-1]).splitlines()
+                                   if line.strip() and not line.startswith('#')])
+                assert metric_count > 0, "Metrics should not be empty after reconfigurations"
+
+        finally:
             self._stop_kafka()
