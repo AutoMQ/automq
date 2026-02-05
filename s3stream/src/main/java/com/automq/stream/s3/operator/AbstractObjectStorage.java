@@ -935,6 +935,34 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return true;
     }
 
+    protected <T> CompletableFuture<T> retryOnThrottle(Supplier<CompletableFuture<T>> operation,
+        S3Operation operationType, int retryCount) {
+    
+        CompletableFuture<T> cf = new CompletableFuture<>();
+        operation.get().whenComplete((result, ex) -> {
+            if (ex == null) {
+                cf.complete(result);
+                return;
+            }
+
+            Throwable cause = FutureUtil.cause(ex);
+            if (!isThrottled(cause, retryCount)) {
+                cf.completeExceptionally(cause);
+                return;
+            }
+
+            int delay = retryDelay(operationType, retryCount);
+            scheduler.schedule(() -> 
+                retryOnThrottle(operation, operationType, retryCount + 1)
+                    .whenComplete((r, e) -> {
+                        if (e != null) cf.completeExceptionally(e);
+                        else cf.complete(r);
+                    }), 
+                delay, TimeUnit.MILLISECONDS);
+        });
+        return cf;
+    }
+
     protected DeleteObjectsAccumulator newDeleteObjectsAccumulator() {
         return new DeleteObjectsAccumulator(this::doDeleteObjects);
     }
