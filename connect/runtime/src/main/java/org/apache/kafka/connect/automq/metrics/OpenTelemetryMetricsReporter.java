@@ -38,6 +38,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -90,8 +92,8 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private String excludePattern = null;
     
     private Meter meter;
-    private final Map<String, AutoCloseable> observableHandles = new ConcurrentHashMap<>();
-    private final Map<String, KafkaMetric> registeredMetrics = new ConcurrentHashMap<>();
+    private final Map<String, MetricHandle> metricHandles = new ConcurrentHashMap<>();
+    private final Map<KafkaMetric, String> metricToKey = new ConcurrentHashMap<>();
     
     public static void initializeTelemetry(Properties props) {
         String exportURIStr = props.getProperty(MetricsConfigConstants.EXPORTER_URI_KEY);
@@ -212,29 +214,15 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
             return;
         }
         
-        try {
-            String metricKey = buildMetricKey(metric.metricName());
-            closeHandle(metricKey);
-            registeredMetrics.remove(metricKey);
-            LOGGER.debug("Removed metric: {}", metricKey);
-        } catch (Exception e) {
-            LOGGER.warn("Failed to remove metric {}", metric.metricName(), e);
-        }
+        removeMetricInternal(metric);
     }
 
     @Override
     public void close() {
         if (enabled) {
-            // Close all observable handles to prevent memory leaks
-            observableHandles.values().forEach(handle -> {
-                try {
-                    handle.close();
-                } catch (Exception e) {
-                    LOGGER.debug("Error closing observable handle", e);
-                }
-            });
-            observableHandles.clear();
-            registeredMetrics.clear();
+            metricHandles.forEach((metricKey, handle) -> closeHandle(metricKey, handle));
+            metricHandles.clear();
+            metricToKey.clear();
         }
         LOGGER.info("OpenTelemetryMetricsReporter closed");
     }
@@ -257,84 +245,122 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
         
         Attributes attributes = buildAttributes(metricName);
-        
-        // Close existing handle if present (for metric updates)
-        closeHandle(metricKey);
-        
-        // Register the metric for future access
-        registeredMetrics.put(metricKey, metric);
-        
-        // Determine metric type and register accordingly
-        if (isCounterMetric(metricName)) {
-            registerAsyncCounter(metricKey, metricName, metric, attributes, (Number) testValue);
-        } else {
-            registerAsyncGauge(metricKey, metricName, metric, attributes);
+
+        // Remove any stale registration before re-adding the metric
+        removeMetricInternal(metric);
+
+        AtomicBoolean creationFailed = new AtomicBoolean(false);
+        AtomicBoolean entryAdded = new AtomicBoolean(false);
+        metricHandles.compute(metricKey, (key, existingHandle) -> {
+            MetricHandle handle = existingHandle;
+            if (handle == null) {
+                MetricHandle newHandle = createMetricHandle(key, metricName, (Number) testValue, isCounterMetric(metricName));
+                if (newHandle == null || newHandle.handle == null) {
+                    creationFailed.set(true);
+                    return null;
+                }
+                handle = newHandle;
+            }
+            handle.entries.add(new MetricEntry(metric, attributes));
+            entryAdded.set(true);
+            return handle;
+        });
+
+        if (creationFailed.get()) {
+            LOGGER.warn("Failed to register metric handle for {}", metricKey);
+            return;
+        }
+
+        if (entryAdded.get()) {
+            metricToKey.put(metric, metricKey);
         }
     }
     
-    private void registerAsyncGauge(String metricKey, MetricName metricName, KafkaMetric metric, Attributes attributes) {
+    private MetricHandle createMetricHandle(String metricKey, MetricName metricName, Number initialValue, boolean isCounter) {
+        MetricHandle handle = new MetricHandle();
+        String description = buildDescription(metricName);
+        String unit = determineUnit(metricName);
+
+        if (isCounter) {
+            boolean useLongCounter = initialValue instanceof Long || initialValue instanceof Integer;
+            AutoCloseable counterHandle = registerSharedAsyncCounter(metricKey, description, unit, handle, useLongCounter);
+            if (counterHandle == null) {
+                return null;
+            }
+            handle.handle = counterHandle;
+        } else {
+            AutoCloseable gaugeHandle = registerSharedAsyncGauge(metricKey, description, unit, handle);
+            if (gaugeHandle == null) {
+                return null;
+            }
+            handle.handle = gaugeHandle;
+        }
+        return handle;
+    }
+
+    private AutoCloseable registerSharedAsyncGauge(String metricKey, String description, String unit, MetricHandle metricHandle) {
         try {
-            String description = buildDescription(metricName);
-            String unit = determineUnit(metricName);
-            
             ObservableDoubleGauge gauge = meter.gaugeBuilder(metricKey)
                 .setDescription(description)
                 .setUnit(unit)
                 .buildWithCallback(measurement -> {
-                    Number value = (Number) safeMetricValue(metric);
-                    if (value != null) {
-                        measurement.record(value.doubleValue(), attributes);
+                    for (MetricEntry entry : metricHandle.entries) {
+                        Number value = (Number) safeMetricValue(entry.metric);
+                        if (value != null) {
+                            measurement.record(value.doubleValue(), entry.attributes);
+                        }
                     }
                 });
-            
-            observableHandles.put(metricKey, gauge);
-            LOGGER.debug("Registered async gauge: {}", metricKey);
+            LOGGER.debug("Registered shared async gauge: {}", metricKey);
+            return gauge;
         } catch (Exception e) {
-            LOGGER.warn("Failed to register async gauge for {}", metricKey, e);
+            LOGGER.warn("Failed to register shared async gauge for {}", metricKey, e);
+            return null;
         }
     }
-    
-    private void registerAsyncCounter(String metricKey, MetricName metricName, KafkaMetric metric, 
-                                    Attributes attributes, Number initialValue) {
+
+    private AutoCloseable registerSharedAsyncCounter(String metricKey, String description, String unit,
+                                                     MetricHandle metricHandle, boolean useLongCounter) {
         try {
-            String description = buildDescription(metricName);
-            String unit = determineUnit(metricName);
-            
-            // Use appropriate counter type based on initial value type
-            if (initialValue instanceof Long || initialValue instanceof Integer) {
+            if (useLongCounter) {
                 ObservableLongCounter counter = meter.counterBuilder(metricKey)
                     .setDescription(description)
                     .setUnit(unit)
                     .buildWithCallback(measurement -> {
-                        Number value = (Number) safeMetricValue(metric);
-                        if (value != null) {
-                            long longValue = value.longValue();
-                            if (longValue >= 0) {
-                                measurement.record(longValue, attributes);
+                        for (MetricEntry entry : metricHandle.entries) {
+                            Number value = (Number) safeMetricValue(entry.metric);
+                            if (value != null) {
+                                long longValue = value.longValue();
+                                if (longValue >= 0) {
+                                    measurement.record(longValue, entry.attributes);
+                                }
                             }
                         }
                     });
-                observableHandles.put(metricKey, counter);
-            } else {
-                ObservableDoubleCounter counter = meter.counterBuilder(metricKey)
-                    .ofDoubles()
-                    .setDescription(description)
-                    .setUnit(unit)
-                    .buildWithCallback(measurement -> {
-                        Number value = (Number) safeMetricValue(metric);
+                LOGGER.debug("Registered shared async long counter: {}", metricKey);
+                return counter;
+            }
+
+            ObservableDoubleCounter counter = meter.counterBuilder(metricKey)
+                .ofDoubles()
+                .setDescription(description)
+                .setUnit(unit)
+                .buildWithCallback(measurement -> {
+                    for (MetricEntry entry : metricHandle.entries) {
+                        Number value = (Number) safeMetricValue(entry.metric);
                         if (value != null) {
                             double doubleValue = value.doubleValue();
                             if (doubleValue >= 0) {
-                                measurement.record(doubleValue, attributes);
+                                measurement.record(doubleValue, entry.attributes);
                             }
                         }
-                    });
-                observableHandles.put(metricKey, counter);
-            }
-            
-            LOGGER.debug("Registered async counter: {}", metricKey);
+                    }
+                });
+            LOGGER.debug("Registered shared async double counter: {}", metricKey);
+            return counter;
         } catch (Exception e) {
-            LOGGER.warn("Failed to register async counter for {}", metricKey, e);
+            LOGGER.warn("Failed to register shared async counter for {}", metricKey, e);
+            return null;
         }
     }
     
@@ -347,15 +373,35 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
     }
     
-    private void closeHandle(String metricKey) {
-        AutoCloseable handle = observableHandles.remove(metricKey);
-        if (handle != null) {
+    private void closeHandle(String metricKey, MetricHandle handle) {
+        if (handle != null && handle.handle != null) {
             try {
-                handle.close();
+                handle.handle.close();
             } catch (Exception e) {
                 LOGGER.debug("Error closing handle for {}", metricKey, e);
             }
         }
+    }
+
+    private void removeMetricInternal(KafkaMetric metric) {
+        String metricKey = metricToKey.remove(metric);
+        if (metricKey == null) {
+            return;
+        }
+
+        metricHandles.compute(metricKey, (key, handle) -> {
+            if (handle == null) {
+                return null;
+            }
+
+            handle.entries.removeIf(entry -> entry.metric == metric);
+
+            if (handle.entries.isEmpty()) {
+                closeHandle(key, handle);
+                return null;
+            }
+            return handle;
+        });
     }
     
     private String buildMetricKey(MetricName metricName) {
@@ -821,5 +867,20 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
         
         return true;
+    }
+
+    private static final class MetricEntry {
+        final KafkaMetric metric;
+        final Attributes attributes;
+
+        MetricEntry(KafkaMetric metric, Attributes attributes) {
+            this.metric = metric;
+            this.attributes = attributes;
+        }
+    }
+
+    private static final class MetricHandle {
+        final CopyOnWriteArrayList<MetricEntry> entries = new CopyOnWriteArrayList<>();
+        AutoCloseable handle;
     }
 }
