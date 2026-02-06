@@ -39,6 +39,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -245,24 +246,31 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         // Remove any stale registration before re-adding the metric
         removeMetricInternal(metric);
 
-        MetricHandle metricHandle = metricHandles.get(metricKey);
-        if (metricHandle == null) {
-            MetricHandle newHandle = createMetricHandle(metricKey, metricName, (Number) testValue, isCounterMetric(metricName));
-            if (newHandle == null || newHandle.handle == null) {
-                LOGGER.warn("Failed to register metric handle for {}", metricKey);
-                return;
+        AtomicBoolean creationFailed = new AtomicBoolean(false);
+        AtomicBoolean entryAdded = new AtomicBoolean(false);
+        metricHandles.compute(metricKey, (key, existingHandle) -> {
+            MetricHandle handle = existingHandle;
+            if (handle == null) {
+                MetricHandle newHandle = createMetricHandle(key, metricName, (Number) testValue, isCounterMetric(metricName));
+                if (newHandle == null || newHandle.handle == null) {
+                    creationFailed.set(true);
+                    return null;
+                }
+                handle = newHandle;
             }
-            MetricHandle previous = metricHandles.putIfAbsent(metricKey, newHandle);
-            if (previous != null) {
-                metricHandle = previous;
-                closeHandle(metricKey, newHandle);
-            } else {
-                metricHandle = newHandle;
-            }
+            handle.entries.add(new MetricEntry(metric, attributes));
+            entryAdded.set(true);
+            return handle;
+        });
+
+        if (creationFailed.get()) {
+            LOGGER.warn("Failed to register metric handle for {}", metricKey);
+            return;
         }
 
-        metricHandle.entries.add(new MetricEntry(metric, attributes));
-        metricToKey.put(metric, metricKey);
+        if (entryAdded.get()) {
+            metricToKey.put(metric, metricKey);
+        }
     }
     
     private MetricHandle createMetricHandle(String metricKey, MetricName metricName, Number initialValue, boolean isCounter) {
@@ -378,17 +386,19 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
             return;
         }
 
-        MetricHandle handle = metricHandles.get(metricKey);
-        if (handle == null) {
-            return;
-        }
+        metricHandles.compute(metricKey, (key, handle) -> {
+            if (handle == null) {
+                return null;
+            }
 
-        handle.entries.removeIf(entry -> entry.metric == metric);
+            handle.entries.removeIf(entry -> entry.metric == metric);
 
-        if (handle.entries.isEmpty()) {
-            metricHandles.remove(metricKey, handle);
-            closeHandle(metricKey, handle);
-        }
+            if (handle.entries.isEmpty()) {
+                closeHandle(key, handle);
+                return null;
+            }
+            return handle;
+        });
     }
     
     private String buildMetricKey(MetricName metricName) {
