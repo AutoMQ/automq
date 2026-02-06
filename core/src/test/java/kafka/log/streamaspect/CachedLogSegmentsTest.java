@@ -21,12 +21,12 @@ package kafka.log.streamaspect;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.storage.internals.log.LogSegment;
+
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.DisplayName;
 import org.mockito.Mockito;
-
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
