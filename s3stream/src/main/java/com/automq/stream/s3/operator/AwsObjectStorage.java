@@ -57,6 +57,7 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
@@ -309,21 +310,23 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .delete(Delete.builder().objects(toDeleteKeys).build())
             .build();
 
-        CompletableFuture<Void> cf = new CompletableFuture<>();
-        this.writeS3Client.deleteObjects(request)
-            .thenAccept(resp -> {
-                try {
-                    checkDeleteObjectsResponse(resp);
-                    cf.complete(null);
-                } catch (Throwable ex) {
+        return retryOnThrottle(() -> {
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            writeS3Client.deleteObjects(request)
+                .thenAccept(resp -> {
+                    try {
+                        checkDeleteObjectsResponse(resp);
+                        cf.complete(null);
+                    } catch (Throwable ex) {
+                        cf.completeExceptionally(ex);
+                    }
+                })
+                .exceptionally(ex -> {
                     cf.completeExceptionally(ex);
-                }
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
-            });
-        return cf;
+                    return null;
+                });
+            return cf;
+        }, S3Operation.DELETE_OBJECTS, 0);
     }
 
     @Override
@@ -438,6 +441,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return ClientOverrideConfiguration.builder()
             .apiCallTimeout(Duration.ofMillis(apiCallTimeoutMs))
             .apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeoutMs))
+            .retryStrategy(RetryMode.STANDARD)
             .build();
     }
 
