@@ -131,10 +131,12 @@ import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.metadata.UpdateNextNodeIdRecord;
 import org.apache.kafka.common.metadata.UserScramCredentialRecord;
 import org.apache.kafka.common.metadata.ZkMigrationStateRecord;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
@@ -2882,6 +2884,17 @@ public final class QuorumController implements Controller {
     }
 
     @Override
+    public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData) {
+        return extension.handleExtensionRequest(
+            context,
+            apiKey,
+            requestData,
+            this::appendReadEvent,
+            this::appendWriteEvent
+        );
+    }
+
+    @Override
     public CompletableFuture<AutomqRegisterNodeResponseData> registerNode(ControllerRequestContext context, AutomqRegisterNodeRequest req) {
         return appendWriteEvent("registerNode", context.deadlineNs(), () -> nodeControlManager.register(req));
     }
@@ -2894,6 +2907,12 @@ public final class QuorumController implements Controller {
     @Override
     public long lastStableOffset() {
         return offsetControl.lastStableOffset();
+    }
+
+    @Override
+    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return extension.maybeHandleBlockedBroker(request, registerBrokerRecordOffset);
     }
     // AutoMQ for Kafka inject end
 

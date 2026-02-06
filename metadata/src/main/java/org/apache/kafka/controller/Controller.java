@@ -78,8 +78,10 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
@@ -91,6 +93,7 @@ import org.apache.kafka.metadata.authorizer.AclMutator;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -609,6 +612,12 @@ public interface Controller extends AclMutator, AutoCloseable {
         DeleteKVsRequestData request
     );
 
+    CompletableFuture<AbstractResponse> handleExtensionRequest(
+        ControllerRequestContext context,
+        ApiKeys apiKey,
+        Object requestData
+    );
+
     /**
      * Register node metadata
      */
@@ -635,6 +644,11 @@ public interface Controller extends AclMutator, AutoCloseable {
 
     default long lastStableOffset() {
         throw new UnsupportedOperationException();
+    }
+
+    default Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return Optional.empty();
     }
     // AutoMQ for Kafka inject end
 }

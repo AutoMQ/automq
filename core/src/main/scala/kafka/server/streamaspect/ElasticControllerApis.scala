@@ -6,11 +6,12 @@ import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.{ApiVersionManager, ControllerApis, KafkaConfig, RequestLocal}
 import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
-import org.apache.kafka.common.errors.ApiException
+import org.apache.kafka.common.errors.{ApiException, UnsupportedVersionException}
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
+import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse}
 import org.apache.kafka.common.requests.s3._
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.controller.{Controller, ControllerRequestContext}
@@ -51,6 +52,9 @@ class ElasticControllerApis(
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
+        case ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request)
         case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
         case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
@@ -99,6 +103,9 @@ class ElasticControllerApis(
            | ApiKeys.GET_KVS
            | ApiKeys.PUT_KVS
            | ApiKeys.DELETE_KVS
+           | ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST
            | ApiKeys.AUTOMQ_REGISTER_NODE
            | ApiKeys.AUTOMQ_GET_NODES
            | ApiKeys.GET_NEXT_NODE_ID
@@ -356,6 +363,26 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DeleteKVsResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleExtensionRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val apiKey = request.header.apiKey
+    val requestData = request.body[AbstractRequest].data()
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.handleExtensionRequest(context, apiKey, requestData)
+      .handle[Unit] { (response: AbstractResponse, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (response == null) {
+          requestHelper.handleError(request, new UnsupportedVersionException(s"Api ${apiKey} is not supported in this version"))
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            response.maybeSetThrottleTimeMs(requestThrottleMs)
+            response
           })
         }
       }

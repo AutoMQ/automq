@@ -23,6 +23,7 @@ import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.automq.interceptor.TrafficInterceptor;
+import kafka.network.RequestChannel;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
@@ -35,6 +36,7 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.LogContext;
@@ -208,6 +210,13 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         String listenerName) {
         fillRackIfMissing(clientId);
         return mapping.getLeaderNode(leaderId, clientId, listenerName);
+    }
+
+    @Override
+    public boolean preHandleFetchRequest(FetchRequest fetchRequest,
+                                         RequestChannel.Request request,
+                                         RequestChannel requestChannel) {
+        return true;
     }
 
     @Override
