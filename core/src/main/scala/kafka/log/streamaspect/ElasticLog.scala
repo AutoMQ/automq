@@ -208,46 +208,52 @@ class ElasticLog(val metaStream: MetaStream,
             APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
         }
 
-        activeSegment.append(lastOffset, largestTimestamp, offsetOfMaxTimestamp, records)
+        try {
+            activeSegment.append(lastOffset, largestTimestamp, offsetOfMaxTimestamp, records)
 
-        APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
-        val endOffset = lastOffset + 1
-        updateLogEndOffset(endOffset)
-        val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
-        cf.whenComplete((_, _) => {
-            APPEND_PERMIT_SEMAPHORE.release(permit)
-        })
-        cf.thenAccept(_ => {
-            APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
-            // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
-            // append callback executor is single thread executor, so the callback will be executed in order.
-            val startNanos = System.nanoTime()
-            var notify = false
-            breakable {
-                while (true) {
-                    val offset = _confirmOffset.get()
-                    if (offset.messageOffset < endOffset) {
-                        _confirmOffset.compareAndSet(offset, new LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
-                        notify = true
-                    } else {
-                        break()
-                    }
-                }
-            }
-            if (notify) {
-                appendAckQueue.offer(endOffset)
-                lastAppendAckFuture = appendAckThread.submit(new Runnable {
-                    override def run(): Unit = {
-                        try {
-                            appendCallback(startNanos)
-                        } catch {
-                            case e: Throwable =>
-                                error(s"append callback error", e)
+            APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
+            val endOffset = lastOffset + 1
+            updateLogEndOffset(endOffset)
+            val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
+            cf.whenComplete((_, _) => {
+                APPEND_PERMIT_SEMAPHORE.release(permit)
+            })
+            cf.thenAccept(_ => {
+                APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
+                // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
+                // append callback executor is single thread executor, so the callback will be executed in order.
+                val startNanos = System.nanoTime()
+                var notify = false
+                breakable {
+                    while (true) {
+                        val offset = _confirmOffset.get()
+                        if (offset.messageOffset < endOffset) {
+                            _confirmOffset.compareAndSet(offset, new LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
+                            notify = true
+                        } else {
+                            break()
                         }
                     }
-                })
-            }
-        })
+                }
+                if (notify) {
+                    appendAckQueue.offer(endOffset)
+                    lastAppendAckFuture = appendAckThread.submit(new Runnable {
+                        override def run(): Unit = {
+                            try {
+                                appendCallback(startNanos)
+                            } catch {
+                                case e: Throwable =>
+                                    error(s"append callback error", e)
+                            }
+                        }
+                    })
+                }
+            })
+        } catch {
+            case e: Throwable =>
+                APPEND_PERMIT_SEMAPHORE.release(permit)
+                throw e
+        }
     }
 
     private def appendCallback(startNanos: Long): Unit = {
