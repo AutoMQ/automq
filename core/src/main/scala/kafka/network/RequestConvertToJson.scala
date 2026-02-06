@@ -133,6 +133,9 @@ object RequestConvertToJson {
       case req: AutomqGetPartitionSnapshotRequest => AutomqGetPartitionSnapshotRequestDataJsonConverter.write(req.data, request.version)
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeStreamsRequest => DescribeStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: UpdateLicenseRequest => UpdateLicenseRequestDataJsonConverter.write(req.data, request.version)
+      case req: DescribeLicenseRequest => DescribeLicenseRequestDataJsonConverter.write(req.data, request.version)
+      case req: ExportClusterManifestRequest => ExportClusterManifestRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
       
       case req: AddRaftVoterRequest => AddRaftVoterRequestDataJsonConverter.write(req.data, request.version)
@@ -250,6 +253,9 @@ object RequestConvertToJson {
       case res: AutomqZoneRouterResponse => AutomqZoneRouterResponseDataJsonConverter.write(res.data, version)
       case res: AutomqGetPartitionSnapshotResponse => AutomqGetPartitionSnapshotResponseDataJsonConverter.write(res.data, version)
       case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: UpdateLicenseResponse => UpdateLicenseResponseDataJsonConverter.write(res.data, version)
+      case res: DescribeLicenseResponse => DescribeLicenseResponseDataJsonConverter.write(res.data, version)
+      case res: ExportClusterManifestResponse => ExportClusterManifestResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       
       case res: AddRaftVoterResponse => AddRaftVoterResponseDataJsonConverter.write(res.data, version)

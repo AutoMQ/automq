@@ -320,5 +320,20 @@ public class ForwardingAdmin implements Admin {
         return delegate.updateGroup(groupId, groupSpec, options);
     }
 
+    @Override
+    public UpdateLicenseResult updateLicense(String license, UpdateLicenseOptions options) {
+        return delegate.updateLicense(license);
+    }
+
+    @Override
+    public DescribeLicenseResult describeLicense(DescribeLicenseOptions options) {
+        return delegate.describeLicense(options);
+    }
+
+    @Override
+    public ExportClusterManifestResult exportClusterManifest(ExportClusterManifestOptions options) {
+        return delegate.exportClusterManifest(options);
+    }
+
     // AutoMQ inject end
 }
