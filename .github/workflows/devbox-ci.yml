@@ -112,7 +112,7 @@ jobs:
         run: |
           just topic-create ci-test
           just topic-list 2>&1 | grep ci-test
-          just topic-describe ci-test 2>&1 | grep "PartitionCount:16"
+          just topic-describe ci-test 2>&1 | grep "PartitionCount: 16"
           echo "✓ Topic operations OK"
 
       - name: Produce and consume
