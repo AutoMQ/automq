@@ -88,9 +88,11 @@ generate-config nodes features="":
       if [ $i -lt $CTRL_COUNT ]; then
         echo "process.roles=broker,controller" >> "$CFG"
         echo "listeners=PLAINTEXT://:9092,CONTROLLER://:9093" >> "$CFG"
+        echo "advertised.listeners=PLAINTEXT://node-${i}:9092,CONTROLLER://node-${i}:9093" >> "$CFG"
       else
         echo "process.roles=broker" >> "$CFG"
         echo "listeners=PLAINTEXT://:9092" >> "$CFG"
+        echo "advertised.listeners=PLAINTEXT://node-${i}:9092" >> "$CFG"
       fi
 
       # Layer 3: node identity
@@ -100,7 +102,6 @@ generate-config nodes features="":
       echo "node.id=${i}" >> "$CFG"
       echo "controller.quorum.voters=${VOTERS}" >> "$CFG"
       echo "controller.quorum.bootstrap.servers=${BOOTSTRAP}" >> "$CFG"
-      echo "advertised.listeners=PLAINTEXT://node-${i}:9092" >> "$CFG"
 
       # Layer 4: features
       for feat in {{features}}; do
