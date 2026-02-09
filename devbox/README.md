@@ -59,8 +59,7 @@ just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092
 | Command | Description |
 |---------|-------------|
 | `just topic-list` | List topics |
-| `just topic-create my-topic` | Create topic (16 partitions) |
-| `just topic-create my-topic --partitions 8` | Custom partitions |
+| `just topic-create my-topic --partitions 16` | Create topic with 16 partitions |
 | `just topic-describe my-topic` | Describe topic |
 | `just produce my-topic` | Interactive producer |
 | `just consume my-topic --from-beginning` | Consumer |

@@ -7,6 +7,7 @@ DEVBOX := justfile_directory() + "/.devbox"
 COMPOSE := "docker compose -f " + justfile_directory() + "/docker-compose.yml"
 ALL_PROFILES := "--profile single --profile cluster --profile cluster4 --profile cluster5 --profile tabletopic --profile analytics"
 AZ_NAMES := "az-0 az-1 az-2"
+KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS=''"
 
 default: help
 
@@ -176,25 +177,25 @@ bin *ARGS:
       esac
     done
     docker exec node-${NODE} bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/$*"
+      "{{KAFKA_OPTS}} /opt/automq/bin/$*"
 
 # ==================== Shortcuts ====================
 
 topic-list node="0":
     @docker exec node-{{node}} bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
 
 topic-create name *ARGS:
     @docker exec node-0 bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic {{name}} --partitions 16 {{ARGS}}"
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic {{name}} {{ARGS}}"
 
 topic-describe name node="0":
     @docker exec node-{{node}} bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}"
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}"
 
 produce topic node="0":
     @docker exec -it node-{{node}} bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic {{topic}}"
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic {{topic}}"
 
 consume topic *ARGS:
     #!/usr/bin/env bash
@@ -207,7 +208,7 @@ consume topic *ARGS:
       esac
     done
     docker exec -it node-${NODE} bash -c \
-      "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA"
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA"
 
 # ==================== Chaos ====================
 
