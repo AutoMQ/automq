@@ -101,8 +101,8 @@ Other services:
 5-layer config system (low → high priority):
 
 1. `config/defaults.properties` — MinIO, KRaft basics
-2. Role — process.roles, listeners (auto: controller for node 0-2, broker-only for 3+)
-3. Node identity — node.id, cluster.id, quorum.voters, advertised.listeners (auto)
+2. Role — process.roles, listeners, advertised.listeners (auto: controller for node 0-2, broker-only for 3+)
+3. Node identity — node.id, cluster.id, quorum.voters (auto)
 4. `config/features/*.properties` — tabletopic, zerozone, telemetry (applied via start args)
 5. `config/custom.properties` — your overrides, highest priority (gitignored)
 
