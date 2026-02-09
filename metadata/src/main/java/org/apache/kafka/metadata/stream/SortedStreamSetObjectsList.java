@@ -17,22 +17,25 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
+    // ArrayList instead of LinkedList for faster random access needed by binary search
     private final List<S3StreamSetObject> list;
 
     public SortedStreamSetObjectsList(SortedStreamSetObjects source) {
-        this.list = new LinkedList<>(source.list());
+        Objects.requireNonNull(source, "source must not be null");
+        this.list = new ArrayList<>(source.list());
     }
 
     public SortedStreamSetObjectsList() {
-        this.list = new LinkedList<>();
+        this.list = new ArrayList<>();
     }
 
     /**
@@ -40,7 +43,7 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
      * @param list the list of S3StreamSetObjects, must guarantee that the list is sorted
      */
     public SortedStreamSetObjectsList(List<S3StreamSetObject> list) {
-        this.list = list;
+        this.list = new ArrayList<>(Objects.requireNonNull(list, "list must not be null"));
     }
 
     @Override
@@ -65,27 +68,39 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
     @Override
     public boolean contains(Object o) {
-        return this.list.contains(o);
+        if (!(o instanceof S3StreamSetObject)) {
+            return false;
+        }
+        // Use binary search for faster lookup
+        return findExactMatch((S3StreamSetObject) o) >= 0;
     }
 
     @Override
     public boolean add(S3StreamSetObject s3StreamSetObject) {
-        // TODO: optimize by binary search
-        for (int index = 0; index < this.list.size(); index++) {
-            S3StreamSetObject current = this.list.get(index);
-            if (s3StreamSetObject.compareTo(current) <= 0) {
-                this.list.add(index, s3StreamSetObject);
-                return true;
-            }
-        }
-        this.list.add(s3StreamSetObject);
+        Objects.requireNonNull(s3StreamSetObject, "s3StreamSetObject must not be null");
+
+        // Use binary search to find where to insert (replaces linear scan)
+        int insertionIndex = findInsertionIndex(s3StreamSetObject);
+        this.list.add(insertionIndex, s3StreamSetObject);
         return true;
     }
 
     @Override
     public boolean remove(Object o) {
-        // TODO: optimize by binary search
-        return this.list.remove(o);
+        if (!(o instanceof S3StreamSetObject)) {
+            return false;
+        }
+
+        S3StreamSetObject target = (S3StreamSetObject) o;
+
+        // Use binary search to find the object (replaces linear scan)
+        int index = findExactMatch(target);
+
+        if (index >= 0) {
+            this.list.remove(index);
+            return true;
+        }
+        return false;
     }
 
 
@@ -98,6 +113,73 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
     @Override
     public void clear() {
         this.list.clear();
+    }
+
+    /**
+     * Finds the exact object in the list using binary search.
+     * Note: compareTo() uses orderId, but equals() uses objectId.
+     * So we binary search by orderId, then scan duplicates to find matching objectId.
+     */
+    private int findExactMatch(S3StreamSetObject target) {
+        int index = Collections.binarySearch(this.list, target);
+
+        if (index < 0) {
+            // No element with matching orderId found
+            return -1;
+        }
+
+        // Found an element with same orderId, check if it's the exact match
+        if (this.list.get(index).equals(target)) {
+            return index;
+        }
+
+        // Multiple objects can have the same orderId but different objectId
+        // Search forward through duplicates
+        int size = this.list.size();
+        for (int i = index + 1; i < size; i++) {
+            S3StreamSetObject element = this.list.get(i);
+            if (target.compareTo(element) != 0) {
+                break; // No more duplicates
+            }
+            if (element.equals(target)) {
+                return i;
+            }
+        }
+
+        // Search backward through duplicates
+        for (int i = index - 1; i >= 0; i--) {
+            S3StreamSetObject element = this.list.get(i);
+            if (target.compareTo(element) != 0) {
+                break; // No more duplicates
+            }
+            if (element.equals(target)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /**
+     * Finds where to insert a new object using binary search.
+     * Inserts at the leftmost position among objects with the same orderId.
+     * This keeps the list sorted and maintains stable insertion order.
+     */
+    private int findInsertionIndex(S3StreamSetObject target) {
+        int index = Collections.binarySearch(this.list, target);
+
+        if (index < 0) {
+            // No matching orderId found, convert to insertion point
+            // binarySearch returns (-(insertion point) - 1) when not found
+            return -(index + 1);
+        }
+
+        // Found objects with same orderId, move to leftmost position
+        while (index > 0 && target.compareTo(this.list.get(index - 1)) == 0) {
+            index--;
+        }
+
+        return index;
     }
 
     @Override
