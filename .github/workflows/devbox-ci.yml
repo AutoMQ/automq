@@ -12,6 +12,10 @@ on:
         options: [lint, smoke, full]
         default: smoke
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
