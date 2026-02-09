@@ -6,6 +6,7 @@ AUTOMQ_DEV_HOME := justfile_directory() + "/.."
 DEVBOX := justfile_directory() + "/.devbox"
 COMPOSE := "docker compose -f " + justfile_directory() + "/docker-compose.yml"
 ALL_PROFILES := "--profile single --profile cluster --profile cluster4 --profile cluster5 --profile tabletopic --profile analytics"
+ALL_NODES := "node-0 node-1 node-2 node-3 node-4"
 AZ_NAMES := "az-0 az-1 az-2"
 KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' JMX_PORT=''"
 
@@ -68,6 +69,11 @@ build:
     @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} build
     @echo "✓ Building Java code..."
     cd "{{AUTOMQ_DEV_HOME}}" && ./gradlew :core:build :tools:build :shell:build -x test
+
+# Rebuild Docker images only
+build-image *args="":
+    @echo "✓ Building Docker image..."
+    @AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" {{COMPOSE}} build {{ if args == "" { ALL_NODES } else { args } }}
 
 [private]
 generate-config nodes features="":
