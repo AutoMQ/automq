@@ -14,7 +14,6 @@ x-automq-common: &automq-common
     - KAFKA_S3_SECRET_KEY=password
     - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G}
     - KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UseZGC -XX:ZCollectionInterval=5
-    - JMX_PORT=9999
   depends_on:
     mc:
       condition: service_completed_successfully
@@ -80,8 +79,7 @@ services:
       - bash
       - -c
       - |
-        JMX_PORT=9999
-        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-0.properties
     healthcheck:
       test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
@@ -100,8 +98,7 @@ services:
       - bash
       - -c
       - |
-        JMX_PORT=9999
-        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-1.properties
     healthcheck:
       test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
