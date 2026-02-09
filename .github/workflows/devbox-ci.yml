@@ -154,20 +154,29 @@ jobs:
       - name: Gradle build
         run: ./gradlew :core:build :tools:build :shell:build -x test
 
-      - name: Test 3-node cluster
+      - name: Test 4-node cluster
         working-directory: devbox
         run: |
-          just start 3
-          for node in 0 1 2; do
+          just start 4
+          # Verify role configs
+          grep -q "process.roles=broker,controller" .devbox/config/node-0.properties
+          grep -q "process.roles=broker,controller" .devbox/config/node-1.properties
+          grep -q "process.roles=broker,controller" .devbox/config/node-2.properties
+          grep -q "^process.roles=broker$" .devbox/config/node-3.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devbox/config/node-0.properties
+          echo "✓ Role configs correct"
+          # Wait for healthy
+          for node in 0 1 2 3; do
             for i in $(seq 1 30); do
               S=$(docker inspect --format='{{.State.Health.Status}}' node-${node} 2>/dev/null)
               [ "$S" = "healthy" ] && echo "✓ node-${node} healthy" && break
               sleep 5
             done
           done
-          just topic-create cluster-ci-test
-          just topic-describe cluster-ci-test 2>&1 | grep -E "Leader: [012]"
-          echo "✓ Cluster partitions distributed"
+          # Test topic operations
+          just topic-create mixed-ci-test
+          just topic-describe mixed-ci-test 2>&1 | grep -E "Leader: [0123]"
+          echo "✓ Cluster OK"
           just stop
 
       - name: Test tabletopic
@@ -186,6 +195,31 @@ jobs:
           done
           grep -q "automq.table.topic" .devbox/config/node-0.properties
           echo "✓ Tabletopic config merged"
+          just stop
+
+      - name: Test 4-node cluster (3 controller + 1 broker)
+        working-directory: devbox
+        run: |
+          just start 4
+          # Verify role configs
+          grep -q "process.roles=broker,controller" .devbox/config/node-0.properties
+          grep -q "process.roles=broker,controller" .devbox/config/node-1.properties
+          grep -q "process.roles=broker,controller" .devbox/config/node-2.properties
+          grep -q "^process.roles=broker$" .devbox/config/node-3.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devbox/config/node-0.properties
+          echo "✓ Role configs correct"
+          # Wait for healthy
+          for node in 0 1 2 3; do
+            for i in $(seq 1 30); do
+              S=$(docker inspect --format='{{.State.Health.Status}}' node-${node} 2>/dev/null)
+              [ "$S" = "healthy" ] && echo "✓ node-${node} healthy" && break
+              sleep 5
+            done
+          done
+          # Test topic operations
+          just topic-create mixed-ci-test
+          just topic-describe mixed-ci-test 2>&1 | grep -E "Leader: [0123]"
+          echo "✓ Mixed cluster (3 controller + 1 broker) OK"
           just stop
 
       - name: Test zerozone config
