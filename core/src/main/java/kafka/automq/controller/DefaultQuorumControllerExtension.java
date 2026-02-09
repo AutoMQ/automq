@@ -21,15 +21,22 @@ package kafka.automq.controller;
 
 import kafka.automq.failover.FailoverControlManager;
 
+import org.apache.kafka.common.message.BrokerHeartbeatRequestData;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ApiMessage;
+import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.controller.ControllerRequestContext;
+import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.QuorumControllerExtension;
+import org.apache.kafka.metadata.BrokerHeartbeatReply;
 import org.apache.kafka.raft.OffsetAndEpoch;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 public class DefaultQuorumControllerExtension implements QuorumControllerExtension {
     private final FailoverControlManager failoverControlManager;
@@ -53,5 +60,18 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             return false;
         }
         return true;
+    }
+
+    @Override
+    public CompletableFuture<AbstractResponse> handleExtensionRequest(ControllerRequestContext context, ApiKeys apiKey, Object requestData,
+                                                                      ReadEventAppender readEventAppender, WriteEventAppender writeEventAppender) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException(
+            String.format("ApiKey %s is not supported.", apiKey.name())));
+    }
+
+    @Override
+    public Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return Optional.empty();
     }
 }

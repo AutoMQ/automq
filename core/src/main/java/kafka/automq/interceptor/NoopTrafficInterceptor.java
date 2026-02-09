@@ -19,6 +19,7 @@
 
 package kafka.automq.interceptor;
 
+import kafka.network.RequestChannel;
 import kafka.server.MetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
@@ -26,6 +27,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.common.network.ListenerName;
+import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
 import com.automq.stream.utils.FutureUtil;
@@ -72,5 +74,12 @@ public class NoopTrafficInterceptor implements TrafficInterceptor {
         } else {
             return Optional.of(opt.get());
         }
+    }
+
+    @Override
+    public boolean preHandleFetchRequest(FetchRequest fetchRequest,
+                                         RequestChannel.Request request,
+                                         RequestChannel requestChannel) {
+        return true;
     }
 }

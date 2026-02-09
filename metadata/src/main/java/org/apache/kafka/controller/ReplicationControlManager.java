@@ -1719,6 +1719,14 @@ public class ReplicationControlManager {
         long brokerEpoch = request.brokerEpoch();
         clusterControl.checkBrokerEpoch(brokerId, brokerEpoch);
         BrokerHeartbeatManager heartbeatManager = clusterControl.heartbeatManager();
+
+        // AutoMQ inject start
+        Optional<ControllerResult<BrokerHeartbeatReply>> denyResult = quorumController.maybeHandleBlockedBroker(request, registerBrokerRecordOffset);
+        if (denyResult.isPresent()) {
+            return denyResult.get();
+        }
+        // AutoMQ inject end
+
         BrokerControlStates states = heartbeatManager.calculateNextBrokerState(brokerId,
             request, registerBrokerRecordOffset, () -> brokersToIsrs.hasLeaderships(brokerId));
         List<ApiMessageAndVersion> records = new ArrayList<>();
