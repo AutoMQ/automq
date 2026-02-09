@@ -12,8 +12,8 @@ Zero-configuration local dev environment for AutoMQ. One command to start a Kafk
 
 ```bash
 cd devbox
-just start-build        # Build + single node
-just start-build 3      # Build + 3-node cluster
+just start-build        # Build image & code + single node
+just start-build 3      # Build image & code + 3-node cluster
 ```
 
 After first build, iterate faster with:
@@ -34,7 +34,7 @@ DevBox automatically generates a stable CLUSTER_ID, node configs, and starts Min
 | `just start 3` | 3-node cluster |
 | `just start 1 telemetry` | Single node + OpenTelemetry metrics |
 | `just start 5 tabletopic` | 5-node + TableTopic |
-| `just start-build` | Build + single node |
+| `just start-build` | Build image & code, then start single node |
 | `just start-build 3 tabletopic analytics` | Build + full stack |
 | `just stop` | Stop all services |
 | `just restart` | Rebuild and restart |
@@ -52,6 +52,8 @@ just bin kafka-configs.sh --bootstrap-server localhost:9092 --describe --entity-
 just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092
 ```
 
+> **Note**: The cluster is designed for container-internal access. To interact with Kafka from your host machine, use `just bin` commands or the shortcuts below (`topic-*`, `produce`, `consume`).
+
 ### Shortcuts
 
 | Command | Description |
@@ -67,9 +69,10 @@ just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092
 
 | Command | Description |
 |---------|-------------|
-| `just chaos-delay` | 200ms delay on node 0 |
-| `just chaos-delay 500 node-1` | 500ms delay on node 1 |
-| `just chaos-loss 10` | 10% packet loss on node 0 |
+| `just chaos-delay` | 200ms delay on node-0 |
+| `just chaos-delay 500 node-1` | 500ms delay on node-1 |
+| `just chaos-loss` | 5% packet loss on node-0 |
+| `just chaos-loss 10 node-1` | 10% packet loss on node-1 |
 | `just chaos-reset` | Remove all rules |
 | `just chaos-status` | Show rules |
 

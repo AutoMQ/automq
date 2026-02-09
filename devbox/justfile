@@ -15,7 +15,7 @@ help:
     @echo ""
     @echo "Lifecycle:"
     @echo "  just start [N] [features...]            Start N nodes (default: 1, no build)"
-    @echo "  just start-build [N] [features...]      Build + start"
+    @echo "  just start-build [N] [features...]      Build image & code, then start"
     @echo ""
     @echo "  just start 3 zerozone tabletopic        Example: 3-node + features"
     @echo ""
@@ -58,7 +58,9 @@ ensure-cluster-id:
 
 [private]
 build:
-    @echo "✓ Building..."
+    @echo "✓ Building Docker image..."
+    @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} build
+    @echo "✓ Building Java code..."
     cd "{{AUTOMQ_DEV_HOME}}" && ./gradlew :core:build :tools:build :shell:build -x test
 
 [private]
@@ -133,7 +135,7 @@ start nodes="1" *FEATURES: ensure-cluster-id
     just generate-config {{nodes}} "{{FEATURES}}"
     echo "✓ Starting {{nodes}} node(s)..."
     export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}"
-    {{COMPOSE}} $COMPOSE_PROFILES up -d --build
+    {{COMPOSE}} $COMPOSE_PROFILES up -d
     echo ""
     echo "🎉 AutoMQ DevBox started"
     echo "  Kafka:  localhost:9092"
@@ -165,7 +167,7 @@ logs node="":
 
 bin *ARGS:
     #!/usr/bin/env bash
-    NODE=0; SKIP=false
+    NODE=0
     set -- {{ARGS}}
     while [ $# -gt 0 ]; do
       case $1 in

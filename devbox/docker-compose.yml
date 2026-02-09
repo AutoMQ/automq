@@ -9,7 +9,6 @@ x-automq-common: &automq-common
   restart: unless-stopped
   cap_add:
     - NET_ADMIN
-  privileged: true
   environment:
     - KAFKA_S3_ACCESS_KEY=admin
     - KAFKA_S3_SECRET_KEY=password
