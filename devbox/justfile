@@ -29,6 +29,11 @@ help:
     @echo "  just bin kafka-topics.sh --bootstrap-server localhost:9092 --list"
     @echo "  just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
     @echo ""
+    @echo "JMX:"
+    @echo "  just jmx -e domains                     List all JMX domains"
+    @echo "  just jmx -e 'beans -d kafka.server'     List beans in domain"
+    @echo "  just jmx --node 1 -e 'get ...'          Query from node-1"
+    @echo ""
     @echo "Shortcuts:"
     @echo "  just topic-list                         List topics"
     @echo "  just topic-create <name> [extra flags]  Create topic"
@@ -179,19 +184,28 @@ bin *ARGS:
     docker exec node-${NODE} bash -c \
       "{{KAFKA_OPTS}} /opt/automq/bin/$*"
 
+jmx *ARGS:
+    #!/usr/bin/env bash
+    NODE=0
+    set -- {{ARGS}}
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --node) NODE=$2; shift 2 ;;
+        *) break ;;
+      esac
+    done
+    echo "$@" | docker exec -i node-${NODE} java -jar /usr/local/bin/jmxterm.jar -l localhost:9999 -n
+
 # ==================== Shortcuts ====================
 
 topic-list node="0":
-    @docker exec node-{{node}} bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"
+    @just bin --node {{node}} kafka-topics.sh --bootstrap-server localhost:9092 --list
 
 topic-create name *ARGS:
-    @docker exec node-0 bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --create --topic {{name}} {{ARGS}}"
+    @just bin kafka-topics.sh --bootstrap-server localhost:9092 --create --topic {{name}} {{ARGS}}
 
 topic-describe name node="0":
-    @docker exec node-{{node}} bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}"
+    @just bin --node {{node}} kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}
 
 produce topic node="0":
     @docker exec -it node-{{node}} bash -c \

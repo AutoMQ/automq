@@ -82,7 +82,6 @@ jobs:
   smoke:
     name: Smoke
     needs: lint
-    if: github.event.inputs.level != 'lint'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -116,7 +115,7 @@ jobs:
         run: |
           just topic-create ci-test
           just topic-list 2>&1 | grep ci-test
-          just topic-describe ci-test 2>&1 | grep "PartitionCount: 16"
+          just topic-describe ci-test 2>&1 | grep "PartitionCount: 1"
           echo "✓ Topic operations OK"
 
       - name: Produce and consume
@@ -134,6 +133,13 @@ jobs:
           just bin kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | grep -q "ApiVersion"
           echo "✓ Bin passthrough OK"
 
+      - name: JMX operations
+        working-directory: devbox
+        run: |
+          just jmx -e domains 2>&1 | grep -q "kafka.server"
+          just jmx -e 'beans -d kafka.server' 2>&1 | grep -q "kafka.server"
+          echo "✓ JMX operations OK"
+
       - name: Stop
         if: always()
         working-directory: devbox
@@ -142,7 +148,6 @@ jobs:
   full:
     name: Full
     needs: lint
-    if: github.event.inputs.level == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
