@@ -137,7 +137,7 @@ jobs:
 
   full:
     name: Full
-    needs: smoke
+    needs: lint
     if: github.event.inputs.level == 'full'
     runs-on: ubuntu-latest
     timeout-minutes: 30
