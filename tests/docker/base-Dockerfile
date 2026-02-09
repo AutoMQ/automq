@@ -13,7 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG jdk_version=openjdk:17-bullseye
+# The openjdk image has been officially deprecated. For more information, see: https://hub.docker.com/_/openjdk
+ARG jdk_version=eclipse-temurin:17-jdk-jammy
 FROM $jdk_version
 
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
