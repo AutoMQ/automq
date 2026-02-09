@@ -154,8 +154,10 @@ stop:
     @echo "Stopping..."
     @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} down -v
 
-restart: build
+restart:
     @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} restart
+
+restart-build: build restart
 
 status:
     @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} ps
@@ -181,8 +183,9 @@ bin *ARGS:
         *) break ;;
       esac
     done
-    docker exec node-${NODE} bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/$*"
+    CMD="docker exec node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/$*\""
+    echo "→ $CMD" >&2
+    eval "$CMD"
 
 jmx *ARGS:
     #!/usr/bin/env bash
@@ -221,8 +224,9 @@ consume topic *ARGS:
         *)                [ "$NEXT_NODE" = 1 ] && NODE=$arg && NEXT_NODE="" ;;
       esac
     done
-    docker exec -it node-${NODE} bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA"
+    CMD="docker exec -it node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA\""
+    echo "→ $CMD" >&2
+    eval "$CMD"
 
 # ==================== Chaos ====================
 

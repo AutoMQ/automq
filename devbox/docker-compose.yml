@@ -80,6 +80,7 @@ services:
       - bash
       - -c
       - |
+        JMX_PORT=9999
         KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-0.properties
     healthcheck:
@@ -99,6 +100,7 @@ services:
       - bash
       - -c
       - |
+        JMX_PORT=9999
         KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-1.properties
     healthcheck:
@@ -118,7 +120,7 @@ services:
       - bash
       - -c
       - |
-        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-2.properties
     healthcheck:
       test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
@@ -137,7 +139,7 @@ services:
       - bash
       - -c
       - |
-        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-3.properties
     healthcheck:
       test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
@@ -156,7 +158,7 @@ services:
       - bash
       - -c
       - |
-        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" \
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
         exec /opt/automq/bin/kafka-server-start.sh /config/node-4.properties
     healthcheck:
       test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
