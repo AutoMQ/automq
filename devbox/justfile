@@ -7,7 +7,7 @@ DEVBOX := justfile_directory() + "/.devbox"
 COMPOSE := "docker compose -f " + justfile_directory() + "/docker-compose.yml"
 ALL_PROFILES := "--profile single --profile cluster --profile cluster4 --profile cluster5 --profile tabletopic --profile analytics"
 AZ_NAMES := "az-0 az-1 az-2"
-KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS=''"
+KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' JMX_PORT=''"
 
 default: help
 
