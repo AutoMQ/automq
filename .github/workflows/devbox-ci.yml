@@ -1,0 +1,201 @@
+name: DevBox CI
+
+on:
+  pull_request:
+    paths:
+      - 'devbox/**'
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Test level'
+        type: choice
+        options: [lint, smoke, full]
+        default: smoke
+
+permissions:
+  contents: read
+
+env:
+  AUTOMQ_DEV_HOME: ${{ github.workspace }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Validate justfile
+        working-directory: devbox
+        run: just --list
+
+      - name: Validate docker-compose
+        working-directory: devbox
+        run: |
+          for p in single cluster cluster4 cluster5; do
+            echo "=== Profile: $p ==="
+            docker compose -f docker-compose.yml --profile $p config --services
+          done
+
+      - name: Validate config generation
+        working-directory: devbox
+        run: |
+          # Generate cluster-id without kafka-storage.sh
+          mkdir -p .devbox
+          echo "test-cluster-id" > .devbox/cluster-id
+
+          # Single node, no features
+          just generate-config 1 ""
+          grep -q "node.id=0" .devbox/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093" .devbox/config/node-0.properties
+          ! grep -q "broker.rack" .devbox/config/node-0.properties
+          echo "✓ Single node config OK"
+
+          # 3-node cluster with zerozone
+          just generate-config 3 "zerozone"
+          grep -q "broker.rack=az-0" .devbox/config/node-0.properties
+          grep -q "broker.rack=az-1" .devbox/config/node-1.properties
+          grep -q "broker.rack=az-2" .devbox/config/node-2.properties
+          grep -q "zonerouter" .devbox/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devbox/config/node-0.properties
+          echo "✓ Cluster + zerozone config OK"
+
+          # Tabletopic feature
+          just generate-config 1 "tabletopic"
+          grep -q "automq.table.topic.catalog.type=rest" .devbox/config/node-0.properties
+          echo "✓ Tabletopic config OK"
+
+          # Combined features
+          just generate-config 1 "tabletopic zerozone"
+          grep -q "automq.table.topic" .devbox/config/node-0.properties
+          grep -q "zonerouter" .devbox/config/node-0.properties
+          grep -q "broker.rack" .devbox/config/node-0.properties
+          echo "✓ Combined features config OK"
+
+  smoke:
+    name: Smoke
+    needs: lint
+    if: github.event.inputs.level != 'lint'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: extractions/setup-just@v2
+
+      - name: Gradle build
+        run: ./gradlew :core:build :tools:build :shell:build -x test
+
+      - name: Start single node
+        working-directory: devbox
+        run: just start
+
+      - name: Wait for healthy
+        run: |
+          for i in $(seq 1 30); do
+            S=$(docker inspect --format='{{.State.Health.Status}}' node-0 2>/dev/null)
+            [ "$S" = "healthy" ] && echo "✓ node-0 healthy" && exit 0
+            sleep 5
+          done
+          echo "Timeout waiting for node-0" && docker logs node-0 | tail -50 && exit 1
+
+      - name: Topic operations
+        working-directory: devbox
+        run: |
+          just topic-create ci-test
+          just topic-list 2>&1 | grep ci-test
+          just topic-describe ci-test 2>&1 | grep "PartitionCount:16"
+          echo "✓ Topic operations OK"
+
+      - name: Produce and consume
+        run: |
+          echo -e "ci-msg-1\nci-msg-2" | docker exec -i node-0 bash -c \
+            "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic ci-test"
+          docker exec node-0 bash -c \
+            "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ci-test --from-beginning --max-messages 2 --timeout-ms 15000" \
+            2>&1 | grep ci-msg-1
+          echo "✓ Produce/consume OK"
+
+      - name: Bin passthrough
+        working-directory: devbox
+        run: |
+          just bin kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | grep -q "ApiVersion"
+          echo "✓ Bin passthrough OK"
+
+      - name: Stop
+        if: always()
+        working-directory: devbox
+        run: just stop
+
+  full:
+    name: Full
+    needs: smoke
+    if: github.event.inputs.level == 'full'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: extractions/setup-just@v2
+
+      - name: Gradle build
+        run: ./gradlew :core:build :tools:build :shell:build -x test
+
+      - name: Test 3-node cluster
+        working-directory: devbox
+        run: |
+          just start 3
+          for node in 0 1 2; do
+            for i in $(seq 1 30); do
+              S=$(docker inspect --format='{{.State.Health.Status}}' node-${node} 2>/dev/null)
+              [ "$S" = "healthy" ] && echo "✓ node-${node} healthy" && break
+              sleep 5
+            done
+          done
+          just topic-create cluster-ci-test
+          just topic-describe cluster-ci-test 2>&1 | grep -E "Leader: [012]"
+          echo "✓ Cluster partitions distributed"
+          just stop
+
+      - name: Test tabletopic
+        working-directory: devbox
+        run: |
+          just start 1 tabletopic
+          for i in $(seq 1 30); do
+            S=$(docker inspect --format='{{.State.Health.Status}}' node-0 2>/dev/null)
+            [ "$S" = "healthy" ] && break; sleep 5
+          done
+          curl -sf http://localhost:8181/v1/config > /dev/null
+          echo "✓ Iceberg REST OK"
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081/ > /dev/null && echo "✓ Schema Registry OK" && break
+            sleep 5
+          done
+          grep -q "automq.table.topic" .devbox/config/node-0.properties
+          echo "✓ Tabletopic config merged"
+          just stop
+
+      - name: Test zerozone config
+        working-directory: devbox
+        run: |
+          just start 5 zerozone
+          grep -q "broker.rack=az-0" .devbox/config/node-0.properties
+          grep -q "broker.rack=az-1" .devbox/config/node-1.properties
+          grep -q "broker.rack=az-2" .devbox/config/node-2.properties
+          grep -q "broker.rack=az-0" .devbox/config/node-3.properties
+          grep -q "broker.rack=az-1" .devbox/config/node-4.properties
+          echo "✓ ZeroZone broker.rack round-robin OK"
+          just stop

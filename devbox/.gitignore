@@ -1,0 +1,3 @@
+.devbox/
+config/custom.properties
+__pycache__/
