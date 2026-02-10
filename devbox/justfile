@@ -25,6 +25,7 @@ help:
     @echo "  just restart                            Rebuild and restart"
     @echo "  just status                             Show service status"
     @echo "  just logs [node]                        Tail logs"
+    @echo "  just shell [node]                       Enter container shell"
     @echo ""
     @echo "Bin (direct passthrough):"
     @echo "  just bin kafka-topics.sh --bootstrap-server localhost:9092 --list"
@@ -176,6 +177,9 @@ logs node="":
     else
       {{COMPOSE}} {{ALL_PROFILES}} logs -f node-{{node}}
     fi
+
+shell node="0":
+    @docker exec -it node-{{node}} bash
 
 # ==================== Bin ====================
 
