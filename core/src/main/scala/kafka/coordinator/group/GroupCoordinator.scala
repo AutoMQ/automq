@@ -1851,7 +1851,9 @@ object GroupCoordinator {
     // AutoMQ for Kafka inject end
 
     new GroupCoordinator(config.brokerId, groupConfig, offsetConfig, groupMetadataManager, heartbeatPurgatory,
+      // AutoMQ for Kafka inject start
       rebalancePurgatory, time, metrics, lagMonitorService)
+      // AutoMQ for Kafka inject end
   }
 
   private def memberLeaveError(memberIdentity: MemberIdentity,
