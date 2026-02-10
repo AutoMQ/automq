@@ -199,6 +199,15 @@ public class AutoMQConfig {
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
         + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
 
+    // Consumer Lag Monitor Config
+    public static final String CONSUMER_LAG_MONITOR_ENABLE_CONFIG = "consumer.lag.monitor.enable";
+    public static final String CONSUMER_LAG_MONITOR_ENABLE_DOC = "Enable consumer lag monitoring on GroupCoordinator";
+    public static final boolean CONSUMER_LAG_MONITOR_ENABLE_DEFAULT = true;
+
+    public static final String CONSUMER_LAG_MONITOR_INTERVAL_MS_CONFIG = "consumer.lag.monitor.interval.ms";
+    public static final String CONSUMER_LAG_MONITOR_INTERVAL_MS_DOC = "Interval between consumer lag computations in milliseconds";
+    public static final long CONSUMER_LAG_MONITOR_INTERVAL_MS_DEFAULT = 30000L;
+
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
     public static final String S3_ENDPOINT_DOC = "[DEPRECATED]please use s3.data.buckets. The object storage endpoint, ex. <code>https://s3.us-east-1.amazonaws.com</code>.";
@@ -293,6 +302,8 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
+            .define(AutoMQConfig.CONSUMER_LAG_MONITOR_ENABLE_CONFIG, BOOLEAN, AutoMQConfig.CONSUMER_LAG_MONITOR_ENABLE_DEFAULT, MEDIUM, AutoMQConfig.CONSUMER_LAG_MONITOR_ENABLE_DOC)
+            .define(AutoMQConfig.CONSUMER_LAG_MONITOR_INTERVAL_MS_CONFIG, LONG, AutoMQConfig.CONSUMER_LAG_MONITOR_INTERVAL_MS_DEFAULT, MEDIUM, AutoMQConfig.CONSUMER_LAG_MONITOR_INTERVAL_MS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)

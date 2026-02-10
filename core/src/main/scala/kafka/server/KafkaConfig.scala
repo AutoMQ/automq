@@ -799,6 +799,8 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3BackPressureEnabled = getBoolean(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG)
+  val consumerLagMonitorEnable = getBoolean(AutoMQConfig.CONSUMER_LAG_MONITOR_ENABLE_CONFIG)
+  val consumerLagMonitorIntervalMs = getLong(AutoMQConfig.CONSUMER_LAG_MONITOR_INTERVAL_MS_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/
