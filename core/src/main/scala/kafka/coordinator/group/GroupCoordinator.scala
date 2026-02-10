@@ -69,7 +69,10 @@ class GroupCoordinator(
   val heartbeatPurgatory: DelayedOperationPurgatory[DelayedHeartbeat],
   val rebalancePurgatory: DelayedOperationPurgatory[DelayedRebalance],
   time: Time,
-  metrics: Metrics
+  // AutoMQ for Kafka inject start
+  metrics: Metrics,
+  val lagMonitorService: Option[LagMonitorService] = None
+  // AutoMQ for Kafka inject end
 ) extends Logging {
   import GroupCoordinator._
 
@@ -124,6 +127,9 @@ class GroupCoordinator(
   def startup(retrieveGroupMetadataTopicPartitionCount: () => Int, enableMetadataExpiration: Boolean = true): Unit = {
     info("Starting up.")
     groupManager.startup(retrieveGroupMetadataTopicPartitionCount, enableMetadataExpiration)
+    // AutoMQ for Kafka inject start
+    lagMonitorService.foreach(_.startup())
+    // AutoMQ for Kafka inject end
     isActive.set(true)
     info("Startup complete.")
   }
@@ -135,6 +141,9 @@ class GroupCoordinator(
   def shutdown(): Unit = {
     info("Shutting down.")
     isActive.set(false)
+    // AutoMQ for Kafka inject start
+    lagMonitorService.foreach(_.shutdown())
+    // AutoMQ for Kafka inject end
     groupManager.shutdown()
     heartbeatPurgatory.shutdown()
     rebalancePurgatory.shutdown()
@@ -1822,8 +1831,27 @@ object GroupCoordinator {
 
     val groupMetadataManager = new GroupMetadataManager(config.brokerId, config.interBrokerProtocolVersion,
       offsetConfig, replicaManager, time, metrics)
+
+    // AutoMQ for Kafka inject start
+    // Create LagMonitorService if enabled and metadataCache is available
+    val lagMonitorService = if (config.consumerLagMonitorEnable && replicaManager.metadataCache != null) {
+      Some(LagMonitorService.create(
+        brokerId = config.brokerId,
+        config = config,
+        groupMetadataManager = groupMetadataManager,
+        replicaManager = replicaManager,
+        metadataCache = replicaManager.metadataCache,
+        metrics = metrics,
+        time = time,
+        lagComputeIntervalMs = config.consumerLagMonitorIntervalMs
+      ))
+    } else {
+      None
+    }
+    // AutoMQ for Kafka inject end
+
     new GroupCoordinator(config.brokerId, groupConfig, offsetConfig, groupMetadataManager, heartbeatPurgatory,
-      rebalancePurgatory, time, metrics)
+      rebalancePurgatory, time, metrics, lagMonitorService)
   }
 
   private def memberLeaveError(memberIdentity: MemberIdentity,
