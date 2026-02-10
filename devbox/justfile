@@ -1,0 +1,266 @@
+# DevBox - AutoMQ Local Development Environment
+
+set dotenv-load := false
+
+AUTOMQ_DEV_HOME := justfile_directory() + "/.."
+DEVBOX := justfile_directory() + "/.devbox"
+COMPOSE := "docker compose -f " + justfile_directory() + "/docker-compose.yml"
+ALL_PROFILES := "--profile single --profile cluster --profile cluster4 --profile cluster5 --profile tabletopic --profile analytics"
+ALL_NODES := "node-0 node-1 node-2 node-3 node-4"
+AZ_NAMES := "az-0 az-1 az-2"
+KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' JMX_PORT=''"
+
+default: help
+
+help:
+    @echo "DevBox - AutoMQ Local Development Environment"
+    @echo ""
+    @echo "Lifecycle:"
+    @echo "  just start [N] [features...]            Start N nodes (default: 1, no build)"
+    @echo "  just start-build [N] [features...]      Build image & code, then start"
+    @echo ""
+    @echo "  just start 3 zerozone tabletopic        Example: 3-node + features"
+    @echo ""
+    @echo "  just stop                               Stop all services"
+    @echo "  just restart                            Rebuild and restart"
+    @echo "  just status                             Show service status"
+    @echo "  just logs [node]                        Tail logs"
+    @echo "  just shell [node]                       Enter container shell"
+    @echo ""
+    @echo "Bin (direct passthrough):"
+    @echo "  just bin kafka-topics.sh --bootstrap-server localhost:9092 --list"
+    @echo "  just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+    @echo ""
+    @echo "JMX:"
+    @echo "  just jmx -e domains                     List all JMX domains"
+    @echo "  just jmx -e 'beans -d kafka.server'     List beans in domain"
+    @echo "  just jmx --node 1 -e 'get ...'          Query from node-1"
+    @echo ""
+    @echo "Shortcuts:"
+    @echo "  just topic-list                         List topics"
+    @echo "  just topic-create <name> [extra flags]  Create topic"
+    @echo "  just topic-describe <name>              Describe topic"
+    @echo "  just produce <topic>                    Interactive producer"
+    @echo "  just consume <topic> [--from-beginning] Consumer"
+    @echo ""
+    @echo "Chaos:"
+    @echo "  just chaos-delay [ms] [node]            Network delay"
+    @echo "  just chaos-loss [%] [node]              Packet loss"
+    @echo "  just chaos-reset                        Remove all rules"
+    @echo "  just chaos-status                       Show rules"
+    @echo ""
+    @echo "Features: tabletopic, zerozone, telemetry, analytics"
+
+# ==================== Internal ====================
+
+[private]
+ensure-cluster-id:
+    #!/usr/bin/env bash
+    mkdir -p "{{DEVBOX}}"
+    if [ ! -f "{{DEVBOX}}/cluster-id" ]; then
+      KAFKA_HEAP_OPTS="-Xms256m -Xmx256m" \
+        "{{AUTOMQ_DEV_HOME}}/bin/kafka-storage.sh" random-uuid \
+        > "{{DEVBOX}}/cluster-id"
+      echo "✓ Generated CLUSTER_ID: $(cat "{{DEVBOX}}/cluster-id")"
+    fi
+
+[private]
+build:
+    @echo "✓ Building Docker image..."
+    @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} build
+    @echo "✓ Building Java code..."
+    cd "{{AUTOMQ_DEV_HOME}}" && ./gradlew :core:build :tools:build :shell:build -x test
+
+# Rebuild Docker images only
+build-image *args="":
+    @echo "✓ Building Docker image..."
+    @AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" {{COMPOSE}} build {{ if args == "" { ALL_NODES } else { args } }}
+
+[private]
+generate-config nodes features="":
+    #!/usr/bin/env bash
+    set -e
+    mkdir -p "{{DEVBOX}}/config"
+    CLUSTER_ID=$(cat "{{DEVBOX}}/cluster-id")
+    MAX_CTRL=3
+    CTRL_COUNT=$(({{nodes}} < MAX_CTRL ? {{nodes}} : MAX_CTRL))
+    VOTERS="" ; BOOTSTRAP=""
+    for i in $(seq 0 $((CTRL_COUNT - 1))); do
+      [ -n "$VOTERS" ] && VOTERS="$VOTERS," && BOOTSTRAP="$BOOTSTRAP,"
+      VOTERS="${VOTERS}${i}@node-${i}:9093"
+      BOOTSTRAP="${BOOTSTRAP}node-${i}:9093"
+    done
+    AZS=({{AZ_NAMES}})
+    for i in $(seq 0 $(({{nodes}} - 1))); do
+      CFG="{{DEVBOX}}/config/node-${i}.properties"
+
+      # Layer 1: defaults
+      cat "{{justfile_directory()}}/config/defaults.properties" > "$CFG"
+
+      # Layer 2: role (controller+broker or broker-only)
+      echo "" >> "$CFG"
+      echo "# === Role ===" >> "$CFG"
+      if [ $i -lt $CTRL_COUNT ]; then
+        echo "process.roles=broker,controller" >> "$CFG"
+        echo "listeners=PLAINTEXT://:9092,CONTROLLER://:9093" >> "$CFG"
+        echo "advertised.listeners=PLAINTEXT://node-${i}:9092,CONTROLLER://node-${i}:9093" >> "$CFG"
+      else
+        echo "process.roles=broker" >> "$CFG"
+        echo "listeners=PLAINTEXT://:9092" >> "$CFG"
+        echo "advertised.listeners=PLAINTEXT://node-${i}:9092" >> "$CFG"
+      fi
+
+      # Layer 3: node identity
+      echo "" >> "$CFG"
+      echo "# === Node ===" >> "$CFG"
+      echo "cluster.id=${CLUSTER_ID}" >> "$CFG"
+      echo "node.id=${i}" >> "$CFG"
+      echo "controller.quorum.voters=${VOTERS}" >> "$CFG"
+      echo "controller.quorum.bootstrap.servers=${BOOTSTRAP}" >> "$CFG"
+
+      # Layer 4: features
+      for feat in {{features}}; do
+        F="{{justfile_directory()}}/config/features/${feat}.properties"
+        [ -f "$F" ] && echo "" >> "$CFG" && cat "$F" >> "$CFG"
+        [ "$feat" = "zerozone" ] && echo "broker.rack=${AZS[$((i % ${#AZS[@]}))]}" >> "$CFG"
+      done
+
+      # Layer 5: custom overrides (highest priority)
+      C="{{justfile_directory()}}/config/custom.properties"
+      [ -f "$C" ] && echo "" >> "$CFG" && cat "$C" >> "$CFG"
+
+      echo "✓ Config: node-${i}.properties"
+    done
+
+# ==================== Lifecycle ====================
+
+start nodes="1" *FEATURES: ensure-cluster-id
+    #!/usr/bin/env bash
+    set -e
+    case {{nodes}} in
+      1) PROFILE=single ;; 3) PROFILE=cluster ;; 4) PROFILE=cluster4 ;; 5) PROFILE=cluster5 ;;
+      *) echo "Error: nodes must be 1,3,4,5"; exit 1 ;;
+    esac
+    COMPOSE_PROFILES="--profile $PROFILE"
+    for feat in {{FEATURES}}; do
+      COMPOSE_PROFILES="$COMPOSE_PROFILES --profile $feat"
+    done
+    just generate-config {{nodes}} "{{FEATURES}}"
+    echo "✓ Starting {{nodes}} node(s)..."
+    export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}"
+    {{COMPOSE}} $COMPOSE_PROFILES up -d
+    echo ""
+    echo "🎉 AutoMQ DevBox started"
+    echo "  Kafka:  localhost:9092"
+    echo "  Debug:  localhost:5005"
+    echo "  MinIO:  http://localhost:9001 (admin/password)"
+
+start-build nodes="1" *FEATURES: build (start nodes FEATURES)
+
+stop:
+    @echo "Stopping..."
+    @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} down -v
+
+restart:
+    @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} restart
+
+restart-build: build restart
+
+status:
+    @export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}" && {{COMPOSE}} {{ALL_PROFILES}} ps
+
+logs node="":
+    #!/usr/bin/env bash
+    export AUTOMQ_DEV_HOME="{{AUTOMQ_DEV_HOME}}"
+    if [ -z "{{node}}" ]; then
+      {{COMPOSE}} {{ALL_PROFILES}} logs -f
+    else
+      {{COMPOSE}} {{ALL_PROFILES}} logs -f node-{{node}}
+    fi
+
+shell node="0":
+    @docker exec -it node-{{node}} bash
+
+# ==================== Bin ====================
+
+bin *ARGS:
+    #!/usr/bin/env bash
+    NODE=0
+    set -- {{ARGS}}
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --node) NODE=$2; shift 2 ;;
+        *) break ;;
+      esac
+    done
+    CMD="docker exec node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/$*\""
+    echo "→ $CMD" >&2
+    eval "$CMD"
+
+jmx *ARGS:
+    #!/usr/bin/env bash
+    NODE=0
+    set -- {{ARGS}}
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --node) NODE=$2; shift 2 ;;
+        *) break ;;
+      esac
+    done
+    echo "$@" | docker exec -i node-${NODE} java -jar /usr/local/bin/jmxterm.jar -l localhost:9999 -n
+
+# ==================== Shortcuts ====================
+
+topic-list node="0":
+    @just bin --node {{node}} kafka-topics.sh --bootstrap-server localhost:9092 --list
+
+topic-create name *ARGS:
+    @just bin kafka-topics.sh --bootstrap-server localhost:9092 --create --topic {{name}} {{ARGS}}
+
+topic-describe name node="0":
+    @just bin --node {{node}} kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}
+
+produce topic node="0":
+    @docker exec -it node-{{node}} bash -c \
+      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic {{topic}}"
+
+consume topic *ARGS:
+    #!/usr/bin/env bash
+    NODE=0; EXTRA=""
+    for arg in {{ARGS}}; do
+      case $arg in
+        --from-beginning) EXTRA="--from-beginning" ;;
+        --node)           NEXT_NODE=1 ;;
+        *)                [ "$NEXT_NODE" = 1 ] && NODE=$arg && NEXT_NODE="" ;;
+      esac
+    done
+    CMD="docker exec -it node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA\""
+    echo "→ $CMD" >&2
+    eval "$CMD"
+
+# ==================== Chaos ====================
+
+[private]
+_node-list:
+    @docker ps --filter "name=node-" --format '{{ '{{' }}.Names{{ '}}' }}'
+
+chaos-delay ms="200" node="node-0":
+    docker exec {{node}} tc qdisc add dev eth0 root netem delay {{ms}}ms
+    @echo "✓ {{ms}}ms delay on {{node}}"
+
+chaos-loss percent="5" node="node-0":
+    docker exec {{node}} tc qdisc add dev eth0 root netem loss {{percent}}%
+    @echo "✓ {{percent}}% packet loss on {{node}}"
+
+chaos-reset:
+    #!/usr/bin/env bash
+    for n in $(just _node-list); do
+      docker exec $n tc qdisc del dev eth0 root 2>/dev/null || true
+    done
+    echo "✓ Reset all chaos rules"
+
+chaos-status:
+    #!/usr/bin/env bash
+    for n in $(just _node-list); do
+      echo "=== $n ===" && docker exec $n tc qdisc show dev eth0
+    done
