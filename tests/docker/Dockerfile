@@ -77,10 +77,6 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm6
 RUN curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
 # AutoMQ inject end
 
-
-# NOTE: ducktape 0.11.4 requires python3.9
-RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape==0.11.4"
-
 COPY --from=build-native-image /build/kafka-binary/ /opt/kafka-binary/
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
