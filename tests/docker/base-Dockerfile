@@ -19,6 +19,8 @@ FROM $jdk_version
 
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
 
+RUN apt update && apt install -y sudo curl
+
 # Install binary test dependencies.
 # we use the same versions as in vagrant/base.sh
 ARG KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
@@ -78,5 +80,6 @@ RUN curl -s "$KAFKA_MIRROR/kafka-streams-3.8.1-test.jar" -o /opt/kafka-3.8.1/lib
 
 
 # AutoMQ
-ARG AUTOMQ_DOWNLOAD="https://github.com/AutoMQ/automq/releases/download"
-RUN mkdir -p "/opt/automq-1.1.0" && chmod a+rw /opt/automq-1.1.0 && wget "$AUTOMQ_DOWNLOAD/1.1.0/automq-1.1.0_kafka-3.7.0.tgz" && tar xz --strip-components=1 -f automq-1.1.0_kafka-3.7.0.tgz -C "/opt/automq-1.1.0"
+# FIXME: version_upgrade_test
+#ARG AUTOMQ_DOWNLOAD="https://github.com/AutoMQ/automq/releases/download"
+#RUN mkdir -p "/opt/automq-1.1.0" && chmod a+rw /opt/automq-1.1.0 && wget "$AUTOMQ_DOWNLOAD/1.1.0/automq-1.1.0_kafka-3.7.0.tgz" && tar xz --strip-components=1 -f automq-1.1.0_kafka-3.7.0.tgz -C "/opt/automq-1.1.0"
