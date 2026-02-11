@@ -68,7 +68,9 @@ LABEL ducker.creator=$ducker_creator
 # we have to install git since it is included in openjdk:8 but not openjdk:11
 RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl jq coreutils openssh-server net-tools vim python3-pip python3-dev libffi-dev libssl-dev cmake pkg-config libfuse-dev iperf traceroute iproute2 iputils-ping iftop && apt-get -y clean
 RUN python3 -m pip install -U pip==21.1.1;
-RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape==0.11.4"
+# NOTE: ducktape 0.12.0 supports py 3.9, 3.10, 3.11 and 3.12
+COPY requirements.txt requirements.txt
+RUN pip3 install --upgrade -r requirements.txt
 
 # AutoMQ inject start
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m | sed 's/arm64/aarch64/')-2.15.15.zip" -o "awscliv2.zip" && unzip awscliv2.zip && ./aws/install && rm -rf awscliv2.zip aws
@@ -154,9 +156,12 @@ RUN useradd -o -u $UID -ms /bin/bash ducker \
   && mkdir -p /home/ducker/ \
   && rsync -aiq /root/.ssh/ /home/ducker/.ssh \
   && chown -R ducker /home/ducker/ /mnt/ /var/log/ \
-  && echo "PATH=$(runuser -l ducker -c 'echo $PATH'):$JAVA_HOME/bin" >> /home/ducker/.ssh/environment \
-  && echo 'PATH=$PATH:'"$JAVA_HOME/bin" >> /home/ducker/.profile \
   && echo 'ducker ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+
+# Symlink all JDK binaries (java, jcmd, jps, etc.) to /usr/bin.
+# We don't add PATH env to ~/.ssh/environment because on some Linux distributions,
+# PAM (Pluggable Authentication Modules) may re-read /etc/environment, overwriting PATH.
+RUN cp -sn $JAVA_HOME/bin/* /usr/bin/
 
 USER ducker
 
