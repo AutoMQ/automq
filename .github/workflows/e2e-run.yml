@@ -14,6 +14,10 @@ on:
       test-path:
         required: false
         type: string
+      public-ssh-key:
+        required: false
+        type: string
+        description: "Public SSH key for debug access on failure"
   workflow_call:
     inputs:
       runner:
@@ -26,6 +30,9 @@ on:
         required: false
         type: string
       test-path:
+        required: false
+        type: string
+      public-ssh-key:
         required: false
         type: string
     outputs:
@@ -108,3 +115,9 @@ jobs:
         run: ./tests/docker/ducker-ak down
         shell: bash
         if: ${{ always() }}
+      - name: Setup SSH access for debugging
+        uses: ubicloud/ssh-runner@main
+        if: ${{ failure() && inputs.public-ssh-key != '' }}
+        with:
+          public-ssh-key: ${{ inputs.public-ssh-key }}
+          wait-minutes: 60
