@@ -170,6 +170,37 @@ class AutoMQBrokerTelemetryTest(Test):
     # Tests
     # ------------------------------------------------------------------
 
+    def _assert_invalid_label_rejection(self, current_port, expected_valid_labels=None):
+        invalid_labels = [
+            "invalid_no_value",
+            "key1=value1,invalid_label",
+            "=no_key",
+        ]
+        execution_node = self.kafka.nodes[0]
+
+        for invalid_label in invalid_labels:
+            config_command = (
+                f"{self.kafka.path.script('kafka-configs.sh', execution_node)} "
+                f"--bootstrap-server {self.kafka.bootstrap_servers()} "
+                f"--entity-type brokers --entity-default "
+                f"--alter "
+                f"--add-config 's3.telemetry.metrics.base.labels=[{invalid_label}]'"
+            )
+            execution_node.account.ssh_output(config_command, allow_fail=True)
+
+            # Invalid label content must not appear in metrics output
+            for check_node in self.kafka.nodes:
+                output = self._fetch_metrics(check_node, current_port)
+                assert invalid_label not in output, \
+                    f"Invalid label '{invalid_label}' should not appear in metrics output on {check_node.account.hostname}"
+
+                # Previously valid labels should be preserved
+                if expected_valid_labels:
+                    for label in expected_valid_labels:
+                        assert label in output, \
+                            f"Valid label '{label}' should still be present after invalid config: {invalid_label} on {check_node.account.hostname}"
+
+
     @cluster(num_nodes=4)
     def test_prometheus_metrics_exporter(self):
         """Verify that the broker exposes Prometheus metrics via the AutoMQ OpenTelemetry module."""
@@ -277,4 +308,65 @@ class AutoMQBrokerTelemetryTest(Test):
 
         finally:
             self.num_brokers = original_num_brokers
+            self._stop_kafka()
+
+    @cluster(num_nodes=4)
+    def test_dynamic_telemetry_reconfiguration(self):
+        initial_port = 9464
+        new_port = 9465
+        initial_labels = ['k1="v1"', 'k2="v2"']
+        new_labels = ['k3="v3"', 'k4="v4"']
+
+        server_overrides = [
+            ["s3.telemetry.metrics.exporter.uri", f"prometheus://0.0.0.0:{initial_port}"],
+            ["s3.telemetry.metrics.base.labels", "k1=v1,k2=v2"]
+        ]
+
+        try:
+            self._start_kafka(server_overrides=server_overrides)
+
+            self._wait_for_metrics_available(port=initial_port)
+            for node in self.kafka.nodes:
+                self._assert_prometheus_metrics(self._fetch_metrics(node, port=initial_port),
+                                                expected_labels=initial_labels)
+
+            # Test invalid label formats are rejected
+            self._assert_invalid_label_rejection(initial_port,expected_valid_labels=initial_labels)
+
+            config_command = (
+                f"{self.kafka.path.script('kafka-configs.sh', self.kafka.nodes[0])} "
+                f"--bootstrap-server {self.kafka.bootstrap_servers()} "
+                f"--entity-type brokers --entity-default "
+                f"--alter "
+                f"--add-config 's3.telemetry.metrics.exporter.uri=prometheus://0.0.0.0:{new_port},"
+                f"s3.telemetry.metrics.base.labels=[k3=v3,k4=v4]'"
+            )
+            self.kafka.nodes[0].account.ssh(config_command)
+            self._wait_for_metrics_available(port=new_port, timeout_sec=60)
+
+            for node in self.kafka.nodes:
+                output = self._fetch_metrics(node, port=new_port)
+
+                # New labels should be present
+                self._assert_prometheus_metrics(output, expected_labels=new_labels)
+
+                # Old labels should no longer appear
+                for old_label in initial_labels:
+                    assert old_label not in output, \
+                        f"Old label '{old_label}' should not be present after reconfiguration"
+
+                # Old port should be closed
+                wait_until(
+                    lambda n=node: not self._metrics_ready(n, initial_port),
+                    timeout_sec=30, backoff_sec=2,
+                    err_msg=f"Old port {initial_port} should be closed"
+                )
+
+            # Metrics should not be empty
+            for node in self.kafka.nodes:
+                metric_count = len([line for line in self._fetch_metrics(node, port=new_port).splitlines()
+                                   if line.strip() and not line.startswith('#')])
+                assert metric_count > 0, "Metrics should not be empty after reconfiguration"
+
+        finally:
             self._stop_kafka()
