@@ -103,7 +103,8 @@ object DynamicBrokerConfig {
     DynamicRemoteLogConfig.ReconfigurableConfigs ++
     AutoBalancerControllerConfig.RECONFIGURABLE_CONFIGS.asScala ++
     AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS.asScala ++
-    BackPressureConfig.RECONFIGURABLE_CONFIGS.asScala
+    BackPressureConfig.RECONFIGURABLE_CONFIGS.asScala ++
+    DynamicTelemetryAdapter.RECONFIGURABLE_CONFIGS.asScala
 
   private val ClusterLevelListenerConfigs = Set(SocketServerConfigs.MAX_CONNECTIONS_CONFIG, SocketServerConfigs.MAX_CONNECTION_CREATION_RATE_CONFIG, SocketServerConfigs.NUM_NETWORK_THREADS_CONFIG)
   private val PerBrokerConfigs = (DynamicSecurityConfigs ++ DynamicListenerConfig.ReconfigurableConfigs).diff(
@@ -275,6 +276,12 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     kafkaServer match {
       case brokerServer: BrokerServer =>
         addReconfigurable(brokerServer.backPressureManager)
+        if (brokerServer.sharedServer.telemetryManager != null) {
+          addReconfigurable(new DynamicTelemetryAdapter(
+            brokerServer.sharedServer.telemetryManager,
+            kafkaConfig
+          ))
+        }
       case _ =>
     }
     // AutoMQ inject end

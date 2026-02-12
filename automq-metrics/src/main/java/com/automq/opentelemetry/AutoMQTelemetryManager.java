@@ -19,6 +19,10 @@
 
 package com.automq.opentelemetry;
 
+import io.opentelemetry.api.trace.Tracer;
+import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.common.config.types.Password;
+
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
@@ -38,6 +42,8 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -71,12 +77,17 @@ import io.opentelemetry.sdk.resources.Resource;
 public class AutoMQTelemetryManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQTelemetryManager.class);
 
-    private final String exporterUri;
+    public static final String EXPORTER_URI_CONFIG = "s3.telemetry.metrics.exporter.uri";
+    public static final String EXPORTER_LABEL_CONFIG = "s3.telemetry.metrics.base.labels";
+    private volatile String exporterUri;
     private final String serviceName;
     private final String instanceId;
     private final MetricsExportConfig metricsExportConfig;
     private final List<MetricReader> metricReaders = new ArrayList<>();
+    private volatile List<Pair<String, String>> currentBaseLabels;
     private final List<AutoCloseable> autoCloseableList;
+    private final Object reconfigureLock = new Object();
+    private volatile boolean initialized = false;
     private OpenTelemetrySdk openTelemetrySdk;
     private YammerMetricsReporter yammerReporter;
 
@@ -96,6 +107,7 @@ public class AutoMQTelemetryManager {
         this.serviceName = serviceName;
         this.instanceId = instanceId;
         this.metricsExportConfig = metricsExportConfig;
+        this.currentBaseLabels = new ArrayList<>(metricsExportConfig.baseLabels());
         this.autoCloseableList = new ArrayList<>();
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -107,19 +119,26 @@ public class AutoMQTelemetryManager {
      * configures exporters, and registers JVM and JMX metrics.
      */
     public void init() {
-        SdkMeterProvider meterProvider = buildMeterProvider();
+        synchronized (reconfigureLock) {
+            if (initialized) {
+                shutdown();
+            }
 
-        this.openTelemetrySdk = OpenTelemetrySdk.builder()
-            .setMeterProvider(meterProvider)
-            .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
-                W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
-            .buildAndRegisterGlobal();
+            SdkMeterProvider meterProvider = buildMeterProvider();
 
-        // Register JVM and JMX metrics
-        registerJvmMetrics(openTelemetrySdk);
-        registerJmxMetrics(openTelemetrySdk);
+            this.openTelemetrySdk = OpenTelemetrySdk.builder()
+                .setMeterProvider(meterProvider)
+                .setPropagators(ContextPropagators.create(TextMapPropagator.composite(
+                    W3CTraceContextPropagator.getInstance(), W3CBaggagePropagator.getInstance())))
+                .build();
 
-        LOGGER.info("AutoMQ Telemetry Manager initialized successfully.");
+            // Register JVM and JMX metrics
+            registerJvmMetrics(openTelemetrySdk);
+            registerJmxMetrics(openTelemetrySdk);
+
+            initialized = true;
+            LOGGER.info("AutoMQ Telemetry Manager initialized successfully.");
+        }
     }
 
     private SdkMeterProvider buildMeterProvider() {
@@ -137,7 +156,7 @@ public class AutoMQTelemetryManager {
             .put(TelemetryConstants.PROMETHEUS_JOB_KEY, serviceName)
             .put(TelemetryConstants.PROMETHEUS_INSTANCE_KEY, instanceId);
 
-        for (Pair<String, String> label : metricsExportConfig.baseLabels()) {
+        for (Pair<String, String> label : currentBaseLabels) {
             attrsBuilder.put(label.getKey(), label.getValue());
         }
 
@@ -233,6 +252,8 @@ public class AutoMQTelemetryManager {
                 LOGGER.error("Failed to close auto closeable", e);
             }
         });
+        autoCloseableList.clear();
+
         metricReaders.forEach(metricReader -> {
             metricReader.forceFlush();
             try {
@@ -241,9 +262,42 @@ public class AutoMQTelemetryManager {
                 LOGGER.error("Failed to close metric reader", e);
             }
         });
+        metricReaders.clear();
+
         if (openTelemetrySdk != null) {
             openTelemetrySdk.close();
+            openTelemetrySdk = null;
         }
+        initialized = false;
+    }
+
+    public void restartYammerReporter() {
+        if (yammerReporter != null) {
+            yammerReporter.start(getMeter());
+        }
+    }
+
+    public List<Pair<String, String>> parseLabels(String labelStr) {
+        if (labelStr == null || labelStr.isBlank()) {
+            return Collections.emptyList();
+        }
+        List<Pair<String, String>> labels = new ArrayList<>();
+        for (String label : labelStr.split(",")) {
+            int index = label.indexOf('=');
+            if (index == -1) {
+                throw new ConfigException(EXPORTER_LABEL_CONFIG, labelStr, "Invalid label format, missing '=': " + label);
+            }
+            String key = label.substring(0, index).trim();
+            String value = label.substring(index + 1).trim();
+            if (key.isBlank()) {
+                throw new ConfigException(EXPORTER_LABEL_CONFIG, labelStr, "Invalid label format, key is empty: " + label);
+            }
+            if (value.isBlank()) {
+                throw new ConfigException(EXPORTER_LABEL_CONFIG, labelStr, "Invalid label format, value is empty: " + label);
+            }
+            labels.add(Pair.of(key, value));
+        }
+        return labels;
     }
 
     /**
@@ -273,5 +327,55 @@ public class AutoMQTelemetryManager {
             throw new IllegalStateException("TelemetryManager is not initialized. Call init() first.");
         }
         return this.openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);
+    }
+
+    public Tracer getTracer(String instrumentationName) {
+        if (this.openTelemetrySdk == null) {
+            throw new IllegalStateException("TelemetryManager is not initialized. Call init() first.");
+        }
+        return this.openTelemetrySdk.getTracer(instrumentationName);
+    }
+
+    public String validateExporterUri(Object value) throws ConfigException {
+        String uri = Objects.toString(value, null);
+        if (value instanceof Password p) {
+            uri = p.value();
+        }
+        if (uri == null || uri.isBlank()) {
+            return uri;
+        }
+        try {
+            MetricsExporterURI.parse(uri, metricsExportConfig);
+        } catch (Exception e) {
+            throw new ConfigException(EXPORTER_URI_CONFIG, uri, "Invalid exporter URI: " + e.getMessage());
+        }
+        return uri;
+    }
+
+    public boolean mayApplyConfigChanges(Map<String, ?> configs) {
+        boolean hasConfigChanges = false;
+
+        if (configs.containsKey(EXPORTER_URI_CONFIG)) {
+            Object value = configs.get(EXPORTER_URI_CONFIG);
+            String newUri = validateExporterUri(value);
+            if (newUri != null && !newUri.equals(this.exporterUri)) {
+                LOGGER.info("Exporter URI changed: {} -> {}", this.exporterUri, newUri);
+                this.exporterUri = newUri;
+                hasConfigChanges = true;
+            }
+        }
+
+        if (configs.containsKey(EXPORTER_LABEL_CONFIG)) {
+            Object value = configs.get(EXPORTER_LABEL_CONFIG);
+            String labelStr = value != null ? value.toString() : "";
+            List<Pair<String, String>> newLabels = parseLabels(labelStr);
+            if (!newLabels.equals(this.currentBaseLabels)) {
+                LOGGER.info("Base labels changed: {} -> {}", this.currentBaseLabels, newLabels);
+                this.currentBaseLabels = newLabels;
+                hasConfigChanges = true;
+            }
+        }
+
+        return hasConfigChanges;
     }
 }
