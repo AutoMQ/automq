@@ -122,7 +122,8 @@ class AutoMQZeroZoneTest(ProduceConsumeValidateTest):
         node1_ip = broker_ips[0]
         other_broker_ips = set(broker_ips[1:])
 
-        cmd = "iftop -t -s 10 -L 10 -n"
+        # The runner user may not have permissions to run iftop, so we run it as root.
+        cmd = "sudo -u root iftop -t -s 10 -L 10 -n"
         iftop_output = [line for line in node.account.ssh_capture(cmd, allow_fail=False)]
         # The consumer still has some traffic to coordinator, so we set the threshold to 4096
         seen_ips = parse_iftop_ips(iftop_output, min_bps_bytes=4096)
