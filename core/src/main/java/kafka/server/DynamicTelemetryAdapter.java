@@ -18,10 +18,10 @@
  */
 package kafka.server;
 
-import com.automq.opentelemetry.AutoMQTelemetryManager;
-
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigException;
+
+import com.automq.opentelemetry.AutoMQTelemetryManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
