@@ -1,0 +1,179 @@
+# Linux Production Deployment - Docker Compose
+# Optimized for high-throughput IoT ingestion on Linux
+
+version: "3.8"
+
+services:
+  # MinIO - S3 Compatible Storage
+  minio:
+    container_name: "iot-minio"
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: [ "server", "/data", "--console-address", ":9001" ]
+    volumes:
+      - minio_data:/data
+    networks:
+      iot_net:
+        ipv4_address: 10.7.0.2
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # MinIO bucket init
+  mc:
+    container_name: "iot-mc"
+    image: minio/mc:RELEASE.2024-01-16T16-06-34Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c " until (/usr/bin/mc alias set minio http://minio:9000 minioadmin minioadmin); do sleep 1; done; /usr/bin/mc mb minio/automq-data --ignore-existing; /usr/bin/mc mb minio/automq-ops --ignore-existing; exit 0; "
+    networks:
+      - iot_net
+
+  # AutoMQ - Optimized for burst ingestion
+  automq:
+    container_name: "iot-automq"
+    image: automqinc/automq:latest
+    stop_grace_period: 2m
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      - KAFKA_S3_ACCESS_KEY=minioadmin
+      - KAFKA_S3_SECRET_KEY=minioadmin
+      # Increased heap for burst handling
+      - KAFKA_HEAP_OPTS=-Xms2g -Xmx4g -XX:MetaspaceSize=128m -XX:MaxDirectMemorySize=2G
+      - CLUSTER_ID=IoTBurstPilotProd
+    command:
+      - bash
+      - -c
+      - |
+        /opt/automq/kafka/bin/kafka-server-start.sh \
+        /opt/automq/kafka/config/kraft/server.properties \
+        --override cluster.id=$$CLUSTER_ID \
+        --override node.id=0 \
+        --override process.roles=broker,controller \
+        --override controller.quorum.voters=0@automq:9093 \
+        --override controller.quorum.bootstrap.servers=automq:9093 \
+        --override listeners=PLAINTEXT://:9092,CONTROLLER://:9093 \
+        --override advertised.listeners=PLAINTEXT://localhost:9092 \
+        --override listener.security.protocol.map=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT \
+        --override inter.broker.listener.name=PLAINTEXT \
+        --override controller.listener.names=CONTROLLER \
+        --override log.retention.hours=1 \
+        --override num.io.threads=16 \
+        --override num.network.threads=8 \
+        --override socket.send.buffer.bytes=1048576 \
+        --override socket.receive.buffer.bytes=1048576 \
+        --override s3.data.buckets='0@s3://automq-data?region=us-east-1&endpoint=http://10.7.0.2:9000&pathStyle=true' \
+        --override s3.ops.buckets='1@s3://automq-ops?region=us-east-1&endpoint=http://10.7.0.2:9000&pathStyle=true' \
+        --override s3.wal.path='0@s3://automq-data?region=us-east-1&endpoint=http://10.7.0.2:9000&pathStyle=true'
+    networks:
+      iot_net:
+        ipv4_address: 10.7.0.10
+    depends_on:
+      mc:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+    # Linux-specific optimizations
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      memlock:
+        soft: -1
+        hard: -1
+
+  # High-Performance Gateway (Linux Optimized)
+  gateway:
+    container_name: "iot-gateway"
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile.linux
+    ports:
+      - "5000:5000/udp" # IoT telemetry
+      - "8080:8080" # Prometheus metrics
+    environment:
+      - KAFKA_BOOTSTRAP=automq:9092
+      - KAFKA_TOPIC=iot_telemetry
+      - NUM_WORKERS=8
+      - BATCH_SIZE=65536
+      - LINGER_MS=25
+      - COMPRESSION=lz4
+      - QUEUE_SIZE=1000000
+      - UDP_RECV_BUFFER=52428800 # 50MB
+    networks:
+      - iot_net
+    depends_on:
+      - automq
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    # Critical: Increase UDP buffer
+    sysctls:
+      - net.core.rmem_max=52428800
+      - net.core.rmem_default=52428800
+
+  # Prometheus
+  prometheus:
+    container_name: "iot-prometheus"
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=3d"
+    networks:
+      - iot_net
+
+  # Grafana
+  grafana:
+    container_name: "iot-grafana"
+    image: grafana/grafana:10.2.3
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - iot_net
+    depends_on:
+      - prometheus
+
+volumes:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+
+
+networks:
+  iot_net:
+    name: iot_net
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "10.7.0.0/16"
+          gateway: "10.7.0.1"

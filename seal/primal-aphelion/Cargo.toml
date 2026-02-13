@@ -1,0 +1,53 @@
+[package]
+name = "iot-dam-gateway"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance UDP-to-Kafka ingestion gateway with adaptive rate limiting"
+license = "MIT"
+
+[features]
+default = []
+# Enable real Kafka integration (requires librdkafka)
+kafka = ["rdkafka"]
+# For static linking on Linux (requires cmake)
+kafka-static = ["rdkafka/cmake-build"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["rt-multi-thread", "net", "sync", "macros", "signal", "time"] }
+
+# Kafka - optional, requires librdkafka native library
+rdkafka = { version = "0.36", default-features = false, features = ["tokio"], optional = true }
+
+# HTTP/REST API
+axum = { version = "0.7", features = ["json"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Metrics
+prometheus = { version = "0.13", features = ["process"] }
+
+# Utilities
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+parking_lot = "0.12"
+crossbeam-queue = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Linux-specific optimizations
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+opt-level = 1

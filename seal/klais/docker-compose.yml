@@ -1,0 +1,144 @@
+version: '3.8'
+
+services:
+  # KLAIS Ingestion Gateway
+  klais:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: klais-gateway
+    ports:
+      - "5000:5000/udp"    # UDP ingestion
+      - "8080:8080"        # REST API / Prometheus metrics
+    environment:
+      - KLAIS_UDP_BIND=0.0.0.0:5000
+      - KLAIS_API_BIND=0.0.0.0:8080
+      - KLAIS_KAFKA_BOOTSTRAP=kafka:9092
+      - KLAIS_KAFKA_TOPIC=iot_telemetry
+      - KLAIS_DAM_MAX_RATE=10000
+      - KLAIS_DAM_BURST_SIZE=50000
+      - KLAIS_LOG_LEVEL=info
+      - RUST_BACKTRACE=1
+    depends_on:
+      - kafka
+    networks:
+      - klais-net
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 512M
+    # For eBPF support, uncomment:
+    # privileged: true
+    # volumes:
+    #   - /sys/kernel/debug:/sys/kernel/debug:ro
+
+  # Kafka (using AutoMQ-compatible Kafka)
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: klais-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      CLUSTER_ID: 'klais-cluster-001'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - klais-net
+    restart: unless-stopped
+
+  # MinIO for S3-compatible storage (AutoMQ offloading)
+  minio:
+    image: minio/minio:latest
+    container_name: klais-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - klais-net
+    restart: unless-stopped
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: klais-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    networks:
+      - klais-net
+    restart: unless-stopped
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: klais-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - klais-net
+    restart: unless-stopped
+
+  # UDP traffic generator for testing
+  traffic-gen:
+    build:
+      context: ./tools/traffic-gen
+      dockerfile: Dockerfile
+    container_name: klais-traffic-gen
+    environment:
+      - TARGET_HOST=klais
+      - TARGET_PORT=5000
+      - RATE=1000
+      - DEVICES=100
+    depends_on:
+      - klais
+    networks:
+      - klais-net
+    profiles:
+      - testing
+
+volumes:
+  kafka-data:
+  minio-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  klais-net:
+    driver: bridge
