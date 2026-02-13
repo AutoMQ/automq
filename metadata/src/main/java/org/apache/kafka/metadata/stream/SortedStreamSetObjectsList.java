@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
@@ -63,7 +64,7 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
     @Override
     public List<S3StreamSetObject> list() {
-        return list;
+        return Collections.unmodifiableList(list);
     }
 
     @Override
@@ -108,6 +109,11 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
     @Override
     public S3StreamSetObject get(int index) {
         return this.list.get(index);
+    }
+
+    @Override
+    public boolean removeIf(Predicate<S3StreamSetObject> filter) {
+        return this.list.removeIf(filter);
     }
 
     @Override
