@@ -22,6 +22,8 @@ package com.automq.stream.s3.trace.context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.function.Supplier;
+
 import javax.annotation.concurrent.NotThreadSafe;
 
 import io.opentelemetry.api.GlobalOpenTelemetry;
@@ -37,14 +39,24 @@ import io.opentelemetry.context.Context;
 public class TraceContext {
     public static final TraceContext DEFAULT = new TraceContext(false, null, null);
     private static final Logger LOGGER = LoggerFactory.getLogger(TraceContext.class);
+    private static volatile Supplier<Tracer> tracerSupplier;
+
     private final boolean isTraceEnabled;
     private final Tracer tracer;
     private Context currContext;
 
+    public static void setTracerSupplier(Supplier<Tracer> supplier) {
+        tracerSupplier = supplier;
+    }
+
     public TraceContext(boolean isTraceEnabled, Tracer tracer, Context currContext) {
         this.isTraceEnabled = isTraceEnabled;
         if (isTraceEnabled && tracer == null) {
-            this.tracer = GlobalOpenTelemetry.getTracer("s3stream");
+            if (tracerSupplier != null) {
+                this.tracer = tracerSupplier.get();
+            } else {
+                this.tracer = GlobalOpenTelemetry.getTracer("s3stream");
+            }
         } else {
             this.tracer = tracer;
         }
