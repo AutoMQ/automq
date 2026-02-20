@@ -101,6 +101,14 @@ The `docker/docker-compose.yaml` file provides a simple single-node setup for qu
 ```shell
 curl -O https://raw.githubusercontent.com/AutoMQ/automq/refs/tags/1.5.5/docker/docker-compose.yaml && docker compose -f docker-compose.yaml up -d
 ```
+**Windows (PowerShell) users:**
+Run the commands separately:
+```powershell
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/AutoMQ/automq/refs/tags/1.5.5/docker/docker-compose.yaml" -OutFile docker-compose.yaml
+docker compose -f docker-compose.yaml up -d
+```
+Make sure Docker is installed and `docker` is available in your PATH.
+
 This setup features a single AutoMQ node serving as both controller and broker, alongside MinIO for S3 storage. All services operate within a Docker bridge network called `automq_net`, allowing you to start a Kafka producer in this network to test AutoMQ:
 ```shell
 docker run --network automq_net automqinc/automq:latest /bin/bash -c \
