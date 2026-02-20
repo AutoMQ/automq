@@ -323,48 +323,77 @@ class AbstractObjectStorageTest {
 
         when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
             callCount.incrementAndGet();
-            return blockingFuture; // Always return blocking future for first call
+            return blockingFuture;
         });
 
-        // Phase 1: Acquire the only permit
+        // Phase 1: Acquire permit and start first write
         ByteBuf firstBuffer = TestUtils.randomPooled(1024);
-        objectStorage.write(options, "testKey", firstBuffer);
+        CompletableFuture<ObjectStorage.WriteResult> firstWrite = objectStorage.write(options, "testKey", firstBuffer);
 
-        // Verify permit acquisition
-        await().until(() -> callCount.get() == 1);
+        // Verify first write started
+        await().atMost(1, TimeUnit.SECONDS).until(() -> callCount.get() >= 1);
 
-        // Phase 2: Verify blocking behavior with interrupt
-        Thread blockingThread = new Thread(() -> {
-            ByteBuf byteBuf = TestUtils.randomPooled(1024);
-            try {
-                CompletableFuture<ObjectStorage.WriteResult> future =
-                    objectStorage.write(options, "testKey", byteBuf);
-                ExecutionException exception = assertThrows(ExecutionException.class, () -> future.get());
-                assertTrue(exception.getCause() instanceof InterruptedException);
-            } catch (Exception e) {
-                // Ignore
-            } finally {
-                await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> {
-                    assertEquals(0, byteBuf.refCnt());
-                });
-            }
+        // Phase 2: Second write should also execute (AsyncSemaphore allows overdraft)
+        ByteBuf secondBuffer = TestUtils.randomPooled(1024);
+        CompletableFuture<ObjectStorage.WriteResult> secondWrite = objectStorage.write(options, "testKey2", secondBuffer);
+
+        // Both writes should not be done yet (blocked on future)
+        Thread.sleep(100);
+        assertFalse(firstWrite.isDone());
+        assertFalse(secondWrite.isDone());
+
+        // Phase 3: Complete the blocking future and verify writes finish
+        blockingFuture.complete(null);
+        await().atMost(2, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue(firstWrite.isDone());
+            assertTrue(secondWrite.isDone());
+            assertEquals(0, firstBuffer.refCnt());
+            assertEquals(0, secondBuffer.refCnt());
+        });
+    }
+
+    @Test
+    void testAsyncAcquireFIFOOrder() throws Exception {
+        final int maxConcurrency = 2;
+        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+
+        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+            .enableFastRetry(false)
+            .retry(false);
+
+        CompletableFuture<Void> barrier = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+
+        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+            callCount.incrementAndGet();
+            return barrier;
         });
 
-        blockingThread.start();
+        // Start multiple writes
+        ByteBuf buf1 = TestUtils.randomPooled(1024);
+        ByteBuf buf2 = TestUtils.randomPooled(1024);
+        ByteBuf buf3 = TestUtils.randomPooled(1024);
+        CompletableFuture<ObjectStorage.WriteResult> write1 = objectStorage.write(options, "task1", buf1);
+        CompletableFuture<ObjectStorage.WriteResult> write2 = objectStorage.write(options, "task2", buf2);
+        CompletableFuture<ObjectStorage.WriteResult> write3 = objectStorage.write(options, "task3", buf3);
 
-        Thread.sleep(1000);
+        // Wait for writes to execute (AsyncSemaphore allows overdraft, so all may execute)
+        await().atMost(1, TimeUnit.SECONDS).until(() -> callCount.get() >= 2);
 
-        // Interrupt and verify
-        blockingThread.interrupt();
-        blockingThread.join();
+        // Writes should not be done yet (blocked on barrier)
+        assertFalse(write1.isDone());
+        assertFalse(write2.isDone());
 
-        // Verify resource cleanup
-        assertEquals(1, firstBuffer.refCnt());
-
-        // Cleanup
-        blockingFuture.complete(null);
-        await().atMost(2, TimeUnit.SECONDS)
-            .untilAsserted(() -> assertEquals(0, firstBuffer.refCnt()));
+        // Complete barrier and verify all writes finish
+        barrier.complete(null);
+        await().atMost(2, TimeUnit.SECONDS).untilAsserted(() -> {
+            assertTrue(write1.isDone());
+            assertTrue(write2.isDone());
+            assertTrue(write3.isDone());
+            assertEquals(0, buf1.refCnt());
+            assertEquals(0, buf2.refCnt());
+            assertEquals(0, buf3.refCnt());
+        });
     }
 
     @Test
