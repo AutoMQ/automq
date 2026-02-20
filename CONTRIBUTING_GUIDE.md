@@ -1,4 +1,4 @@
-# Contributing to AutoMQ
+<!-- # Contributing to AutoMQ
 
 Thank you for your interest in contributing! We love community contributions.
 Read on to learn how to contribute to AutoMQ.
@@ -166,4 +166,80 @@ users or report bugs in GitHub.
 
 ## Attribution
 
-This contributing document is adapted from that of [Airbyte](https://github.com/airbytehq/airbyte).
+This contributing document is adapted from that of [Airbyte](https://github.com/airbytehq/airbyte). -->
+
+
+# Contributing to AutoMQ
+
+Thank you for your interest in contributing to AutoMQ. We welcome community contributions and appreciate first-time contributors.
+
+This guide explains how to contribute to AutoMQ and how to get started with local development. If you have questions, feel free to reach out via the
+[WeChat Group](https://www.automq.com/img/----------------------------1.png)
+or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA).
+
+Before getting started, please review AutoMQ’s Code of Conduct. Everyone interacting in GitHub, Slack, or WeChat must follow the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Code Contributions
+
+### Finding or Reporting Issues
+
+- **Find an existing issue:**  
+  Browse the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often labeled `good first issue` and are recommended for new contributors.  
+  To claim an issue, reply with `/assign`, and the GitHub bot will assign it to you. You may start with this list of
+  [`good first issue`](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+
+- **Report a new issue:**  
+  If you find a bug or want to request a feature, please [create a new issue](https://github.com/AutoMQ/automq/issues/new/choose). Select the appropriate template and provide the required details.
+
+If you have questions about an issue, feel free to ask in the issue comments.
+
+### Submitting Pull Requests
+
+The standard workflow for contributing code is:
+
+1. Fork the AutoMQ repository.
+2. Clone the repository locally.
+3. Create a branch for your change using the format `{YOUR_USERNAME}/{FEATURE_OR_BUG}`  
+   (for example, `jdoe/source-stock-api-stream-fix`).
+4. Make and commit your changes.
+5. Push your branch to your fork.
+6. Submit a Pull Request for review.
+7. [Link an existing issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/linking-a-pull-request-to-an-issue)
+   (created earlier or one you claimed) that does not include the `needs triage` label. Pull Requests without a linked issue will be closed.
+8. Write a PR title and description following the [Pull Request Template](PULL_REQUEST_TEMPLATE.md).
+9. An AutoMQ maintainer will trigger CI tests and review your changes.
+10. Respond to feedback and make updates as needed.
+11. Merge the contribution.
+
+Pull Request reviews are performed on a regular basis.
+
+> [!NOTE]
+> Please respond to feedback and sign the CLA.
+>
+> Pull Requests without updates may be closed due to inactivity.
+
+## Requirements
+
+| Requirement            | Version    |
+| ---------------------- | ---------- |
+| Compiling requirements | JDK 17     |
+| Compiling requirements | Scala 2.13 |
+| Running requirements   | JDK 17     |
+
+> Tip: Refer to the official [Scala documentation](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13.
+
+## Local Debug with IDEA
+
+This section provides a step-by-step guide for setting up AutoMQ locally, especially for new contributors.
+
+### Gradle
+
+AutoMQ uses Gradle in the same way as Apache Kafka. Project configuration is managed through the `build.gradle` file in the repository root.
+
+You do not need to install Gradle manually. The `gradlew` script will automatically download and use the correct Gradle version.
+
+### Build
+
+```bash
+./gradlew jar -x test
