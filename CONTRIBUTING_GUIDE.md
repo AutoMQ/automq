@@ -23,17 +23,26 @@ If you are new to AutoMQ, we recommend starting with the simplest path before di
   - Produce and consume messages
 - This helps you understand AutoMQ behavior without local environment setup
 
-**Option 2: Local development setup**
-- Follow the steps below to build and run AutoMQ locally
-- This path is recommended if you plan to contribute code or debug internals
+**Option 2: DevBox local development (recommended for code contributions)**
+- Use the Docker Compose-based DevBox to start a local AutoMQ cluster with MinIO and JDWP debug ports
+- Quick start:
+  - `cd devbox`
+  - `just start-build` (single node) or `just start-build 3` (3-node cluster)
+- Useful shortcuts: `just topic-list`, `just produce <topic>`, `just logs`
+- See full instructions in [devbox/README.md](devbox/README.md)
 
-> Tip: If you encounter setup issues, check the “Local Debug with IDEA” and S3 configuration sections below.
+**Option 3: Manual local development setup**
+- Follow the steps below to build and run AutoMQ locally with IDEA/manual configuration
+- This path is useful when you need full control over local components and configs
+
+> Tip: If you encounter setup issues, check [devbox/README.md](devbox/README.md), “Local Debug with IDEA”, and S3 configuration sections below.
 
 
 If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
 This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
 
 After gaining familiarity, contributors who want to work on code can follow the steps in this guide to build and run AutoMQ locally.
+For most contributors, we recommend starting with DevBox (`devbox/README.md`) and using the manual setup only when deeper environment customization is needed.
 
 
 ## Code Contributions
