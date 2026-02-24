@@ -3,8 +3,10 @@ package kafka.coordinator.group
 import kafka.server.MetadataCache
 import kafka.utils.Logging
 import org.apache.kafka.common.{Node, TopicPartition}
+import org.apache.kafka.common.errors.RetriableException
 import org.apache.kafka.common.message.ListOffsetsRequestData.{ListOffsetsPartition, ListOffsetsTopic}
 import org.apache.kafka.common.network.ListenerName
+import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{ListOffsetsRequest, ListOffsetsResponse}
 import org.apache.kafka.server.util.AsyncSender
 
@@ -92,9 +94,17 @@ class RemoteLeoFetcher(
     val result = scala.collection.mutable.Map[TopicPartition, Long]()
     response.topics.forEach { topic =>
       topic.partitions.forEach { partition =>
-        if (partition.errorCode == 0) {
-          val tp = new TopicPartition(topic.name, partition.partitionIndex)
-          result.put(tp, partition.offset)
+        val tp = new TopicPartition(topic.name, partition.partitionIndex)
+        val error = Errors.forCode(partition.errorCode)
+        error match {
+          case Errors.NONE =>
+            result.put(tp, partition.offset)
+          case Errors.NOT_LEADER_OR_FOLLOWER | Errors.LEADER_NOT_AVAILABLE =>
+            debug(s"ListOffsets for $tp will be retried due to invalid leader metadata: $error")
+          case _ if error.exception.isInstanceOf[RetriableException] =>
+            debug(s"ListOffsets for $tp will be retried due to retriable error: $error")
+          case _ =>
+            debug(s"ListOffsets for $tp failed due to error: $error")
         }
       }
     }

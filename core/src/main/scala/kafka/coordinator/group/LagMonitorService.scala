@@ -49,13 +49,6 @@ class LagMonitorService private[group] (
   asyncSender: AsyncSender
 ) extends Logging {
 
-  require(brokerId >= 0, s"brokerId must be non-negative, got: $brokerId")
-  require(lagComputeIntervalMs > 0, s"lagComputeIntervalMs must be positive, got: $lagComputeIntervalMs")
-  require(groupMetadataManager != null, "groupMetadataManager cannot be null")
-  require(replicaManager != null, "replicaManager cannot be null")
-  require(remoteLeoFetcher != null, "remoteLeoFetcher cannot be null")
-  require(asyncSender != null, "asyncSender cannot be null")
-
   private val running = new AtomicBoolean(false)
   private val scheduler = new KafkaScheduler(1, true, "lag-monitor-")
 
