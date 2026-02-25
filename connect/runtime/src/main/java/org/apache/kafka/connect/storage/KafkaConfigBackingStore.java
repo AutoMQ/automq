@@ -324,6 +324,16 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
     final Map<String, AppliedConnectorConfig> appliedConnectorConfigs = new HashMap<>();
     final Set<String> connectorsPendingFencing = new HashSet<>();
 
+    // Tracks connectors that have been explicitly deleted (i.e., we observed a tombstone for their
+    // connector config record during the current read of the config topic). This is used to distinguish
+    // between two scenarios when a task commit record is encountered but no connector config is present:
+    //   1. The connector was truly deleted (KAFKA-16838) - the tombstone was observed, so we should ignore
+    //      the orphaned task configs.
+    //   2. Log compaction reordered records (KAFKA-17719) - the connector config simply hasn't been read yet,
+    //      so we should defer task config processing until the connector config arrives.
+    // See https://issues.apache.org/jira/browse/KAFKA-17719
+    final Set<String> deletedConnectors = new HashSet<>();
+
     private final WorkerConfigTransformer configTransformer;
 
     private final boolean usesFencableWriter;
@@ -1015,6 +1025,7 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
             if (value.value() == null) {
                 // Connector deletion will be written as a null value
                 processConnectorRemoval(connectorName);
+                deletedConnectors.add(connectorName);
                 log.info("Successfully processed removal of connector '{}'", connectorName);
                 removed = true;
             } else {
@@ -1035,10 +1046,18 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
                 Map<String, String> stringsConnectorConfig = (Map<String, String>) newConnectorConfig;
                 connectorConfigs.put(connectorName, stringsConnectorConfig);
 
+                // If this connector was previously marked as deleted, clear that mark since it has been re-created
+                deletedConnectors.remove(connectorName);
+
                 // Set the initial state of the connector to STARTED, which ensures that any connectors
                 // which were created with 0.9 Connect will be initialized in the STARTED state.
                 if (!connectorTargetStates.containsKey(connectorName))
                     connectorTargetStates.put(connectorName, TargetState.STARTED);
+
+                // If a task commit was previously received before this connector config (due to log compaction
+                // reordering), the task configs were deferred. Now that the connector config has arrived,
+                // attempt to apply those deferred task configs. See KAFKA-17719.
+                applyDeferredTaskConfigs(connectorName);
             }
         }
         if (started) {
@@ -1078,18 +1097,45 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
     private void processTasksCommitRecord(String connectorName, SchemaAndValue value) {
         List<ConnectorTaskId> updatedTasks = new ArrayList<>();
         synchronized (lock) {
-            // Edge case: connector was deleted before these task configs were published,
-            // but compaction took place and both the original connector config and the
-            // tombstone message for it have been removed from the config topic
-            // We should ignore these task configs
             Map<String, String> appliedConnectorConfig = connectorConfigs.get(connectorName);
             if (appliedConnectorConfig == null) {
-                processConnectorRemoval(connectorName);
-                log.debug(
-                        "Ignoring task configs for connector {}; it appears that the connector was deleted previously "
-                            + "and that log compaction has since removed any trace of its previous configurations "
-                            + "from the config topic",
-                        connectorName
+                if (deletedConnectors.contains(connectorName)) {
+                    // KAFKA-16838: The connector was truly deleted - we observed its tombstone during
+                    // this read of the config topic. Clean up any orphaned task configs.
+                    processConnectorRemoval(connectorName);
+                    log.debug(
+                            "Ignoring task configs for connector {} because it was deleted "
+                                + "and its tombstone was observed during this read of the config topic",
+                            connectorName
+                    );
+                    return;
+                }
+
+                // KAFKA-17719: The connector config has not been read yet. This can happen when log
+                // compaction reorders records such that the task configs and commit appear before the
+                // connector config in the topic. It can also happen if the connector was deleted and
+                // its tombstone has been removed by delete.retention.ms.
+                // In either case, we defer processing: store the task count and mark the connector as
+                // inconsistent. If the connector config arrives later (compaction reorder case),
+                // applyDeferredTaskConfigs() will apply the deferred task configs at that point.
+                // If no connector config ever arrives (deleted connector case), the deferred data
+                // remains inert - the connector won't appear in connectors() since connectorConfigs
+                // doesn't contain it, so no tasks will be assigned.
+                if (!(value.value() instanceof Map)) {
+                    log.error("Ignoring connector tasks configuration commit for connector '{}' "
+                        + "because it is in the wrong format: {}", connectorName, className(value.value()));
+                    return;
+                }
+                @SuppressWarnings("unchecked")
+                int newTaskCount = intValue(((Map<String, Object>) value.value()).get("tasks"));
+                connectorTaskCounts.put(connectorName, newTaskCount);
+                inconsistent.add(connectorName);
+                log.warn(
+                        "Received task commit for connector '{}' (task count: {}) but its connector config "
+                            + "is not yet present. This is likely due to log compaction reordering records "
+                            + "in the config topic (KAFKA-17719). Deferring task config application until "
+                            + "the connector config is received.",
+                        connectorName, newTaskCount
                 );
                 return;
             }
@@ -1276,6 +1322,57 @@ public class KafkaConfigBackingStore extends KafkaTopicBasedBackingStore impleme
                     level,
                     namespace
             );
+        }
+    }
+
+    /**
+     * Attempt to apply deferred task configs that were received before the connector config
+     * due to log compaction reordering records in the config topic (KAFKA-17719).
+     *
+     * <p>When log compaction reorders records, the task configs and commit record may appear
+     * before the connector config record. In that case, {@link #processTasksCommitRecord} stores
+     * the task count in {@link #connectorTaskCounts} and marks the connector as inconsistent,
+     * while the task configs remain in {@link #deferredTaskUpdates}. When the connector config
+     * finally arrives and this method is called, it attempts to apply those deferred task configs.</p>
+     *
+     * <p>This method must be called while holding {@link #lock}.</p>
+     *
+     * @param connectorName the name of the connector whose deferred task configs should be applied
+     */
+    private void applyDeferredTaskConfigs(String connectorName) {
+        Integer pendingTaskCount = connectorTaskCounts.get(connectorName);
+        if (pendingTaskCount == null || !inconsistent.contains(connectorName)) {
+            return;
+        }
+
+        Map<ConnectorTaskId, Map<String, String>> deferred = deferredTaskUpdates.get(connectorName);
+        Set<Integer> taskIdSet = taskIds(connectorName, deferred);
+        if (completeTaskIdSet(taskIdSet, pendingTaskCount)) {
+            if (deferred != null) {
+                taskConfigs.putAll(deferred);
+                connectorTaskConfigGenerations.compute(connectorName,
+                    (ignored, generation) -> generation != null ? generation + 1 : 0);
+                deferred.clear();
+            }
+            inconsistent.remove(connectorName);
+            connectorsPendingFencing.add(connectorName);
+
+            Map<String, String> currentConfig = connectorConfigs.get(connectorName);
+            if (currentConfig != null) {
+                appliedConnectorConfigs.put(
+                        connectorName,
+                        new AppliedConnectorConfig(currentConfig)
+                );
+            }
+
+            log.info("Successfully applied deferred task configs for connector '{}' after receiving "
+                    + "its connector config (likely due to log compaction reordering, see KAFKA-17719)",
+                    connectorName);
+        } else {
+            log.warn("Connector '{}' has deferred task configs but they are incomplete "
+                    + "(expected {} tasks, got task IDs {}). Connector will remain inconsistent "
+                    + "until a complete set of task configs is written.",
+                    connectorName, pendingTaskCount, taskIdSet);
         }
     }
 
