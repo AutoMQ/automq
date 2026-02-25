@@ -41,12 +41,12 @@ import scala.jdk.CollectionConverters._
  * Use LagMonitorService.create() for production, or the constructor directly for testing.
  */
 class LagMonitorService private[group] (
-  val brokerId: Int,
-  val groupMetadataManager: GroupMetadataManager,
-  val replicaManager: ReplicaManager,
-  val lagComputeIntervalMs: Long,
-  remoteLeoFetcher: RemoteLeoFetcher,
-  asyncSender: AsyncSender
+                                         val brokerId: Int,
+                                         val groupMetadataManager: GroupMetadataManager,
+                                         val replicaManager: ReplicaManager,
+                                         val lagComputeIntervalMs: Long,
+                                         remoteLeoFetcher: PartitionOffsetFetcher,
+                                         asyncSender: AsyncSender
 ) extends Logging {
 
   private val running = new AtomicBoolean(false)
@@ -244,7 +244,7 @@ object LagMonitorService {
     val logContext = new LogContext(s"[AsyncSender brokerId=$brokerId] ")
     val client = NetworkUtils.buildNetworkClient("lag-fetcher", config, metrics, time, logContext)
     val sender = InterBrokerAsyncSender.create("lag-fetcher-sender", client, config.requestTimeoutMs, time)
-    val fetcher = new RemoteLeoFetcher(brokerId, metadataCache, config.interBrokerListenerName, sender)
+    val fetcher = new PartitionOffsetFetcher(brokerId, metadataCache, config.interBrokerListenerName, sender)
     new LagMonitorService(brokerId, groupMetadataManager, replicaManager, lagComputeIntervalMs, fetcher, sender)
   }
 }

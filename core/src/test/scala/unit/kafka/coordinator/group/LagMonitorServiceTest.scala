@@ -33,7 +33,7 @@ class LagMonitorServiceTest {
   var lagMonitorService: LagMonitorService = _
   var groupMetadataManager: GroupMetadataManager = _
   var replicaManager: ReplicaManager = _
-  var remoteLeoFetcher: RemoteLeoFetcher = _
+  var remoteLeoFetcher: PartitionOffsetFetcher = _
   var asyncSender: AsyncSender = _
 
   val brokerId = 0
@@ -43,7 +43,7 @@ class LagMonitorServiceTest {
   def setUp(): Unit = {
     groupMetadataManager = mock(classOf[GroupMetadataManager])
     replicaManager = mock(classOf[ReplicaManager])
-    remoteLeoFetcher = mock(classOf[RemoteLeoFetcher])
+    remoteLeoFetcher = mock(classOf[PartitionOffsetFetcher])
     asyncSender = mock(classOf[AsyncSender])
 
     // Default: remoteLeoFetcher returns empty map
@@ -86,9 +86,9 @@ class LagMonitorServiceTest {
   @Test
   def testCollectCommitOffsets(): Unit = {
     when(groupMetadataManager.currentGroups).thenReturn(Iterable.empty)
-    
+
     val result = lagMonitorService.collectCommitOffsets()
-    
+
     assertEquals(0, result.size)
   }
 
@@ -119,9 +119,9 @@ class LagMonitorServiceTest {
   @Test
   def testMetricsRegistration(): Unit = {
     when(groupMetadataManager.currentGroups).thenReturn(Iterable.empty)
-    
+
     lagMonitorService.computeLag()
-    
+
     val registeredMetrics = lagMonitorService.getRegisteredMetrics
     assertEquals(0, registeredMetrics.size)
   }
@@ -129,7 +129,7 @@ class LagMonitorServiceTest {
   @Test
   def testConcurrentCleanup(): Unit = {
     when(groupMetadataManager.currentGroups).thenReturn(Iterable.empty)
-    
+
     val threads = (1 to 10).map { _ =>
       new Thread(() => {
         try {
@@ -140,25 +140,25 @@ class LagMonitorServiceTest {
         }
       })
     }
-    
+
     threads.foreach(_.start())
     threads.foreach(_.join())
-    
+
     assertTrue(true)
   }
 
   @Test
   def testShutdownCleansUpMetrics(): Unit = {
     val tp0 = new TopicPartition("topic-1", 0)
-    
+
     val group = new GroupMetadata("test-group", Stable, Time.SYSTEM)
     when(groupMetadataManager.currentGroups).thenReturn(Iterable(group))
     when(replicaManager.getLogEndOffset(tp0)).thenReturn(Some(100L))
-    
+
     lagMonitorService.computeLag()
-    
+
     lagMonitorService.shutdown()
-    
+
     val registeredMetrics = lagMonitorService.getRegisteredMetrics
     assertEquals(0, registeredMetrics.size, "All metrics should be cleaned up after shutdown")
   }
@@ -167,12 +167,12 @@ class LagMonitorServiceTest {
   def testExceptionHandlingInFetchLocalLeos(): Unit = {
     val tp0 = new TopicPartition("topic-1", 0)
     val tp1 = new TopicPartition("topic-1", 1)
-    
+
     when(replicaManager.getLogEndOffset(tp0)).thenThrow(new RuntimeException("Test exception"))
     when(replicaManager.getLogEndOffset(tp1)).thenReturn(Some(200L))
-    
+
     val (localLeos, remotePartitions) = lagMonitorService.fetchLocalLeos(Set(tp0, tp1))
-    
+
     assertTrue(remotePartitions.contains(tp0), "Failed partition should be in remote set")
     assertEquals(Some(200L), localLeos.get(tp1), "Normal partition should have LEO")
   }
@@ -189,7 +189,7 @@ class LagMonitorServiceTest {
     when(replicaManager.getLogEndOffset(tp1)).thenReturn(None)
 
     val (localLeos, remotePartitions) = lagMonitorService.fetchLocalLeos(Set(tp0, tp1))
-    
+
     assertEquals(1, localLeos.size)
     assertEquals(Some(150L), localLeos.get(tp0))
     assertEquals(1, remotePartitions.size)
