@@ -1601,6 +1601,229 @@ public class KafkaConfigBackingStoreTest {
         verify(configLog).stop();
     }
 
+    /**
+     * Test KAFKA-17719: When log compaction reorders records such that task configs and commit
+     * appear before the connector config, the task configs should be deferred and applied when
+     * the connector config finally arrives.
+     */
+    @Test
+    public void testCompactionReorderConnectorConfigAfterCommit() {
+        // Simulate compaction reorder: task configs + commit appear BEFORE connector config
+        List<ConsumerRecord<String, byte[]>> existingRecords = Arrays.asList(
+                new ConsumerRecord<>(TOPIC, 0, 0, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(0), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 1, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(1),
+                        CONFIGS_SERIALIZED.get(1), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 2, 0L, TimestampType.CREATE_TIME, 0, 0, COMMIT_TASKS_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(2), new RecordHeaders(), Optional.empty()),
+                // Connector config arrives AFTER commit due to compaction reorder
+                new ConsumerRecord<>(TOPIC, 0, 3, 0L, TimestampType.CREATE_TIME, 0, 0, CONNECTOR_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(3), new RecordHeaders(), Optional.empty()));
+        LinkedHashMap<byte[], Struct> deserialized = new LinkedHashMap<>();
+        deserialized.put(CONFIGS_SERIALIZED.get(0), TASK_CONFIG_STRUCTS.get(0));
+        deserialized.put(CONFIGS_SERIALIZED.get(1), TASK_CONFIG_STRUCTS.get(1));
+        deserialized.put(CONFIGS_SERIALIZED.get(2), TASKS_COMMIT_STRUCT_TWO_TASK_CONNECTOR);
+        deserialized.put(CONFIGS_SERIALIZED.get(3), CONNECTOR_CONFIG_STRUCTS.get(0));
+        logOffset = 4;
+
+        expectStart(existingRecords, deserialized);
+        when(configLog.partitionCount()).thenReturn(1);
+
+        configStorage.setupAndCreateKafkaBasedLog(TOPIC, config);
+        verifyConfigure();
+        configStorage.start();
+
+        ClusterConfigState configState = configStorage.snapshot();
+        // Connector should be fully loaded with task configs applied
+        assertEquals(4, configState.offset());
+        assertEquals(Collections.singletonList(CONNECTOR_IDS.get(0)), new ArrayList<>(configState.connectors()));
+        assertEquals(SAMPLE_CONFIGS.get(0), configState.connectorConfig(CONNECTOR_IDS.get(0)));
+        assertEquals(2, configState.taskCount(CONNECTOR_IDS.get(0)));
+        assertEquals(SAMPLE_CONFIGS.get(0), configState.taskConfig(TASK_IDS.get(0)));
+        assertEquals(SAMPLE_CONFIGS.get(1), configState.taskConfig(TASK_IDS.get(1)));
+        assertEquals(Collections.emptySet(), configState.inconsistentConnectors());
+
+        configStorage.stop();
+        verify(configLog).stop();
+    }
+
+    /**
+     * Test KAFKA-16838: When a connector is deleted and its tombstone is present in the config topic,
+     * orphaned task configs and commit records should be properly ignored.
+     */
+    @Test
+    public void testDeletedConnectorWithTombstoneIgnoresOrphanTaskConfigs() {
+        // Simulate: orphan task configs + commit appear, then connector tombstone
+        List<ConsumerRecord<String, byte[]>> existingRecords = Arrays.asList(
+                new ConsumerRecord<>(TOPIC, 0, 0, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(0), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 1, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(1),
+                        CONFIGS_SERIALIZED.get(1), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 2, 0L, TimestampType.CREATE_TIME, 0, 0, COMMIT_TASKS_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(2), new RecordHeaders(), Optional.empty()),
+                // Connector tombstone arrives after orphan task configs
+                new ConsumerRecord<>(TOPIC, 0, 3, 0L, TimestampType.CREATE_TIME, 0, 0, CONNECTOR_CONFIG_KEYS.get(0),
+                        null, new RecordHeaders(), Optional.empty()));
+        LinkedHashMap<byte[], Struct> deserialized = new LinkedHashMap<>();
+        deserialized.put(CONFIGS_SERIALIZED.get(0), TASK_CONFIG_STRUCTS.get(0));
+        deserialized.put(CONFIGS_SERIALIZED.get(1), TASK_CONFIG_STRUCTS.get(1));
+        deserialized.put(CONFIGS_SERIALIZED.get(2), TASKS_COMMIT_STRUCT_TWO_TASK_CONNECTOR);
+        logOffset = 4;
+
+        expectStart(existingRecords, deserialized);
+        // null value (tombstone) → SchemaAndValue.NULL
+        when(converter.toConnectData(TOPIC, null)).thenReturn(SchemaAndValue.NULL);
+        when(configLog.partitionCount()).thenReturn(1);
+
+        configStorage.setupAndCreateKafkaBasedLog(TOPIC, config);
+        verifyConfigure();
+        configStorage.start();
+
+        ClusterConfigState configState = configStorage.snapshot();
+        // Connector should NOT be present — it was deleted
+        assertEquals(4, configState.offset());
+        assertFalse(configState.contains(CONNECTOR_IDS.get(0)));
+        assertEquals(0, configState.taskCount(CONNECTOR_IDS.get(0)));
+        // Deferred task updates should be cleaned up by processConnectorRemoval
+        assertEquals(Collections.emptyMap(), configStorage.deferredTaskUpdates);
+        assertEquals(Collections.emptySet(), configState.inconsistentConnectors());
+
+        configStorage.stop();
+        verify(configLog).stop();
+    }
+
+    /**
+     * Test KAFKA-16838 with tombstone compacted away: When a connector was deleted but its tombstone
+     * has been removed by delete.retention.ms, orphaned task configs remain inert because no
+     * connector config will ever arrive to trigger applyDeferredTaskConfigs.
+     */
+    @Test
+    public void testOrphanTaskConfigsWithDeletedTombstoneCompacted() {
+        // Simulate: only orphan task configs + commit remain (tombstone already compacted away)
+        List<ConsumerRecord<String, byte[]>> existingRecords = Arrays.asList(
+                new ConsumerRecord<>(TOPIC, 0, 0, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(0), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 1, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(1),
+                        CONFIGS_SERIALIZED.get(1), new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 2, 0L, TimestampType.CREATE_TIME, 0, 0, COMMIT_TASKS_CONFIG_KEYS.get(0),
+                        CONFIGS_SERIALIZED.get(2), new RecordHeaders(), Optional.empty()));
+        LinkedHashMap<byte[], Struct> deserialized = new LinkedHashMap<>();
+        deserialized.put(CONFIGS_SERIALIZED.get(0), TASK_CONFIG_STRUCTS.get(0));
+        deserialized.put(CONFIGS_SERIALIZED.get(1), TASK_CONFIG_STRUCTS.get(1));
+        deserialized.put(CONFIGS_SERIALIZED.get(2), TASKS_COMMIT_STRUCT_TWO_TASK_CONNECTOR);
+        logOffset = 3;
+
+        expectStart(existingRecords, deserialized);
+        when(configLog.partitionCount()).thenReturn(1);
+
+        configStorage.setupAndCreateKafkaBasedLog(TOPIC, config);
+        verifyConfigure();
+        configStorage.start();
+
+        ClusterConfigState configState = configStorage.snapshot();
+        // Connector should NOT be present in connectors list
+        assertEquals(3, configState.offset());
+        assertFalse(configState.contains(CONNECTOR_IDS.get(0)));
+        // The connector is marked inconsistent (deferred data exists but no connector config)
+        assertTrue(configState.inconsistentConnectors().contains(CONNECTOR_IDS.get(0)));
+        // Task configs should NOT have been applied (still in deferred)
+        assertNull(configState.taskConfig(TASK_IDS.get(0)));
+        assertNull(configState.taskConfig(TASK_IDS.get(1)));
+        // tasks() should return empty for inconsistent connectors
+        assertEquals(Collections.emptyList(), configState.tasks(CONNECTOR_IDS.get(0)));
+
+        configStorage.stop();
+        verify(configLog).stop();
+    }
+
+    /**
+     * Test that removeConnectorConfig writes tombstones for all task config keys and the commit key,
+     * in addition to the connector config and target state keys.
+     */
+    @Test
+    public void testRemoveConnectorConfigWritesFullTombstones() throws Exception {
+        when(configLog.partitionCount()).thenReturn(1);
+
+        configStorage.setupAndCreateKafkaBasedLog(TOPIC, config);
+        verifyConfigure();
+        configStorage.start();
+
+        // Bootstrap: add a connector with 2 tasks
+        addConnector(CONNECTOR_IDS.get(0), SAMPLE_CONFIGS.get(0),
+                Arrays.asList(SAMPLE_CONFIGS.get(0), SAMPLE_CONFIGS.get(1)));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+
+        when(configLog.sendWithReceipt(keyCaptor.capture(), isNull()))
+                .thenReturn(producerFuture);
+        when(producerFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(null);
+
+        @SuppressWarnings("unchecked")
+        Future<Void> readFuture = mock(Future.class);
+        when(configLog.readToEnd()).thenReturn(readFuture);
+        when(readFuture.get(anyLong(), any(TimeUnit.class))).thenReturn(null);
+
+        configStorage.removeConnectorConfig(CONNECTOR_IDS.get(0));
+
+        // Verify all expected tombstone keys were written
+        List<String> capturedKeys = keyCaptor.getAllValues();
+        assertTrue(capturedKeys.contains(CONNECTOR_CONFIG_KEYS.get(0)),
+                "Should write tombstone for connector config key");
+        assertTrue(capturedKeys.contains(TARGET_STATE_KEYS.get(0)),
+                "Should write tombstone for target state key");
+        assertTrue(capturedKeys.contains(TASK_CONFIG_KEYS.get(0)),
+                "Should write tombstone for task-0 config key");
+        assertTrue(capturedKeys.contains(TASK_CONFIG_KEYS.get(1)),
+                "Should write tombstone for task-1 config key");
+        assertTrue(capturedKeys.contains(COMMIT_TASKS_CONFIG_KEYS.get(0)),
+                "Should write tombstone for commit key");
+
+        configStorage.stop();
+        verify(configLog).stop();
+    }
+
+    /**
+     * Test that full tombstones written during deletion are properly handled on restart:
+     * all tombstone records should be safely ignored.
+     */
+    @Test
+    public void testRestartWithFullTombstonesAfterDeletion() {
+        // Simulate: all keys have tombstones (full tombstone deletion)
+        List<ConsumerRecord<String, byte[]>> existingRecords = Arrays.asList(
+                new ConsumerRecord<>(TOPIC, 0, 0, 0L, TimestampType.CREATE_TIME, 0, 0, CONNECTOR_CONFIG_KEYS.get(0),
+                        null, new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 1, 0L, TimestampType.CREATE_TIME, 0, 0, TARGET_STATE_KEYS.get(0),
+                        null, new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 2, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(0),
+                        null, new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 3, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(1),
+                        null, new RecordHeaders(), Optional.empty()),
+                new ConsumerRecord<>(TOPIC, 0, 4, 0L, TimestampType.CREATE_TIME, 0, 0, COMMIT_TASKS_CONFIG_KEYS.get(0),
+                        null, new RecordHeaders(), Optional.empty()));
+        LinkedHashMap<byte[], Struct> deserialized = new LinkedHashMap<>();
+        logOffset = 5;
+
+        expectStart(existingRecords, deserialized);
+        // All records have null value → tombstone
+        when(converter.toConnectData(TOPIC, null)).thenReturn(SchemaAndValue.NULL);
+        when(configLog.partitionCount()).thenReturn(1);
+
+        configStorage.setupAndCreateKafkaBasedLog(TOPIC, config);
+        verifyConfigure();
+        configStorage.start();
+
+        ClusterConfigState configState = configStorage.snapshot();
+        // Everything should be clean — no connectors, no tasks, no inconsistencies
+        assertEquals(5, configState.offset());
+        assertTrue(configState.connectors().isEmpty());
+        assertEquals(Collections.emptySet(), configState.inconsistentConnectors());
+        assertEquals(Collections.emptyMap(), configStorage.deferredTaskUpdates);
+
+        configStorage.stop();
+        verify(configLog).stop();
+    }
+
     private void verifyConfigure() {
         verify(configStorage).createKafkaBasedLog(capturedTopic.capture(), capturedProducerProps.capture(),
                 capturedConsumerProps.capture(), capturedConsumedCallback.capture(),
