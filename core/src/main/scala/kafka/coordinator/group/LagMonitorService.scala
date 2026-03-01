@@ -53,9 +53,11 @@ class LagMonitorService private[group] (
   private val scheduler = new KafkaScheduler(1, true, "lag-monitor-")
 
   private val lagCache = new ConcurrentHashMap[(String, TopicPartition), Long]()
+  private val timeLagCache = new ConcurrentHashMap[(String, TopicPartition), Long]()
 
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
   private val registeredMetrics = ConcurrentHashMap.newKeySet[(String, TopicPartition)]()
+  private val registeredTimeLagMetrics = ConcurrentHashMap.newKeySet[(String, TopicPartition)]()
 
   this.logIdent = s"[LagMonitorService brokerId=$brokerId] "
 
@@ -84,6 +86,9 @@ class LagMonitorService private[group] (
       registeredMetrics.asScala.toSet.foreach { key: (String, TopicPartition) =>
         removeMetric(key._1, key._2)
       }
+      registeredTimeLagMetrics.asScala.toSet.foreach { key: (String, TopicPartition) =>
+        removeTimeLagMetric(key._1, key._2)
+      }
 
       try { asyncSender.close() }
       catch {
@@ -100,8 +105,7 @@ class LagMonitorService private[group] (
   def collectCommitOffsets(): Map[(String, TopicPartition), Long] = {
     groupMetadataManager.currentGroups.flatMap { group =>
       group.inLock {
-        val state = group.currentState
-        if (state != Dead && !(state == Empty && group.allOffsets.isEmpty)) {
+        if (group.allOffsets.nonEmpty) {
           group.allOffsets.map { case (tp, offsetAndMetadata) =>
             (group.groupId, tp) -> offsetAndMetadata.offset
           }
@@ -133,8 +137,10 @@ class LagMonitorService private[group] (
   }
 
   def getLagCache: Map[(String, TopicPartition), Long] = lagCache.asScala.toMap
+  def getTimeLagCache: Map[(String, TopicPartition), Long] = timeLagCache.asScala.toMap
 
   def getRegisteredMetrics: Set[(String, TopicPartition)] = registeredMetrics.asScala.toSet
+  def getRegisteredTimeLagMetrics: Set[(String, TopicPartition)] = registeredTimeLagMetrics.asScala.toSet
 
   private def ensureMetricRegistered(groupId: String, tp: TopicPartition): Unit = {
     val key = (groupId, tp)
@@ -167,6 +173,37 @@ class LagMonitorService private[group] (
     }
   }
 
+  private def ensureTimeLagMetricRegistered(groupId: String, tp: TopicPartition): Unit = {
+    val key = (groupId, tp)
+    if (registeredTimeLagMetrics.add(key)) {
+      val tags = java.util.Map.of(
+        "group", groupId,
+        "topic", tp.topic,
+        "partition", tp.partition.toString
+      )
+      metricsGroup.newGauge(
+        "ConsumerTimeLag",
+        new java.util.function.Supplier[Long] {
+          override def get(): Long = timeLagCache.getOrDefault(key, -1L)
+        },
+        tags
+      )
+    }
+  }
+
+  private def removeTimeLagMetric(groupId: String, tp: TopicPartition): Unit = {
+    val key = (groupId, tp)
+    if (registeredTimeLagMetrics.remove(key)) {
+      timeLagCache.remove(key)
+      val tags = java.util.Map.of(
+        "group", groupId,
+        "topic", tp.topic,
+        "partition", tp.partition.toString
+      )
+      metricsGroup.removeMetric("ConsumerTimeLag", tags)
+    }
+  }
+
   def computeLag(): Unit = {
     val commitOffsets = collectCommitOffsets()
     if (commitOffsets.isEmpty) return
@@ -178,6 +215,7 @@ class LagMonitorService private[group] (
     commitOffsets.keys.foreach(activeKeys.add)
 
     computeLocalLag(commitOffsets, localLeos)
+    computeLocalTimeLag(commitOffsets, localLeos)
 
     if (remotePartitions.nonEmpty) {
       fetchRemoteLagAsync(commitOffsets, remotePartitions)
@@ -212,10 +250,83 @@ class LagMonitorService private[group] (
       failedPartitions.foreach { tp =>
         remoteCommitOffsets.filter(_._1._2 == tp).foreach { case ((groupId, _), _) =>
           lagCache.remove((groupId, tp))
+          timeLagCache.remove((groupId, tp))
+        }
+      }
+
+      fetchRemoteTimeLagAsync(remoteCommitOffsets, leos)
+    }.exceptionally { ex =>
+      warn(s"Failed to fetch remote LEOs: ${ex.getMessage}")
+      null
+    }
+  }
+
+  private def computeLocalTimeLag(commitOffsets: Map[(String, TopicPartition), Long],
+                                  localLeos: Map[TopicPartition, Long]): Unit = {
+    val now = System.currentTimeMillis()
+    commitOffsets.foreach { case ((groupId, tp), commitOffset) =>
+      localLeos.get(tp).foreach { leo =>
+        if (commitOffset >= leo) {
+          timeLagCache.put((groupId, tp), 0L)
+          ensureTimeLagMetricRegistered(groupId, tp)
+        } else {
+          replicaManager.getPartition(tp) match {
+            case kafka.server.HostedPartition.Online(partition) =>
+              partition.offsetTimestampIndex.foreach { index =>
+                val result = index.lookup(commitOffset)
+                if (result.timestamp() >= 0) {
+                  val timeLag = math.max(0L, now - result.timestamp())
+                  timeLagCache.put((groupId, tp), timeLag)
+                  ensureTimeLagMetricRegistered(groupId, tp)
+                }
+              }
+            case _ =>
+          }
+        }
+      }
+    }
+  }
+
+  private def fetchRemoteTimeLagAsync(
+    remoteCommitOffsets: Map[(String, TopicPartition), Long],
+    remoteLeos: Map[TopicPartition, Long]
+  ): Unit = {
+    if (remoteCommitOffsets.isEmpty) return
+
+    val needLookup = scala.collection.mutable.Map[(String, TopicPartition), Long]()
+    remoteCommitOffsets.foreach { case ((groupId, tp), commitOffset) =>
+      remoteLeos.get(tp) match {
+        case Some(leo) if commitOffset >= leo =>
+          timeLagCache.put((groupId, tp), 0L)
+          ensureTimeLagMetricRegistered(groupId, tp)
+        case Some(_) =>
+          needLookup.put((groupId, tp), commitOffset)
+        case None =>
+      }
+    }
+
+    if (needLookup.isEmpty) return
+
+    val queries = needLookup.groupBy(_._1._2).map { case (tp, entries) =>
+      tp -> entries.values.toSet
+    }.toMap
+
+    remoteLeoFetcher.fetchOffsetTimestamps(queries).thenAccept { timestampResults =>
+      val now = System.currentTimeMillis()
+      val groupsByTpOffset = needLookup.groupBy { case ((_, tp), offset) => (tp, offset) }
+      timestampResults.foreach { case ((tp, offset), timestamp) =>
+        if (timestamp >= 0) {
+          groupsByTpOffset.get((tp, offset)).foreach { entries =>
+            entries.keys.foreach { case (groupId, _) =>
+              val timeLag = math.max(0L, now - timestamp)
+              timeLagCache.put((groupId, tp), timeLag)
+              ensureTimeLagMetricRegistered(groupId, tp)
+            }
+          }
         }
       }
     }.exceptionally { ex =>
-      warn(s"Failed to fetch remote LEOs: ${ex.getMessage}")
+      warn(s"Failed to fetch remote offset timestamps: ${ex.getMessage}")
       null
     }
   }
@@ -223,6 +334,9 @@ class LagMonitorService private[group] (
   private def cleanupStaleMetrics(activeKeys: Set[(String, TopicPartition)]): Unit = {
     val staleKeys = lagCache.keySet.asScala.toSet -- activeKeys
     staleKeys.foreach { key => removeMetric(key._1, key._2) }
+
+    val staleTimeLagKeys = timeLagCache.keySet.asScala.toSet -- activeKeys
+    staleTimeLagKeys.foreach { key => removeTimeLagMetric(key._1, key._2) }
   }
 }
 

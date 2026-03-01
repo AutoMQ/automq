@@ -3,10 +3,12 @@ package kafka.coordinator.group
 import kafka.server.MetadataCache
 import kafka.utils.Logging
 import org.apache.kafka.common.{Node, TopicPartition}
+import org.apache.kafka.common.message.AutomqGetOffsetTimestampsRequestData
 import org.apache.kafka.common.message.ListOffsetsRequestData.{ListOffsetsPartition, ListOffsetsTopic}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{ListOffsetsRequest, ListOffsetsResponse}
+import org.apache.kafka.common.requests.s3.{AutomqGetOffsetTimestampsRequest, AutomqGetOffsetTimestampsResponse}
 import org.apache.kafka.server.util.AsyncSender
 
 import java.util.concurrent.CompletableFuture
@@ -93,6 +95,49 @@ class PartitionOffsetFetcher(
       }
   }
 
+  /**
+   * Fetch timestamps for given (partition, offset) pairs from their leaders.
+   * Returns a map of (TopicPartition, offset) -> timestamp.
+   */
+  def fetchOffsetTimestamps(
+    queries: Map[TopicPartition, Set[Long]]
+  ): CompletableFuture[Map[(TopicPartition, Long), Long]] = {
+    if (queries.isEmpty) {
+      return CompletableFuture.completedFuture(Map.empty)
+    }
+
+    val partitionsByLeader = new java.util.HashMap[Node, java.util.List[(TopicPartition, Set[Long])]]()
+    queries.foreach { case (tp, offsets) =>
+      metadataCache.getPartitionLeaderEndpoint(tp.topic, tp.partition, listenerName).foreach { node =>
+        partitionsByLeader
+          .computeIfAbsent(node, _ => new java.util.ArrayList[(TopicPartition, Set[Long])]())
+          .add((tp, offsets))
+      }
+    }
+
+    if (partitionsByLeader.isEmpty) {
+      return CompletableFuture.completedFuture(Map.empty)
+    }
+
+    val futures = new java.util.ArrayList[CompletableFuture[Map[(TopicPartition, Long), Long]]]()
+    partitionsByLeader.forEach { (node, nodeQueries) =>
+      val builder = buildGetOffsetTimestampsRequest(nodeQueries.asScala.toSeq)
+      val future = asyncSender.sendRequest(node, builder)
+        .thenApply[Map[(TopicPartition, Long), Long]] { response =>
+          parseGetOffsetTimestampsResponse(
+            response.responseBody.asInstanceOf[AutomqGetOffsetTimestampsResponse]
+          )
+        }
+        .exceptionally { _ => Map.empty[(TopicPartition, Long), Long] }
+      futures.add(future)
+    }
+
+    CompletableFuture.allOf(futures.toArray(new Array[CompletableFuture[_]](0)): _*)
+      .thenApply[Map[(TopicPartition, Long), Long]] { _ =>
+        futures.asScala.flatMap(_.join()).toMap
+      }
+  }
+
   private def fetchOffsetsWithTimestamp(partitions: Seq[TopicPartition], timestamp: Long):
       CompletableFuture[Map[TopicPartition, (Long, Long)]] = {
     val partitionsByLeader = new java.util.HashMap[Node, java.util.List[TopicPartition]]()
@@ -151,6 +196,44 @@ class PartitionOffsetFetcher(
         if (Errors.forCode(partition.errorCode) == Errors.NONE) {
           result.put(new TopicPartition(topic.name, partition.partitionIndex),
             (partition.offset, partition.timestamp))
+        }
+      }
+    }
+    result.toMap
+  }
+
+  private def buildGetOffsetTimestampsRequest(
+    queries: Seq[(TopicPartition, Set[Long])]
+  ): AutomqGetOffsetTimestampsRequest.Builder = {
+    val data = new AutomqGetOffsetTimestampsRequestData()
+    queries.groupBy(_._1.topic).foreach { case (topic, tpQueries) =>
+      val topicReq = new AutomqGetOffsetTimestampsRequestData.TopicRequest().setName(topic)
+      tpQueries.foreach { case (tp, offsets) =>
+        val partReq = new AutomqGetOffsetTimestampsRequestData.PartitionRequest()
+          .setPartitionIndex(tp.partition)
+        offsets.foreach(o => partReq.offsets.add(o))
+        topicReq.partitions.add(partReq)
+      }
+      data.topics.add(topicReq)
+    }
+    new AutomqGetOffsetTimestampsRequest.Builder(data)
+  }
+
+  private def parseGetOffsetTimestampsResponse(
+    response: AutomqGetOffsetTimestampsResponse
+  ): Map[(TopicPartition, Long), Long] = {
+    val result = scala.collection.mutable.Map[(TopicPartition, Long), Long]()
+    response.data.topics.forEach { topic =>
+      topic.partitions.forEach { partition =>
+        if (Errors.forCode(partition.errorCode) == Errors.NONE) {
+          partition.offsetTimestamps.forEach { offsetTs =>
+            if (offsetTs.timestamp >= 0) {
+              result.put(
+                (new TopicPartition(topic.name, partition.partitionIndex), offsetTs.offset),
+                offsetTs.timestamp
+              )
+            }
+          }
         }
       }
     }

@@ -61,6 +61,7 @@ import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.FindCoordinatorRequest.CoordinatorType
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests._
+import org.apache.kafka.common.requests.s3.{AutomqGetOffsetTimestampsRequest, AutomqGetOffsetTimestampsResponse}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType._
 import org.apache.kafka.common.resource.{Resource, ResourceType}
@@ -271,6 +272,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.GET_KVS => forwardToControllerOrFail(request)
         case ApiKeys.DELETE_KVS => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_GET_NODES => forwardToControllerOrFail(request)
+        case ApiKeys.AUTOMQ_GET_OFFSET_TIMESTAMPS => handleAutomqGetOffsetTimestamps(request)
         // AutoMQ inject end
 
         case ApiKeys.ADD_RAFT_VOTER => forwardToControllerOrFail(request)
@@ -300,6 +302,87 @@ class KafkaApis(val requestChannel: RequestChannel,
         request.apiLocalCompleteTimeNanos = time.nanoseconds
     }
   }
+
+  // AutoMQ inject start
+  def handleAutomqGetOffsetTimestamps(request: RequestChannel.Request): Unit = {
+    val reqData = request.body[AutomqGetOffsetTimestampsRequest].data()
+    val responseData = new AutomqGetOffsetTimestampsResponseData()
+
+    val maxBackfillsPerRequest = 10
+    var backfillCount = 0
+
+    reqData.topics.forEach { topicReq =>
+      val topicResp = new AutomqGetOffsetTimestampsResponseData.TopicResponse()
+        .setName(topicReq.name)
+
+      topicReq.partitions.forEach { partReq =>
+        val tp = new TopicPartition(topicReq.name, partReq.partitionIndex)
+        val partResp = new AutomqGetOffsetTimestampsResponseData.PartitionResponse()
+          .setPartitionIndex(partReq.partitionIndex)
+
+        replicaManager.getPartition(tp) match {
+          case HostedPartition.Online(partition) if partition.leaderIdIfLocal.isDefined =>
+            partition.offsetTimestampIndex match {
+              case Some(index) =>
+                partReq.offsets.forEach { offset =>
+                  var result = index.lookup(offset)
+
+                  if (result.timestamp() == -1L && backfillCount < maxBackfillsPerRequest) {
+                    try {
+                      val fetched = partition.localLogOrException.read(
+                        offset,
+                        maxLength = 4096,
+                        isolation = FetchIsolation.LOG_END,
+                        minOneMessage = true
+                      )
+                      val batches = fetched.records.batches.iterator
+                      if (batches.hasNext) {
+                        val ts = batches.next.maxTimestamp
+                        if (ts >= 0) {
+                          index.addPointToGlobal(offset, ts, time.milliseconds())
+                          result = new kafka.automq.lag.OffsetTimestampIndex.LookupResult(ts, true)
+                          backfillCount += 1
+                        }
+                      }
+                    } catch {
+                      case e: Exception =>
+                        debug(s"Failed to backfill offset $offset for $tp", e)
+                    }
+                  }
+
+                  partResp.offsetTimestamps.add(
+                    new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
+                      .setOffset(offset)
+                      .setTimestamp(result.timestamp())
+                      .setPrecise(result.precise())
+                  )
+                }
+                partResp.setErrorCode(Errors.NONE.code)
+              case None =>
+                partReq.offsets.forEach { offset =>
+                  partResp.offsetTimestamps.add(
+                    new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
+                      .setOffset(offset)
+                      .setTimestamp(-1L)
+                      .setPrecise(false)
+                  )
+                }
+                partResp.setErrorCode(Errors.NONE.code)
+            }
+          case _ =>
+            partResp.setErrorCode(Errors.NOT_LEADER_OR_FOLLOWER.code)
+        }
+
+        topicResp.partitions.add(partResp)
+      }
+
+      responseData.topics.add(topicResp)
+    }
+
+    requestHelper.sendResponseMaybeThrottle(request, throttleTimeMs =>
+      new AutomqGetOffsetTimestampsResponse(responseData.setThrottleTimeMs(throttleTimeMs)))
+  }
+  // AutoMQ inject end
 
   override def tryCompleteActions(): Unit = {
     replicaManager.tryCompleteActions()

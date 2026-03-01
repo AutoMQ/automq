@@ -197,10 +197,18 @@ class LagMonitorServiceTest {
   }
 
   @Test
-  def testCollectCommitOffsetsSkipsDeadGroups(): Unit = {
+  def testCollectCommitOffsetsIncludesDeadGroupsWithOffsets(): Unit = {
     val tp0 = new TopicPartition("topic-1", 0)
+    val tp1 = new TopicPartition("topic-1", 1)
 
     val deadGroup = new GroupMetadata("dead-group", Dead, Time.SYSTEM)
+    deadGroup.initializeOffsets(
+      Map(tp1 -> new CommitRecordMetadataAndOffset(
+        Some(0L),
+        OffsetAndMetadata(80L, java.util.Optional.empty(), "", System.currentTimeMillis(), None)
+      )),
+      Map.empty
+    )
     val stableGroup = new GroupMetadata("stable-group", Stable, Time.SYSTEM)
     stableGroup.initializeOffsets(
       Map(tp0 -> new CommitRecordMetadataAndOffset(
@@ -214,9 +222,30 @@ class LagMonitorServiceTest {
 
     val result = lagMonitorService.collectCommitOffsets()
 
-    assertEquals(1, result.size)
+    assertEquals(2, result.size)
     assertEquals(Some(100L), result.get(("stable-group", tp0)))
-    assertFalse(result.keys.exists(_._1 == "dead-group"))
+    assertEquals(Some(80L), result.get(("dead-group", tp1)))
+  }
+
+  @Test
+  def testTimeLagIsZeroWhenCommitOffsetEqualsLeo(): Unit = {
+    val tp0 = new TopicPartition("topic-1", 0)
+
+    val group = new GroupMetadata("group-1", Stable, Time.SYSTEM)
+    group.initializeOffsets(
+      Map(tp0 -> new CommitRecordMetadataAndOffset(
+        Some(0L),
+        OffsetAndMetadata(100L, java.util.Optional.empty(), "", System.currentTimeMillis(), None)
+      )),
+      Map.empty
+    )
+    when(groupMetadataManager.currentGroups).thenReturn(Iterable(group))
+    when(replicaManager.getLogEndOffset(tp0)).thenReturn(Some(100L))
+
+    lagMonitorService.computeLag()
+
+    assertEquals(Some(0L), lagMonitorService.getTimeLagCache.get(("group-1", tp0)))
+    assertTrue(lagMonitorService.getRegisteredTimeLagMetrics.contains(("group-1", tp0)))
   }
 
   @Test
