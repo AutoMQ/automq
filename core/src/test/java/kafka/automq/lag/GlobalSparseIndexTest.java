@@ -64,8 +64,10 @@ public class GlobalSparseIndexTest {
             index.addPoint(i * 100L, now - age);
         }
 
-        assertTrue(index.l0Size() <= 10);
-        assertTrue(index.l1Size() + index.l2Size() > 0);
+        assertEquals(2, index.l0Size(), "Only <=1h points should remain in L0 after age demotion");
+        assertTrue(index.l1Size() + index.l2Size() > 0, "Aged points should be demoted to L1/L2");
+        assertEquals(11, index.l0Size() + index.l1Size() + index.l2Size(),
+            "Total points should be preserved");
 
         GlobalSparseIndex.LookupResult r = index.lookup(500);
         assertNotEquals(-1L, r.timestamp());
@@ -81,11 +83,12 @@ public class GlobalSparseIndexTest {
             index.addPoint(i * 100L, now - 10_000L);
         }
 
-        assertTrue(index.l1Size() > 0);
+        assertTrue(index.l1Size() > 0, "L1 should have demoted points before future compact");
 
         long futureNow = now + 4 * HOUR;
         index.compact(futureNow);
-        assertTrue(index.l2Size() > 0);
+        assertTrue(index.l2Size() > 0, "L2 should receive aged L1 points after future compact");
+        assertEquals(7, index.totalSize(), "Sampling should cap retained points across layers");
     }
 
     @Test

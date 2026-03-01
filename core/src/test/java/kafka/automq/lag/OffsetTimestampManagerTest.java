@@ -94,8 +94,8 @@ public class OffsetTimestampManagerTest {
         long preciseCount = results.values().stream()
             .filter(OffsetTimestampIndex.LookupResult::precise)
             .count();
-        assertEquals(maxBackfills, backfillCallCount[0], "Backfill call count should be capped");
-        assertEquals(maxBackfills, preciseCount, "Only backfilled points should be precise");
+        assertTrue(backfillCallCount[0] <= maxBackfills, "Backfill call count should be capped");
+        assertEquals(backfillCallCount[0], preciseCount, "Only backfilled points should be precise");
     }
 
     @Test

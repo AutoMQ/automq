@@ -19,7 +19,7 @@ package kafka.cluster
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
-import kafka.automq.lag.OffsetTimestampIndex
+import kafka.automq.lag.{OffsetTimestampIndex, OffsetTimestampManager}
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -355,6 +355,7 @@ class Partition(val topicPartition: TopicPartition,
   // AutoMQ inject start
   @volatile var snapshotRead = false
   @volatile var offsetTimestampIndex: Option[OffsetTimestampIndex] = None
+  @volatile var offsetTimestampManager: Option[OffsetTimestampManager] = None
   // AutoMQ inject end
 
   // Partition listeners
@@ -387,30 +388,52 @@ class Partition(val topicPartition: TopicPartition,
 
   // AutoMQ inject: offset-timestamp index for lag time-lag metric
   def initOffsetTimestampIndex(): Unit = {
-    offsetTimestampIndex = Some(new OffsetTimestampIndex(
+    val idx = new OffsetTimestampIndex(
       100, 50, 50,
       60 * 60 * 1000L, 6 * 60 * 60 * 1000L,
       20, 200,
       1000L, 5 * 60 * 1000L
-    ))
+    )
+    offsetTimestampIndex = Some(idx)
+
+    val backfillFn: java.util.function.Function[java.lang.Long, java.lang.Long] = (offset: java.lang.Long) => {
+      try {
+        val fetched = localLogOrException.read(
+          offset,
+          maxLength = 4096,
+          isolation = FetchIsolation.LOG_END,
+          minOneMessage = true
+        )
+        val batches = fetched.records.batches.iterator
+        if (batches.hasNext) {
+          val ts = batches.next.maxTimestamp
+          if (ts >= 0) java.lang.Long.valueOf(ts) else java.lang.Long.valueOf(-1L)
+        } else {
+          java.lang.Long.valueOf(-1L)
+        }
+      } catch {
+        case _: Exception => java.lang.Long.valueOf(-1L)
+      }
+    }
+    offsetTimestampManager = Some(new OffsetTimestampManager(idx, backfillFn, 10))
   }
 
   def onFetchSessionClosed(sessionId: Int): Unit = {
-    offsetTimestampIndex.foreach(_.onSessionClosed(sessionId))
+    offsetTimestampManager.foreach(_.onSessionClosed(sessionId))
   }
 
   private def recordFetchForOffsetIndex(sessionId: Int,
                                         fetchOffset: Long,
                                         fetchTimeMs: Long,
                                         logReadInfo: LogReadInfo): Unit = {
-    offsetTimestampIndex.foreach { index =>
+    offsetTimestampManager.foreach { manager =>
       try {
         val batches = logReadInfo.fetchedData.records.batches().iterator()
         if (batches.hasNext) {
           val firstBatch = batches.next()
           val timestamp = firstBatch.maxTimestamp()
           if (timestamp >= 0) {
-            index.onFetch(sessionId, fetchOffset, timestamp, fetchTimeMs)
+            manager.onFetch(sessionId, fetchOffset, timestamp, fetchTimeMs)
           }
         }
       } catch {

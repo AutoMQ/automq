@@ -57,7 +57,7 @@ public class SessionBufferTest {
         for (int i = 0; i <= 10; i++) {
             buffer.append(i * 100L, i * 10000L, i * 2000L);
         }
-        assertTrue(buffer.size() <= 10);
+        assertEquals(5, buffer.size(), "Buffer should compact to maxSize/2");
         SessionBuffer.LookupResult first = buffer.lookup(0);
         assertNotEquals(-1, first.timestamp());
         SessionBuffer.LookupResult last = buffer.lookup(1000);

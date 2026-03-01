@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OffsetTimestampIndexTest {
@@ -68,7 +67,7 @@ public class OffsetTimestampIndexTest {
         index.onSessionClosed(1);
 
         OffsetTimestampIndex.LookupResult r = index.lookup(550);
-        assertNotNull(r);
+        assertFalse(r.precise(), "Should not get precise result after session eviction");
     }
 
     @Test
@@ -80,7 +79,8 @@ public class OffsetTimestampIndexTest {
 
         index.periodicMaintenance(now + 20000L);
 
-        assertTrue(index.globalTotalSize() > 0);
+        assertTrue(index.globalTotalSize() >= 2,
+            "Global should contain LEO point plus flushed session points");
     }
 
     @Test

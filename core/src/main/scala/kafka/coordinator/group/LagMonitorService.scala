@@ -272,8 +272,8 @@ class LagMonitorService private[group] (
         } else {
           replicaManager.getPartition(tp) match {
             case kafka.server.HostedPartition.Online(partition) =>
-              partition.offsetTimestampIndex.foreach { index =>
-                val result = index.lookup(commitOffset)
+              partition.offsetTimestampManager.foreach { manager =>
+                val result = manager.lookup(commitOffset)
                 if (result.timestamp() >= 0) {
                   val timeLag = math.max(0L, now - result.timestamp())
                   timeLagCache.put((groupId, tp), timeLag)

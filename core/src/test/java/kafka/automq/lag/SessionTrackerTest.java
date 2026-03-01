@@ -7,7 +7,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SessionTrackerTest {
 
@@ -70,7 +69,7 @@ public class SessionTrackerTest {
         for (int i = 1; i <= 6; i++) {
             tracker.onFetch(i, i * 100L, i * 10000L, i * 1000L);
         }
-        assertTrue(tracker.sessionCount() <= 5);
+        assertEquals(5, tracker.sessionCount(), "Should evict to maxSessions");
     }
 
     @Test
@@ -80,7 +79,8 @@ public class SessionTrackerTest {
         tracker.onFetch(1, 300, 30000L, 2000L);
 
         List<SessionBuffer.DataPoint> points = tracker.flushAgedPoints(20000L);
-        assertFalse(points.isEmpty());
+        assertEquals(3, points.size(), "Should flush all 3 points from aged session");
+        assertEquals(0, tracker.sessionCount(), "Aged session should be removed");
     }
 
     @Test

@@ -308,9 +308,6 @@ class KafkaApis(val requestChannel: RequestChannel,
     val reqData = request.body[AutomqGetOffsetTimestampsRequest].data()
     val responseData = new AutomqGetOffsetTimestampsResponseData()
 
-    val maxBackfillsPerRequest = 10
-    var backfillCount = 0
-
     reqData.topics.forEach { topicReq =>
       val topicResp = new AutomqGetOffsetTimestampsResponseData.TopicResponse()
         .setName(topicReq.name)
@@ -322,39 +319,18 @@ class KafkaApis(val requestChannel: RequestChannel,
 
         replicaManager.getPartition(tp) match {
           case HostedPartition.Online(partition) if partition.leaderIdIfLocal.isDefined =>
-            partition.offsetTimestampIndex match {
-              case Some(index) =>
+            partition.offsetTimestampManager match {
+              case Some(manager) =>
+                val offsets = partReq.offsets.asScala.map(o => java.lang.Long.valueOf(o.longValue())).toSet.asJava
+                val results = manager.lookupBatch(offsets)
                 partReq.offsets.forEach { offset =>
-                  var result = index.lookup(offset)
-
-                  if (result.timestamp() == -1L && backfillCount < maxBackfillsPerRequest) {
-                    try {
-                      val fetched = partition.localLogOrException.read(
-                        offset,
-                        maxLength = 4096,
-                        isolation = FetchIsolation.LOG_END,
-                        minOneMessage = true
-                      )
-                      val batches = fetched.records.batches.iterator
-                      if (batches.hasNext) {
-                        val ts = batches.next.maxTimestamp
-                        if (ts >= 0) {
-                          index.addPointToGlobal(offset, ts, time.milliseconds())
-                          result = new kafka.automq.lag.OffsetTimestampIndex.LookupResult(ts, true)
-                          backfillCount += 1
-                        }
-                      }
-                    } catch {
-                      case e: Exception =>
-                        debug(s"Failed to backfill offset $offset for $tp", e)
-                    }
-                  }
-
+                  val lookupResult = results.getOrDefault(offset.longValue(),
+                    kafka.automq.lag.OffsetTimestampIndex.LookupResult.MISS)
                   partResp.offsetTimestamps.add(
                     new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
                       .setOffset(offset)
-                      .setTimestamp(result.timestamp())
-                      .setPrecise(result.precise())
+                      .setTimestamp(lookupResult.timestamp())
+                      .setPrecise(lookupResult.precise())
                   )
                 }
                 partResp.setErrorCode(Errors.NONE.code)
