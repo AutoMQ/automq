@@ -32,6 +32,7 @@ Vagrantfile.local
 /logs
 .DS_Store
 local.properties
+.worktrees/
 
 config/server-*
 config/zookeeper-*
