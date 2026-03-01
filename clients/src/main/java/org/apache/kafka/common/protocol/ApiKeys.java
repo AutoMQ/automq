@@ -152,6 +152,7 @@ public enum ApiKeys {
     AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, true),
     AUTOMQ_ZONE_ROUTER(ApiMessageType.AUTOMQ_ZONE_ROUTER, false, false),
     AUTOMQ_GET_PARTITION_SNAPSHOT(ApiMessageType.AUTOMQ_GET_PARTITION_SNAPSHOT, false, false),
+    AUTOMQ_GET_OFFSET_TIMESTAMPS(ApiMessageType.AUTOMQ_GET_OFFSET_TIMESTAMPS, false, false),
 
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true),
     DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true),

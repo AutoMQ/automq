@@ -19,6 +19,7 @@ package kafka.cluster
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
+import kafka.automq.lag.OffsetTimestampIndex
 import kafka.api.LeaderAndIsr
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
@@ -353,6 +354,7 @@ class Partition(val topicPartition: TopicPartition,
 
   // AutoMQ inject start
   @volatile var snapshotRead = false
+  @volatile var offsetTimestampIndex: Option[OffsetTimestampIndex] = None
   // AutoMQ inject end
 
   // Partition listeners
@@ -379,6 +381,40 @@ class Partition(val topicPartition: TopicPartition,
     override def onNewAppend(partition: TopicPartition, offset: Long): Unit = {
       listeners.forEach { listener =>
         listener.onNewAppend(partition, offset)
+      }
+    }
+  }
+
+  // AutoMQ inject: offset-timestamp index for lag time-lag metric
+  def initOffsetTimestampIndex(): Unit = {
+    offsetTimestampIndex = Some(new OffsetTimestampIndex(
+      100, 50, 50,
+      60 * 60 * 1000L, 6 * 60 * 60 * 1000L,
+      20, 200,
+      1000L, 5 * 60 * 1000L, 10 * 60 * 1000L
+    ))
+  }
+
+  def onFetchSessionClosed(sessionId: Int): Unit = {
+    offsetTimestampIndex.foreach(_.onSessionClosed(sessionId))
+  }
+
+  private def recordFetchForOffsetIndex(sessionId: Int,
+                                        fetchOffset: Long,
+                                        fetchTimeMs: Long,
+                                        logReadInfo: LogReadInfo): Unit = {
+    offsetTimestampIndex.foreach { index =>
+      try {
+        val batches = logReadInfo.fetchedData.records.batches().iterator()
+        if (batches.hasNext) {
+          val firstBatch = batches.next()
+          val timestamp = firstBatch.maxTimestamp()
+          if (timestamp >= 0) {
+            index.onFetch(sessionId, fetchOffset, timestamp, fetchTimeMs)
+          }
+        }
+      } catch {
+        case _: Exception =>
       }
     }
   }
@@ -1665,6 +1701,7 @@ class Partition(val topicPartition: TopicPartition,
         )
       }
 
+      recordFetchForOffsetIndex(fetchParams.replicaId, fetchPartitionData.fetchOffset, fetchTimeMs, logReadInfo)
       logReadInfo
     } else {
       inReadLock(leaderIsrUpdateLock) {
@@ -1672,7 +1709,9 @@ class Partition(val topicPartition: TopicPartition,
           fetchPartitionData.currentLeaderEpoch,
           fetchParams.fetchOnlyLeader
         )
-        readFromLocalLog(localLog)
+        val logReadInfo = readFromLocalLog(localLog)
+        recordFetchForOffsetIndex(fetchParams.replicaId, fetchPartitionData.fetchOffset, fetchTimeMs, logReadInfo)
+        logReadInfo
       }
     }
   }

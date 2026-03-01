@@ -31,7 +31,7 @@ import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{ThreadLocalRandom, TimeUnit}
+import java.util.concurrent.{CopyOnWriteArrayList, ThreadLocalRandom, TimeUnit}
 import scala.collection.mutable
 
 object FetchSession {
@@ -649,6 +649,7 @@ class FetchSessionCacheShard(private val maxEntries: Int,
 
   // A map containing sessions which can be evicted by privileged sessions.
   private val evictableByPrivileged = new util.TreeMap[EvictableKey, FetchSession]
+  private val sessionRemovalListeners = new CopyOnWriteArrayList[FetchSessionCacheShard.SessionRemovalListener]()
 
   // This metric is shared across all shards because newMeter returns an existing metric
   // if one exists with the same name. It's safe for concurrent use because Meter is thread-safe.
@@ -789,6 +790,7 @@ class FetchSessionCacheShard(private val maxEntries: Int,
     * @return         The removed session, or None if there was no such session.
     */
   def remove(session: FetchSession): Option[FetchSession] = synchronized {
+    sessionRemovalListeners.forEach(listener => listener.onSessionRemoved(session.id, session.partitionMap))
     val evictableKey = session.synchronized {
       lastUsed.remove(session.lastUsedKey)
       session.evictableKey
@@ -800,6 +802,10 @@ class FetchSessionCacheShard(private val maxEntries: Int,
       numPartitions = numPartitions - session.cachedSize
     }
     removeResult
+  }
+
+  def addRemovalListener(listener: FetchSessionCacheShard.SessionRemovalListener): Unit = {
+    sessionRemovalListeners.add(listener)
   }
 
   /**
@@ -832,6 +838,12 @@ class FetchSessionCacheShard(private val maxEntries: Int,
       }
       numPartitions = numPartitions + session.cachedSize
     }
+  }
+}
+
+object FetchSessionCacheShard {
+  trait SessionRemovalListener {
+    def onSessionRemoved(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit
   }
 }
 object FetchSessionCache {
