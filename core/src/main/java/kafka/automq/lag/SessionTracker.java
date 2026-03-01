@@ -20,15 +20,13 @@ public class SessionTracker {
     private final int bufferMaxSize;
     private final long minTimeGapMs;
     private final long archiveAgeMs;
-    private final long expireAgeMs;
 
     public SessionTracker(int maxSessions, int bufferMaxSize, long minTimeGapMs,
-                          long archiveAgeMs, long expireAgeMs) {
+                          long archiveAgeMs) {
         this.maxSessions = maxSessions;
         this.bufferMaxSize = bufferMaxSize;
         this.minTimeGapMs = minTimeGapMs;
         this.archiveAgeMs = archiveAgeMs;
-        this.expireAgeMs = expireAgeMs;
     }
 
     public void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {

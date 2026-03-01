@@ -21,27 +21,27 @@ public class OffsetTimestampIndex {
     public OffsetTimestampIndex(int l0Max, int l1Max, int l2Max,
                                 long l0BoundaryMs, long l1BoundaryMs,
                                 int maxSessions, int bufferMaxSize,
-                                long minTimeGapMs, long archiveAgeMs, long expireAgeMs) {
+                                long minTimeGapMs, long archiveAgeMs) {
         this.globalIndex = new GlobalSparseIndex(l0Max, l1Max, l2Max, l0BoundaryMs, l1BoundaryMs);
-        this.sessionTracker = new SessionTracker(maxSessions, bufferMaxSize, minTimeGapMs, archiveAgeMs, expireAgeMs);
+        this.sessionTracker = new SessionTracker(maxSessions, bufferMaxSize, minTimeGapMs, archiveAgeMs);
     }
 
-    public void updateLeo(long leo, long leoTimestamp, long logStartOffset, long nowMs) {
+    public synchronized void updateLeo(long leo, long leoTimestamp, long logStartOffset, long nowMs) {
         globalIndex.setLogStartOffset(logStartOffset);
         if (leoTimestamp >= 0) {
             globalIndex.addPoint(leo, leoTimestamp, nowMs);
         }
     }
 
-    public void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {
+    public synchronized void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {
         sessionTracker.onFetch(sessionId, offset, timestamp, currentTimeMs);
     }
 
-    public void onSessionClosed(int sessionId) {
+    public synchronized void onSessionClosed(int sessionId) {
         sessionTracker.onSessionClosed(sessionId);
     }
 
-    public LookupResult lookup(long targetOffset) {
+    public synchronized LookupResult lookup(long targetOffset) {
         SessionTracker.LookupResult sessionResult = sessionTracker.lookup(targetOffset);
         if (sessionResult.timestamp() >= 0) {
             return new LookupResult(sessionResult.timestamp(), sessionResult.precise());
@@ -55,11 +55,11 @@ public class OffsetTimestampIndex {
         return LookupResult.MISS;
     }
 
-    public void addPointToGlobal(long offset, long timestamp, long nowMs) {
+    public synchronized void addPointToGlobal(long offset, long timestamp, long nowMs) {
         globalIndex.addPoint(offset, timestamp, nowMs);
     }
 
-    public void periodicMaintenance(long currentTimeMs) {
+    public synchronized void periodicMaintenance(long currentTimeMs) {
         List<SessionBuffer.DataPoint> flushed = sessionTracker.flushAgedPoints(currentTimeMs);
         for (SessionBuffer.DataPoint point : flushed) {
             globalIndex.addPoint(point.offset(), point.timestamp(), currentTimeMs);
@@ -71,7 +71,7 @@ public class OffsetTimestampIndex {
         }
     }
 
-    public int globalTotalSize() {
+    public synchronized int globalTotalSize() {
         return globalIndex.totalSize();
     }
 }

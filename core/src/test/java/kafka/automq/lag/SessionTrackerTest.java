@@ -15,7 +15,7 @@ public class SessionTrackerTest {
 
     @BeforeEach
     void setUp() {
-        tracker = new SessionTracker(5, 20, 100L, 5000L, 10000L);
+        tracker = new SessionTracker(5, 20, 100L, 5000L);
     }
 
     @Test

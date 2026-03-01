@@ -21,7 +21,7 @@ public class OffsetTimestampIndexTest {
             20, 10, 10,
             HOUR, 6 * HOUR,
             5, 20,
-            100L, 5000L, 10000L
+            100L, 5000L
         );
     }
 

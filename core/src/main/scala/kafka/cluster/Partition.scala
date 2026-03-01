@@ -391,7 +391,7 @@ class Partition(val topicPartition: TopicPartition,
       100, 50, 50,
       60 * 60 * 1000L, 6 * 60 * 60 * 1000L,
       20, 200,
-      1000L, 5 * 60 * 1000L, 10 * 60 * 1000L
+      1000L, 5 * 60 * 1000L
     ))
   }
 
