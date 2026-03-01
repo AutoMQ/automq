@@ -3,7 +3,6 @@ package kafka.coordinator.group
 import kafka.server.MetadataCache
 import kafka.utils.Logging
 import org.apache.kafka.common.{Node, TopicPartition}
-import org.apache.kafka.common.errors.RetriableException
 import org.apache.kafka.common.message.ListOffsetsRequestData.{ListOffsetsPartition, ListOffsetsTopic}
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
