@@ -29,10 +29,14 @@ public class OffsetTimestampManager {
         }
 
         if (backfillFn != null) {
-            long ts = backfillFn.apply(targetOffset);
-            if (ts >= 0) {
-                index.addPointToGlobal(targetOffset, ts, System.currentTimeMillis());
-                return new OffsetTimestampIndex.LookupResult(ts, true);
+            try {
+                long ts = backfillFn.apply(targetOffset);
+                if (ts >= 0) {
+                    index.addPointToGlobal(targetOffset, ts, System.currentTimeMillis());
+                    return new OffsetTimestampIndex.LookupResult(ts, true);
+                }
+            } catch (Exception ignored) {
+                // Treat backfill errors as misses so lookup path remains resilient.
             }
         }
 
@@ -51,12 +55,16 @@ public class OffsetTimestampManager {
             }
 
             if (backfillFn != null && backfillCount < maxBackfillsPerBatch) {
-                long ts = backfillFn.apply(offset);
-                if (ts >= 0) {
-                    index.addPointToGlobal(offset, ts, System.currentTimeMillis());
-                    results.put(offset, new OffsetTimestampIndex.LookupResult(ts, true));
-                    backfillCount++;
-                    continue;
+                try {
+                    long ts = backfillFn.apply(offset);
+                    if (ts >= 0) {
+                        index.addPointToGlobal(offset, ts, System.currentTimeMillis());
+                        results.put(offset, new OffsetTimestampIndex.LookupResult(ts, true));
+                        backfillCount++;
+                        continue;
+                    }
+                } catch (Exception ignored) {
+                    // Treat this offset as a miss and continue processing the batch.
                 }
             }
 
@@ -82,7 +90,4 @@ public class OffsetTimestampManager {
         index.periodicMaintenance(currentTimeMs);
     }
 
-    public OffsetTimestampIndex getIndex() {
-        return index;
-    }
 }

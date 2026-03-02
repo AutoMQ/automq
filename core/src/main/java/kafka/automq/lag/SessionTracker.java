@@ -2,12 +2,15 @@ package kafka.automq.lag;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Tracks SessionBuffer instances for one partition.
+ *
+ * <p>Not thread-safe. Callers must externally synchronize all access.
+ * In production this is guarded by synchronized methods on OffsetTimestampIndex.</p>
  */
 public class SessionTracker {
 
@@ -15,7 +18,7 @@ public class SessionTracker {
         public static final LookupResult MISS = new LookupResult(-1L, false);
     }
 
-    private final ConcurrentHashMap<Integer, SessionBuffer> sessions = new ConcurrentHashMap<>();
+    private final Map<Integer, SessionBuffer> sessions = new HashMap<>();
     private final int maxSessions;
     private final int bufferMaxSize;
     private final long minTimeGapMs;

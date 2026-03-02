@@ -391,6 +391,25 @@ class ReplicaManager(val config: KafkaConfig,
     // A follower can lag behind leader for up to config.replicaLagTimeMaxMs x 1.5 before it is removed from ISR
     scheduler.schedule("isr-expiration", () => maybeShrinkIsr(), 0L, config.replicaLagTimeMaxMs / 2)
     scheduler.schedule("shutdown-idle-replica-alter-log-dirs-thread", () => shutdownIdleReplicaAlterLogDirsThread(), 0L, 10000L)
+    scheduler.schedule("offset-timestamp-maintenance", () => {
+      val nowMs = time.milliseconds()
+      onlinePartitionsIterator.foreach { partition =>
+        partition.offsetTimestampManager.foreach { manager =>
+          try {
+            val localLog = partition.localLogOrException
+            val leo = localLog.logEndOffset
+            val leoTimestamp = localLog
+              .fetchOffsetByTimestamp(ListOffsetsRequest.MAX_TIMESTAMP)
+              .map(_.timestamp)
+              .getOrElse(-1L)
+            manager.updateLeo(leo, leoTimestamp, localLog.logStartOffset, nowMs)
+            manager.periodicMaintenance(nowMs)
+          } catch {
+            case _: Exception =>
+          }
+        }
+      }
+    }, 0L, 30_000L)
 
     // If inter-broker protocol (IBP) < 1.0, the controller will send LeaderAndIsrRequest V0 which does not include isNew field.
     // In this case, the broker receiving the request cannot determine whether it is safe to create a partition if a log directory has failed.

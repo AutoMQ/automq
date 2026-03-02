@@ -435,6 +435,14 @@ class BrokerServer(
           sessionIdRange,
           shardNum
         ))
+      fetchSessionCacheShards.foreach(_.addRemovalListener((sessionId: Int, partitions: FetchSession.CACHE_MAP) => {
+        partitions.forEach(part => {
+          replicaManager.getPartition(new TopicPartition(part.topic, part.partition)) match {
+            case HostedPartition.Online(partition) => partition.onFetchSessionClosed(sessionId)
+            case _ =>
+          }
+        })
+      }))
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
       // Create the request processor objects.

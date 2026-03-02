@@ -80,10 +80,37 @@ public class SessionBufferTest {
     @Test
     void testMinMaxOffset() {
         buffer.append(200, 20000L, 0L);
-        buffer.append(500, 50000L, 2000L);
-        buffer.append(300, 30000L, 4000L);
+        buffer.append(300, 30000L, 2000L);
+        buffer.append(500, 50000L, 4000L);
 
         assertEquals(200, buffer.minOffset());
         assertEquals(500, buffer.maxOffset());
+    }
+
+    @Test
+    void testAppendNonMonotonicOffsetResetsBuffer() {
+        buffer.append(100, 10000L, 0L);
+        buffer.append(500, 50000L, 2000L);
+        buffer.append(200, 20000L, 4000L);
+
+        assertEquals(1, buffer.size());
+        assertEquals(200L, buffer.minOffset());
+        assertEquals(200L, buffer.maxOffset());
+
+        SessionBuffer.LookupResult result = buffer.lookup(200L);
+        assertEquals(20000L, result.timestamp());
+        assertTrue(result.precise());
+    }
+
+    @Test
+    void testLookupAfterSeekReset() {
+        buffer.append(100, 10000L, 0L);
+        buffer.append(300, 30000L, 2000L);
+        buffer.append(200, 20000L, 4000L);
+        buffer.append(400, 40000L, 6000L);
+
+        SessionBuffer.LookupResult result = buffer.lookup(300L);
+        assertEquals(30000L, result.timestamp());
+        assertFalse(result.precise());
     }
 }

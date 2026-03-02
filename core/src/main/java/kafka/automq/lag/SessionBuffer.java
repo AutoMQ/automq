@@ -32,6 +32,10 @@ public class SessionBuffer {
     }
 
     public void append(long offset, long timestamp, long currentTimeMs) {
+        if (!buffer.isEmpty() && offset <= maxOffset) {
+            reset();
+        }
+
         lastUpdateTimeMs = currentTimeMs;
 
         if (lastRecordTimeMs != Long.MIN_VALUE && currentTimeMs - lastRecordTimeMs < minTimeGapMs) {
@@ -52,6 +56,13 @@ public class SessionBuffer {
             compactInPlace();
             recalculateMinMax();
         }
+    }
+
+    private void reset() {
+        buffer.clear();
+        lastRecordTimeMs = Long.MIN_VALUE;
+        minOffset = Long.MAX_VALUE;
+        maxOffset = Long.MIN_VALUE;
     }
 
     public LookupResult lookup(long targetOffset) {

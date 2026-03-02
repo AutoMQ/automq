@@ -3,10 +3,13 @@ package kafka.automq.lag;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -139,5 +142,42 @@ public class OffsetTimestampManagerTest {
         OffsetTimestampIndex.LookupResult result = manager.lookup(1000);
         assertEquals(now, result.timestamp());
         assertTrue(result.precise());
+    }
+
+    @Test
+    void testBackfillFnThrowsException_ReturnsMiss() {
+        Function<Long, Long> backfillFn = offset -> {
+            throw new RuntimeException("boom");
+        };
+
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampIndex.LookupResult result = assertDoesNotThrow(() -> manager.lookup(500L));
+
+        assertEquals(-1L, result.timestamp());
+        assertFalse(result.precise());
+    }
+
+    @Test
+    void testLookupBatchContinuesAfterBackfillException() {
+        long now = 100 * HOUR;
+        Function<Long, Long> backfillFn = offset -> {
+            if (offset == 1000L) {
+                throw new RuntimeException("boom");
+            }
+            return now - offset * 1000L;
+        };
+
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+
+        Set<Long> offsets = new LinkedHashSet<>(Arrays.asList(1000L, 100L, 50L));
+        Map<Long, OffsetTimestampIndex.LookupResult> results =
+            assertDoesNotThrow(() -> manager.lookupBatch(offsets));
+
+        assertEquals(-1L, results.get(1000L).timestamp());
+        assertFalse(results.get(1000L).precise());
+        assertEquals(now - 100_000L, results.get(100L).timestamp());
+        assertTrue(results.get(100L).precise());
+        assertEquals(now - 50_000L, results.get(50L).timestamp());
+        assertTrue(results.get(50L).precise());
     }
 }
