@@ -388,12 +388,7 @@ class Partition(val topicPartition: TopicPartition,
 
   // AutoMQ inject: offset-timestamp index for lag time-lag metric
   def initOffsetTimestampIndex(): Unit = {
-    val idx = new OffsetTimestampIndex(
-      100, 50, 50,
-      60 * 60 * 1000L, 6 * 60 * 60 * 1000L,
-      20, 200,
-      1000L, 5 * 60 * 1000L
-    )
+    val idx = new OffsetTimestampIndex()
     offsetTimestampIndex = Some(idx)
 
     val backfillFn: java.util.function.Function[java.lang.Long, java.lang.Long] = (offset: java.lang.Long) => {

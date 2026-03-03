@@ -1,14 +1,19 @@
 package kafka.automq.lag;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
 /**
- * Strategy layer over OffsetTimestampIndex.
+ * Strategy layer over OffsetTimestampIndex with backfill-on-miss.
  */
 public class OffsetTimestampManager {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(OffsetTimestampManager.class);
 
     private final OffsetTimestampIndex index;
     private final Function<Long, Long> backfillFn;
@@ -22,60 +27,58 @@ public class OffsetTimestampManager {
         this.maxBackfillsPerBatch = maxBackfillsPerBatch;
     }
 
-    public OffsetTimestampIndex.LookupResult lookup(long targetOffset) {
-        OffsetTimestampIndex.LookupResult result = index.lookup(targetOffset);
-        if (result.timestamp() >= 0) {
-            return result;
+    public long lookup(long targetOffset) {
+        long timestamp = index.lookup(targetOffset);
+        if (timestamp >= 0) {
+            return timestamp;
         }
 
         if (backfillFn != null) {
             try {
-                long ts = backfillFn.apply(targetOffset);
-                if (ts >= 0) {
-                    index.addPointToGlobal(targetOffset, ts, System.currentTimeMillis());
-                    return new OffsetTimestampIndex.LookupResult(ts, true);
+                long backfillTs = backfillFn.apply(targetOffset);
+                if (backfillTs >= 0) {
+                    return backfillTs;
                 }
-            } catch (Exception ignored) {
-                // Treat backfill errors as misses so lookup path remains resilient.
+            } catch (Exception e) {
+                LOGGER.warn("Backfill failed for offset {}", targetOffset, e);
             }
         }
 
-        return OffsetTimestampIndex.LookupResult.MISS;
+        LOGGER.debug("Timestamp lookup miss for offset {}", targetOffset);
+        return -1L;
     }
 
-    public Map<Long, OffsetTimestampIndex.LookupResult> lookupBatch(Set<Long> targetOffsets) {
-        Map<Long, OffsetTimestampIndex.LookupResult> results = new HashMap<>();
+    public Map<Long, Long> lookupBatch(Set<Long> targetOffsets) {
+        Map<Long, Long> results = new HashMap<>();
         int backfillCount = 0;
 
         for (long offset : targetOffsets) {
-            OffsetTimestampIndex.LookupResult result = index.lookup(offset);
-            if (result.timestamp() >= 0) {
-                results.put(offset, result);
+            long timestamp = index.lookup(offset);
+            if (timestamp >= 0) {
+                results.put(offset, timestamp);
                 continue;
             }
 
             if (backfillFn != null && backfillCount < maxBackfillsPerBatch) {
                 try {
-                    long ts = backfillFn.apply(offset);
-                    if (ts >= 0) {
-                        index.addPointToGlobal(offset, ts, System.currentTimeMillis());
-                        results.put(offset, new OffsetTimestampIndex.LookupResult(ts, true));
+                    long backfillTs = backfillFn.apply(offset);
+                    if (backfillTs >= 0) {
+                        results.put(offset, backfillTs);
                         backfillCount++;
                         continue;
                     }
-                } catch (Exception ignored) {
-                    // Treat this offset as a miss and continue processing the batch.
+                } catch (Exception e) {
+                    LOGGER.warn("Backfill failed for offset {}", offset, e);
                 }
             }
 
-            results.put(offset, OffsetTimestampIndex.LookupResult.MISS);
+            results.put(offset, -1L);
         }
-
         return results;
     }
 
-    public void updateLeo(long leo, long leoTimestamp, long logStartOffset, long nowMs) {
-        index.updateLeo(leo, leoTimestamp, logStartOffset, nowMs);
+    public void updateLeo(long leo, long leoTimestamp) {
+        index.updateLeo(leo, leoTimestamp);
     }
 
     public void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {
@@ -85,9 +88,4 @@ public class OffsetTimestampManager {
     public void onSessionClosed(int sessionId) {
         index.onSessionClosed(sessionId);
     }
-
-    public void periodicMaintenance(long currentTimeMs) {
-        index.periodicMaintenance(currentTimeMs);
-    }
-
 }

@@ -33,10 +33,10 @@
       "about": "Topic-level results",
       "fields": [
         {
-          "name": "Name",
-          "type": "string",
+          "name": "TopicId",
+          "type": "uuid",
           "versions": "0+",
-          "about": "The topic name"
+          "about": "The topic id"
         },
         {
           "name": "Partitions",
@@ -73,12 +73,6 @@
                   "type": "int64",
                   "versions": "0+",
                   "about": "The timestamp for this offset. -1 if unknown"
-                },
-                {
-                  "name": "Precise",
-                  "type": "bool",
-                  "versions": "0+",
-                  "about": "True if exact, false if interpolated"
                 }
               ]
             }

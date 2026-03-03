@@ -30,10 +30,10 @@
       "about": "Topics and partitions to query offset timestamps for",
       "fields": [
         {
-          "name": "Name",
-          "type": "string",
+          "name": "TopicId",
+          "type": "uuid",
           "versions": "0+",
-          "about": "The topic name"
+          "about": "The topic id"
         },
         {
           "name": "Partitions",

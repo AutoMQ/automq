@@ -310,43 +310,45 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     reqData.topics.forEach { topicReq =>
       val topicResp = new AutomqGetOffsetTimestampsResponseData.TopicResponse()
-        .setName(topicReq.name)
+        .setTopicId(topicReq.topicId)
 
       topicReq.partitions.forEach { partReq =>
-        val tp = new TopicPartition(topicReq.name, partReq.partitionIndex)
         val partResp = new AutomqGetOffsetTimestampsResponseData.PartitionResponse()
           .setPartitionIndex(partReq.partitionIndex)
 
-        replicaManager.getPartition(tp) match {
-          case HostedPartition.Online(partition) if partition.leaderIdIfLocal.isDefined =>
-            partition.offsetTimestampManager match {
-              case Some(manager) =>
-                val offsets = partReq.offsets.asScala.map(o => java.lang.Long.valueOf(o.longValue())).toSet.asJava
-                val results = manager.lookupBatch(offsets)
-                partReq.offsets.forEach { offset =>
-                  val lookupResult = results.getOrDefault(offset.longValue(),
-                    kafka.automq.lag.OffsetTimestampIndex.LookupResult.MISS)
-                  partResp.offsetTimestamps.add(
-                    new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
-                      .setOffset(offset)
-                      .setTimestamp(lookupResult.timestamp())
-                      .setPrecise(lookupResult.precise())
-                  )
+        metadataCache.getTopicName(topicReq.topicId) match {
+          case Some(topicName) =>
+            val tp = new TopicPartition(topicName, partReq.partitionIndex)
+            replicaManager.getPartition(tp) match {
+              case HostedPartition.Online(partition) if partition.leaderIdIfLocal.isDefined =>
+                partition.offsetTimestampManager match {
+                  case Some(manager) =>
+                    val offsets = partReq.offsets.asScala.map(o => java.lang.Long.valueOf(o.longValue())).toSet.asJava
+                    val results = manager.lookupBatch(offsets)
+                    partReq.offsets.forEach { offset =>
+                      val timestamp = results.getOrDefault(offset.longValue(), -1L)
+                      partResp.offsetTimestamps.add(
+                        new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
+                          .setOffset(offset)
+                          .setTimestamp(timestamp)
+                      )
+                    }
+                    partResp.setErrorCode(Errors.NONE.code)
+                  case None =>
+                    partReq.offsets.forEach { offset =>
+                      partResp.offsetTimestamps.add(
+                        new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
+                          .setOffset(offset)
+                          .setTimestamp(-1L)
+                      )
+                    }
+                    partResp.setErrorCode(Errors.NONE.code)
                 }
-                partResp.setErrorCode(Errors.NONE.code)
-              case None =>
-                partReq.offsets.forEach { offset =>
-                  partResp.offsetTimestamps.add(
-                    new AutomqGetOffsetTimestampsResponseData.OffsetTimestamp()
-                      .setOffset(offset)
-                      .setTimestamp(-1L)
-                      .setPrecise(false)
-                  )
-                }
-                partResp.setErrorCode(Errors.NONE.code)
+              case _ =>
+                partResp.setErrorCode(Errors.NOT_LEADER_OR_FOLLOWER.code)
             }
-          case _ =>
-            partResp.setErrorCode(Errors.NOT_LEADER_OR_FOLLOWER.code)
+          case None =>
+            partResp.setErrorCode(Errors.UNKNOWN_TOPIC_ID.code)
         }
 
         topicResp.partitions.add(partResp)

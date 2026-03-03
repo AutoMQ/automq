@@ -4,93 +4,144 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OffsetTimestampIndexTest {
 
     private OffsetTimestampIndex index;
 
-    private static final long HOUR = 3600_000L;
-
     @BeforeEach
     void setUp() {
         index = new OffsetTimestampIndex(
-            20, 10, 10,
-            HOUR, 6 * HOUR,
-            5, 20,
-            100L, 5000L
+            5,
+            new long[]{100L, 500L}, new int[]{4, 4},
+            new long[]{50L, 200L}, new int[]{4, 4}
         );
     }
 
     @Test
-    void testFetchHitFromSessionTracker() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-        index.onFetch(1, 500, now - 500_000L, now);
-        index.onFetch(1, 600, now - 400_000L, now + 1000L);
-
-        OffsetTimestampIndex.LookupResult r = index.lookup(550);
-        assertNotEquals(-1L, r.timestamp());
-        assertFalse(r.precise());
+    void testLeoIndexExactHit() {
+        index.updateLeo(1000, 50000L);
+        long ts = index.lookup(1000);
+        assertEquals(50000L, ts);
     }
 
     @Test
-    void testFallbackToGlobalIndex() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-        index.addPointToGlobal(200, now - 200_000L, now);
-        index.addPointToGlobal(400, now - 100_000L, now);
-
-        OffsetTimestampIndex.LookupResult r = index.lookup(300);
-        assertNotEquals(-1L, r.timestamp());
+    void testLeoIndexInterpolation() {
+        index.updateLeo(100, 1000L);
+        index.updateLeo(200, 1200L);
+        long ts = index.lookup(150);
+        assertEquals(1100L, ts);
     }
 
     @Test
-    void testLeoSampleGoesToGlobal() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-
-        OffsetTimestampIndex.LookupResult r = index.lookup(1000);
-        assertEquals(now, r.timestamp());
-        assertTrue(r.precise());
+    void testSessionExactHit() {
+        index.onFetch(1, 500, 5000L, 0L);
+        long ts = index.lookup(500);
+        assertEquals(5000L, ts);
     }
 
     @Test
-    void testSessionClosedEvictsData() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-        index.onFetch(1, 500, now - 500_000L, now);
-        index.onFetch(1, 600, now - 400_000L, now + 1000L);
+    void testSessionInterpolation() {
+        index.onFetch(1, 100, 1000L, 0L);
+        index.onFetch(1, 200, 2000L, 100L);
+        long ts = index.lookup(150);
+        assertEquals(1500L, ts);
+    }
 
+    @Test
+    void testExactHitFromSessionReturnsEarly() {
+        index.onFetch(1, 500, 5000L, 0L);
+        index.updateLeo(1000, 10000L);
+
+        long ts = index.lookup(500);
+        assertEquals(5000L, ts, "Should return session exact hit");
+    }
+
+    @Test
+    void testInterpolationPicksTightestBounds() {
+        index.updateLeo(100, 1000L);
+        index.updateLeo(400, 4200L);
+
+        index.onFetch(1, 200, 2000L, 0L);
+        index.onFetch(1, 300, 3000L, 100L);
+
+        long ts = index.lookup(250);
+        assertEquals(2500L, ts);
+    }
+
+    @Test
+    void testFallbackFromSessionToLeo() {
+        index.onFetch(1, 100, 1000L, 0L);
+        index.onFetch(1, 200, 2000L, 100L);
+
+        index.updateLeo(800, 8000L);
+        index.updateLeo(1000, 10000L);
+
+        long ts = index.lookup(900);
+        assertEquals(9000L, ts);
+    }
+
+    @Test
+    void testSessionClosed() {
+        index.onFetch(1, 500, 5000L, 0L);
         index.onSessionClosed(1);
-
-        OffsetTimestampIndex.LookupResult r = index.lookup(550);
-        assertFalse(r.precise(), "Should not get precise result after session eviction");
+        long ts = index.lookup(500);
+        assertEquals(-1L, ts, "Should miss after session closed");
     }
 
     @Test
-    void testPeriodicMaintenance() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-        index.onFetch(1, 500, now - 500_000L, now);
-        index.onFetch(1, 600, now - 400_000L, now + 1000L);
+    void testSessionSeekBackwardResetsSession() {
+        index.onFetch(1, 500, 5000L, 0L);
+        index.onFetch(1, 600, 6000L, 100L);
 
-        index.periodicMaintenance(now + 20000L);
+        index.onFetch(1, 200, 2000L, 200L);
 
-        assertTrue(index.globalTotalSize() >= 2,
-            "Global should contain LEO point plus flushed session points");
+        long ts = index.lookup(500);
+        assertEquals(-1L, ts);
+        ts = index.lookup(200);
+        assertEquals(2000L, ts);
     }
 
     @Test
-    void testBackfillAddsToGlobal() {
-        long now = 100 * HOUR;
-        index.updateLeo(1000, now, 0, now);
-        index.addPointToGlobal(300, now - 300_000L, now);
+    void testMaxSessionsEvictsOldest() {
+        for (int i = 1; i <= 6; i++) {
+            index.onFetch(i, i * 100L, i * 1000L, i * 100L);
+        }
+        assertEquals(5, index.sessionCount(), "Should evict to maxSessions");
+    }
 
-        OffsetTimestampIndex.LookupResult r = index.lookup(300);
-        assertEquals(now - 300_000L, r.timestamp());
-        assertTrue(r.precise());
+    @Test
+    void testLookupMissOnEmpty() {
+        long ts = index.lookup(500);
+        assertEquals(-1L, ts);
+    }
+
+    @Test
+    void testNegativeLeoTimestampIgnored() {
+        index.updateLeo(1000, -1L);
+        long ts = index.lookup(1000);
+        assertEquals(-1L, ts, "Negative timestamp should be ignored");
+    }
+
+    @Test
+    void testOffsetRangePruning() {
+        index.onFetch(1, 100, 1000L, 0L);
+        index.onFetch(1, 200, 2000L, 100L);
+        index.onFetch(2, 500, 5000L, 0L);
+        index.onFetch(2, 600, 6000L, 100L);
+
+        long ts = index.lookup(550);
+        assertEquals(5500L, ts);
+    }
+
+    @Test
+    void testMultipleSessionsCombinedLookup() {
+        index.onFetch(1, 100, 1000L, 0L);
+        index.onFetch(1, 200, 2000L, 100L);
+        index.onFetch(2, 300, 3000L, 0L);
+        index.onFetch(2, 400, 4000L, 100L);
+
+        long ts = index.lookup(250);
+        assertEquals(2500L, ts);
     }
 }

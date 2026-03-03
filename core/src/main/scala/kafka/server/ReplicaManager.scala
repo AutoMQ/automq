@@ -392,7 +392,6 @@ class ReplicaManager(val config: KafkaConfig,
     scheduler.schedule("isr-expiration", () => maybeShrinkIsr(), 0L, config.replicaLagTimeMaxMs / 2)
     scheduler.schedule("shutdown-idle-replica-alter-log-dirs-thread", () => shutdownIdleReplicaAlterLogDirsThread(), 0L, 10000L)
     scheduler.schedule("offset-timestamp-maintenance", () => {
-      val nowMs = time.milliseconds()
       onlinePartitionsIterator.foreach { partition =>
         partition.offsetTimestampManager.foreach { manager =>
           try {
@@ -402,8 +401,7 @@ class ReplicaManager(val config: KafkaConfig,
               .fetchOffsetByTimestamp(ListOffsetsRequest.MAX_TIMESTAMP)
               .map(_.timestamp)
               .getOrElse(-1L)
-            manager.updateLeo(leo, leoTimestamp, localLog.logStartOffset, nowMs)
-            manager.periodicMaintenance(nowMs)
+            manager.updateLeo(leo, leoTimestamp)
           } catch {
             case _: Exception =>
           }

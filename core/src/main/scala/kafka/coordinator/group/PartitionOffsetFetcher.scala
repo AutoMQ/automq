@@ -207,7 +207,8 @@ class PartitionOffsetFetcher(
   ): AutomqGetOffsetTimestampsRequest.Builder = {
     val data = new AutomqGetOffsetTimestampsRequestData()
     queries.groupBy(_._1.topic).foreach { case (topic, tpQueries) =>
-      val topicReq = new AutomqGetOffsetTimestampsRequestData.TopicRequest().setName(topic)
+      val topicReq = new AutomqGetOffsetTimestampsRequestData.TopicRequest()
+        .setTopicId(metadataCache.getTopicId(topic))
       tpQueries.foreach { case (tp, offsets) =>
         val partReq = new AutomqGetOffsetTimestampsRequestData.PartitionRequest()
           .setPartitionIndex(tp.partition)
@@ -224,14 +225,16 @@ class PartitionOffsetFetcher(
   ): Map[(TopicPartition, Long), Long] = {
     val result = scala.collection.mutable.Map[(TopicPartition, Long), Long]()
     response.data.topics.forEach { topic =>
-      topic.partitions.forEach { partition =>
-        if (Errors.forCode(partition.errorCode) == Errors.NONE) {
-          partition.offsetTimestamps.forEach { offsetTs =>
-            if (offsetTs.timestamp >= 0) {
-              result.put(
-                (new TopicPartition(topic.name, partition.partitionIndex), offsetTs.offset),
-                offsetTs.timestamp
-              )
+      metadataCache.getTopicName(topic.topicId).foreach { topicName =>
+        topic.partitions.forEach { partition =>
+          if (Errors.forCode(partition.errorCode) == Errors.NONE) {
+            partition.offsetTimestamps.forEach { offsetTs =>
+              if (offsetTs.timestamp >= 0) {
+                result.put(
+                  (new TopicPartition(topicName, partition.partitionIndex), offsetTs.offset),
+                  offsetTs.timestamp
+                )
+              }
             }
           }
         }
