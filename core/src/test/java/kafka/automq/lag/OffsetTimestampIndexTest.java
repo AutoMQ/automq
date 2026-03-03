@@ -12,9 +12,17 @@ public class OffsetTimestampIndexTest {
     @BeforeEach
     void setUp() {
         index = new OffsetTimestampIndex(
-            5,
-            new long[]{100L, 500L}, new int[]{4, 4},
-            new long[]{50L, 200L}, new int[]{4, 4}
+            new OffsetTimestampIndex.IndexConfig(
+                new OffsetTimestampIndex.SparseIndexConfig(java.util.List.of(
+                    new OffsetTimestampIndex.LayerConfig(100L, 4),
+                    new OffsetTimestampIndex.LayerConfig(500L, 4)
+                )),
+                new OffsetTimestampIndex.SparseIndexConfig(java.util.List.of(
+                    new OffsetTimestampIndex.LayerConfig(50L, 4),
+                    new OffsetTimestampIndex.LayerConfig(200L, 4)
+                )),
+                5
+            )
         );
     }
 

@@ -1,6 +1,7 @@
 package kafka.automq.lag;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -10,11 +11,43 @@ public class OffsetTimestampIndex {
 
     public static final long MISS = -1L;
 
-    static final long[] DEFAULT_LEO_INTERVALS = {60_000L, 600_000L, 14_400_000L};
-    static final int[] DEFAULT_LEO_CAPACITIES = {10, 18, 18};
-    static final long[] DEFAULT_SESSION_INTERVALS = {10_000L, 60_000L};
-    static final int[] DEFAULT_SESSION_CAPACITIES = {12, 10};
-    static final int DEFAULT_MAX_SESSIONS = 20;
+    public record LayerConfig(long intervalMs, int capacity) {
+        public LayerConfig {
+            if (capacity <= 0) {
+                throw new IllegalArgumentException("capacity must be positive");
+            }
+        }
+    }
+
+    public record SparseIndexConfig(List<LayerConfig> levels) {
+        public SparseIndexConfig {
+            levels = List.copyOf(levels);
+            if (levels.isEmpty()) {
+                throw new IllegalArgumentException("levels must be non-empty");
+            }
+        }
+    }
+
+    public record IndexConfig(SparseIndexConfig leo, SparseIndexConfig session, int maxSessions) {
+        public IndexConfig {
+            if (maxSessions <= 0) {
+                throw new IllegalArgumentException("maxSessions must be positive");
+            }
+        }
+    }
+
+    static final IndexConfig DEFAULT_CONFIG = new IndexConfig(
+        new SparseIndexConfig(List.of(
+            new LayerConfig(60_000L, 10),
+            new LayerConfig(600_000L, 18),
+            new LayerConfig(14_400_000L, 18)
+        )),
+        new SparseIndexConfig(List.of(
+            new LayerConfig(10_000L, 12),
+            new LayerConfig(60_000L, 10)
+        )),
+        20
+    );
 
     private final LayeredSparseIndex leoIndex;
     private final Map<Integer, SessionEntry> sessions = new HashMap<>();
@@ -23,24 +56,24 @@ public class OffsetTimestampIndex {
     private final int[] sessionCapacities;
 
     public OffsetTimestampIndex() {
+        this(DEFAULT_CONFIG);
+    }
+
+    public OffsetTimestampIndex(IndexConfig config) {
         this(
-            DEFAULT_MAX_SESSIONS,
-            DEFAULT_LEO_INTERVALS,
-            DEFAULT_LEO_CAPACITIES,
-            DEFAULT_SESSION_INTERVALS,
-            DEFAULT_SESSION_CAPACITIES
+            config.maxSessions(),
+            config.leo(),
+            config.session()
         );
     }
 
-    public OffsetTimestampIndex(int maxSessions,
-                                long[] leoIntervals,
-                                int[] leoCapacities,
-                                long[] sessionIntervals,
-                                int[] sessionCapacities) {
+    private OffsetTimestampIndex(int maxSessions,
+                                 SparseIndexConfig leoConfig,
+                                 SparseIndexConfig sessionConfig) {
         this.maxSessions = maxSessions;
-        this.leoIndex = new LayeredSparseIndex(leoIntervals, leoCapacities);
-        this.sessionIntervals = sessionIntervals.clone();
-        this.sessionCapacities = sessionCapacities.clone();
+        this.leoIndex = new LayeredSparseIndex(intervals(leoConfig), capacities(leoConfig));
+        this.sessionIntervals = intervals(sessionConfig);
+        this.sessionCapacities = capacities(sessionConfig);
     }
 
     public synchronized void updateLeo(long leo, long leoTimestamp) {
@@ -184,5 +217,21 @@ public class OffsetTimestampIndex {
             this.index = index;
             this.lastFetchTimeMs = lastFetchTimeMs;
         }
+    }
+
+    private static long[] intervals(SparseIndexConfig config) {
+        long[] values = new long[config.levels().size()];
+        for (int i = 0; i < config.levels().size(); i++) {
+            values[i] = config.levels().get(i).intervalMs();
+        }
+        return values;
+    }
+
+    private static int[] capacities(SparseIndexConfig config) {
+        int[] values = new int[config.levels().size()];
+        for (int i = 0; i < config.levels().size(); i++) {
+            values[i] = config.levels().get(i).capacity();
+        }
+        return values;
     }
 }

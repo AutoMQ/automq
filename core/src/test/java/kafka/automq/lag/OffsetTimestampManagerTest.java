@@ -19,9 +19,17 @@ public class OffsetTimestampManagerTest {
     @BeforeEach
     void setUp() {
         index = new OffsetTimestampIndex(
-            5,
-            new long[]{100L, 500L}, new int[]{10, 10},
-            new long[]{50L, 200L}, new int[]{10, 10}
+            new OffsetTimestampIndex.IndexConfig(
+                new OffsetTimestampIndex.SparseIndexConfig(java.util.List.of(
+                    new OffsetTimestampIndex.LayerConfig(100L, 10),
+                    new OffsetTimestampIndex.LayerConfig(500L, 10)
+                )),
+                new OffsetTimestampIndex.SparseIndexConfig(java.util.List.of(
+                    new OffsetTimestampIndex.LayerConfig(50L, 10),
+                    new OffsetTimestampIndex.LayerConfig(200L, 10)
+                )),
+                5
+            )
         );
     }
 
