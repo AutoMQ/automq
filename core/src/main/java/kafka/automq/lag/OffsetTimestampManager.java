@@ -17,14 +17,11 @@ public class OffsetTimestampManager {
 
     private final OffsetTimestampIndex index;
     private final Function<Long, Long> backfillFn;
-    private final int maxBackfillsPerBatch;
 
     public OffsetTimestampManager(OffsetTimestampIndex index,
-                                  Function<Long, Long> backfillFn,
-                                  int maxBackfillsPerBatch) {
+                                  Function<Long, Long> backfillFn) {
         this.index = index;
         this.backfillFn = backfillFn;
-        this.maxBackfillsPerBatch = maxBackfillsPerBatch;
     }
 
     public long lookup(long targetOffset) {
@@ -50,7 +47,6 @@ public class OffsetTimestampManager {
 
     public Map<Long, Long> lookupBatch(Set<Long> targetOffsets) {
         Map<Long, Long> results = new HashMap<>();
-        int backfillCount = 0;
 
         for (long offset : targetOffsets) {
             long timestamp = index.lookup(offset);
@@ -59,12 +55,11 @@ public class OffsetTimestampManager {
                 continue;
             }
 
-            if (backfillFn != null && backfillCount < maxBackfillsPerBatch) {
+            if (backfillFn != null) {
                 try {
                     long backfillTs = backfillFn.apply(offset);
                     if (backfillTs >= 0) {
                         results.put(offset, backfillTs);
-                        backfillCount++;
                         continue;
                     }
                 } catch (Exception e) {

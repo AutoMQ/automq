@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class LayeredSparseIndexTest {
@@ -239,5 +240,20 @@ public class LayeredSparseIndexTest {
 
         LayeredSparseIndex.LookupBounds bounds = single.lookupBounds(400);
         assertNotNull(bounds.floor());
+    }
+
+    @Test
+    void testDemoteAppendNeverExceedsLevelCapacityBuffer() {
+        LayeredSparseIndex idx = new LayeredSparseIndex(
+            new long[]{0L, 0L, 0L},
+            new int[]{2, 2, 2}
+        );
+
+        assertDoesNotThrow(() -> {
+            for (int i = 0; i < 200; i++) {
+                idx.insert(i, i);
+            }
+        });
+        assertTrue(idx.totalSize() <= 6);
     }
 }

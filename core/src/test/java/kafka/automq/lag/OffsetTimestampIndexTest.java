@@ -135,13 +135,13 @@ public class OffsetTimestampIndexTest {
     }
 
     @Test
-    void testMultipleSessionsCombinedLookup() {
+    void testLookupSkipsOutOfRangeSessionsInInterpolationPhase() {
         index.onFetch(1, 100, 1000L, 0L);
         index.onFetch(1, 200, 2000L, 100L);
         index.onFetch(2, 300, 3000L, 0L);
         index.onFetch(2, 400, 4000L, 100L);
 
         long ts = index.lookup(250);
-        assertEquals(2500L, ts);
+        assertEquals(-1L, ts);
     }
 }

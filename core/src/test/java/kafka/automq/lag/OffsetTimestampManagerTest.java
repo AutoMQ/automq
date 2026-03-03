@@ -11,7 +11,6 @@ import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class OffsetTimestampManagerTest {
 
@@ -36,7 +35,7 @@ public class OffsetTimestampManagerTest {
             return 9999L;
         };
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
         long ts = manager.lookup(500);
 
         assertEquals(5000L, ts);
@@ -47,7 +46,7 @@ public class OffsetTimestampManagerTest {
     void testLookupMissTriggersBackfill() {
         Function<Long, Long> backfillFn = offset -> 42000L;
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
         long ts = manager.lookup(500);
         assertEquals(42000L, ts);
     }
@@ -56,7 +55,7 @@ public class OffsetTimestampManagerTest {
     void testBackfillReturnsNegativeTreatedAsMiss() {
         Function<Long, Long> backfillFn = offset -> -1L;
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
         long ts = manager.lookup(500);
         assertEquals(-1L, ts);
     }
@@ -67,35 +66,37 @@ public class OffsetTimestampManagerTest {
             throw new RuntimeException("boom");
         };
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
         long ts = assertDoesNotThrow(() -> manager.lookup(500L));
         assertEquals(-1L, ts);
     }
 
     @Test
     void testNullBackfillFnReturnsMiss() {
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, null, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, null);
         long ts = manager.lookup(500);
         assertEquals(-1L, ts);
     }
 
     @Test
-    void testLookupBatchRespectsMaxBackfills() {
+    void testLookupBatchBackfillsAllMisses() {
         int[] callCount = {0};
         Function<Long, Long> backfillFn = offset -> {
             callCount[0]++;
             return offset * 10L;
         };
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 2);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
 
         Set<Long> offsets = new LinkedHashSet<>(Arrays.asList(100L, 200L, 300L, 400L));
         Map<Long, Long> results = manager.lookupBatch(offsets);
 
         assertEquals(4, results.size());
-        assertTrue(callCount[0] <= 2, "Backfill should be capped at maxBackfillsPerBatch");
-        long hitCount = results.values().stream().filter(ts -> ts >= 0).count();
-        assertEquals(callCount[0], hitCount, "Only backfilled offsets should have valid timestamps");
+        assertEquals(4, callCount[0], "All misses should trigger backfill without per-batch limit");
+        assertEquals(1000L, results.get(100L));
+        assertEquals(2000L, results.get(200L));
+        assertEquals(3000L, results.get(300L));
+        assertEquals(4000L, results.get(400L));
     }
 
     @Test
@@ -107,7 +108,7 @@ public class OffsetTimestampManagerTest {
             return offset * 10L;
         };
 
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, backfillFn);
         Set<Long> offsets = new LinkedHashSet<>(Arrays.asList(100L, 200L));
         Map<Long, Long> results = assertDoesNotThrow(() -> manager.lookupBatch(offsets));
 
@@ -117,7 +118,7 @@ public class OffsetTimestampManagerTest {
 
     @Test
     void testDelegatesUpdateLeoToIndex() {
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, null, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, null);
         manager.updateLeo(1000, 50000L);
         long ts = manager.lookup(1000);
         assertEquals(50000L, ts);
@@ -125,7 +126,7 @@ public class OffsetTimestampManagerTest {
 
     @Test
     void testDelegatesOnFetchToIndex() {
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, null, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, null);
         manager.onFetch(1, 500, 5000L, 0L);
         long ts = manager.lookup(500);
         assertEquals(5000L, ts);
@@ -133,7 +134,7 @@ public class OffsetTimestampManagerTest {
 
     @Test
     void testDelegatesOnSessionClosedToIndex() {
-        OffsetTimestampManager manager = new OffsetTimestampManager(index, null, 10);
+        OffsetTimestampManager manager = new OffsetTimestampManager(index, null);
         manager.onFetch(1, 500, 5000L, 0L);
         manager.onSessionClosed(1);
         long ts = manager.lookup(500);

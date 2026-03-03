@@ -410,7 +410,7 @@ class Partition(val topicPartition: TopicPartition,
         case _: Exception => java.lang.Long.valueOf(-1L)
       }
     }
-    offsetTimestampManager = Some(new OffsetTimestampManager(idx, backfillFn, 10))
+    offsetTimestampManager = Some(new OffsetTimestampManager(idx, backfillFn))
   }
 
   def onFetchSessionClosed(sessionId: Int): Unit = {

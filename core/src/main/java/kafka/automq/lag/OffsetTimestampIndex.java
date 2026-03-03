@@ -43,29 +43,10 @@ public class OffsetTimestampIndex {
         this.sessionCapacities = sessionCapacities.clone();
     }
 
-    /**
-     * Kept for compatibility while Scala call sites are migrated.
-     */
-    @Deprecated
-    public OffsetTimestampIndex(int l0Max, int l1Max, int l2Max,
-                                long l0BoundaryMs, long l1BoundaryMs,
-                                int maxSessions, int bufferMaxSize,
-                                long minTimeGapMs, long archiveAgeMs) {
-        this();
-    }
-
     public synchronized void updateLeo(long leo, long leoTimestamp) {
         if (leoTimestamp >= 0) {
             leoIndex.insert(leo, leoTimestamp);
         }
-    }
-
-    /**
-     * Kept for compatibility while Scala call sites are migrated.
-     */
-    @Deprecated
-    public synchronized void updateLeo(long leo, long leoTimestamp, long logStartOffset, long nowMs) {
-        updateLeo(leo, leoTimestamp);
     }
 
     public synchronized void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {
@@ -116,13 +97,24 @@ public class OffsetTimestampIndex {
         LayeredSparseIndex.DataPoint bestFloor = null;
         LayeredSparseIndex.DataPoint bestCeil = null;
         for (SessionEntry entry : sessions.values()) {
-            LayeredSparseIndex.LookupBounds bounds = entry.index.lookupBounds(targetOffset);
+            LayeredSparseIndex sessionIndex = entry.index;
+            if (sessionIndex.isEmpty()) {
+                continue;
+            }
+            if (targetOffset < sessionIndex.minOffset() || targetOffset > sessionIndex.maxOffset()) {
+                continue;
+            }
+            LayeredSparseIndex.LookupBounds bounds = sessionIndex.lookupBounds(targetOffset);
             bestFloor = tighterFloor(bestFloor, bounds.floor());
             bestCeil = tighterCeil(bestCeil, bounds.ceil());
         }
-        LayeredSparseIndex.LookupBounds leoBounds = leoIndex.lookupBounds(targetOffset);
-        bestFloor = tighterFloor(bestFloor, leoBounds.floor());
-        bestCeil = tighterCeil(bestCeil, leoBounds.ceil());
+        if (!leoIndex.isEmpty()
+            && targetOffset >= leoIndex.minOffset()
+            && targetOffset <= leoIndex.maxOffset()) {
+            LayeredSparseIndex.LookupBounds leoBounds = leoIndex.lookupBounds(targetOffset);
+            bestFloor = tighterFloor(bestFloor, leoBounds.floor());
+            bestCeil = tighterCeil(bestCeil, leoBounds.ceil());
+        }
 
         if (bestFloor != null && bestCeil != null) {
             return interpolate(bestFloor, bestCeil, targetOffset);
@@ -132,29 +124,6 @@ public class OffsetTimestampIndex {
 
     public synchronized int sessionCount() {
         return sessions.size();
-    }
-
-    /**
-     * Kept for compatibility while manager and tests are migrated.
-     */
-    @Deprecated
-    public synchronized void addPointToGlobal(long offset, long timestamp, long nowMs) {
-        leoIndex.insert(offset, timestamp);
-    }
-
-    /**
-     * Kept for compatibility while manager and tests are migrated.
-     */
-    @Deprecated
-    public synchronized void periodicMaintenance(long currentTimeMs) {
-    }
-
-    /**
-     * Kept for compatibility while manager and tests are migrated.
-     */
-    @Deprecated
-    public synchronized int globalTotalSize() {
-        return leoIndex.totalSize();
     }
 
     private static boolean isExactHit(LayeredSparseIndex.LookupBounds bounds, long targetOffset) {

@@ -118,10 +118,7 @@ public class LayeredSparseIndex {
 
         Level l0 = levels[0];
         if (l0.size == 0 || Math.abs(timestamp - l0.last().timestamp()) >= l0.intervalMs) {
-            l0.append(new DataPoint(offset, timestamp));
-            if (l0.size > l0.capacity) {
-                overflow(0);
-            }
+            appendWithOverflow(0, new DataPoint(offset, timestamp));
         }
     }
 
@@ -148,12 +145,21 @@ public class LayeredSparseIndex {
         for (int i = start; i < removed.length; i++) {
             DataPoint point = removed[i];
             if (Math.abs(point.timestamp() - anchor) >= next.intervalMs) {
-                next.append(point);
-                anchor = point.timestamp();
+                appendWithOverflow(nextIdx, point);
+                anchor = next.last().timestamp();
             }
         }
-        if (next.size > next.capacity) {
-            overflow(nextIdx);
+    }
+
+    private void appendWithOverflow(int levelIdx, DataPoint point) {
+        Level level = levels[levelIdx];
+        if (level.size >= level.points.length) {
+            overflow(levelIdx);
+            level = levels[levelIdx];
+        }
+        level.append(point);
+        if (level.size > level.capacity) {
+            overflow(levelIdx);
         }
     }
 
