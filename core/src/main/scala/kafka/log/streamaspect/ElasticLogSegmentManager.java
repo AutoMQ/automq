@@ -48,7 +48,8 @@ public class ElasticLogSegmentManager {
      * The lock of {@link #segments} and {@link #inflightCleanedSegments}
      */
     private final ReentrantLock segmentLock = new ReentrantLock();
-    private final Map<Long, ElasticLogSegment> segments = new HashMap<>();
+    // visible to test
+    final Map<Long, ElasticLogSegment> segments = new HashMap<>();
     private final Map<Long, ElasticLogSegment> inflightCleanedSegments = new HashMap<>();
     private final EventListener innerListener = new EventListener();
     private final List<LogEventListener> logEventListeners = new CopyOnWriteArrayList<>();
@@ -105,6 +106,19 @@ public class ElasticLogSegmentManager {
                 notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
             }
             return segment;
+        } finally {
+            segmentLock.unlock();
+        }
+    }
+
+    public boolean remove(long baseOffset, ElasticLogSegment segment) {
+        segmentLock.lock();
+        try {
+            boolean removed = segments.remove(baseOffset, segment);
+            if (removed) {
+                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
+            }
+            return removed;
         } finally {
             segmentLock.unlock();
         }
@@ -263,10 +277,10 @@ public class ElasticLogSegmentManager {
         private volatile CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = null;
 
         @Override
-        public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
+        public void onEvent(long segmentBaseOffset, ElasticLogSegment segment, ElasticLogSegmentEvent event) {
             switch (event) {
                 case SEGMENT_DELETE: {
-                    boolean deleted = remove(segmentBaseOffset) != null;
+                    boolean deleted = remove(segmentBaseOffset, segment);
                     if (deleted) {
                         // This may happen since kafka.log.LocalLog.deleteSegmentFiles schedules the delayed deletion task.
                         if (metaStream.isFenced()) {
