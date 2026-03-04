@@ -91,14 +91,22 @@ public final class AutoBalancerTestUtils {
         for (int i = 0; i < portNum; i++) {
             int port = -1;
             while (port < 0) {
+                ServerSocket socket = null;
                 try {
-                    ServerSocket socket = new ServerSocket(0);
+                    socket = new ServerSocket(0);
                     socket.setReuseAddress(true);
                     port = socket.getLocalPort();
                     ports[i] = port;
                     sockets.add(socket);
                 } catch (IOException ie) {
-                    // let it go.
+                    // close socket if setReuseAddress throws
+                    if (socket != null) {
+                        try {
+                            socket.close();
+                        } catch (IOException e) {
+                            // Ignore IOException on close()
+                        }
+                    }
                 }
             }
         }
