@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.common.network;
 
+import org.apache.kafka.common.memory.MemoryPool;
 import org.apache.kafka.test.TestUtils;
 
 import org.junit.jupiter.api.Test;
@@ -27,7 +28,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ScatteringByteChannel;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class NetworkReceiveTest {
@@ -35,39 +35,83 @@ public class NetworkReceiveTest {
     @Test
     public void testBytesRead() throws IOException {
         NetworkReceive receive = new NetworkReceive(128, "0");
-        assertEquals(0, receive.bytesRead());
 
         ScatteringByteChannel channel = Mockito.mock(ScatteringByteChannel.class);
+        ArgumentCaptor<ByteBuffer> captor = ArgumentCaptor.forClass(ByteBuffer.class);
 
-        ArgumentCaptor<ByteBuffer> bufferCaptor = ArgumentCaptor.forClass(ByteBuffer.class);
-        Mockito.when(channel.read(bufferCaptor.capture())).thenAnswer(invocation -> {
-            bufferCaptor.getValue().putInt(128);
-            return 4;
-        }).thenReturn(0);
+        Mockito.when(channel.read(captor.capture()))
+            .thenAnswer(invocation -> {
+                ByteBuffer buf = captor.getValue();
+                if (buf.remaining() == 4) {
+                    buf.putInt(128);
+                    return 4;
+                }
+                int toWrite = Math.min(buf.remaining(), 64);
+                buf.put(TestUtils.randomBytes(toWrite));
+                return toWrite;
+            });
 
-        assertEquals(4, receive.readFrom(channel));
-        assertEquals(4, receive.bytesRead());
-        assertFalse(receive.complete());
+        int totalRead = 0;
+        while (!receive.complete()) {
+            totalRead += receive.readFrom(channel);
+        }
 
-        Mockito.reset(channel);
-        Mockito.when(channel.read(bufferCaptor.capture())).thenAnswer(invocation -> {
-            bufferCaptor.getValue().put(TestUtils.randomBytes(64));
-            return 64;
-        });
-
-        assertEquals(64, receive.readFrom(channel));
-        assertEquals(68, receive.bytesRead());
-        assertFalse(receive.complete());
-
-        Mockito.reset(channel);
-        Mockito.when(channel.read(bufferCaptor.capture())).thenAnswer(invocation -> {
-            bufferCaptor.getValue().put(TestUtils.randomBytes(64));
-            return 64;
-        });
-
-        assertEquals(64, receive.readFrom(channel));
         assertEquals(132, receive.bytesRead());
+        assertEquals(132, totalRead);
         assertTrue(receive.complete());
+
+        receive.close();
     }
 
+    @Test
+    public void testZeroSizePayload() throws IOException {
+        NetworkReceive receive = new NetworkReceive("zero");
+
+        ScatteringByteChannel channel = Mockito.mock(ScatteringByteChannel.class);
+        ArgumentCaptor<ByteBuffer> captor = ArgumentCaptor.forClass(ByteBuffer.class);
+
+        Mockito.when(channel.read(captor.capture()))
+            .thenAnswer(invocation -> {
+                ByteBuffer buf = captor.getValue();
+                if (buf.remaining() == 4) {
+                    buf.putInt(0);
+                    return 4;
+                }
+                return 0;
+            });
+
+        receive.readFrom(channel);
+
+        assertTrue(receive.complete());
+        assertEquals(0, receive.payload().remaining());
+
+        receive.close();
+    }
+
+    @Test
+    public void testWithMemoryPoolNone() throws IOException {
+        NetworkReceive receive =
+            new NetworkReceive(1024, "none", MemoryPool.NONE);
+
+        ScatteringByteChannel channel = Mockito.mock(ScatteringByteChannel.class);
+        ArgumentCaptor<ByteBuffer> captor = ArgumentCaptor.forClass(ByteBuffer.class);
+
+        Mockito.when(channel.read(captor.capture()))
+            .thenAnswer(invocation -> {
+                ByteBuffer buf = captor.getValue();
+                if (buf.remaining() == 4) {
+                    buf.putInt(256);
+                    return 4;
+                }
+                buf.put(TestUtils.randomBytes(buf.remaining()));
+                return buf.remaining();
+            });
+
+        while (!receive.complete()) {
+            receive.readFrom(channel);
+        }
+
+        assertTrue(receive.complete());
+        receive.close();
+    }
 }
