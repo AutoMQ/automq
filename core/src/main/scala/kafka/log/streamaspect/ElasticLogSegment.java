@@ -323,7 +323,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     @Override
     public int recover(ProducerStateManager producerStateManager,
         Optional<LeaderEpochFileCache> leaderEpochCache) throws IOException {
-        logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_UPDATE);
+        logListener.onEvent(baseOffset, null, ElasticLogSegmentEvent.SEGMENT_UPDATE);
         return recover0(producerStateManager, leaderEpochCache);
     }
 
@@ -447,7 +447,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     @Override
     public void deleteIfExists() throws IOException {
-        logListener.onEvent(baseOffset, ElasticLogSegmentEvent.SEGMENT_DELETE);
+        logListener.onEvent(baseOffset, this, ElasticLogSegmentEvent.SEGMENT_DELETE);
     }
 
     @Override
