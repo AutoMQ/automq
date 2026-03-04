@@ -621,7 +621,7 @@ class ElasticLog(val metaStream: MetaStream,
             })
             segments.clear()
             logMeta.getSegmentMetas.forEach(segMeta => {
-                val segment = new ElasticLogSegment(dir, segMeta, streamSliceManager, config, time, (_, _) => {}, logIdent)
+                val segment = new ElasticLogSegment(dir, segMeta, streamSliceManager, config, time, (_, _, _) => {}, logIdent)
                 segments.add(segment)
             })
         }
