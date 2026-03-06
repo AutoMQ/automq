@@ -4014,6 +4014,26 @@ public class RequestResponseTest {
     }
 
     @Test
+    public void testRequestResponseExtensionsUsesRequestProvider() {
+        RequestAndSize requestAndSize = new RequestAndSize(RequestResponseExtensions.parseRequest(
+            ApiKeys.FETCH,
+            (short) 0,
+            ByteBuffer.allocate(0)
+        ), 0);
+        assertTrue(requestAndSize.request instanceof TestRequestResponseExtensionProvider.TestEnterpriseRequest);
+    }
+
+    @Test
+    public void testRequestResponseExtensionsUsesResponseProvider() {
+        AbstractResponse response = RequestResponseExtensions.parseResponse(
+            ApiKeys.FETCH,
+            (short) 0,
+            ByteBuffer.allocate(0)
+        );
+        assertTrue(response instanceof TestRequestResponseExtensionProvider.TestEnterpriseResponse);
+    }
+
+    @Test
     public void testInvalidSaslHandShakeRequest() {
         AbstractRequest request = new SaslHandshakeRequest.Builder(
                 new SaslHandshakeRequestData().setMechanism("PLAIN")).build();

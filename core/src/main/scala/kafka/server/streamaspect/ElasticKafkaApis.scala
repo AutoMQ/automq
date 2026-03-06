@@ -182,6 +182,7 @@ class ElasticKafkaApis(
         case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
+        case apiKey if ApiKeys.isExtensionApi(apiKey) => forwardToControllerOrFail(request)
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -215,6 +216,7 @@ class ElasticKafkaApis(
            | ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
            | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
+      case apiKey if ApiKeys.isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
