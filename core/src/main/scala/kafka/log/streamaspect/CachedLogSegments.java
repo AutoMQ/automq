@@ -48,10 +48,11 @@ public class CachedLogSegments extends LogSegments {
     @Override
     public void remove(long offset) {
         synchronized (this) {
-            if (null != activeSegment && offset == activeSegment.baseOffset()) {
+            LogSegment currentActive = activeSegment;
+            super.remove(offset);
+            if (null != currentActive && offset == currentActive.baseOffset()) {
                 activeSegment = super.lastSegment().orElse(null);
             }
-            super.remove(offset);
         }
     }
 
@@ -66,7 +67,7 @@ public class CachedLogSegments extends LogSegments {
     @Override
     public Optional<LogSegment> lastSegment() {
         synchronized (this) {
-            return Optional.of(activeSegment);
+            return Optional.ofNullable(activeSegment);
         }
     }
 
