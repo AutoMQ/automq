@@ -20,9 +20,79 @@ package kafka.server.streamaspect.extension
 import kafka.network.RequestChannel
 import kafka.server.RequestLocal
 
+import org.apache.kafka.common.requests.AbstractResponse
+
+import java.util.ServiceLoader
+
+import scala.jdk.CollectionConverters.IteratorHasAsScala
+
 trait BrokerExtensionHandle {
   def init(ops: BrokerHandleOps): Unit = {
   }
 
   def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit
+}
+
+trait BrokerExtensionHandleProvider {
+  def create(): BrokerExtensionHandle
+}
+
+trait BrokerHandleOps {
+  def forwardToControllerOrFail(request: RequestChannel.Request): Unit
+
+  def maybeForward(request: RequestChannel.Request,
+    handler: RequestChannel.Request => Unit,
+    responseCallback: Option[AbstractResponse] => Unit): Unit
+
+  def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit
+
+  def sendResponseMaybeThrottle(request: RequestChannel.Request,
+    responseBuilder: Int => AbstractResponse): Unit
+
+  def handleError(request: RequestChannel.Request, t: Throwable): Unit
+
+  def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit
+}
+
+trait BrokerExtensionHandleDispatcher {
+  import BrokerExtensionHandleDispatcher.Result
+
+  def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Result
+}
+
+object BrokerExtensionHandleDispatcher {
+  sealed trait Result
+  case object Handled extends Result
+  case object NotHandled extends Result
+
+  def load(
+    ops: BrokerHandleOps,
+    loader: ServiceLoader[BrokerExtensionHandleProvider] = ServiceLoader.load(classOf[BrokerExtensionHandleProvider])
+  ): BrokerExtensionHandleDispatcher = {
+    loadFromProviders(ops, loader.iterator().asScala.toSeq)
+  }
+
+  def loadFromProviders(
+    ops: BrokerHandleOps,
+    providers: Iterable[BrokerExtensionHandleProvider]
+  ): BrokerExtensionHandleDispatcher = {
+    val loadedProviders = providers.toSeq
+    if (loadedProviders.size > 1) {
+      val providerNames = loadedProviders.map(_.getClass.getName).mkString(", ")
+      throw new IllegalStateException(
+        s"Only one BrokerExtensionHandleProvider is supported, found ${loadedProviders.size}: ${providerNames}")
+    }
+
+    loadedProviders.headOption match {
+      case Some(provider) =>
+        val handle = provider.create()
+        handle.init(ops)
+        (request: RequestChannel.Request, requestLocal: RequestLocal) => {
+          handle.handle(request, requestLocal)
+          Handled
+        }
+      case None =>
+        (_: RequestChannel.Request, _: RequestLocal) => NotHandled
+    }
+  }
 }
