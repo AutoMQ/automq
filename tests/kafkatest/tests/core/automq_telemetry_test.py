@@ -278,3 +278,40 @@ class AutoMQBrokerTelemetryTest(Test):
         finally:
             self.num_brokers = original_num_brokers
             self._stop_kafka()
+
+    @cluster(num_nodes=4)
+    def test_dynamic_prometheus_exporter_reconfiguration(self):
+        """Verify that the Prometheus metrics exporter can be dynamically reconfigured to a new port."""
+        initial_port = 9464
+        new_port = 9465
+
+        server_overrides = [
+            ["s3.telemetry.metrics.exporter.uri", f"prometheus://0.0.0.0:{initial_port}"]
+        ]
+
+        self._start_kafka(server_overrides=server_overrides)
+
+        try:
+            self._wait_for_metrics_available(port=initial_port)
+
+            for node in self.kafka.nodes:
+                output = self._fetch_metrics(node, port=initial_port)
+                self._assert_prometheus_metrics(output)
+                self.logger.info("Verified metrics on initial port %d", initial_port)
+
+            self.logger.info("Reconfiguring telemetry exporter URI to port %d", new_port)
+            config_command = (
+                f"{self.kafka.path.script('kafka-configs.sh', self.kafka.nodes[0])} "
+                f"--bootstrap-server {self.kafka.bootstrap_servers()} "
+                f"--entity-type brokers --entity-default "
+                f"--alter --add-config s3.telemetry.metrics.exporter.uri=prometheus://0.0.0.0:{new_port}"
+            )
+            self.kafka.nodes[0].account.ssh(config_command)
+            self._wait_for_metrics_available(port=new_port, timeout_sec=60)
+            for node in self.kafka.nodes:
+                output = self._fetch_metrics(node, port=new_port)
+                self._assert_prometheus_metrics(output)
+                self.logger.info("Verified metrics on new port %d after dynamic reconfiguration", new_port)
+
+        finally:
+            self._stop_kafka()
