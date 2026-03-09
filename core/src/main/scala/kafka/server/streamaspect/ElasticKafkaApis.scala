@@ -216,7 +216,7 @@ class ElasticKafkaApis(
           brokerExtensionHandleDispatcher.handle(request, requestLocal) match {
             case BrokerExtensionHandleDispatcher.Handled =>
             case BrokerExtensionHandleDispatcher.NotHandled =>
-              throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
+              throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
           }
 
         case _ =>
