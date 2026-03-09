@@ -26,6 +26,12 @@ import java.util.ServiceLoader
 
 import scala.jdk.CollectionConverters.IteratorHasAsScala
 
+/**
+ * Broker-side extension SPI.
+ *
+ * Implementations are created by [[BrokerExtensionHandleProvider]], initialized with
+ * [[BrokerExtensionContext]], and invoked by [[BrokerExtensionHandleDispatcher]].
+ */
 trait BrokerExtensionHandle {
   def init(ops: BrokerExtensionContext): Unit = {
   }
