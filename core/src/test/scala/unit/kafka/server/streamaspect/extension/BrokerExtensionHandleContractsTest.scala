@@ -2,7 +2,7 @@ package unit.kafka.server.streamaspect.extension
 
 import kafka.network.RequestChannel
 import kafka.server.RequestLocal
-import kafka.server.streamaspect.extension.{BrokerExtensionHandle, BrokerExtensionHandleProvider, BrokerHandleOps}
+import kafka.server.streamaspect.extension.{BrokerExtensionHandle, BrokerExtensionHandleProvider, BrokerExtensionContext}
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
 
@@ -12,7 +12,7 @@ class BrokerExtensionHandleContractsTest {
   def shouldSupportDefaultInitHook(): Unit = {
     var initialized = false
     val handle = new BrokerExtensionHandle {
-      override def init(ops: BrokerHandleOps): Unit = {
+      override def init(ops: BrokerExtensionContext): Unit = {
         initialized = true
       }
 
@@ -20,7 +20,7 @@ class BrokerExtensionHandleContractsTest {
       }
     }
 
-    handle.init(new BrokerHandleOps {
+    handle.init(new BrokerExtensionContext {
       override def forwardToControllerOrFail(request: RequestChannel.Request): Unit = ()
       override def maybeForward(request: RequestChannel.Request, handler: RequestChannel.Request => Unit,
         cb: Option[org.apache.kafka.common.requests.AbstractResponse] => Unit): Unit = ()

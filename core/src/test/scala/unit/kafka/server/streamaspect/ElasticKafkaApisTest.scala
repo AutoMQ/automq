@@ -4,7 +4,7 @@ import com.google.common.util.concurrent.MoreExecutors
 import kafka.network.RequestChannel
 import kafka.server._
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache, MockConfigRepository, ZkMetadataCache}
-import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerHandleOps}
+import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
 import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.memory.MemoryPool
@@ -34,7 +34,7 @@ import scala.jdk.CollectionConverters.SetHasAsScala
 class ElasticKafkaApisTest extends KafkaApisTest {
   override protected val replicaManager: ElasticReplicaManager = mock(classOf[ElasticReplicaManager])
   private var extensionApiMatcherOverride: Option[ApiKeys => Boolean] = None
-  private var brokerDispatcherFactoryOverride: Option[BrokerHandleOps => BrokerExtensionHandleDispatcher] = None
+  private var brokerDispatcherFactoryOverride: Option[BrokerExtensionContext => BrokerExtensionHandleDispatcher] = None
 
   @Test
   def shouldDelegateExtensionApiToBrokerDispatcher(): Unit = {
@@ -176,14 +176,14 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       override protected def isExtensionApi(apiKey: ApiKeys): Boolean =
         extensionApiMatcherOverride.map(_(apiKey)).getOrElse(super.isExtensionApi(apiKey))
 
-      override protected def createBrokerExtensionHandleDispatcher(ops: BrokerHandleOps): BrokerExtensionHandleDispatcher =
+      override protected def createBrokerExtensionHandleDispatcher(ops: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
         brokerDispatcherFactoryOverride.map(_(ops)).getOrElse(super.createBrokerExtensionHandleDispatcher(ops))
     }
   }
 
   private def withExtensionHooks[T](
     extensionApiMatcher: ApiKeys => Boolean,
-    dispatcherFactory: BrokerHandleOps => BrokerExtensionHandleDispatcher
+    dispatcherFactory: BrokerExtensionContext => BrokerExtensionHandleDispatcher
   )(block: => T): T = {
     extensionApiMatcherOverride = Some(extensionApiMatcher)
     brokerDispatcherFactoryOverride = Some(dispatcherFactory)

@@ -3,7 +3,7 @@ package unit.kafka.server.streamaspect.extension
 import kafka.network.RequestChannel
 import kafka.server.RequestLocal
 import kafka.server.streamaspect.extension.BrokerExtensionHandleDispatcher.{Handled, NotHandled}
-import kafka.server.streamaspect.extension.{BrokerExtensionHandle, BrokerExtensionHandleDispatcher, BrokerExtensionHandleProvider, BrokerHandleOps}
+import kafka.server.streamaspect.extension.{BrokerExtensionHandle, BrokerExtensionHandleDispatcher, BrokerExtensionHandleProvider, BrokerExtensionContext}
 import org.junit.jupiter.api.Assertions.{assertEquals, assertThrows, assertTrue}
 import org.junit.jupiter.api.Test
 
@@ -22,7 +22,7 @@ class BrokerExtensionHandleDispatcherTest {
 
     val provider = new BrokerExtensionHandleProvider {
       override def create(): BrokerExtensionHandle = new BrokerExtensionHandle {
-        override def init(ops: BrokerHandleOps): Unit = {
+        override def init(ops: BrokerExtensionContext): Unit = {
           initialized = true
         }
 
@@ -53,7 +53,7 @@ class BrokerExtensionHandleDispatcherTest {
     }
   }
 
-  private def noopOps: BrokerHandleOps = new BrokerHandleOps {
+  private def noopOps: BrokerExtensionContext = new BrokerExtensionContext {
     override def forwardToControllerOrFail(request: RequestChannel.Request): Unit = ()
 
     override def maybeForward(request: RequestChannel.Request,

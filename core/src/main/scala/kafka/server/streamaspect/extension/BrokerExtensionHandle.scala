@@ -27,7 +27,7 @@ import java.util.ServiceLoader
 import scala.jdk.CollectionConverters.IteratorHasAsScala
 
 trait BrokerExtensionHandle {
-  def init(ops: BrokerHandleOps): Unit = {
+  def init(ops: BrokerExtensionContext): Unit = {
   }
 
   def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit
@@ -37,7 +37,7 @@ trait BrokerExtensionHandleProvider {
   def create(): BrokerExtensionHandle
 }
 
-trait BrokerHandleOps {
+trait BrokerExtensionContext {
   def forwardToControllerOrFail(request: RequestChannel.Request): Unit
 
   def maybeForward(request: RequestChannel.Request,
@@ -66,14 +66,14 @@ object BrokerExtensionHandleDispatcher {
   case object NotHandled extends Result
 
   def load(
-    ops: BrokerHandleOps,
+    context: BrokerExtensionContext,
     loader: ServiceLoader[BrokerExtensionHandleProvider] = ServiceLoader.load(classOf[BrokerExtensionHandleProvider])
   ): BrokerExtensionHandleDispatcher = {
-    loadFromProviders(ops, loader.iterator().asScala.toSeq)
+    loadFromProviders(context, loader.iterator().asScala.toSeq)
   }
 
   def loadFromProviders(
-    ops: BrokerHandleOps,
+    context: BrokerExtensionContext,
     providers: Iterable[BrokerExtensionHandleProvider]
   ): BrokerExtensionHandleDispatcher = {
     val loadedProviders = providers.toSeq
@@ -86,7 +86,7 @@ object BrokerExtensionHandleDispatcher {
     loadedProviders.headOption match {
       case Some(provider) =>
         val handle = provider.create()
-        handle.init(ops)
+        handle.init(context)
         (request: RequestChannel.Request, requestLocal: RequestLocal) => {
           handle.handle(request, requestLocal)
           Handled

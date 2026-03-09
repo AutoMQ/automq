@@ -12,7 +12,7 @@ import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server._
-import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerHandleOps}
+import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
 import kafka.server.metadata.ConfigRepository
 import kafka.server.streamaspect.ElasticKafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.utils.Implicits.MapExtensionMethods
@@ -92,7 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
-  private val brokerHandleOps: BrokerHandleOps = new BrokerHandleOps {
+  private val brokerExtensionContext: BrokerExtensionContext = new BrokerExtensionContext {
     override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.forwardToControllerOrFail(request)
 
@@ -115,10 +115,10 @@ class ElasticKafkaApis(
       ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
   }
   private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
-    createBrokerExtensionHandleDispatcher(brokerHandleOps)
+    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
 
-  protected def createBrokerExtensionHandleDispatcher(ops: BrokerHandleOps): BrokerExtensionHandleDispatcher =
-    BrokerExtensionHandleDispatcher.load(ops)
+  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
+    BrokerExtensionHandleDispatcher.load(context)
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
 
