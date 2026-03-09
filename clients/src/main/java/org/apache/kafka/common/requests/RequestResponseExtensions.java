@@ -41,7 +41,7 @@ public class RequestResponseExtensions {
             throw new AssertionError(String.format(
                 "ApiKey %s is not handled and no extension provider is registered.", apiKey));
         }
-        return PROVIDER.parseRequest(apiKey, buffer, apiVersion);
+        return PROVIDER.parseRequest(apiKey, apiVersion, buffer);
     }
 
     public static AbstractResponse parseResponse(ApiKeys apiKey, short version, ByteBuffer buffer) {
@@ -49,6 +49,6 @@ public class RequestResponseExtensions {
             throw new AssertionError(String.format(
                 "ApiKey %s is not handled and no extension provider is registered.", apiKey));
         }
-        return PROVIDER.parseResponse(apiKey, buffer, version);
+        return PROVIDER.parseResponse(apiKey, version, buffer);
     }
 }

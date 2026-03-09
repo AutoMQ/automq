@@ -27,12 +27,12 @@ import java.util.Map;
 
 public class TestRequestResponseExtensionProvider implements RequestResponseExtensionProvider {
     @Override
-    public AbstractRequest parseRequest(ApiKeys apiKey, ByteBuffer buffer, short apiVersion) {
+    public AbstractRequest parseRequest(ApiKeys apiKey, short apiVersion, ByteBuffer buffer) {
         return new TestEnterpriseRequest(apiVersion);
     }
 
     @Override
-    public AbstractResponse parseResponse(ApiKeys apiKey, ByteBuffer buffer, short version) {
+    public AbstractResponse parseResponse(ApiKeys apiKey, short version, ByteBuffer buffer) {
         return new TestEnterpriseResponse();
     }
 

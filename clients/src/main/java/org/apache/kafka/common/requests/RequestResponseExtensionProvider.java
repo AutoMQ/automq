@@ -22,7 +22,7 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import java.nio.ByteBuffer;
 
 public interface RequestResponseExtensionProvider {
-    AbstractRequest parseRequest(ApiKeys apiKey, ByteBuffer buffer, short apiVersion);
+    AbstractRequest parseRequest(ApiKeys apiKey, short apiVersion, ByteBuffer buffer);
 
-    AbstractResponse parseResponse(ApiKeys apiKey, ByteBuffer buffer, short version);
+    AbstractResponse parseResponse(ApiKeys apiKey, short version, ByteBuffer buffer);
 }
