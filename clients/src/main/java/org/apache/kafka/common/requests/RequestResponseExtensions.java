@@ -28,8 +28,10 @@ public class RequestResponseExtensions {
     static {
         RequestResponseExtensionProvider loaded = null;
         for (RequestResponseExtensionProvider provider : ServiceLoader.load(RequestResponseExtensionProvider.class)) {
+            if (loaded != null) {
+                throw new IllegalStateException("Only one RequestResponseExtensionProvider is supported.");
+            }
             loaded = provider;
-            break;
         }
         PROVIDER = loaded;
     }
