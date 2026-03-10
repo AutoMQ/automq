@@ -292,6 +292,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedList;
@@ -338,6 +339,30 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 // This class performs tests requests and responses for all API keys
 public class RequestResponseTest {
+    private static final Set<ApiKeys> STREAM_AND_ENTERPRISE_APIS_NOT_COVERED_BY_GENERIC_SERIALIZATION = EnumSet.of(
+        ApiKeys.CREATE_STREAMS,
+        ApiKeys.OPEN_STREAMS,
+        ApiKeys.CLOSE_STREAMS,
+        ApiKeys.DELETE_STREAMS,
+        ApiKeys.TRIM_STREAMS,
+        ApiKeys.PREPARE_S3_OBJECT,
+        ApiKeys.COMMIT_STREAM_SET_OBJECT,
+        ApiKeys.COMMIT_STREAM_OBJECT,
+        ApiKeys.DESCRIBE_STREAMS,
+        ApiKeys.GET_OPENING_STREAMS,
+        ApiKeys.GET_KVS,
+        ApiKeys.PUT_KVS,
+        ApiKeys.DELETE_KVS,
+        ApiKeys.GET_NEXT_NODE_ID,
+        ApiKeys.AUTOMQ_REGISTER_NODE,
+        ApiKeys.AUTOMQ_GET_NODES,
+        ApiKeys.AUTOMQ_ZONE_ROUTER,
+        ApiKeys.AUTOMQ_UPDATE_GROUP,
+        ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT,
+        ApiKeys.UPDATE_LICENSE,
+        ApiKeys.DESCRIBE_LICENSE,
+        ApiKeys.EXPORT_CLUSTER_MANIFEST
+    );
 
     // Exception includes a message that we verify is not included in error responses
     private final UnknownServerException unknownServerException = new UnknownServerException("secret");
@@ -354,6 +379,7 @@ public class RequestResponseTest {
 
         for (ApiKeys apikey : ApiKeys.values()) {
             for (short version : apikey.allVersions()) {
+                if (STREAM_AND_ENTERPRISE_APIS_NOT_COVERED_BY_GENERIC_SERIALIZATION.contains(apikey)) continue;
                 if (toSkip.containsKey(apikey) && toSkip.get(apikey).contains(version)) continue;
                 AbstractRequest request = getRequest(apikey, version);
                 checkRequest(request);
@@ -4011,6 +4037,26 @@ public class RequestResponseTest {
                                 .setStartOffset(0)
                                 .setStateEpoch(0)))));
         return new ReadShareGroupStateSummaryResponse(data);
+    }
+
+    @Test
+    public void testRequestResponseExtensionsUsesRequestProvider() {
+        RequestAndSize requestAndSize = new RequestAndSize(RequestResponseExtensions.parseRequest(
+            ApiKeys.FETCH,
+            (short) 0,
+            ByteBuffer.allocate(0)
+        ), 0);
+        assertTrue(requestAndSize.request instanceof TestRequestResponseExtensionProvider.TestEnterpriseRequest);
+    }
+
+    @Test
+    public void testRequestResponseExtensionsUsesResponseProvider() {
+        AbstractResponse response = RequestResponseExtensions.parseResponse(
+            ApiKeys.FETCH,
+            (short) 0,
+            ByteBuffer.allocate(0)
+        );
+        assertTrue(response instanceof TestRequestResponseExtensionProvider.TestEnterpriseResponse);
     }
 
     @Test

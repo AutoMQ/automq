@@ -12,6 +12,7 @@ import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server._
+import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
 import kafka.server.metadata.ConfigRepository
 import kafka.server.streamaspect.ElasticKafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.utils.Implicits.MapExtensionMethods
@@ -91,6 +92,14 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
+  private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
+    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
+
+  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
+    BrokerExtensionHandleDispatcher.load(context)
+
+  protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -182,6 +191,12 @@ class ElasticKafkaApis(
         case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
+        case apiKey if isExtensionApi(apiKey) =>
+          brokerExtensionHandleDispatcher.handle(request, requestLocal) match {
+            case BrokerExtensionHandleDispatcher.Handled =>
+            case BrokerExtensionHandleDispatcher.NotHandled =>
+              throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
+          }
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -215,6 +230,7 @@ class ElasticKafkaApis(
            | ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
            | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
+      case apiKey if isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
@@ -867,6 +883,29 @@ class ElasticKafkaApis(
 
   def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
     this.snapshotAwaitReadySupplier = supplier
+  }
+
+  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
+    override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.forwardToControllerOrFail(request)
+
+    override def maybeForward(request: RequestChannel.Request,
+      handler: RequestChannel.Request => Unit,
+      responseCallback: Option[AbstractResponse] => Unit): Unit =
+      metadataSupport.maybeForward(request, handler, responseCallback)
+
+    override def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit =
+      requestHelper.sendForwardedResponse(request, response)
+
+    override def sendResponseMaybeThrottle(request: RequestChannel.Request,
+      responseBuilder: Int => AbstractResponse): Unit =
+      requestHelper.sendResponseMaybeThrottle(request, responseBuilder)
+
+    override def handleError(request: RequestChannel.Request, t: Throwable): Unit =
+      requestHelper.handleError(request, t)
+
+    override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
   }
 
 }
