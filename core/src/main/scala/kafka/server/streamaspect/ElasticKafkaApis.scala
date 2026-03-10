@@ -101,29 +101,6 @@ class ElasticKafkaApis(
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
 
-  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
-    override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
-      ElasticKafkaApis.this.forwardToControllerOrFail(request)
-
-    override def maybeForward(request: RequestChannel.Request,
-      handler: RequestChannel.Request => Unit,
-      responseCallback: Option[AbstractResponse] => Unit): Unit =
-      metadataSupport.maybeForward(request, handler, responseCallback)
-
-    override def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit =
-      requestHelper.sendForwardedResponse(request, response)
-
-    override def sendResponseMaybeThrottle(request: RequestChannel.Request,
-      responseBuilder: Int => AbstractResponse): Unit =
-      requestHelper.sendResponseMaybeThrottle(request, responseBuilder)
-
-    override def handleError(request: RequestChannel.Request, t: Throwable): Unit =
-      requestHelper.handleError(request, t)
-
-    override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
-      ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
-  }
-
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
    *
@@ -906,6 +883,29 @@ class ElasticKafkaApis(
 
   def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
     this.snapshotAwaitReadySupplier = supplier
+  }
+
+  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
+    override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.forwardToControllerOrFail(request)
+
+    override def maybeForward(request: RequestChannel.Request,
+      handler: RequestChannel.Request => Unit,
+      responseCallback: Option[AbstractResponse] => Unit): Unit =
+      metadataSupport.maybeForward(request, handler, responseCallback)
+
+    override def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit =
+      requestHelper.sendForwardedResponse(request, response)
+
+    override def sendResponseMaybeThrottle(request: RequestChannel.Request,
+      responseBuilder: Int => AbstractResponse): Unit =
+      requestHelper.sendResponseMaybeThrottle(request, responseBuilder)
+
+    override def handleError(request: RequestChannel.Request, t: Throwable): Unit =
+      requestHelper.handleError(request, t)
+
+    override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
   }
 
 }
