@@ -28,15 +28,15 @@ public class OffsetTimestampIndexTest {
 
     @Test
     void testLeoIndexExactHit() {
-        index.updateLeo(1000, 50000L);
+        index.updateLatestAppendSample(1000, 50000L);
         long ts = index.lookup(1000);
         assertEquals(50000L, ts);
     }
 
     @Test
     void testLeoIndexInterpolation() {
-        index.updateLeo(100, 1000L);
-        index.updateLeo(200, 1200L);
+        index.updateLatestAppendSample(100, 1000L);
+        index.updateLatestAppendSample(200, 1200L);
         long ts = index.lookup(150);
         assertEquals(1100L, ts);
     }
@@ -59,7 +59,7 @@ public class OffsetTimestampIndexTest {
     @Test
     void testExactHitFromSessionReturnsEarly() {
         index.onFetch(1, 500, 5000L, 0L);
-        index.updateLeo(1000, 10000L);
+        index.updateLatestAppendSample(1000, 10000L);
 
         long ts = index.lookup(500);
         assertEquals(5000L, ts, "Should return session exact hit");
@@ -67,8 +67,8 @@ public class OffsetTimestampIndexTest {
 
     @Test
     void testInterpolationPicksTightestBounds() {
-        index.updateLeo(100, 1000L);
-        index.updateLeo(400, 4200L);
+        index.updateLatestAppendSample(100, 1000L);
+        index.updateLatestAppendSample(400, 4200L);
 
         index.onFetch(1, 200, 2000L, 0L);
         index.onFetch(1, 300, 3000L, 100L);
@@ -82,8 +82,8 @@ public class OffsetTimestampIndexTest {
         index.onFetch(1, 100, 1000L, 0L);
         index.onFetch(1, 200, 2000L, 100L);
 
-        index.updateLeo(800, 8000L);
-        index.updateLeo(1000, 10000L);
+        index.updateLatestAppendSample(800, 8000L);
+        index.updateLatestAppendSample(1000, 10000L);
 
         long ts = index.lookup(900);
         assertEquals(9000L, ts);
@@ -126,7 +126,7 @@ public class OffsetTimestampIndexTest {
 
     @Test
     void testNegativeLeoTimestampIgnored() {
-        index.updateLeo(1000, -1L);
+        index.updateLatestAppendSample(1000, -1L);
         long ts = index.lookup(1000);
         assertEquals(-1L, ts, "Negative timestamp should be ignored");
     }

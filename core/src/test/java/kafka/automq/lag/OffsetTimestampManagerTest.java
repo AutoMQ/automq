@@ -35,7 +35,7 @@ public class OffsetTimestampManagerTest {
 
     @Test
     void testLookupHitsIndexNoBackfill() {
-        index.updateLeo(500, 5000L);
+        index.updateLatestAppendSample(500, 5000L);
 
         int[] callCount = {0};
         Function<Long, Long> backfillFn = offset -> {
@@ -125,9 +125,9 @@ public class OffsetTimestampManagerTest {
     }
 
     @Test
-    void testDelegatesUpdateLeoToIndex() {
+    void testDelegatesUpdateLatestAppendSampleToIndex() {
         OffsetTimestampManager manager = new OffsetTimestampManager(index, null);
-        manager.updateLeo(1000, 50000L);
+        manager.updateLatestAppendSample(1000, 50000L);
         long ts = manager.lookup(1000);
         assertEquals(50000L, ts);
     }

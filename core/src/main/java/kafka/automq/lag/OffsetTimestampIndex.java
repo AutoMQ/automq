@@ -49,7 +49,7 @@ public class OffsetTimestampIndex {
         20
     );
 
-    private final LayeredSparseIndex leoIndex;
+    private final LayeredSparseIndex latestAppendSampleIndex;
     private final Map<Integer, SessionEntry> sessions = new HashMap<>();
     private final int maxSessions;
     private final long[] sessionIntervals;
@@ -71,14 +71,14 @@ public class OffsetTimestampIndex {
                                  SparseIndexConfig leoConfig,
                                  SparseIndexConfig sessionConfig) {
         this.maxSessions = maxSessions;
-        this.leoIndex = new LayeredSparseIndex(intervals(leoConfig), capacities(leoConfig));
+        this.latestAppendSampleIndex = new LayeredSparseIndex(intervals(leoConfig), capacities(leoConfig));
         this.sessionIntervals = intervals(sessionConfig);
         this.sessionCapacities = capacities(sessionConfig);
     }
 
-    public synchronized void updateLeo(long leo, long leoTimestamp) {
-        if (leoTimestamp >= 0) {
-            leoIndex.insert(leo, leoTimestamp);
+    public synchronized void updateLatestAppendSample(long offset, long timestamp) {
+        if (timestamp >= 0) {
+            latestAppendSampleIndex.insert(offset, timestamp);
         }
     }
 
@@ -120,8 +120,10 @@ public class OffsetTimestampIndex {
             }
         }
 
-        if (!leoIndex.isEmpty() && targetOffset >= leoIndex.minOffset() && targetOffset <= leoIndex.maxOffset()) {
-            LayeredSparseIndex.LookupBounds bounds = leoIndex.lookupBounds(targetOffset);
+        if (!latestAppendSampleIndex.isEmpty()
+            && targetOffset >= latestAppendSampleIndex.minOffset()
+            && targetOffset <= latestAppendSampleIndex.maxOffset()) {
+            LayeredSparseIndex.LookupBounds bounds = latestAppendSampleIndex.lookupBounds(targetOffset);
             if (isExactHit(bounds, targetOffset)) {
                 return bounds.floor().timestamp();
             }
@@ -141,12 +143,12 @@ public class OffsetTimestampIndex {
             bestFloor = tighterFloor(bestFloor, bounds.floor());
             bestCeil = tighterCeil(bestCeil, bounds.ceil());
         }
-        if (!leoIndex.isEmpty()
-            && targetOffset >= leoIndex.minOffset()
-            && targetOffset <= leoIndex.maxOffset()) {
-            LayeredSparseIndex.LookupBounds leoBounds = leoIndex.lookupBounds(targetOffset);
-            bestFloor = tighterFloor(bestFloor, leoBounds.floor());
-            bestCeil = tighterCeil(bestCeil, leoBounds.ceil());
+        if (!latestAppendSampleIndex.isEmpty()
+            && targetOffset >= latestAppendSampleIndex.minOffset()
+            && targetOffset <= latestAppendSampleIndex.maxOffset()) {
+            LayeredSparseIndex.LookupBounds latestSampleBounds = latestAppendSampleIndex.lookupBounds(targetOffset);
+            bestFloor = tighterFloor(bestFloor, latestSampleBounds.floor());
+            bestCeil = tighterCeil(bestCeil, latestSampleBounds.ceil());
         }
 
         if (bestFloor != null && bestCeil != null) {

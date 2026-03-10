@@ -72,8 +72,8 @@ public class OffsetTimestampManager {
         return results;
     }
 
-    public void updateLeo(long leo, long leoTimestamp) {
-        index.updateLeo(leo, leoTimestamp);
+    public void updateLatestAppendSample(long offset, long timestamp) {
+        index.updateLatestAppendSample(offset, timestamp);
     }
 
     public void onFetch(int sessionId, long offset, long timestamp, long currentTimeMs) {

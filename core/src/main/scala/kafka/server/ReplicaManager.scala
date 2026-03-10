@@ -396,12 +396,9 @@ class ReplicaManager(val config: KafkaConfig,
         partition.offsetTimestampManager.foreach { manager =>
           try {
             val localLog = partition.localLogOrException
-            val leo = localLog.logEndOffset
-            val (sampleOffset, sampleTimestamp) = localLog.latestAppendState match {
-              case Some(state) => (state.maxTimestampOffset, state.maxTimestamp)
-              case None => (leo, -1L)
+            localLog.latestAppendState.foreach { state =>
+              manager.updateLatestAppendSample(state.maxTimestampOffset, state.maxTimestamp)
             }
-            manager.updateLeo(sampleOffset, sampleTimestamp)
           } catch {
             case _: Exception =>
           }
