@@ -46,6 +46,12 @@ public class ApiKeysTest {
     }
 
     @Test
+    public void testIsExtensionApi() {
+        assertFalse(ApiKeys.isExtensionApi(ApiKeys.FETCH));
+        assertFalse(ApiKeys.isExtensionApi(ApiKeys.DESCRIBE_TOPIC_PARTITIONS));
+    }
+
+    @Test
     public void testAlterPartitionIsClusterAction() {
         assertTrue(ApiKeys.ALTER_PARTITION.clusterAction);
     }

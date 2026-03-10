@@ -358,8 +358,7 @@ public abstract class AbstractResponse implements AbstractRequestResponse {
             case READ_SHARE_GROUP_STATE_SUMMARY:
                 return ReadShareGroupStateSummaryResponse.parse(responseBuffer, version);
             default:
-                throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseResponse`, the " +
-                        "code should be updated to do so.", apiKey));
+                return RequestResponseExtensions.parseResponse(apiKey, version, responseBuffer);
         }
     }
 

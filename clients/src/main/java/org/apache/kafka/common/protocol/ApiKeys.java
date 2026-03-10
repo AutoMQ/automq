@@ -240,6 +240,13 @@ public enum ApiKeys {
         return ID_TO_TYPE.containsKey(id);
     }
 
+    /**
+     * Extension APIs use apiKey IDs in [10000, 19999], reserved for enterprise features.
+     */
+    public static boolean isExtensionApi(ApiKeys apiKey) {
+        return apiKey.id >= 10000 && apiKey.id <= 19999;
+    }
+
     public short latestVersion() {
         return messageType.highestSupportedVersion(true);
     }
