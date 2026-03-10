@@ -92,7 +92,16 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
-  private val brokerExtensionContext: BrokerExtensionContext = new BrokerExtensionContext {
+  private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
+  private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
+    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
+
+  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
+    BrokerExtensionHandleDispatcher.load(context)
+
+  protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+
+  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
     override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.forwardToControllerOrFail(request)
 
@@ -114,13 +123,6 @@ class ElasticKafkaApis(
     override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
   }
-  private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
-    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
-
-  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
-    BrokerExtensionHandleDispatcher.load(context)
-
-  protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
