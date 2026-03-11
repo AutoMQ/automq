@@ -4628,7 +4628,7 @@ class KafkaApisTest extends Logging {
     kafkaApis.handleFetchRequest(request)
     verifyNoThrottling[FetchResponse](request)
 
-    verify(listener).onFetch(
+    verify(listener, timeout(1000)).onFetch(
       ArgumentMatchers.eq(tp),
       ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
       ArgumentMatchers.eq(0L),
@@ -4695,7 +4695,7 @@ class KafkaApisTest extends Logging {
     kafkaApis.handleFetchRequest(request)
     verifyNoThrottling[FetchResponse](request)
 
-    verify(listener).onFetch(
+    verify(listener, timeout(1000)).onFetch(
       ArgumentMatchers.eq(tp),
       ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
       ArgumentMatchers.eq(10L),
