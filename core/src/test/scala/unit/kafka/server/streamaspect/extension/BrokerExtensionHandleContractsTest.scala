@@ -20,10 +20,13 @@
 package unit.kafka.server.streamaspect.extension
 
 import kafka.network.RequestChannel
-import kafka.server.RequestLocal
+import kafka.server.{HostedPartition, RequestLocal}
 import kafka.server.streamaspect.extension.{BrokerExtensionHandle, BrokerExtensionHandleProvider, BrokerExtensionContext}
+import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
+
+import java.util.Optional
 
 class BrokerExtensionHandleContractsTest {
 
@@ -49,6 +52,8 @@ class BrokerExtensionHandleContractsTest {
         responseBuilder: Int => org.apache.kafka.common.requests.AbstractResponse): Unit = ()
       override def handleError(request: RequestChannel.Request, t: Throwable): Unit = ()
       override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = ()
+      override def getTopicName(topicId: Uuid): Optional[String] = Optional.empty()
+      override def getPartition(topicPartition: TopicPartition): HostedPartition = HostedPartition.None
     })
     assert(initialized)
   }

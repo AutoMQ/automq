@@ -14,6 +14,7 @@ import org.apache.kafka.common.network.{ClientInformation, ListenerName}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, MessageUtil}
 import org.apache.kafka.common.requests.s3.UpdateLicenseRequest
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, FetchRequest, FetchResponse, RequestContext, RequestHeader}
+import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
@@ -22,7 +23,7 @@ import org.apache.kafka.server.config.KRaftConfigs
 import org.junit.jupiter.api.Assertions.{assertEquals, assertNotNull, assertTrue}
 import org.junit.jupiter.api.{Tag, Test, Timeout}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.Mockito.{mock, never, verify}
+import org.mockito.Mockito.{doReturn, mock, never, spy, verify, when}
 
 import java.net.InetAddress
 import java.util.{Collections, Optional}
@@ -91,6 +92,33 @@ class ElasticKafkaApisTest extends KafkaApisTest {
         ArgumentMatchers.any(),
         ArgumentMatchers.any())
     }
+  }
+
+  @Test
+  def shouldExposeMetadataAndPartitionViaExtensionContext(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val tp = new TopicPartition("test-topic", 0)
+    val partition = mock(classOf[kafka.cluster.Partition])
+    var capturedContext: BrokerExtensionContext = null
+
+    val zkCache = MetadataCache.zkMetadataCache(brokerId, MetadataVersion.latestTesting())
+    metadataCache = spy(zkCache)
+    doReturn(Some("test-topic")).when(metadataCache).getTopicName(topicId)
+    when(replicaManager.getPartition(tp)).thenReturn(HostedPartition.Online(partition))
+
+    withExtensionHooks(
+      _ == ApiKeys.FETCH,
+      ops => {
+        capturedContext = ops
+        (_: RequestChannel.Request, _: RequestLocal) => BrokerExtensionHandleDispatcher.Handled
+      }) {
+      kafkaApis = createKafkaApis()
+      val request = buildRequest(new FetchRequest(new FetchRequestData(), ApiKeys.FETCH.latestVersion))
+      kafkaApis.handle(request, RequestLocal.NoCaching)
+    }
+
+    assertEquals(Optional.of("test-topic"), capturedContext.getTopicName(topicId))
+    assertEquals(HostedPartition.Online(partition), capturedContext.getPartition(tp))
   }
 
   override def createKafkaApis(interBrokerProtocolVersion: MetadataVersion = MetadataVersion.latestTesting,
