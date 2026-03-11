@@ -30,6 +30,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.trace.context.TraceContext;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -67,6 +68,7 @@ public final class TelemetrySupport {
 
         telemetryManager.setJmxConfigPaths(buildJmxConfigPaths(config));
         telemetryManager.init();
+        TraceContext.setTracerSupplier(() -> telemetryManager.getTracer("s3stream"));
         telemetryManager.startYammerMetricsReporter(KafkaYammerMetrics.defaultRegistry());
         initializeMetrics(telemetryManager, config);
 
@@ -135,5 +137,12 @@ public final class TelemetrySupport {
         }
 
         return String.join(",", paths);
+    }
+
+    public static void reinitialize(AutoMQTelemetryManager telemetryManager, KafkaConfig config) {
+        telemetryManager.init();
+        telemetryManager.restartYammerReporter();
+        initializeMetrics(telemetryManager, config);
+        LOGGER.info("Telemetry system reinitialized successfully.");
     }
 }
