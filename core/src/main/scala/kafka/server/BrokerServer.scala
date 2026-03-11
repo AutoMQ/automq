@@ -426,6 +426,7 @@ class BrokerServer(
       // The FetchSessionCache is divided into config.numIoThreads shards, each responsible
       // for Math.max(1, shardNum * sessionIdRange) <= sessionId < (shardNum + 1) * sessionIdRange
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
+      // AutoMQ inject start
       val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
@@ -440,14 +441,18 @@ class BrokerServer(
           }
         }
       }
+      // AutoMQ inject end
       val fetchSessionCacheShards = (0 until NumFetchSessionCacheShards)
         .map(shardNum => new FetchSessionCacheShard(
           config.maxIncrementalFetchSessionCacheSlots / NumFetchSessionCacheShards,
           KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS,
           sessionIdRange,
           shardNum,
+          // AutoMQ inject start
           sessionRemovalListener
+          // AutoMQ inject end
         ))
+
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
       // Create the request processor objects.
@@ -773,9 +778,8 @@ class BrokerServer(
       metadataPublishers.clear()
       if (dataPlaneRequestHandlerPool != null)
         CoreUtils.swallow(dataPlaneRequestHandlerPool.shutdown(), this)
-      if (dataPlaneRequestProcessor != null) {
+      if (dataPlaneRequestProcessor != null)
         CoreUtils.swallow(dataPlaneRequestProcessor.close(), this)
-      }
       CoreUtils.swallow(authorizer.foreach(_.close()), this)
 
       /**
@@ -920,9 +924,11 @@ class BrokerServer(
     trafficInterceptor
   }
 
+  // AutoMQ inject start
   protected def newFetchListener(): FetchListener = {
     FetchListener.NOOP
   }
+  // AutoMQ inject end
 
   protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
     val list = new util.ArrayList[PartitionLifecycleListener]()
