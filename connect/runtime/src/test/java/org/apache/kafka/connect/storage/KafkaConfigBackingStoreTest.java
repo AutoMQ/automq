@@ -148,10 +148,17 @@ public class KafkaConfigBackingStoreTest {
             Collections.singletonMap("config-key-two", "config-value-two"),
             Collections.singletonMap("config-key-three", "config-value-three")
     );
+    // Distinct v2 task configs used to verify that later task configs override earlier ones
+    private static final Map<String, String> SAMPLE_CONFIG_TASK_0_V2 = Collections.singletonMap("config-key-one", "config-value-one-v2");
+    private static final Map<String, String> SAMPLE_CONFIG_TASK_1_V2 = Collections.singletonMap("config-key-two", "config-value-two-v2");
     private static final List<Struct> TASK_CONFIG_STRUCTS = Arrays.asList(
             new Struct(KafkaConfigBackingStore.TASK_CONFIGURATION_V0).put("properties", SAMPLE_CONFIGS.get(0)),
             new Struct(KafkaConfigBackingStore.TASK_CONFIGURATION_V0).put("properties", SAMPLE_CONFIGS.get(1))
     );
+    private static final Struct TASK_CONFIG_STRUCT_0_V2 =
+            new Struct(KafkaConfigBackingStore.TASK_CONFIGURATION_V0).put("properties", SAMPLE_CONFIG_TASK_0_V2);
+    private static final Struct TASK_CONFIG_STRUCT_1_V2 =
+            new Struct(KafkaConfigBackingStore.TASK_CONFIGURATION_V0).put("properties", SAMPLE_CONFIG_TASK_1_V2);
     private static final Struct ONLY_FAILED_MISSING_STRUCT = new Struct(KafkaConfigBackingStore.RESTART_REQUEST_V0).put(INCLUDE_TASKS_FIELD_NAME, false);
     private static final Struct INCLUDE_TASKS_MISSING_STRUCT = new Struct(KafkaConfigBackingStore.RESTART_REQUEST_V0).put(ONLY_FAILED_FIELD_NAME, true);
     private static final List<Struct> RESTART_REQUEST_STRUCTS = Arrays.asList(
@@ -1946,7 +1953,7 @@ public class KafkaConfigBackingStoreTest {
                         CONFIGS_SERIALIZED.get(1), new RecordHeaders(), Optional.empty()),
                 new ConsumerRecord<>(TOPIC, 0, 2, 0L, TimestampType.CREATE_TIME, 0, 0, COMMIT_TASKS_CONFIG_KEYS.get(0),
                         CONFIGS_SERIALIZED.get(2), new RecordHeaders(), Optional.empty()),
-                // Second round: task-0-v2, task-1-v2, commit
+                // Second round: task-0-v2, task-1-v2, commit (using distinct configs to prove latest wins)
                 new ConsumerRecord<>(TOPIC, 0, 3, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(0),
                         CONFIGS_SERIALIZED.get(3), new RecordHeaders(), Optional.empty()),
                 new ConsumerRecord<>(TOPIC, 0, 4, 0L, TimestampType.CREATE_TIME, 0, 0, TASK_CONFIG_KEYS.get(1),
@@ -1960,8 +1967,8 @@ public class KafkaConfigBackingStoreTest {
         deserialized.put(CONFIGS_SERIALIZED.get(0), TASK_CONFIG_STRUCTS.get(0));        // task-0-v1
         deserialized.put(CONFIGS_SERIALIZED.get(1), TASK_CONFIG_STRUCTS.get(1));        // task-1-v1
         deserialized.put(CONFIGS_SERIALIZED.get(2), TASKS_COMMIT_STRUCT_TWO_TASK_CONNECTOR);  // commit-1
-        deserialized.put(CONFIGS_SERIALIZED.get(3), TASK_CONFIG_STRUCTS.get(0));        // task-0-v2
-        deserialized.put(CONFIGS_SERIALIZED.get(4), TASK_CONFIG_STRUCTS.get(1));        // task-1-v2
+        deserialized.put(CONFIGS_SERIALIZED.get(3), TASK_CONFIG_STRUCT_0_V2);           // task-0-v2 (distinct from v1)
+        deserialized.put(CONFIGS_SERIALIZED.get(4), TASK_CONFIG_STRUCT_1_V2);           // task-1-v2 (distinct from v1)
         deserialized.put(CONFIGS_SERIALIZED.get(5), TASKS_COMMIT_STRUCT_TWO_TASK_CONNECTOR);  // commit-2
         deserialized.put(CONFIGS_SERIALIZED.get(6), CONNECTOR_CONFIG_STRUCTS.get(0));  // connector config
         logOffset = 7;
@@ -1974,13 +1981,14 @@ public class KafkaConfigBackingStoreTest {
         configStorage.start();
 
         ClusterConfigState configState = configStorage.snapshot();
-        // Connector should be fully loaded with v2 task configs
+        // Connector should be fully loaded with v2 task configs (not v1)
         assertEquals(7, configState.offset());
         assertEquals(Collections.singletonList(CONNECTOR_IDS.get(0)), new ArrayList<>(configState.connectors()));
         assertEquals(SAMPLE_CONFIGS.get(0), configState.connectorConfig(CONNECTOR_IDS.get(0)));
         assertEquals(2, configState.taskCount(CONNECTOR_IDS.get(0)));
-        assertEquals(SAMPLE_CONFIGS.get(0), configState.taskConfig(TASK_IDS.get(0)));
-        assertEquals(SAMPLE_CONFIGS.get(1), configState.taskConfig(TASK_IDS.get(1)));
+        // Assert v2 task configs are used, proving that later task configs override earlier ones
+        assertEquals(SAMPLE_CONFIG_TASK_0_V2, configState.taskConfig(TASK_IDS.get(0)));
+        assertEquals(SAMPLE_CONFIG_TASK_1_V2, configState.taskConfig(TASK_IDS.get(1)));
         assertEquals(Collections.emptySet(), configState.inconsistentConnectors());
 
         configStorage.stop();
