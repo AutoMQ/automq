@@ -962,6 +962,12 @@ class ElasticKafkaApis(
 
     override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
+
+    override def getTopicName(topicId: Uuid): Optional[String] =
+      OptionConverters.toJava(metadataCache.getTopicName(topicId))
+
+    override def getPartition(topicPartition: TopicPartition): HostedPartition =
+      replicaManager.getPartition(topicPartition)
   }
 
 }

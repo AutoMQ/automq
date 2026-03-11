@@ -20,10 +20,12 @@
 package kafka.server.streamaspect.extension
 
 import kafka.network.RequestChannel
-import kafka.server.RequestLocal
+import kafka.server.{HostedPartition, RequestLocal}
 
+import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.requests.AbstractResponse
 
+import java.util.Optional
 import java.util.ServiceLoader
 
 import scala.jdk.CollectionConverters.IteratorHasAsScala
@@ -60,6 +62,10 @@ trait BrokerExtensionContext {
   def handleError(request: RequestChannel.Request, t: Throwable): Unit
 
   def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit
+
+  def getTopicName(topicId: Uuid): Optional[String]
+
+  def getPartition(topicPartition: TopicPartition): HostedPartition
 }
 
 trait BrokerExtensionHandleDispatcher {
