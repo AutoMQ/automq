@@ -628,10 +628,17 @@ case class EvictableKey(privileged: Boolean, size: Int, id: Int) extends Compara
   * @param sessionIdRange The number of sessionIds each cache shard handles. For a given instance, Math.max(1, shardNum * sessionIdRange) <= sessionId < (shardNum + 1) * sessionIdRange always holds.
   * @param shardNum Identifier for this shard.
  */
+object FetchSessionCacheShard {
+  trait SessionRemovalListener {
+    def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit
+  }
+}
+
 class FetchSessionCacheShard(private val maxEntries: Int,
                              private val evictionMs: Long,
                              val sessionIdRange: Int = Int.MaxValue,
-                             private val shardNum: Int = 0) extends Logging {
+                             private val shardNum: Int = 0,
+                             private val sessionRemovalListener: FetchSessionCacheShard.SessionRemovalListener = null) extends Logging {
 
   this.logIdent = s"[Shard $shardNum] "
 
@@ -798,8 +805,15 @@ class FetchSessionCacheShard(private val maxEntries: Int,
     val removeResult = sessions.remove(session.id)
     if (removeResult.isDefined) {
       numPartitions = numPartitions - session.cachedSize
+      notifySessionRemoved(session.id, session.partitionMap)
     }
     removeResult
+  }
+
+  private def notifySessionRemoved(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+    if (sessionRemovalListener != null) {
+      sessionRemovalListener.onRemove(sessionId, partitions)
+    }
   }
 
   /**

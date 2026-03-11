@@ -33,7 +33,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, PartitionLifecycleListener}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.clients.admin.ClusterEventPublisher
 import org.apache.kafka.common.config.ConfigException
@@ -426,12 +426,27 @@ class BrokerServer(
       // The FetchSessionCache is divided into config.numIoThreads shards, each responsible
       // for Math.max(1, shardNum * sessionIdRange) <= sessionId < (shardNum + 1) * sessionIdRange
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
+      val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
+      val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
+        override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+          partitions.forEach { part =>
+            val topicPartition = new TopicPartition(part.topic, part.partition)
+            try {
+              fetchListener.onSessionClosed(topicPartition, sessionId)
+            } catch {
+              case e: Exception =>
+                error(s"Error while notifying fetch session close for partition $topicPartition and session $sessionId", e)
+            }
+          }
+        }
+      }
       val fetchSessionCacheShards = (0 until NumFetchSessionCacheShards)
         .map(shardNum => new FetchSessionCacheShard(
           config.maxIncrementalFetchSessionCacheSlots / NumFetchSessionCacheShards,
           KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS,
           sessionIdRange,
-          shardNum
+          shardNum,
+          sessionRemovalListener
         ))
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
@@ -592,7 +607,9 @@ class BrokerServer(
       }
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
-      dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
+      val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
+      elasticKafkaApis.setTrafficInterceptor(trafficInterceptor)
+      elasticKafkaApis.setFetchListener(fetchListener)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
       replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
 
@@ -756,8 +773,9 @@ class BrokerServer(
       metadataPublishers.clear()
       if (dataPlaneRequestHandlerPool != null)
         CoreUtils.swallow(dataPlaneRequestHandlerPool.shutdown(), this)
-      if (dataPlaneRequestProcessor != null)
+      if (dataPlaneRequestProcessor != null) {
         CoreUtils.swallow(dataPlaneRequestProcessor.close(), this)
+      }
       CoreUtils.swallow(authorizer.foreach(_.close()), this)
 
       /**
@@ -900,6 +918,10 @@ class BrokerServer(
       zeroZoneRouter
     }
     trafficInterceptor
+  }
+
+  protected def newFetchListener(): FetchListener = {
+    FetchListener.NOOP
   }
 
   protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
