@@ -1990,6 +1990,30 @@ class FetchSessionTest {
       assertEquals(cacheShards(shardNum % numShards), cache.getNextCacheShard)
     }
   }
+
+  @Test
+  def testFetchSessionCacheShardNotifiesRemovalListeners(): Unit = {
+    var removedSessionId = -1
+    var removedPartitionCount = -1
+    val cacheShard = new FetchSessionCacheShard(2, 1000, Int.MaxValue, 0, new FetchSessionCacheShard.SessionRemovalListener {
+      override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+        removedSessionId = sessionId
+        removedPartitionCount = partitions.size
+      }
+    })
+    val createdSessionId = cacheShard.maybeCreateSession(
+      now = 0,
+      privileged = false,
+      size = 3,
+      usesTopicIds = true,
+      createPartitions = () => dummyCreate(3)
+    )
+    assertTrue(createdSessionId > 0)
+
+    cacheShard.remove(createdSessionId)
+    assertEquals(createdSessionId, removedSessionId)
+    assertEquals(3, removedPartitionCount)
+  }
 }
 
 object FetchSessionTest {

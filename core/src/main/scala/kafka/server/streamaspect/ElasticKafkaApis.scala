@@ -29,7 +29,7 @@ import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
@@ -100,6 +100,7 @@ class ElasticKafkaApis(
     BrokerExtensionHandleDispatcher.load(context)
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+  private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -639,6 +640,11 @@ class ElasticKafkaApis(
       }
     }
 
+    val requestSessionId = fetchRequest.metadata.sessionId
+    val requestFetchOffsets = interesting.map { case (tp, partitionData) =>
+      tp -> partitionData.fetchOffset
+    }.toMap
+
     // the callback for process a fetch response, invoked before throttling
     def processResponseCallback(responsePartitionData: Seq[(TopicIdPartition, FetchPartitionData)]): Unit = {
       val partitions = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]
@@ -646,6 +652,12 @@ class ElasticKafkaApis(
       val nodeEndpoints = new mutable.HashMap[Int, Node]
       val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
       responsePartitionData.foreach { case (tp, data) =>
+        notifyFetchListener(
+          tp.topicPartition(),
+          if (requestSessionId == JFetchMetadata.INVALID_SESSION_ID) FetchListener.NONE_SESSION_ID else requestSessionId,
+          requestFetchOffsets.getOrElse(tp, -1L),
+          data.records
+        )
         val abortedTransactions = data.abortedTransactions.orElse(null)
         val lastStableOffset: Long = data.lastStableOffset.orElse(FetchResponse.INVALID_LAST_STABLE_OFFSET)
         if (data.isReassignmentFetch) reassigningPartitions.add(tp)
@@ -883,6 +895,42 @@ class ElasticKafkaApis(
 
   def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
     this.snapshotAwaitReadySupplier = supplier
+  }
+
+  def setFetchListener(fetchListener: FetchListener): Unit = {
+    this.fetchListener = if (fetchListener == null) FetchListener.NOOP else fetchListener
+  }
+
+  private def notifyFetchListener(topicPartition: TopicPartition,
+                                  sessionId: Int,
+                                  fetchOffset: Long,
+                                  records: Records): Unit = {
+    val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
+    try {
+      fetchListener.onFetch(topicPartition, sessionId, reportedOffset, timestamp)
+    } catch {
+      case e: Exception =>
+        error(s"Error while notifying fetch listener for partition $topicPartition and session $sessionId", e)
+    }
+  }
+
+  private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {
+    if (records == null) {
+      (defaultOffset, RecordBatch.NO_TIMESTAMP)
+    } else {
+      val batches = records.batches().iterator()
+      if (!batches.hasNext) {
+        (defaultOffset, RecordBatch.NO_TIMESTAMP)
+      } else {
+        var lastBatch = batches.next()
+        while (batches.hasNext) {
+          lastBatch = batches.next()
+        }
+        // TODO: If business logic requires the exact timestamp of the last record,
+        // iterate records in lastBatch and extract the final record timestamp.
+        (lastBatch.lastOffset(), lastBatch.maxTimestamp())
+      }
+    }
   }
 
   private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {

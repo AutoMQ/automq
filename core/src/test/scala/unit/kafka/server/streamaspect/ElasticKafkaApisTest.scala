@@ -5,7 +5,7 @@ import kafka.network.RequestChannel
 import kafka.server._
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache, MockConfigRepository, ZkMetadataCache}
 import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -98,7 +98,8 @@ class ElasticKafkaApisTest extends KafkaApisTest {
     enableForwarding: Boolean = false,
     configRepository: ConfigRepository = new MockConfigRepository(),
     raftSupport: Boolean = false,
-    overrideProperties: Map[String, String] = Map.empty): ElasticKafkaApis = {
+    overrideProperties: Map[String, String] = Map.empty,
+    fetchListener: FetchListener = null): ElasticKafkaApis = {
     val properties = if (raftSupport) {
       val properties = TestUtils.createBrokerConfig(brokerId, "")
       properties.put(KRaftConfigs.NODE_ID_CONFIG, brokerId.toString)
@@ -150,7 +151,7 @@ class ElasticKafkaApisTest extends KafkaApisTest {
 
     val clientMetricsManagerOpt = if (raftSupport) Some(clientMetricsManager) else None
 
-    new ElasticKafkaApis(
+    val kafkaApis = new ElasticKafkaApis(
       requestChannel = requestChannel,
       metadataSupport = metadataSupport,
       replicaManager = replicaManager,
@@ -179,6 +180,8 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       override protected def createBrokerExtensionHandleDispatcher(ops: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
         brokerDispatcherFactoryOverride.map(_(ops)).getOrElse(super.createBrokerExtensionHandleDispatcher(ops))
     }
+    kafkaApis.setFetchListener(fetchListener)
+    kafkaApis
   }
 
   private def withExtensionHooks[T](

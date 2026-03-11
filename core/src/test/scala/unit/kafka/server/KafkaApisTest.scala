@@ -25,7 +25,7 @@ import kafka.log.UnifiedLog
 import kafka.network.{RequestChannel, RequestMetrics}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache, MockConfigRepository, ZkMetadataCache}
-import kafka.server.streamaspect.BrokerQuotaManager
+import kafka.server.streamaspect.{BrokerQuotaManager, ElasticKafkaApis, FetchListener}
 import kafka.utils.{CoreUtils, Log4jController, Logging, TestUtils}
 import kafka.zk.KafkaZkClient
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType
@@ -87,6 +87,7 @@ import org.apache.kafka.server.metrics.ClientMetricsTestUtils
 import org.apache.kafka.server.util.{FutureUtils, MockTime}
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchParams, FetchPartitionData, LogConfig}
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.{AfterEach, Test}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.{CsvSource, EnumSource, ValueSource}
@@ -158,7 +159,8 @@ class KafkaApisTest extends Logging {
                       enableForwarding: Boolean = false,
                       configRepository: ConfigRepository = new MockConfigRepository(),
                       raftSupport: Boolean = false,
-                      overrideProperties: Map[String, String] = Map.empty): KafkaApis = {
+                      overrideProperties: Map[String, String] = Map.empty,
+                      fetchListener: FetchListener = null): KafkaApis = {
     val properties = if (raftSupport) {
       val properties = TestUtils.createBrokerConfig(brokerId, "")
       properties.put(KRaftConfigs.NODE_ID_CONFIG, brokerId.toString)
@@ -4570,6 +4572,159 @@ class KafkaApisTest extends Logging {
     val node = response.data.nodeEndpoints.asScala.head
     assertEquals(2, node.nodeId)
     assertEquals("broker2", node.host)
+  }
+
+  @Test
+  def testElasticFetchListenerUsesNoneSessionIdForSessionlessFetch(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val tidp = new TopicIdPartition(topicId, new TopicPartition("foo", 0))
+    val tp = tidp.topicPartition
+    addTopicToMetadataCache(tp.topic, numPartitions = 1, topicId = topicId)
+    when(replicaManager.getLogConfig(ArgumentMatchers.eq(tp))).thenReturn(None)
+
+    val listener = mock(classOf[FetchListener])
+    kafkaApis = createKafkaApis(fetchListener = listener)
+    assumeTrue(kafkaApis.isInstanceOf[ElasticKafkaApis])
+    when(replicaManager.fetchMessages(
+      any[FetchParams],
+      any[Seq[(TopicIdPartition, FetchRequest.PartitionData)]],
+      any[ReplicaQuota],
+      any[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]()
+    )).thenAnswer(invocation => {
+      val callback = invocation.getArgument(3).asInstanceOf[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]
+      callback(Seq(tidp -> new FetchPartitionData(
+        Errors.NONE,
+        3,
+        0,
+        MemoryRecords.EMPTY,
+        Optional.empty(),
+        OptionalLong.empty(),
+        Optional.empty(),
+        OptionalInt.empty(),
+        false
+      )))
+    })
+
+    val fetchData = Map(tidp -> new FetchRequest.PartitionData(topicId, 0, 0, 1000, Optional.empty())).asJava
+    val fetchDataBuilder = Map(tp -> new FetchRequest.PartitionData(topicId, 0, 0, 1000, Optional.empty())).asJava
+    val fetchMetadata = new JFetchMetadata(0, 0)
+    val fetchContext = new FullFetchContext(time, new FetchSessionCacheShard(1000, 100),
+      fetchMetadata, fetchData, true, false)
+    when(fetchManager.newContext(
+      any[Short],
+      any[JFetchMetadata],
+      any[Boolean],
+      any[util.Map[TopicIdPartition, FetchRequest.PartitionData]],
+      any[util.List[TopicIdPartition]],
+      any[util.Map[Uuid, String]])).thenReturn(fetchContext)
+
+    when(clientQuotaManager.maybeRecordAndGetThrottleTimeMs(
+      any[RequestChannel.Request](), anyDouble, anyLong)).thenReturn(0)
+
+    val fetchRequest = new FetchRequest.Builder(16, 16, -1, -1, 100, 0, fetchDataBuilder)
+      .metadata(fetchMetadata)
+      .build()
+    val request = buildRequest(fetchRequest)
+    kafkaApis.handleFetchRequest(request)
+    verifyNoThrottling[FetchResponse](request)
+
+    verify(listener).onFetch(
+      ArgumentMatchers.eq(tp),
+      ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
+      ArgumentMatchers.eq(0L),
+      ArgumentMatchers.eq(RecordBatch.NO_TIMESTAMP)
+    )
+  }
+
+  @Test
+  def testElasticFetchListenerReportsLastBatchOffsetAndTimestamp(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val tidp = new TopicIdPartition(topicId, new TopicPartition("foo", 0))
+    val tp = tidp.topicPartition
+    addTopicToMetadataCache(tp.topic, numPartitions = 1, topicId = topicId)
+    when(replicaManager.getLogConfig(ArgumentMatchers.eq(tp))).thenReturn(None)
+
+    val listener = mock(classOf[FetchListener])
+    kafkaApis = createKafkaApis(fetchListener = listener)
+    assumeTrue(kafkaApis.isInstanceOf[ElasticKafkaApis])
+    val records = MemoryRecords.withRecords(
+      10L,
+      Compression.NONE,
+      new SimpleRecord(1111L, "k1".getBytes(StandardCharsets.UTF_8), "v1".getBytes(StandardCharsets.UTF_8))
+    )
+    when(replicaManager.fetchMessages(
+      any[FetchParams],
+      any[Seq[(TopicIdPartition, FetchRequest.PartitionData)]],
+      any[ReplicaQuota],
+      any[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]()
+    )).thenAnswer(invocation => {
+      val callback = invocation.getArgument(3).asInstanceOf[Seq[(TopicIdPartition, FetchPartitionData)] => Unit]
+      callback(Seq(tidp -> new FetchPartitionData(
+        Errors.NONE,
+        3,
+        0,
+        records,
+        Optional.empty(),
+        OptionalLong.empty(),
+        Optional.empty(),
+        OptionalInt.empty(),
+        false
+      )))
+    })
+
+    val fetchData = Map(tidp -> new FetchRequest.PartitionData(topicId, 0, 0, 1000, Optional.empty())).asJava
+    val fetchDataBuilder = Map(tp -> new FetchRequest.PartitionData(topicId, 0, 0, 1000, Optional.empty())).asJava
+    val fetchMetadata = new JFetchMetadata(0, 0)
+    val fetchContext = new FullFetchContext(time, new FetchSessionCacheShard(1000, 100),
+      fetchMetadata, fetchData, true, false)
+    when(fetchManager.newContext(
+      any[Short],
+      any[JFetchMetadata],
+      any[Boolean],
+      any[util.Map[TopicIdPartition, FetchRequest.PartitionData]],
+      any[util.List[TopicIdPartition]],
+      any[util.Map[Uuid, String]])).thenReturn(fetchContext)
+
+    when(clientQuotaManager.maybeRecordAndGetThrottleTimeMs(
+      any[RequestChannel.Request](), anyDouble, anyLong)).thenReturn(0)
+
+    val fetchRequest = new FetchRequest.Builder(16, 16, -1, -1, 100, 0, fetchDataBuilder)
+      .metadata(fetchMetadata)
+      .build()
+    val request = buildRequest(fetchRequest)
+    kafkaApis.handleFetchRequest(request)
+    verifyNoThrottling[FetchResponse](request)
+
+    verify(listener).onFetch(
+      ArgumentMatchers.eq(tp),
+      ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
+      ArgumentMatchers.eq(10L),
+      ArgumentMatchers.eq(1111L)
+    )
+  }
+
+  @Test
+  def testElasticFetchListenerNotifiesSessionClosedForEachPartition(): Unit = {
+    val listener = mock(classOf[FetchListener])
+    val cacheShard = new FetchSessionCacheShard(10, 1000, Int.MaxValue, 0, new FetchSessionCacheShard.SessionRemovalListener {
+      override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+        partitions.forEach { partition =>
+          listener.onSessionClosed(new TopicPartition(partition.topic, partition.partition), sessionId)
+        }
+      }
+    })
+    val sessionId = cacheShard.maybeCreateSession(0, privileged = false, size = 2, usesTopicIds = true, () => {
+      val partitions = new FetchSession.CACHE_MAP(2)
+      partitions.add(new CachedPartition("foo", Uuid.randomUuid(), 0))
+      partitions.add(new CachedPartition("foo", Uuid.randomUuid(), 1))
+      partitions
+    })
+    assertTrue(sessionId > 0)
+
+    cacheShard.remove(sessionId)
+
+    verify(listener).onSessionClosed(new TopicPartition("foo", 0), sessionId)
+    verify(listener).onSessionClosed(new TopicPartition("foo", 1), sessionId)
   }
 
   @ParameterizedTest
