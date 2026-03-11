@@ -18,6 +18,7 @@
 package kafka.server
 
 import com.automq.stream.s3.S3Storage
+import com.automq.stream.utils.Threads
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -33,7 +34,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
+import kafka.server.streamaspect.{AsyncFetchListener, ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.clients.admin.ClusterEventPublisher
 import org.apache.kafka.common.config.ConfigException
@@ -60,13 +61,14 @@ import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerSer
 import org.apache.kafka.server.util.timer.{SystemTimer, SystemTimerReaper}
 import org.apache.kafka.server.util.{Deadline, FutureUtils, KafkaScheduler}
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel
+import org.slf4j.LoggerFactory
 
 import java.time.Duration
 import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, TimeUnit, TimeoutException}
+import java.util.concurrent.{CompletableFuture, ExecutionException, ExecutorService, TimeUnit, TimeoutException}
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -167,6 +169,7 @@ class BrokerServer(
   var routerChannelProvider: RouterChannelProvider = _
   var confirmWALProvider: ConfirmWALProvider = _
   var trafficInterceptor: TrafficInterceptor = _
+  var fetchListenerExecutor: ExecutorService = _
 
   var backPressureManager: BackPressureManager = _
 
@@ -428,16 +431,18 @@ class BrokerServer(
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
       // AutoMQ inject start
       val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
+      fetchListenerExecutor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
+        1,
+        "fetch-listener-executor",
+        true,
+        LoggerFactory.getLogger(classOf[BrokerServer])
+      )
+      val asyncFetchListener = new AsyncFetchListener(fetchListener, fetchListenerExecutor)
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
           partitions.forEach { part =>
             val topicPartition = new TopicPartition(part.topic, part.partition)
-            try {
-              fetchListener.onSessionClosed(topicPartition, sessionId)
-            } catch {
-              case e: Exception =>
-                error(s"Error while notifying fetch session close for partition $topicPartition and session $sessionId", e)
-            }
+            asyncFetchListener.onSessionClosed(topicPartition, sessionId)
           }
         }
       }
@@ -614,7 +619,7 @@ class BrokerServer(
       trafficInterceptor = newTrafficInterceptor()
       val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
       elasticKafkaApis.setTrafficInterceptor(trafficInterceptor)
-      elasticKafkaApis.setFetchListener(fetchListener)
+      elasticKafkaApis.setFetchListener(asyncFetchListener)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
       replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
 
@@ -766,6 +771,9 @@ class BrokerServer(
           CoreUtils.swallow(routerChannelProvider.close(), this)
         }
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
+      }
+      if (fetchListenerExecutor != null) {
+        CoreUtils.swallow(fetchListenerExecutor.shutdown(), this)
       }
       // AutoMQ for Kafka inject end
 

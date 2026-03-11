@@ -89,7 +89,6 @@ class ElasticKafkaApis(
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
 
   private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
-  private val fetchListenerExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "kafka-apis-fetch-listener-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
@@ -907,19 +906,7 @@ class ElasticKafkaApis(
                                   fetchOffset: Long,
                                   records: Records): Unit = {
     val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
-    try {
-      fetchListenerExecutor.execute(() => {
-        try {
-          fetchListener.onFetch(topicPartition, sessionId, reportedOffset, timestamp)
-        } catch {
-          case e: Exception =>
-            error(s"Error while notifying fetch listener for partition $topicPartition and session $sessionId", e)
-        }
-      })
-    } catch {
-      case e: Exception =>
-        error(s"Error while notifying fetch listener for partition $topicPartition and session $sessionId", e)
-    }
+    fetchListener.onFetch(topicPartition, sessionId, reportedOffset, timestamp)
   }
 
   private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {
