@@ -1991,6 +1991,7 @@ class FetchSessionTest {
     }
   }
 
+  // AutoMQ inject start
   @Test
   def testFetchSessionCacheShardNotifiesRemovalListeners(): Unit = {
     var removedSessionId = -1
@@ -2014,6 +2015,7 @@ class FetchSessionTest {
     assertEquals(createdSessionId, removedSessionId)
     assertEquals(3, removedPartitionCount)
   }
+  // AutoMQ inject end
 }
 
 object FetchSessionTest {

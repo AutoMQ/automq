@@ -160,7 +160,10 @@ class KafkaApisTest extends Logging {
                       configRepository: ConfigRepository = new MockConfigRepository(),
                       raftSupport: Boolean = false,
                       overrideProperties: Map[String, String] = Map.empty,
-                      fetchListener: FetchListener = null): KafkaApis = {
+                      // AutoMQ inject start
+                      fetchListener: FetchListener = null
+                      // AutoMQ inject end
+                     ): KafkaApis = {
     val properties = if (raftSupport) {
       val properties = TestUtils.createBrokerConfig(brokerId, "")
       properties.put(KRaftConfigs.NODE_ID_CONFIG, brokerId.toString)
@@ -4574,6 +4577,7 @@ class KafkaApisTest extends Logging {
     assertEquals("broker2", node.host)
   }
 
+  // AutoMQ inject start
   @Test
   def testElasticFetchListenerUsesNoneSessionIdForSessionlessFetch(): Unit = {
     val topicId = Uuid.randomUuid()
@@ -4726,6 +4730,7 @@ class KafkaApisTest extends Logging {
     verify(listener).onSessionClosed(new TopicPartition("foo", 0), sessionId)
     verify(listener).onSessionClosed(new TopicPartition("foo", 1), sessionId)
   }
+  // AutoMQ inject end
 
   @ParameterizedTest
   @ApiKeyVersionsSource(apiKey = ApiKeys.JOIN_GROUP)
