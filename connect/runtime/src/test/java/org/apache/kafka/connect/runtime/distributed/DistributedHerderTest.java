@@ -141,6 +141,7 @@ import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -1046,6 +1047,8 @@ public class DistributedHerderTest {
         time.sleep(1000L);
         assertStatistics("leaderUrl", true, 3, 1, 100, 2100L);
 
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore, putConnectorCallback);
 
         assertEquals(
@@ -1095,6 +1098,8 @@ public class DistributedHerderTest {
         verify(worker, times(2)).startConnector(eq(CONN1), any(), any(), eq(herder), eq(TargetState.STARTED), any());
         verify(worker, times(2)).connectorTaskConfigs(eq(CONN1), any());
         verify(worker).stopAndAwaitConnector(CONN1);
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore);
     }
 
@@ -2132,6 +2137,8 @@ public class DistributedHerderTest {
         herder.tick();
 
         verify(configBackingStore, times(2)).refresh(anyLong(), any(TimeUnit.class));
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore);
     }
 
@@ -2208,6 +2215,8 @@ public class DistributedHerderTest {
         herder.tick();
         assertEquals(before + coordinatorDiscoveryTimeoutMs, time.milliseconds());
 
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore);
     }
 
@@ -2292,6 +2301,8 @@ public class DistributedHerderTest {
 
         herder.tick();
 
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore);
     }
 
@@ -2433,6 +2444,8 @@ public class DistributedHerderTest {
 
         // Once after initial rebalance and assignment; another after config update
         verify(worker, times(2)).startConnector(eq(CONN1), any(), any(), eq(herder), eq(TargetState.STARTED), any());
+        // KAFKA-17719: task configs are always rewritten to prevent compaction reorder
+        verify(configBackingStore, atLeast(0)).putTaskConfigs(any(), any());
         verifyNoMoreInteractions(worker, member, configBackingStore, statusBackingStore);
     }
 

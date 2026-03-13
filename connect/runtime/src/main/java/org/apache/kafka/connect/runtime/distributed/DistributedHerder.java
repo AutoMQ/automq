@@ -2258,8 +2258,12 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
 
     private void publishConnectorTaskConfigs(String connName, List<Map<String, String>> taskProps, Callback<Void> cb) {
         List<Map<String, String>> rawTaskProps = reverseTransform(connName, configState, taskProps);
-        if (!taskConfigsChanged(configState, connName, rawTaskProps)) {
-            return;
+        // KAFKA-17719: Always rewrite task configs to the config topic, even if unchanged.
+        // This ensures task config offsets are always greater than the connector config offset,
+        // preventing log compaction from reordering records into TCC order (task-commit-connector)
+        // which would cause task configs to be lost on worker restart.
+        if (log.isDebugEnabled() && !taskConfigsChanged(configState, connName, rawTaskProps)) {
+            log.debug("Task configs for connector '{}' are unchanged, but rewriting to prevent compaction reorder (KAFKA-17719)", connName);
         }
 
         if (isLeader()) {
