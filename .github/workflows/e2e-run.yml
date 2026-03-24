@@ -53,6 +53,7 @@ on:
 jobs:
   run_e2e:
     name: "Run E2E tests"
+    timeout-minutes: 2880
     runs-on: ${{ inputs.runner }}
     # Map the job outputs to step outputs
     outputs:
