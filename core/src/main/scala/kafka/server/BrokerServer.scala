@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.automq.stream.s3.S3Storage
-import com.automq.stream.utils.Threads
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -61,14 +60,14 @@ import org.apache.kafka.server.network.{EndpointReadyFutures, KafkaAuthorizerSer
 import org.apache.kafka.server.util.timer.{SystemTimer, SystemTimerReaper}
 import org.apache.kafka.server.util.{Deadline, FutureUtils, KafkaScheduler}
 import org.apache.kafka.storage.internals.log.LogDirFailureChannel
-import org.slf4j.LoggerFactory
 
 import java.time.Duration
 import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, ExecutorService, TimeUnit, TimeoutException}
+import java.util.concurrent.{CompletableFuture, ExecutionException, ExecutorService, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit, TimeoutException}
+import org.apache.kafka.common.utils.ThreadUtils
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -431,19 +430,26 @@ class BrokerServer(
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
       // AutoMQ inject start
       val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
-      fetchListenerExecutor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
-        1,
-        "fetch-listener-executor",
-        true,
-        LoggerFactory.getLogger(classOf[BrokerServer])
+      fetchListenerExecutor = new ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        new LinkedBlockingQueue[Runnable](1024),
+        ThreadUtils.createThreadFactory("fetch-listener-executor", true),
+        new ThreadPoolExecutor.DiscardOldestPolicy()
       )
       val asyncFetchListener = new AsyncFetchListener(fetchListener, fetchListenerExecutor)
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
-          partitions.forEach { part =>
-            val topicPartition = new TopicPartition(part.topic, part.partition)
-            asyncFetchListener.onSessionClosed(topicPartition, sessionId)
-          }
+          fetchListenerExecutor.execute(() => {
+            partitions.forEach { part =>
+              val topicPartition = new TopicPartition(part.topic, part.partition)
+              try {
+                fetchListener.onSessionClosed(topicPartition, sessionId)
+              } catch {
+                case e: Exception =>
+                  logger.error(s"Error in session close listener for partition $topicPartition and session $sessionId", e)
+              }
+            }
+          })
         }
       }
       // AutoMQ inject end
