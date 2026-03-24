@@ -21,6 +21,7 @@ package kafka.server.streamaspect
 
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
+import kafka.server.FetchSession
 
 import java.util.concurrent.ExecutorService
 
@@ -59,6 +60,29 @@ class AsyncFetchListener(
     } catch {
       case e: Exception =>
         error(s"Failed to submit session close task for partition $topicPartition and session $sessionId", e)
+    }
+  }
+
+  /**
+   * Batch version of onSessionClosed — submits a single task to the executor
+   * that iterates all partitions, minimizing lock hold time when called from
+   * within a synchronized block.
+   */
+  def onSessionClosedBatch(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+    try {
+      executor.execute(() => {
+        partitions.forEach { part =>
+          try {
+            delegate.onSessionClosed(new TopicPartition(part.topic, part.partition), sessionId)
+          } catch {
+            case e: Exception =>
+              error(s"Error in session close listener for partition ${part.topic}-${part.partition} and session $sessionId", e)
+          }
+        }
+      })
+    } catch {
+      case e: Exception =>
+        error(s"Failed to submit batch session close task for session $sessionId", e)
     }
   }
 }
