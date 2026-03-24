@@ -53,6 +53,7 @@ public class SaslClientCallbackHandler implements AuthenticateCallbackHandler {
         this.mechanism  = saslMechanism;
     }
 
+    @SuppressWarnings("removal")
     @Override
     public void handle(Callback[] callbacks) throws UnsupportedCallbackException {
         Subject subject = Subject.getSubject(AccessController.getContext());

@@ -264,10 +264,7 @@ subprojects {
       options.compilerArgs << "-Xlint:-rawtypes"
     options.compilerArgs << "-Xlint:-serial"
     options.compilerArgs << "-Xlint:-try"
-    // AutoMQ inject start
-    // TODO: remove me, when upgrade to 4.x
-//    options.compilerArgs << "-Werror"
-    // AutoMQ inject start
+    options.compilerArgs << "-Werror"
 
     // --release is the recommended way to select the target release, but it's only supported in Java 9 so we also
     // set --source and --target via `sourceCompatibility` and `targetCompatibility` a couple of lines below

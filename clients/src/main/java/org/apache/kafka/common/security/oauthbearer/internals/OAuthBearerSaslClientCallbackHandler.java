@@ -75,6 +75,7 @@ public class OAuthBearerSaslClientCallbackHandler implements AuthenticateCallbac
         configured = true;
     }
 
+    @SuppressWarnings("removal")
     @Override
     public void handle(Callback[] callbacks) throws IOException, UnsupportedCallbackException {
         if (!configured())
@@ -94,6 +95,7 @@ public class OAuthBearerSaslClientCallbackHandler implements AuthenticateCallbac
         // empty
     }
 
+    @SuppressWarnings("removal")
     private void handleCallback(OAuthBearerTokenCallback callback) throws IOException {
         if (callback.token() != null)
             throw new IllegalArgumentException("Callback had a token already");
