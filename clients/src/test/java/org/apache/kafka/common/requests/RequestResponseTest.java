@@ -358,7 +358,6 @@ public class RequestResponseTest {
         ApiKeys.AUTOMQ_GET_NODES,
         ApiKeys.AUTOMQ_ZONE_ROUTER,
         ApiKeys.AUTOMQ_UPDATE_GROUP,
-        ApiKeys.AUTOMQ_GET_OFFSET_TIMESTAMPS,
         ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT,
         ApiKeys.UPDATE_LICENSE,
         ApiKeys.DESCRIBE_LICENSE,
