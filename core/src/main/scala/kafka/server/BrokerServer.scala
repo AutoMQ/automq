@@ -489,6 +489,7 @@ class BrokerServer(
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager))
+      dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setEnterpriseFacade(newEnterpriseBrokerFacade())
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
@@ -942,6 +943,10 @@ class BrokerServer(
   // AutoMQ inject start
   protected def newFetchListener(): FetchListener = {
     FetchListener.NOOP
+  }
+
+  protected def newEnterpriseBrokerFacade(): AnyRef = {
+    null
   }
   // AutoMQ inject end
 

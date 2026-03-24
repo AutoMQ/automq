@@ -54,6 +54,7 @@ class BrokerExtensionHandleContractsTest {
       override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit = ()
       override def getTopicName(topicId: Uuid): Optional[String] = Optional.empty()
       override def getPartition(topicPartition: TopicPartition): HostedPartition = HostedPartition.None
+      override def enterpriseFacade(): AnyRef = null
     })
     assert(initialized)
   }

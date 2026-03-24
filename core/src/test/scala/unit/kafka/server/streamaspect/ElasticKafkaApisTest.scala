@@ -20,7 +20,7 @@ import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
 import org.apache.kafka.server.config.KRaftConfigs
-import org.junit.jupiter.api.Assertions.{assertEquals, assertNotNull, assertTrue}
+import org.junit.jupiter.api.Assertions.{assertEquals, assertNotNull, assertSame, assertTrue}
 import org.junit.jupiter.api.{Tag, Test, Timeout}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{doReturn, mock, never, spy, verify, when}
@@ -119,6 +119,27 @@ class ElasticKafkaApisTest extends KafkaApisTest {
 
     assertEquals(Optional.of("test-topic"), capturedContext.getTopicName(topicId))
     assertEquals(HostedPartition.Online(partition), capturedContext.getPartition(tp))
+  }
+
+  @Test
+  def shouldExposeEnterpriseFacadeViaExtensionContext(): Unit = {
+    val facade = new Object()
+    var capturedContext: BrokerExtensionContext = null
+
+    withExtensionHooks(
+      _ == ApiKeys.FETCH,
+      ops => {
+        capturedContext = ops
+        (_: RequestChannel.Request, _: RequestLocal) => BrokerExtensionHandleDispatcher.Handled
+      }) {
+      val elasticKafkaApis = createKafkaApis()
+      kafkaApis = elasticKafkaApis
+      elasticKafkaApis.setEnterpriseFacade(facade)
+      val request = buildRequest(new FetchRequest(new FetchRequestData(), ApiKeys.FETCH.latestVersion))
+      kafkaApis.handle(request, RequestLocal.NoCaching)
+    }
+
+    assertSame(facade, capturedContext.enterpriseFacade())
   }
 
   override def createKafkaApis(interBrokerProtocolVersion: MetadataVersion = MetadataVersion.latestTesting,

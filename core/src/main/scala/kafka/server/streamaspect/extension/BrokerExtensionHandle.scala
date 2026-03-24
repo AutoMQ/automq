@@ -66,6 +66,8 @@ trait BrokerExtensionContext {
   def getTopicName(topicId: Uuid): Optional[String]
 
   def getPartition(topicPartition: TopicPartition): HostedPartition
+
+  def enterpriseFacade(): AnyRef
 }
 
 trait BrokerExtensionHandleDispatcher {

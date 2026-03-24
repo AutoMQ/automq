@@ -92,6 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  @volatile private var enterpriseFacadeRef: AnyRef = null
   private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
   private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
     createBrokerExtensionHandleDispatcher(brokerExtensionContext)
@@ -901,10 +902,19 @@ class ElasticKafkaApis(
     this.fetchListener = if (fetchListener == null) FetchListener.NOOP else fetchListener
   }
 
+  def setEnterpriseFacade(enterpriseFacade: AnyRef): Unit = {
+    this.enterpriseFacadeRef = enterpriseFacade
+  }
+
+  private[streamaspect] def enterpriseFacade(): AnyRef = {
+    enterpriseFacadeRef
+  }
+
   private def notifyFetchListener(topicPartition: TopicPartition,
                                   sessionId: Int,
                                   fetchOffset: Long,
                                   records: Records): Unit = {
+    if (fetchListener eq FetchListener.NOOP) return
     val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
     fetchListener.onFetch(topicPartition, sessionId, reportedOffset, timestamp)
   }
@@ -921,8 +931,6 @@ class ElasticKafkaApis(
         while (batches.hasNext) {
           lastBatch = batches.next()
         }
-        // TODO: If business logic requires the exact timestamp of the last record,
-        // iterate records in lastBatch and extract the final record timestamp.
         (lastBatch.lastOffset(), lastBatch.maxTimestamp())
       }
     }
@@ -955,6 +963,9 @@ class ElasticKafkaApis(
 
     override def getPartition(topicPartition: TopicPartition): HostedPartition =
       replicaManager.getPartition(topicPartition)
+
+    override def enterpriseFacade(): AnyRef =
+      ElasticKafkaApis.this.enterpriseFacade()
   }
 
 }
