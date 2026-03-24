@@ -780,6 +780,7 @@ class BrokerServer(
       }
       if (fetchListenerExecutor != null) {
         CoreUtils.swallow(fetchListenerExecutor.shutdown(), this)
+        CoreUtils.swallow(fetchListenerExecutor.awaitTermination(5, TimeUnit.SECONDS), this)
       }
       // AutoMQ for Kafka inject end
 

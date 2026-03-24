@@ -35,6 +35,7 @@ public class InterBrokerAsyncSender implements AsyncSender {
     private final SendThread sendThread;
     private final ConcurrentLinkedQueue<PendingRequest> pendingRequests = new ConcurrentLinkedQueue<>();
     private final Time time;
+    private volatile boolean closed = false;
 
     // Package-private: tests use this to avoid starting the thread
     InterBrokerAsyncSender(String name, KafkaClient networkClient, int requestTimeoutMs, Time time) {
@@ -53,6 +54,11 @@ public class InterBrokerAsyncSender implements AsyncSender {
     public <T extends AbstractRequest> CompletableFuture<ClientResponse> sendRequest(
         Node node, AbstractRequest.Builder<T> requestBuilder
     ) {
+        if (closed) {
+            CompletableFuture<ClientResponse> future = new CompletableFuture<>();
+            future.completeExceptionally(new IllegalStateException("InterBrokerAsyncSender is closed"));
+            return future;
+        }
         CompletableFuture<ClientResponse> future = new CompletableFuture<>();
         PendingRequest request = new PendingRequest(node, requestBuilder, future, time.milliseconds());
         pendingRequests.offer(request);
@@ -62,6 +68,7 @@ public class InterBrokerAsyncSender implements AsyncSender {
 
     @Override
     public void close() {
+        closed = true;
         try {
             sendThread.shutdown();
         } catch (InterruptedException e) {
