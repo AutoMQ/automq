@@ -100,7 +100,7 @@ class ElasticKafkaApis(
     BrokerExtensionHandleDispatcher.load(context)
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
-  private var fetchListener: FetchListener = FetchListener.NOOP
+  @volatile private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.

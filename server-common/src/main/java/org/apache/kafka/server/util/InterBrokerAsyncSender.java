@@ -67,6 +67,12 @@ public class InterBrokerAsyncSender implements AsyncSender {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+        // Drain pending requests and fail their futures so callers are not stuck waiting
+        PendingRequest pending;
+        while ((pending = pendingRequests.poll()) != null) {
+            pending.future.completeExceptionally(
+                new IllegalStateException("InterBrokerAsyncSender is closed"));
+        }
     }
 
     void pollOnce(long maxTimeoutMs) {

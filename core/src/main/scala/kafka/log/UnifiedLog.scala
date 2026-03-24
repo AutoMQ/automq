@@ -912,8 +912,8 @@ class UnifiedLog(@volatile var logStartOffset: Long,
               // ProducerStateManager will not be updated and the last stable offset will not advance
               // if the append to the transaction index fails.
               localLog.append(appendInfo.lastOffset, validRecords)
-              if (appendInfo.maxTimestamp >= 0 && appendInfo.shallowOffsetOfMaxTimestamp >= 0) {
-                _latestAppendState = Some(LatestAppendState(appendInfo.shallowOffsetOfMaxTimestamp, appendInfo.maxTimestamp))
+              if (appendInfo.maxTimestamp >= 0 && appendInfo.lastOffset >= 0) {
+                _latestAppendState = Some(LatestAppendState(appendInfo.lastOffset, appendInfo.maxTimestamp))
               }
               updateHighWatermarkWithLogEndOffset()
 
@@ -1699,7 +1699,7 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   /**
    * The latest append-time sparse sample from the most recent successful append.
    *
-   * maxTimestampOffset is sourced from LogAppendInfo.shallowOffsetOfMaxTimestamp.
+   * maxTimestampOffset is sourced from LogAppendInfo.lastOffset.
    * maxTimestamp is sourced from LogAppendInfo.maxTimestamp.
    */
   def latestAppendState: Option[LatestAppendState] = _latestAppendState
