@@ -439,17 +439,7 @@ class BrokerServer(
       val asyncFetchListener = new AsyncFetchListener(fetchListener, fetchListenerExecutor)
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
-          fetchListenerExecutor.execute(() => {
-            partitions.forEach { part =>
-              val topicPartition = new TopicPartition(part.topic, part.partition)
-              try {
-                fetchListener.onSessionClosed(topicPartition, sessionId)
-              } catch {
-                case e: Exception =>
-                  logger.error(s"Error in session close listener for partition $topicPartition and session $sessionId", e)
-              }
-            }
-          })
+          asyncFetchListener.onSessionClosedBatch(sessionId, partitions)
         }
       }
       // AutoMQ inject end
