@@ -2352,7 +2352,6 @@ project(':automq-metrics') {
     api libs.opentelemetryExporterLogging
     api libs.opentelemetryExporterProm
     api libs.opentelemetryExporterOTLP
-    api libs.opentelemetryExporterSenderJdk
     api libs.opentelemetryExporterSenderOkhttp
     api libs.opentelemetryJmx
 
