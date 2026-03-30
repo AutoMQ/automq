@@ -5768,6 +5768,40 @@ public class GroupMetadataManager {
         group.remove(member.memberId());
     }
 
+    // AutoMQ inject start
+    /**
+     * Force-remove all members from a classic group and generate an empty group metadata record.
+     * Used by the force offset commit path.
+     *
+     * @param group   The classic group.
+     * @param records The record list to populate.
+     */
+    public void forceRemoveAllClassicGroupMembers(ClassicGroup group, List<CoordinatorRecord> records) {
+        for (String memberId : new ArrayList<>(group.allMemberIds())) {
+            timer.cancel(classicGroupHeartbeatKey(group.groupId(), memberId));
+            group.remove(memberId);
+        }
+        group.transitionTo(ClassicGroupState.EMPTY);
+        records.add(CoordinatorRecordHelpers.newEmptyGroupMetadataRecord(group, metadataImage.features().metadataVersion()));
+    }
+
+    /**
+     * Force-remove all members from a consumer group and generate tombstone + epoch records.
+     * Used by the force offset commit path.
+     *
+     * @param group   The consumer group.
+     * @param records The record list to populate.
+     */
+    public void forceRemoveAllConsumerGroupMembers(ConsumerGroup group, List<CoordinatorRecord> records) {
+        for (String memberId : new ArrayList<>(group.members().keySet())) {
+            removeMember(records, group.groupId(), memberId);
+            cancelTimers(group.groupId(), memberId);
+        }
+        int groupEpoch = group.groupEpoch() + 1;
+        records.add(CoordinatorRecordHelpers.newGroupEpochRecord(group.groupId(), groupEpoch));
+    }
+    // AutoMQ inject end
+
     /**
      * Handles a DeleteGroups request.
      * Populates the record list passed in with record to update the state machine.
