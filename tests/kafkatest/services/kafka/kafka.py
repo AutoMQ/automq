@@ -1869,6 +1869,15 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         """
         super(KafkaService, self).stop()
         self.delete_data_on_s3()
+        self._cleanup_shared_nfs()
+
+    # AutoMQ inject start
+    def _cleanup_shared_nfs(self):
+        self.logger.info("Cleaning up shared NFS dir /mnt/nfs/0")
+        for node in self.nodes:
+            node.account.ssh("rm -rf /mnt/nfs/0/*", allow_fail=True)
+            break
+    # AutoMQ inject end
 
     def delete_data_on_s3(self, timeout_sec=60):
         """

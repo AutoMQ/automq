@@ -299,17 +299,19 @@ docker_run() {
             -d -t -h "${node}" --network ducknet "${expose_ports}" \
             --memory=${docker_run_memory_limit} --memory-swappiness=1 \
             -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "${kafka_dir}:/opt/kafka-dev" --name "${node}" -- "${image_name}"
+            -v "${kafka_dir}:/opt/kafka-dev" \
+            -v "${shared_nfs_dir}:/mnt/nfs/0" --name "${node}" -- "${image_name}"
     else
-# AutoMQ inject end
         # Invoke docker-run. We need privileged mode to be able to run iptables
         # and mount FUSE filesystems inside the container.  We also need it to
         # run iptables inside the container.
         must_do -v docker run --privileged \
             -d -t -h "${node}" --network ducknet "${expose_ports}" \
             --memory=${docker_run_memory_limit} --memory-swappiness=1 \
-            -v "${kafka_dir}:/opt/kafka-dev" --name "${node}" -- "${image_name}"
+            -v "${kafka_dir}:/opt/kafka-dev" \
+            -v "${shared_nfs_dir}:/mnt/nfs/0" --name "${node}" -- "${image_name}"
     fi
+# AutoMQ inject end
 }
 
 setup_custom_ducktape() {
@@ -420,6 +422,10 @@ attempting to start new ones."
 
     # AutoMQ inject start
     must_do -v docker compose -f ${ducker_dir}/s3/docker-compose.yaml up -d
+
+    # Create a shared tmp dir to be mounted as /mnt/nfs/0 in all containers
+    shared_nfs_dir=$(mktemp -d)
+    echo "ducker_up: created shared NFS dir ${shared_nfs_dir}"
     # AutoMQ for Kafka inject end
 
     # node_hosts should be firstly created to be mounted to the container
