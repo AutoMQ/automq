@@ -1,0 +1,235 @@
+x-automq-common: &automq-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  stop_grace_period: 1m
+  volumes:
+    - ${AUTOMQ_DEV_HOME}:/opt/automq
+    - ./.devbox/config:/config
+  restart: unless-stopped
+  cap_add:
+    - NET_ADMIN
+  environment:
+    - KAFKA_S3_ACCESS_KEY=admin
+    - KAFKA_S3_SECRET_KEY=password
+    - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G}
+    - KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UseZGC -XX:ZCollectionInterval=5
+  depends_on:
+    mc:
+      condition: service_completed_successfully
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-automq-healthcheck: &automq-healthcheck
+  interval: 20s
+  timeout: 20s
+  retries: 5
+  start_period: 20s
+
+services:
+  # ==================== Infrastructure ====================
+  minio:
+    image: minio/minio:RELEASE.2025-05-24T17-08-30Z
+    container_name: minio
+    hostname: warehouse.minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_DOMAIN=minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    command: ["server", "/data", "--console-address", ":9001"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://minio:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  mc:
+    image: minio/mc:RELEASE.2025-05-21T01-59-54Z
+    container_name: mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb --ignore-existing minio/automq-data;
+      /usr/bin/mc mb --ignore-existing minio/automq-ops;
+      /usr/bin/mc mb --ignore-existing minio/warehouse;
+      exit 0;
+      "
+
+  # ==================== AutoMQ Nodes ====================
+  node-0:
+    <<: *automq-common
+    container_name: node-0
+    hostname: node-0
+    profiles: [single, cluster, cluster4, cluster5]
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+      - "5005:5005"
+      - "9999:9999"
+    command:
+      - bash
+      - -c
+      - |
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
+        exec /opt/automq/bin/kafka-server-start.sh /config/node-0.properties
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      <<: *automq-healthcheck
+
+  node-1:
+    <<: *automq-common
+    container_name: node-1
+    hostname: node-1
+    profiles: [cluster, cluster4, cluster5]
+    ports:
+      - "19092:9092"
+      - "19093:9093"
+      - "5006:5005"
+    command:
+      - bash
+      - -c
+      - |
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
+        exec /opt/automq/bin/kafka-server-start.sh /config/node-1.properties
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      <<: *automq-healthcheck
+
+  node-2:
+    <<: *automq-common
+    container_name: node-2
+    hostname: node-2
+    profiles: [cluster, cluster4, cluster5]
+    ports:
+      - "29092:9092"
+      - "29093:9093"
+      - "5007:5005"
+    command:
+      - bash
+      - -c
+      - |
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
+        exec /opt/automq/bin/kafka-server-start.sh /config/node-2.properties
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      <<: *automq-healthcheck
+
+  node-3:
+    <<: *automq-common
+    container_name: node-3
+    hostname: node-3
+    profiles: [cluster4, cluster5]
+    ports:
+      - "39092:9092"
+      - "39093:9093"
+      - "5008:5005"
+    command:
+      - bash
+      - -c
+      - |
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
+        exec /opt/automq/bin/kafka-server-start.sh /config/node-3.properties
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      <<: *automq-healthcheck
+
+  node-4:
+    <<: *automq-common
+    container_name: node-4
+    hostname: node-4
+    profiles: [cluster5]
+    ports:
+      - "49092:9092"
+      - "49093:9093"
+      - "5009:5005"
+    command:
+      - bash
+      - -c
+      - |
+        KAFKA_HEAP_OPTS="$$KAFKA_HEAP_OPTS -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005" JMX_PORT="9999" \
+        exec /opt/automq/bin/kafka-server-start.sh /config/node-4.properties
+    healthcheck:
+      test: ["CMD-SHELL", "KAFKA_JVM_PERFORMANCE_OPTS='' KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' /opt/automq/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"]
+      <<: *automq-healthcheck
+
+  # ==================== TableTopic ====================
+  schema-registry:
+    image: confluentinc/cp-schema-registry:latest
+    container_name: schema-registry
+    hostname: schema-registry
+    profiles: [tabletopic]
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: node-0:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081 || exit 1"]
+      interval: 10s
+      timeout: 60s
+      retries: 30
+
+  rest:
+    image: apache/iceberg-rest-fixture
+    container_name: iceberg-rest
+    hostname: rest
+    profiles: [tabletopic]
+    ports:
+      - "8181:8181"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+      - CATALOG_WAREHOUSE=s3://warehouse/
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8181/v1/config || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # ==================== Analytics ====================
+  spark-iceberg:
+    image: tabulario/spark-iceberg
+    container_name: spark
+    hostname: spark-iceberg
+    profiles: [analytics]
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    ports:
+      - "8888:8888"
+      - "8080:8080"
+
+  trino:
+    image: trinodb/trino:472
+    container_name: trino
+    hostname: trino
+    profiles: [analytics]
+    depends_on:
+      minio:
+        condition: service_healthy
+    ports:
+      - "8090:8080"
+    volumes:
+      - ./config/trino-catalog:/etc/trino/catalog
