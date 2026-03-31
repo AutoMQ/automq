@@ -32,6 +32,9 @@ jobs:
       - name: Install just
         uses: extractions/setup-just@v2
 
+      - name: Install envsubst
+        run: sudo apt-get install -y gettext-base
+
       - name: Validate justfile
         working-directory: devkit
         run: just --list
@@ -95,6 +98,15 @@ jobs:
 
       - uses: extractions/setup-just@v2
 
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
       - name: Gradle build
         run: ./gradlew :core:build :tools:build :shell:build -x test
 
@@ -154,6 +166,15 @@ jobs:
           java-version: 17
 
       - uses: extractions/setup-just@v2
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
 
       - name: Gradle build
         run: ./gradlew :core:build :tools:build :shell:build -x test
