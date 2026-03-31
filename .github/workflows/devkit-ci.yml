@@ -1,9 +1,9 @@
-name: DevBox CI
+name: DevKit CI
 
 on:
   pull_request:
     paths:
-      - 'devbox/**'
+      - 'devkit/**'
   workflow_dispatch:
     inputs:
       level:
@@ -33,11 +33,11 @@ jobs:
         uses: extractions/setup-just@v2
 
       - name: Validate justfile
-        working-directory: devbox
+        working-directory: devkit
         run: just --list
 
       - name: Validate docker-compose
-        working-directory: devbox
+        working-directory: devkit
         run: |
           for p in single cluster cluster4 cluster5 tabletopic analytics; do
             echo "=== Profile: $p ==="
@@ -45,38 +45,38 @@ jobs:
           done
 
       - name: Validate config generation
-        working-directory: devbox
+        working-directory: devkit
         run: |
           # Generate cluster-id without kafka-storage.sh
-          mkdir -p .devbox
-          echo "test-cluster-id" > .devbox/cluster-id
+          mkdir -p .devkit
+          echo "test-cluster-id" > .devkit/cluster-id
 
           # Single node, no features
           just generate-config 1 ""
-          grep -q "node.id=0" .devbox/config/node-0.properties
-          grep -q "controller.quorum.voters=0@node-0:9093" .devbox/config/node-0.properties
-          ! grep -q "broker.rack" .devbox/config/node-0.properties
+          grep -q "node.id=0" .devkit/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093" .devkit/config/node-0.properties
+          ! grep -q "broker.rack" .devkit/config/node-0.properties
           echo "✓ Single node config OK"
 
           # 3-node cluster with zerozone
           just generate-config 3 "zerozone"
-          grep -q "broker.rack=az-0" .devbox/config/node-0.properties
-          grep -q "broker.rack=az-1" .devbox/config/node-1.properties
-          grep -q "broker.rack=az-2" .devbox/config/node-2.properties
-          grep -q "zonerouter" .devbox/config/node-0.properties
-          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devbox/config/node-0.properties
+          grep -q "broker.rack=az-0" .devkit/config/node-0.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-1.properties
+          grep -q "broker.rack=az-2" .devkit/config/node-2.properties
+          grep -q "zonerouter" .devkit/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devkit/config/node-0.properties
           echo "✓ Cluster + zerozone config OK"
 
           # Tabletopic feature
           just generate-config 1 "tabletopic"
-          grep -q "automq.table.topic.catalog.type=rest" .devbox/config/node-0.properties
+          grep -q "automq.table.topic.catalog.type=rest" .devkit/config/node-0.properties
           echo "✓ Tabletopic config OK"
 
           # Combined features
           just generate-config 1 "tabletopic zerozone"
-          grep -q "automq.table.topic" .devbox/config/node-0.properties
-          grep -q "zonerouter" .devbox/config/node-0.properties
-          grep -q "broker.rack" .devbox/config/node-0.properties
+          grep -q "automq.table.topic" .devkit/config/node-0.properties
+          grep -q "zonerouter" .devkit/config/node-0.properties
+          grep -q "broker.rack" .devkit/config/node-0.properties
           echo "✓ Combined features config OK"
 
   smoke:
@@ -98,20 +98,15 @@ jobs:
         run: ./gradlew :core:build :tools:build :shell:build -x test
 
       - name: Start single node
-        working-directory: devbox
+        working-directory: devkit
         run: just start
 
       - name: Wait for healthy
-        run: |
-          for i in $(seq 1 30); do
-            S=$(docker inspect --format='{{.State.Health.Status}}' node-0 2>/dev/null)
-            [ "$S" = "healthy" ] && echo "✓ node-0 healthy" && exit 0
-            sleep 5
-          done
-          echo "Timeout waiting for node-0" && docker logs node-0 | tail -50 && exit 1
+        working-directory: devkit
+        run: just wait
 
       - name: Topic operations
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just topic-create ci-test
           just topic-list 2>&1 | grep ci-test
@@ -128,13 +123,13 @@ jobs:
           echo "✓ Produce/consume OK"
 
       - name: Bin passthrough
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just bin kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | grep -q "ApiVersion"
           echo "✓ Bin passthrough OK"
 
       - name: JMX operations
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just jmx -e domains 2>&1 | grep -q "kafka.server"
           just jmx -e 'beans -d kafka.server' 2>&1 | grep -q "kafka.server"
@@ -142,7 +137,7 @@ jobs:
 
       - name: Stop
         if: always()
-        working-directory: devbox
+        working-directory: devkit
         run: just stop
 
   full:
@@ -164,56 +159,44 @@ jobs:
         run: ./gradlew :core:build :tools:build :shell:build -x test
 
       - name: Test tabletopic
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just start 1 tabletopic
-          for i in $(seq 1 30); do
-            S=$(docker inspect --format='{{.State.Health.Status}}' node-0 2>/dev/null)
-            [ "$S" = "healthy" ] && break; sleep 5
-          done
+          just wait
           curl -sf http://localhost:8181/v1/config > /dev/null
           echo "✓ Iceberg REST OK"
           for i in $(seq 1 30); do
             curl -sf http://localhost:8081/ > /dev/null && echo "✓ Schema Registry OK" && break
             sleep 5
           done
-          grep -q "automq.table.topic" .devbox/config/node-0.properties
+          grep -q "automq.table.topic" .devkit/config/node-0.properties
           echo "✓ Tabletopic config merged"
           just stop
 
       - name: Test 4-node cluster (3 controller + 1 broker)
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just start 4
-          # Verify role configs
-          grep -q "process.roles=broker,controller" .devbox/config/node-0.properties
-          grep -q "process.roles=broker,controller" .devbox/config/node-1.properties
-          grep -q "process.roles=broker,controller" .devbox/config/node-2.properties
-          grep -q "^process.roles=broker$" .devbox/config/node-3.properties
-          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devbox/config/node-0.properties
+          just wait
+          grep -q "process.roles=broker,controller" .devkit/config/node-0.properties
+          grep -q "process.roles=broker,controller" .devkit/config/node-1.properties
+          grep -q "process.roles=broker,controller" .devkit/config/node-2.properties
+          grep -q "^process.roles=broker$" .devkit/config/node-3.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devkit/config/node-0.properties
           echo "✓ Role configs correct"
-          # Wait for healthy
-          for node in 0 1 2 3; do
-            for i in $(seq 1 30); do
-              S=$(docker inspect --format='{{.State.Health.Status}}' node-${node} 2>/dev/null)
-              [ "$S" = "healthy" ] && echo "✓ node-${node} healthy" && break
-              sleep 5
-            done
-          done
-          # Test topic operations
           just topic-create mixed-ci-test
           just topic-describe mixed-ci-test 2>&1 | grep -E "Leader: [0123]"
           echo "✓ Mixed cluster (3 controller + 1 broker) OK"
           just stop
 
       - name: Test zerozone config
-        working-directory: devbox
+        working-directory: devkit
         run: |
           just start 5 zerozone
-          grep -q "broker.rack=az-0" .devbox/config/node-0.properties
-          grep -q "broker.rack=az-1" .devbox/config/node-1.properties
-          grep -q "broker.rack=az-2" .devbox/config/node-2.properties
-          grep -q "broker.rack=az-0" .devbox/config/node-3.properties
-          grep -q "broker.rack=az-1" .devbox/config/node-4.properties
+          grep -q "broker.rack=az-0" .devkit/config/node-0.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-1.properties
+          grep -q "broker.rack=az-2" .devkit/config/node-2.properties
+          grep -q "broker.rack=az-0" .devkit/config/node-3.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-4.properties
           echo "✓ ZeroZone broker.rack round-robin OK"
           just stop
