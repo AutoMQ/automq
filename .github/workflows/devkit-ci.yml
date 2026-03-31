@@ -114,12 +114,10 @@ jobs:
           echo "✓ Topic operations OK"
 
       - name: Produce and consume
+        working-directory: devkit
         run: |
-          echo -e "ci-msg-1\nci-msg-2" | docker exec -i node-0 bash -c \
-            "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic ci-test"
-          docker exec node-0 bash -c \
-            "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic ci-test --from-beginning --max-messages 2 --timeout-ms 15000" \
-            2>&1 | grep ci-msg-1
+          echo -e "ci-msg-1\nci-msg-2" | just produce ci-test
+          just consume ci-test --from-beginning --max-messages 2 --timeout-ms 15000 2>&1 | grep ci-msg-1
           echo "✓ Produce/consume OK"
 
       - name: Bin passthrough
