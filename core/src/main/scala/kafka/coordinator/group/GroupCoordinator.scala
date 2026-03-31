@@ -969,6 +969,20 @@ class GroupCoordinator(
                           offsetMetadata: immutable.Map[TopicIdPartition, OffsetAndMetadata],
                           responseCallback: immutable.Map[TopicIdPartition, Errors] => Unit,
                           requestLocal: RequestLocal = RequestLocal.NoCaching): Unit = {
+    // AutoMQ inject start
+    val forceCommitSentinelTopic = Topic.FORCE_COMMIT_SENTINEL_TOPIC
+    val forceCommit = offsetMetadata.keys.exists(_.topic == forceCommitSentinelTopic)
+    val realOffsetMetadata: immutable.Map[TopicIdPartition, OffsetAndMetadata] =
+      if (forceCommit) offsetMetadata.filter(_._1.topic != forceCommitSentinelTopic).toMap else offsetMetadata
+    val wrappedCallback: immutable.Map[TopicIdPartition, Errors] => Unit = if (forceCommit) {
+      commitStatus => {
+        val sentinelResponse = offsetMetadata.keys.filter(_.topic == forceCommitSentinelTopic).map(_ -> Errors.NONE).toMap
+        responseCallback(commitStatus ++ sentinelResponse)
+      }
+    } else {
+      responseCallback
+    }
+    // AutoMQ inject end
     validateGroupStatus(groupId, ApiKeys.OFFSET_COMMIT) match {
       case Some(error) => responseCallback(offsetMetadata.map { case (k, _) => k -> error })
       case None =>
@@ -977,16 +991,16 @@ class GroupCoordinator(
             if (generationId < 0) {
               // the group is not relying on Kafka for group management, so allow the commit
               val group = groupManager.addGroup(new GroupMetadata(groupId, Empty, time))
-              doCommitOffsets(group, memberId, groupInstanceId, generationId, offsetMetadata,
-                responseCallback, requestLocal)
+              doCommitOffsets(group, memberId, groupInstanceId, generationId, realOffsetMetadata,
+                wrappedCallback, requestLocal, forceCommit) // AutoMQ
             } else {
               // or this is a request coming from an older generation. either way, reject the commit
               responseCallback(offsetMetadata.map { case (k, _) => k -> Errors.ILLEGAL_GENERATION })
             }
 
           case Some(group) =>
-            doCommitOffsets(group, memberId, groupInstanceId, generationId, offsetMetadata,
-              responseCallback, requestLocal)
+            doCommitOffsets(group, memberId, groupInstanceId, generationId, realOffsetMetadata,
+              wrappedCallback, requestLocal, forceCommit) // AutoMQ
         }
     }
   }
@@ -1072,8 +1086,29 @@ class GroupCoordinator(
                               generationId: Int,
                               offsetMetadata: immutable.Map[TopicIdPartition, OffsetAndMetadata],
                               responseCallback: immutable.Map[TopicIdPartition, Errors] => Unit,
-                              requestLocal: RequestLocal): Unit = {
+                              requestLocal: RequestLocal,
+                              forceCommit: Boolean // AutoMQ
+                             ): Unit = {
     group.inLock {
+      // AutoMQ inject start
+      if (forceCommit && generationId < 0 && !group.is(Empty)) {
+        // Force path: remove all members, transition to Empty, then commit offsets.
+        group.allMembers.toList.foreach { mid =>
+          val member = group.get(mid)
+          group.maybeInvokeJoinCallback(member, JoinGroupResult(JoinGroupRequest.UNKNOWN_MEMBER_ID, Errors.UNKNOWN_MEMBER_ID))
+          group.remove(mid)
+        }
+        if (!group.is(PreparingRebalance)) {
+          group.transitionTo(PreparingRebalance)
+        }
+        group.initNextGeneration()
+        // Now group is Empty. Store offsets.
+        val offsetTopicPartition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, partitionFor(group.groupId))
+        groupManager.storeOffsets(group, memberId, offsetTopicPartition, offsetMetadata, responseCallback, verificationGuard = None)
+        return
+      }
+      // AutoMQ inject end
+
       val validationErrorOpt = validateOffsetCommit(
         group,
         generationId,

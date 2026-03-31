@@ -525,6 +525,10 @@ public class ConsumerGroupCommand {
                 withTimeoutMs(new DescribeConsumerGroupsOptions())
             ).describedGroups();
 
+            // AutoMQ inject start
+            boolean force = opts.options.has(opts.forceOpt);
+            // AutoMQ inject end
+
             Map<String, Map<TopicPartition, OffsetAndMetadata>> result = new HashMap<>();
 
             consumerGroups.forEach((groupId, groupDescription) -> {
@@ -550,8 +554,26 @@ public class ConsumerGroupCommand {
 
                             break;
                         default:
-                            printError("Assignments can only be reset if the group '" + groupId + "' is inactive, but the current state is " + state + ".", Optional.empty());
-                            result.put(groupId, Collections.emptyMap());
+                            // AutoMQ inject start
+                            if (force) {
+                                Collection<TopicPartition> partitions = getPartitionsToReset(groupId);
+                                Map<TopicPartition, OffsetAndMetadata> offsets = prepareOffsetsToReset(groupId, partitions);
+
+                                boolean isDryRun = opts.options.has(opts.dryRunOpt) || !opts.options.has(opts.executeOpt);
+                                if (!isDryRun) {
+                                    adminClient.alterConsumerGroupOffsets(
+                                        groupId,
+                                        offsets,
+                                        withTimeoutMs(new AlterConsumerGroupOffsetsOptions().force(true))
+                                    ).all().get();
+                                }
+
+                                result.put(groupId, offsets);
+                            } else {
+                                printError("Assignments can only be reset if the group '" + groupId + "' is inactive, but the current state is " + state + ".", Optional.empty());
+                                result.put(groupId, Collections.emptyMap());
+                            }
+                            // AutoMQ inject end
                     }
                 } catch (InterruptedException | ExecutionException e) {
                     throw new RuntimeException(e);

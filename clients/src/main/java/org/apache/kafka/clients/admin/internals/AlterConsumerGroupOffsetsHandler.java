@@ -19,6 +19,7 @@ package org.apache.kafka.clients.admin.internals;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.OffsetCommitRequestData.OffsetCommitRequestPartition;
 import org.apache.kafka.common.message.OffsetCommitRequestData.OffsetCommitRequestTopic;
@@ -44,21 +45,43 @@ import static java.util.Collections.singleton;
 
 public class AlterConsumerGroupOffsetsHandler extends AdminApiHandler.Batched<CoordinatorKey, Map<TopicPartition, Errors>> {
 
+    // AutoMQ inject start
+    // Full name: __automq_consumer_group_force_commit
+    public static final String FORCE_COMMIT_SENTINEL_TOPIC = Topic.FORCE_COMMIT_SENTINEL_TOPIC;
+    // AutoMQ inject end
+
     private final CoordinatorKey groupId;
     private final Map<TopicPartition, OffsetAndMetadata> offsets;
     private final Logger log;
     private final AdminApiLookupStrategy<CoordinatorKey> lookupStrategy;
+    // AutoMQ inject start
+    private final boolean force;
+    // AutoMQ inject end
 
     public AlterConsumerGroupOffsetsHandler(
         String groupId,
         Map<TopicPartition, OffsetAndMetadata> offsets,
         LogContext logContext
     ) {
+        // AutoMQ inject start
+        this(groupId, offsets, logContext, false);
+        // AutoMQ inject end
+    }
+
+    // AutoMQ inject start
+    public AlterConsumerGroupOffsetsHandler(
+        String groupId,
+        Map<TopicPartition, OffsetAndMetadata> offsets,
+        LogContext logContext,
+        boolean force
+    ) {
         this.groupId = CoordinatorKey.byGroupId(groupId);
         this.offsets = offsets;
         this.log = logContext.logger(AlterConsumerGroupOffsetsHandler.class);
         this.lookupStrategy = new CoordinatorStrategy(CoordinatorType.GROUP, logContext);
+        this.force = force;
     }
+    // AutoMQ inject end
 
     @Override
     public String apiName() {
@@ -108,6 +131,17 @@ public class AlterConsumerGroupOffsetsHandler extends AdminApiHandler.Batched<Co
             .setGroupId(groupId.idValue)
             .setTopics(new ArrayList<>(offsetData.values()));
 
+        // AutoMQ inject start
+        if (force) {
+            OffsetCommitRequestTopic sentinelTopic = new OffsetCommitRequestTopic()
+                .setName(FORCE_COMMIT_SENTINEL_TOPIC);
+            sentinelTopic.partitions().add(new OffsetCommitRequestPartition()
+                .setPartitionIndex(0)
+                .setCommittedOffset(0));
+            data.topics().add(sentinelTopic);
+        }
+        // AutoMQ inject end
+
         return new OffsetCommitRequest.Builder(data);
     }
 
@@ -125,6 +159,11 @@ public class AlterConsumerGroupOffsetsHandler extends AdminApiHandler.Batched<Co
         final Map<TopicPartition, Errors> partitionResults = new HashMap<>();
 
         for (OffsetCommitResponseTopic topic : response.data().topics()) {
+            // AutoMQ inject start
+            if (FORCE_COMMIT_SENTINEL_TOPIC.equals(topic.name())) {
+                continue;
+            }
+            // AutoMQ inject end
             for (OffsetCommitResponsePartition partition : topic.partitions()) {
                 TopicPartition topicPartition = new TopicPartition(topic.name(), partition.partitionIndex());
                 Errors error = Errors.forCode(partition.errorCode());
