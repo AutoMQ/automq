@@ -5783,7 +5783,9 @@ public class GroupMetadataManager {
         }
         // EMPTY only accepts PREPARING_REBALANCE as a valid previous state,
         // so we must transition through it first (mirroring the normal leave flow).
-        group.transitionTo(ClassicGroupState.PREPARING_REBALANCE);
+        if (!group.isInState(ClassicGroupState.PREPARING_REBALANCE)) {
+            group.transitionTo(ClassicGroupState.PREPARING_REBALANCE);
+        }
         group.transitionTo(ClassicGroupState.EMPTY);
         records.add(CoordinatorRecordHelpers.newEmptyGroupMetadataRecord(group, metadataImage.features().metadataVersion()));
     }

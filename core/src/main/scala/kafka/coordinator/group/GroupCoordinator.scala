@@ -1098,7 +1098,9 @@ class GroupCoordinator(
           group.maybeInvokeJoinCallback(member, JoinGroupResult(JoinGroupRequest.UNKNOWN_MEMBER_ID, Errors.UNKNOWN_MEMBER_ID))
           group.remove(mid)
         }
-        group.transitionTo(PreparingRebalance)
+        if (!group.is(PreparingRebalance)) {
+          group.transitionTo(PreparingRebalance)
+        }
         group.initNextGeneration()
         // Now group is Empty. Store offsets.
         val offsetTopicPartition = new TopicPartition(Topic.GROUP_METADATA_TOPIC_NAME, partitionFor(group.groupId))
