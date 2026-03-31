@@ -38,12 +38,16 @@ ensure-cluster-id:
       echo "✓ Generated CLUSTER_ID: $(cat "{{DEVKIT}}/cluster-id")"
     fi
 
+# Override to skip or replace the Java build step, e.g.:
+#   JAVA_BUILD_CMD="echo skipped" just start-build
+JAVA_BUILD_CMD := env_var_or_default("JAVA_BUILD_CMD", "./gradlew :core:build :tools:build :shell:build -x test")
+
 [private]
 build:
     @echo "✓ Building Docker image..."
     @{{COMPOSE}} build
     @echo "✓ Building Java code..."
-    cd "{{AUTOMQ_DEV_HOME}}" && ./gradlew :core:build :tools:build :shell:build -x test
+    cd "{{AUTOMQ_DEV_HOME}}" && {{JAVA_BUILD_CMD}}
 
 [private]
 _compute-cluster-vars nodes:

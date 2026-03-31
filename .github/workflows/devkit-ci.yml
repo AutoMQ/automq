@@ -82,6 +82,7 @@ jobs:
   smoke:
     name: Smoke
     needs: lint
+    if: ${{ github.event_name == 'pull_request' || inputs.level == 'smoke' || inputs.level == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -141,6 +142,7 @@ jobs:
   full:
     name: Full
     needs: lint
+    if: ${{ github.event_name == 'pull_request' || inputs.level == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -198,3 +200,8 @@ jobs:
           grep -q "broker.rack=az-1" .devkit/config/node-4.properties
           echo "✓ ZeroZone broker.rack round-robin OK"
           just stop
+
+      - name: Cleanup
+        if: always()
+        working-directory: devkit
+        run: just clean
