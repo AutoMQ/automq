@@ -8,7 +8,8 @@ DEVKIT := justfile_directory() + "/.devkit"
 COMPOSE := "docker compose -f " + justfile_directory() + "/docker-compose.yml"
 ALL_PROFILES := "--profile single --profile cluster --profile cluster4 --profile cluster5 --profile tabletopic --profile analytics"
 AZ_NAMES := "az-0 az-1 az-2"
-KAFKA_OPTS := "KAFKA_HEAP_OPTS='-Xms256m -Xmx256m' KAFKA_JVM_PERFORMANCE_OPTS='' JMX_PORT=''"
+HEAP_OPTS := "-Xms256m -Xmx256m"
+KAFKA_OPTS := "KAFKA_HEAP_OPTS='" + HEAP_OPTS + "' KAFKA_JVM_PERFORMANCE_OPTS='' JMX_PORT=''"
 
 # S3 configuration
 S3_REGION    := "us-east-1"
@@ -31,7 +32,7 @@ ensure-cluster-id:
     #!/usr/bin/env bash
     mkdir -p "{{DEVKIT}}"
     if [ ! -f "{{DEVKIT}}/cluster-id" ]; then
-      KAFKA_HEAP_OPTS="-Xms256m -Xmx256m" \
+      KAFKA_HEAP_OPTS="{{HEAP_OPTS}}" \
         "{{AUTOMQ_DEV_HOME}}/bin/kafka-storage.sh" random-uuid \
         > "{{DEVKIT}}/cluster-id"
       echo "✓ Generated CLUSTER_ID: $(cat "{{DEVKIT}}/cluster-id")"
@@ -176,8 +177,17 @@ restart-build: build restart
 status:
     @{{COMPOSE}} {{ALL_PROFILES}} ps
 
-[doc("Tail logs. Example: just logs 0")]
-logs node="":
+[doc("Show logs snapshot. Example: just logs 0 200")]
+logs node="" tail="100":
+    #!/usr/bin/env bash
+    if [ -z "{{node}}" ]; then
+      {{COMPOSE}} {{ALL_PROFILES}} logs --tail={{tail}}
+    else
+      {{COMPOSE}} {{ALL_PROFILES}} logs --tail={{tail}} node-{{node}}
+    fi
+
+[doc("Follow logs (blocks). Example: just logs-follow 0")]
+logs-follow node="":
     #!/usr/bin/env bash
     if [ -z "{{node}}" ]; then
       {{COMPOSE}} {{ALL_PROFILES}} logs -f
@@ -188,6 +198,10 @@ logs node="":
 [doc("Enter container shell (default: node 0)")]
 shell node="0":
     @docker exec -it node-{{node}} bash
+
+[doc("Run a single command in container. Example: just exec 0 ls /opt/automq/bin")]
+exec node *CMD:
+    @docker exec node-{{node}} {{CMD}}
 
 [doc("Wait for all nodes to be healthy (auto-called by start)")]
 wait timeout="180":
@@ -217,19 +231,17 @@ build-image *args="":
 [doc("Run bin/ command in container. Example: just bin kafka-topics.sh --bootstrap-server localhost:9092 --list")]
 bin *ARGS:
     #!/usr/bin/env bash
-    # Note: uses eval for proper argument splitting in docker exec.
-    # Arguments with special characters (quotes, $) may need escaping.
-    NODE=0
+    NODE=0; PARAMS=()
     set -- {{ARGS}}
     while [ $# -gt 0 ]; do
       case $1 in
         --node) NODE=$2; shift 2 ;;
-        *) break ;;
+        *) PARAMS+=("$1"); shift ;;
       esac
     done
-    CMD="docker exec node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/$*\""
-    echo "→ $CMD" >&2
-    eval "$CMD"
+    docker exec "node-${NODE}" \
+      env "KAFKA_HEAP_OPTS={{HEAP_OPTS}}" KAFKA_JVM_PERFORMANCE_OPTS="" JMX_PORT="" \
+      /opt/automq/bin/"${PARAMS[@]}" 2> >(grep -v '^SLF4J' >&2)
 
 [doc("Query JMX metrics. Example: just jmx -e domains")]
 jmx *ARGS:
@@ -258,26 +270,39 @@ topic-create name *ARGS:
 topic-describe name node="0":
     @just bin --node {{node}} kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic {{name}}
 
-[doc("Interactive producer")]
-produce topic node="0":
-    @docker exec -it node-{{node}} bash -c \
-      "{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic {{topic}}"
-
-[doc("Consumer. Supports --from-beginning and --node N")]
-consume topic *ARGS:
+[doc("Interactive producer. Supports --node N and all other Kafka producer flags")]
+produce topic *ARGS:
     #!/usr/bin/env bash
-    # Note: only --from-beginning and --node are parsed; other consumer flags are ignored.
-    NODE=0; EXTRA=""
-    for arg in {{ARGS}}; do
-      case $arg in
-        --from-beginning) EXTRA="--from-beginning" ;;
-        --node)           NEXT_NODE=1 ;;
-        *)                [ "$NEXT_NODE" = 1 ] && NODE=$arg && NEXT_NODE="" ;;
+    NODE=0; PARAMS=()
+    set -- {{ARGS}}
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --node) NODE=$2; shift 2 ;;
+        *)      PARAMS+=("$1"); shift ;;
       esac
     done
-    CMD="docker exec -it node-${NODE} bash -c \"{{KAFKA_OPTS}} /opt/automq/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic {{topic}} $EXTRA\""
-    echo "→ $CMD" >&2
-    eval "$CMD"
+    docker exec -i "node-${NODE}" \
+      env "KAFKA_HEAP_OPTS={{HEAP_OPTS}}" KAFKA_JVM_PERFORMANCE_OPTS="" JMX_PORT="" \
+      /opt/automq/bin/kafka-console-producer.sh \
+      --bootstrap-server localhost:9092 --topic "{{topic}}" \
+      "${PARAMS[@]}" 2> >(grep -v '^SLF4J' >&2)
+
+[doc("Consumer. Supports --node N and all other Kafka consumer flags")]
+consume topic *ARGS:
+    #!/usr/bin/env bash
+    NODE=0; PARAMS=()
+    set -- {{ARGS}}
+    while [ $# -gt 0 ]; do
+      case $1 in
+        --node) NODE=$2; shift 2 ;;
+        *)      PARAMS+=("$1"); shift ;;
+      esac
+    done
+    docker exec -i "node-${NODE}" \
+      env "KAFKA_HEAP_OPTS={{HEAP_OPTS}}" KAFKA_JVM_PERFORMANCE_OPTS="" JMX_PORT="" \
+      /opt/automq/bin/kafka-console-consumer.sh \
+      --bootstrap-server localhost:9092 --topic "{{topic}}" \
+      "${PARAMS[@]}" 2> >(grep -v '^SLF4J' >&2)
 
 [doc("List consumer groups")]
 group-list:
@@ -323,6 +348,12 @@ perf-consume topic *ARGS:
 [doc("Attach Arthas to Kafka process. Example: just arthas 1")]
 arthas node="0":
     @docker exec -it node-{{node}} java -jar /opt/arthas/arthas-boot.jar
+
+[doc("Run a single Arthas command non-interactively. Example: just arthas-exec 0 'dashboard -n 1'")]
+arthas-exec node cmd:
+    #!/usr/bin/env bash
+    printf '%s\n' '{{cmd}}' | docker exec -i node-{{node}} bash -c \
+      'cat > /tmp/_arthas_cmd && java -jar /opt/arthas/arthas-boot.jar --select kafka.Kafka -f /tmp/_arthas_cmd'
 
 # ==================== Chaos: Node network ====================
 

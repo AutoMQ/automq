@@ -62,15 +62,26 @@ just clean                      # Stop + remove all volumes
 just restart                    # Restart containers (no rebuild)
 just restart-build              # Rebuild code & image, then restart
 just status                     # Show container status
-just logs                       # Tail all logs
-just logs 0                     # Tail node-0 logs only
-just shell                      # Enter node-0 shell
-just shell 1                    # Enter node-1 shell
+just logs                       # Last 100 lines of all nodes
+just logs 0                     # Last 100 lines of node-0
+just logs 0 500                 # Last 500 lines of node-0
+just logs-follow                # Follow all logs (blocks)
+just logs-follow 0              # Follow node-0 logs (blocks)
+just shell                      # Enter node-0 shell (interactive)
+just shell 1                    # Enter node-1 shell (interactive)
+just exec 0 ls /opt/automq/bin  # Run a single command in node-0
 just build-image                # Rebuild Docker image only
 just wait                       # Wait until all nodes healthy (auto-called by start)
 ```
 
-> `just stop` keeps data. `just clean` removes all volumes.
+`just logs` outputs to stdout — pipe it freely:
+
+```bash
+just logs 0 | grep ERROR
+just logs 0 500 | grep WARN
+just logs 0 | head -20          # oldest entries
+just logs 0 | tail -20          # newest entries
+```
 
 ## Topic Operations
 
@@ -78,8 +89,34 @@ just wait                       # Wait until all nodes healthy (auto-called by s
 just topic-list                                     # List all topics
 just topic-create my-topic --partitions 16          # Create topic
 just topic-describe my-topic                        # Describe topic
-just produce my-topic                               # Interactive producer (stdin)
+
+# Producer — reads from stdin, supports --node N and all Kafka producer flags
+just produce my-topic                               # Interactive (type messages, Ctrl-D to end)
+echo "hello" | just produce my-topic               # Pipe a single message
+just produce my-topic --node 1                      # Produce via node-1
+
+# Produce key:value messages
+printf 'k1:v1\nk2:v2\n' | just produce my-topic \
+  --property parse.key=true \
+  --property "key.separator=:"
+
+# Specify client-id (use --producer-property, not --client-id)
+echo "hello" | just produce my-topic \
+  --producer-property client.id=my-producer
+
+# Consumer — supports --node N and all Kafka consumer flags
 just consume my-topic --from-beginning              # Consume from beginning
+just consume my-topic --node 1                      # Consume via node-1
+just consume my-topic --max-messages 10             # Stop after 10 messages
+
+# Print keys with custom separator (special characters passed safely)
+just consume my-topic --from-beginning \
+  --property print.key=true \
+  --property "key.separator=:"
+
+# Specify client-id (use --consumer-property, not --client-id)
+just consume my-topic --from-beginning \
+  --consumer-property client.id=my-consumer
 ```
 
 ## Consumer Group Operations
@@ -109,6 +146,10 @@ Run any Kafka `bin/` script inside a node container. Commands run via `docker ex
 just bin kafka-topics.sh --bootstrap-server localhost:9092 --list
 just bin kafka-configs.sh --bootstrap-server localhost:9092 --describe --entity-type brokers
 just bin --node 1 kafka-broker-api-versions.sh --bootstrap-server localhost:9092
+
+# One-shot shell command in a container
+just exec 0 ls /opt/automq/bin
+just exec 0 cat /config/node-0.properties
 ```
 
 ## Perf
@@ -124,14 +165,18 @@ just perf-consume my-topic --messages 100000
 ### Arthas (Java runtime diagnostics)
 
 ```bash
-just arthas         # Attach to node-0 Kafka process
-just arthas 1       # Attach to node-1
+just arthas         # Attach to node-0 Kafka process (interactive)
+just arthas 1       # Attach to node-1 (interactive)
 
-# Inside Arthas REPL:
-# dashboard                              — CPU, memory, thread overview
-# thread -n 3                            — top 3 busy threads
-# watch <class> <method> returnObj       — watch method return values
-# trace <class> <method>                 — trace call tree with timing
+# Non-interactive: run a single Arthas command and exit
+just arthas-exec 0 version
+just arthas-exec 0 'dashboard -n 1'       # one snapshot of CPU/memory/threads
+just arthas-exec 0 'thread -n 5'          # top 5 busy threads
+just arthas-exec 0 'jvm'                  # JVM info (heap, GC, classloader)
+just arthas-exec 0 'sc kafka.server.*'    # search loaded classes
+
+# Note: streaming commands like watch/trace require active traffic to produce
+# output and will block until -n limit is reached. Use just arthas for those.
 ```
 
 ### JMX
@@ -154,7 +199,7 @@ just shell      # Enter node-0 shell — jstack, jmap, jcmd available
 just shell 1    # Enter node-1 shell
 ```
 
-> To change JVM heap size, edit `KAFKA_HEAP_OPTS` in `justfile` (default: `-Xms1g -Xmx4g`).
+> To change JVM heap size, edit `HEAP_OPTS` in `justfile` (default: `-Xms256m -Xmx256m`).
 
 ## IDEA Remote Debugging
 
