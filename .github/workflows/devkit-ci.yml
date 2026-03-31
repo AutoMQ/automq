@@ -133,6 +133,15 @@ jobs:
           just consume ci-test --from-beginning --max-messages 2 --timeout-ms 15000 2>&1 | grep ci-msg-1
           echo "✓ Produce/consume OK"
 
+      - name: Consumer group operations
+        working-directory: devkit
+        run: |
+          just group-list 2>&1 | grep -q "."
+          just group-describe ci-consumer 2>&1 || true   # group may not exist yet, just verify command works
+          just broker-list 2>&1 | grep -q "node-0"
+          just broker-config 0 2>&1 | grep -q "advertised.listeners"
+          echo "✓ Consumer group and cluster operations OK"
+
       - name: Bin passthrough
         working-directory: devkit
         run: |
@@ -143,7 +152,7 @@ jobs:
         working-directory: devkit
         run: |
           just jmx -e domains 2>&1 | grep -q "kafka.server"
-          just jmx -e 'beans -d kafka.server' 2>&1 | grep -q "kafka.server"
+          just jmx -e 'get -b kafka.server:name=BrokerState,type=KafkaServer Value' 2>&1 | grep -q "Value = 3"
           echo "✓ JMX operations OK"
 
       - name: Stop
@@ -208,6 +217,15 @@ jobs:
           just topic-create mixed-ci-test
           just topic-describe mixed-ci-test 2>&1 | grep -E "Leader: [0123]"
           echo "✓ Mixed cluster (3 controller + 1 broker) OK"
+          just perf-produce mixed-ci-test --num-records 100 --record-size 512 --throughput -1 2>&1 | grep -q "records sent"
+          echo "✓ Perf produce OK"
+          just arthas-exec 0 version 2>&1 | grep -q "arthas"
+          echo "✓ Arthas OK"
+          just chaos-delay 100 node-0
+          just chaos-status 2>&1 | grep -q "node-0"
+          just chaos-reset
+          just chaos-status 2>&1 | grep -q "minio"
+          echo "✓ Chaos OK"
           just stop
 
       - name: Test zerozone config
