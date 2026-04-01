@@ -180,7 +180,7 @@ versions += [
   awsSdk:"2.29.26",
   bucket4j:"8.10.1",
   jna:"5.2.0",
-  guava:"33.4.0-jre",
+  guava:"32.0.1-jre",
   hdrHistogram:"2.1.12",
   nettyTcnativeBoringSsl: "2.0.69.Final",
   avro: "1.11.4",
