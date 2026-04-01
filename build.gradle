@@ -159,6 +159,7 @@ allprojects {
       resolutionStrategy {
         eachDependency { details ->
           if (details.requested.group == 'io.netty' &&
+              details.requested.name != 'netty' &&
               !details.requested.name.startsWith('netty-tcnative')) {
             details.useVersion versions.netty
             details.because('Release packaging must align all Netty modules to a single version')
