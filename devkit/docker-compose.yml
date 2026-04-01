@@ -5,10 +5,12 @@ x-automq-common: &automq-common
   stop_grace_period: 1m
   volumes:
     - ${AUTOMQ_DEV_HOME}:/opt/automq
-    - ./.devbox/config:/config
+    - ./.devkit/config:/config
   restart: unless-stopped
   cap_add:
     - NET_ADMIN
+  labels:
+    com.automq.devkit: "true"
   environment:
     - KAFKA_S3_ACCESS_KEY=admin
     - KAFKA_S3_SECRET_KEY=password
@@ -163,7 +165,7 @@ services:
 
   # ==================== TableTopic ====================
   schema-registry:
-    image: confluentinc/cp-schema-registry:latest
+    image: confluentinc/cp-schema-registry:7.7.8
     container_name: schema-registry
     hostname: schema-registry
     profiles: [tabletopic]
@@ -206,7 +208,7 @@ services:
 
   # ==================== Analytics ====================
   spark-iceberg:
-    image: tabulario/spark-iceberg
+    image: tabulario/spark-iceberg:3.5.5_1.8.1
     container_name: spark
     hostname: spark-iceberg
     profiles: [analytics]
