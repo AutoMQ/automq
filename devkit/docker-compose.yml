@@ -16,6 +16,7 @@ x-automq-common: &automq-common
     - KAFKA_S3_SECRET_KEY=password
     - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G}
     - KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UseZGC -XX:ZCollectionInterval=5
+    - CLASSPATH=${EXTRA_CLASSPATH:-}
   depends_on:
     mc:
       condition: service_completed_successfully
