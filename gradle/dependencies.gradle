@@ -301,6 +301,7 @@ libs += [
   opentelemetryExporterProm: "io.opentelemetry:opentelemetry-exporter-prometheus:$versions.opentelemetrySDKAlpha",
   opentelemetryExporterOTLP: "io.opentelemetry:opentelemetry-exporter-otlp:$versions.opentelemetrySDK",
   opentelemetryExporterSenderJdk: "io.opentelemetry:opentelemetry-exporter-sender-jdk:$versions.opentelemetrySDK",
+  opentelemetryExporterSenderGrpc: "io.opentelemetry:opentelemetry-exporter-sender-grpc-managed-channel:$versions.opentelemetrySDK",
   opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryInstrument",
   oshi: "com.github.oshi:oshi-core-java11:$versions.oshi",
   bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",

@@ -2357,6 +2357,11 @@ project(':automq-metrics') {
     api libs.opentelemetryExporterProm
     api libs.opentelemetryExporterOTLP
     api libs.opentelemetryExporterSenderJdk
+    api libs.opentelemetryExporterSenderGrpc
+
+    // gRPC transport required by sender-grpc-managed-channel at runtime
+    runtimeOnly 'io.grpc:grpc-netty-shaded:1.63.0'
+    
     api libs.opentelemetryJmx
 
     // Logging dependencies
