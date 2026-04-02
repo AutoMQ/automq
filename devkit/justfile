@@ -81,6 +81,7 @@ _render-node node ctrl_count cluster_id voters bootstrap features="":
     export VOTERS="{{voters}}"
     export BOOTSTRAP="{{bootstrap}}"
     export NODE_ID="{{node}}"
+    export HOST_PORT=$(({{node}} * 10000 + 9192))
     export AZ_NAME="${AZS[$(({{node}} % ${#AZS[@]}))]}"
 
     render() { envsubst < "$1" | grep -v '^#' | grep -v '^$'; }
