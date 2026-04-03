@@ -73,9 +73,7 @@ services:
     hostname: node-0
     profiles: [single, cluster, cluster4, cluster5]
     ports:
-      - "9092:9092"
-      - "9093:9093"
-      - "9192:29092"
+      - "9092:9192"
       - "5005:5005"
       - "9999:9999"
     command:
@@ -94,9 +92,7 @@ services:
     hostname: node-1
     profiles: [cluster, cluster4, cluster5]
     ports:
-      - "19092:9092"
-      - "19093:9093"
-      - "19192:29092"
+      - "19092:9192"
       - "5006:5005"
     command:
       - bash
@@ -114,9 +110,7 @@ services:
     hostname: node-2
     profiles: [cluster, cluster4, cluster5]
     ports:
-      - "29092:9092"
-      - "29093:9093"
-      - "29192:29092"
+      - "29092:9192"
       - "5007:5005"
     command:
       - bash
@@ -134,9 +128,7 @@ services:
     hostname: node-3
     profiles: [cluster4, cluster5]
     ports:
-      - "39092:9092"
-      - "39093:9093"
-      - "39192:29092"
+      - "39092:9192"
       - "5008:5005"
     command:
       - bash
@@ -154,9 +146,7 @@ services:
     hostname: node-4
     profiles: [cluster5]
     ports:
-      - "49092:9092"
-      - "49093:9093"
-      - "49192:29092"
+      - "49092:9192"
       - "5009:5005"
     command:
       - bash
