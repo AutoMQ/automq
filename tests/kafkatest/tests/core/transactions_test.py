@@ -105,8 +105,7 @@ class TransactionsTest(Test):
                     wait_until(lambda: not self.kafka.pids(node),
                                timeout_sec=brokerSessionTimeoutSecs + gracePeriodSecs,
                                err_msg="Failed to see timely disappearance of process for hard-killed broker %s" % str(node.account))
-                    # Do not sleep. Recover ASAP.
-                    # time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
+                    time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
                 self.kafka.start_node(node)
 
             self.kafka.await_no_under_replicated_partitions()
