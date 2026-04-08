@@ -86,12 +86,8 @@ _render-node node ctrl_count cluster_id voters bootstrap features="":
     export VOTERS="{{voters}}"
     export BOOTSTRAP="{{bootstrap}}"
     export NODE_ID="{{node}}"
-    PORT_OFFSET=0
-    ENV_FILE="{{DEVKIT}}/compose.env"
-    if [ -f "$ENV_FILE" ]; then
-      source "$ENV_FILE"
-    fi
-    export HOST_PORT=$(({{node}} * 10000 + 9092 + PORT_OFFSET))
+    PORT_OFFSET=$(grep -s '^PORT_OFFSET=' "{{DEVKIT}}/compose.env" | cut -d= -f2)
+    export HOST_PORT=$(({{node}} * 10000 + 9092 + ${PORT_OFFSET:-0}))
     export AZ_NAME="${AZS[$(({{node}} % ${#AZS[@]}))]}"
 
     render() { envsubst < "$1" | grep -v '^#' | grep -v '^$'; }
@@ -133,7 +129,7 @@ generate-config nodes features="":
 
 [private]
 _node-list:
-    @{{COMPOSE}} ps --format '{{ '{{' }}.Service{{ '}}' }}' 2>/dev/null | grep 'node-'
+    @{{COMPOSE}} ps --format '{{ '{{' }}.Service{{ '}}' }}' 2>/dev/null | grep 'node-' || true
 
 [private]
 _ensure-iptables-chain node:
@@ -162,7 +158,6 @@ set-ns name id:
     fi
 
     OFFSET=$((ID * 100))
-    PREFIX="dk-${NAME}-"
     CHECK_PORT=$((9092 + OFFSET))
 
     if lsof -i ":${CHECK_PORT}" >/dev/null 2>&1; then
@@ -170,45 +165,42 @@ set-ns name id:
       exit 1
     fi
 
-    N0K=$((9092 + OFFSET));  N0D=$((5005 + OFFSET));  N0J=$((9999 + OFFSET))
-    N1K=$((19092 + OFFSET)); N1D=$((5006 + OFFSET))
-    N2K=$((29092 + OFFSET)); N2D=$((5007 + OFFSET))
-    N3K=$((39092 + OFFSET)); N3D=$((5008 + OFFSET))
-    N4K=$((49092 + OFFSET)); N4D=$((5009 + OFFSET))
-    MA=$((9000 + OFFSET));   MC=$((9001 + OFFSET))
-    SR=$((8081 + OFFSET));   IR=$((8181 + OFFSET))
-    SN=$((8888 + OFFSET));   SU=$((8080 + OFFSET))
-    TR=$((8090 + OFFSET))
+    # Base ports — each gets +OFFSET in the generated env file
+    declare -a PORT_DEFS=(
+      "NODE0_KAFKA_PORT=9092"
+      "NODE0_DEBUG_PORT=5005"
+      "NODE0_JMX_PORT=9999"
+      "NODE1_KAFKA_PORT=19092"
+      "NODE1_DEBUG_PORT=5006"
+      "NODE2_KAFKA_PORT=29092"
+      "NODE2_DEBUG_PORT=5007"
+      "NODE3_KAFKA_PORT=39092"
+      "NODE3_DEBUG_PORT=5008"
+      "NODE4_KAFKA_PORT=49092"
+      "NODE4_DEBUG_PORT=5009"
+      "MINIO_API_PORT=9000"
+      "MINIO_CONSOLE_PORT=9001"
+      "SCHEMA_REGISTRY_PORT=8081"
+      "ICEBERG_REST_PORT=8181"
+      "SPARK_NOTEBOOK_PORT=8888"
+      "SPARK_UI_PORT=8080"
+      "TRINO_PORT=8090"
+    )
 
     mkdir -p "{{DEVKIT}}"
     {
-      echo "DEVKIT_PREFIX=$PREFIX"
       echo "COMPOSE_PROJECT_NAME=devkit-$NAME"
       echo "PORT_OFFSET=$OFFSET"
-      echo "NODE0_KAFKA_PORT=$N0K"
-      echo "NODE0_DEBUG_PORT=$N0D"
-      echo "NODE0_JMX_PORT=$N0J"
-      echo "NODE1_KAFKA_PORT=$N1K"
-      echo "NODE1_DEBUG_PORT=$N1D"
-      echo "NODE2_KAFKA_PORT=$N2K"
-      echo "NODE2_DEBUG_PORT=$N2D"
-      echo "NODE3_KAFKA_PORT=$N3K"
-      echo "NODE3_DEBUG_PORT=$N3D"
-      echo "NODE4_KAFKA_PORT=$N4K"
-      echo "NODE4_DEBUG_PORT=$N4D"
-      echo "MINIO_API_PORT=$MA"
-      echo "MINIO_CONSOLE_PORT=$MC"
-      echo "SCHEMA_REGISTRY_PORT=$SR"
-      echo "ICEBERG_REST_PORT=$IR"
-      echo "SPARK_NOTEBOOK_PORT=$SN"
-      echo "SPARK_UI_PORT=$SU"
-      echo "TRINO_PORT=$TR"
+      for def in "${PORT_DEFS[@]}"; do
+        key="${def%%=*}"
+        base="${def#*=}"
+        echo "${key}=$((base + OFFSET))"
+      done
     } > "{{DEVKIT}}/compose.env"
 
     echo "✓ Namespace: ${NAME} (id=${ID})"
-    echo "  Container prefix: ${PREFIX}"
     echo "  Port offset: +${OFFSET}"
-    echo "  Kafka will be on port ${N0K}"
+    echo "  Kafka will be on port ${CHECK_PORT}"
 
 [doc("Clear namespace, revert to default ports")]
 clear-ns:
@@ -233,11 +225,8 @@ start nodes="1" *FEATURES: ensure-cluster-id
     echo "✓ Starting {{nodes}} node(s)..."
     {{COMPOSE}} $COMPOSE_PROFILES up -d
     echo ""
-    PORT_OFFSET=0
-    ENV_FILE="{{DEVKIT}}/compose.env"
-    if [ -f "$ENV_FILE" ]; then
-      source "$ENV_FILE"
-    fi
+    PORT_OFFSET=$(grep -s '^PORT_OFFSET=' "{{DEVKIT}}/compose.env" | cut -d= -f2)
+    PORT_OFFSET=${PORT_OFFSET:-0}
     echo "🎉 AutoMQ DevKit started"
     echo "  Kafka:  localhost:$((9092 + PORT_OFFSET))"
     echo "  Debug:  localhost:$((5005 + PORT_OFFSET))"
@@ -546,10 +535,9 @@ chaos-status:
       [ "$RULES" -gt 0 ] && echo "  iptables: ${RULES} DROP rules in DEVKIT chain"
     done
     echo "=== minio ==="
-    MINIO_CONTAINER=$({{COMPOSE}} ps -q minio 2>/dev/null)
-    if [ -z "$MINIO_CONTAINER" ]; then
-      echo "  status: not running"
-    else
-      S=$(docker inspect --format='{{ '{{' }}.State.Paused{{ '}}' }}' "$MINIO_CONTAINER" 2>/dev/null)
-      [ "$S" = "true" ] && echo "  status: PAUSED" || echo "  status: running"
-    fi
+    S=$(docker inspect --format='{{ '{{' }}.State.Paused{{ '}}' }}' "$({{COMPOSE}} ps -q minio 2>/dev/null)" 2>/dev/null)
+    case "$S" in
+      true)  echo "  status: PAUSED" ;;
+      false) echo "  status: running" ;;
+      *)     echo "  status: not running" ;;
+    esac

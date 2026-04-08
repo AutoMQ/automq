@@ -36,7 +36,6 @@ services:
   # ==================== Infrastructure ====================
   minio:
     image: minio/minio:RELEASE.2025-05-24T17-08-30Z
-    container_name: ${DEVKIT_PREFIX:-}minio
     hostname: warehouse.minio
     environment:
       - MINIO_ROOT_USER=admin
@@ -54,7 +53,6 @@ services:
 
   mc:
     image: minio/mc:RELEASE.2025-05-21T01-59-54Z
-    container_name: ${DEVKIT_PREFIX:-}mc
     depends_on:
       minio:
         condition: service_healthy
@@ -70,7 +68,6 @@ services:
   # ==================== AutoMQ Nodes ====================
   node-0:
     <<: *automq-common
-    container_name: ${DEVKIT_PREFIX:-}node-0
     hostname: node-0
     profiles: [single, cluster, cluster4, cluster5]
     ports:
@@ -89,7 +86,6 @@ services:
 
   node-1:
     <<: *automq-common
-    container_name: ${DEVKIT_PREFIX:-}node-1
     hostname: node-1
     profiles: [cluster, cluster4, cluster5]
     ports:
@@ -107,7 +103,6 @@ services:
 
   node-2:
     <<: *automq-common
-    container_name: ${DEVKIT_PREFIX:-}node-2
     hostname: node-2
     profiles: [cluster, cluster4, cluster5]
     ports:
@@ -125,7 +120,6 @@ services:
 
   node-3:
     <<: *automq-common
-    container_name: ${DEVKIT_PREFIX:-}node-3
     hostname: node-3
     profiles: [cluster4, cluster5]
     ports:
@@ -143,7 +137,6 @@ services:
 
   node-4:
     <<: *automq-common
-    container_name: ${DEVKIT_PREFIX:-}node-4
     hostname: node-4
     profiles: [cluster5]
     ports:
@@ -162,7 +155,6 @@ services:
   # ==================== TableTopic ====================
   schema-registry:
     image: confluentinc/cp-schema-registry:7.7.8
-    container_name: ${DEVKIT_PREFIX:-}schema-registry
     hostname: schema-registry
     profiles: [tabletopic]
     ports:
@@ -180,7 +172,6 @@ services:
 
   rest:
     image: apache/iceberg-rest-fixture
-    container_name: ${DEVKIT_PREFIX:-}iceberg-rest
     hostname: rest
     profiles: [tabletopic]
     ports:
@@ -205,7 +196,6 @@ services:
   # ==================== Analytics ====================
   spark-iceberg:
     image: tabulario/spark-iceberg:3.5.5_1.8.1
-    container_name: ${DEVKIT_PREFIX:-}spark
     hostname: spark-iceberg
     profiles: [analytics]
     depends_on:
@@ -221,7 +211,6 @@ services:
 
   trino:
     image: trinodb/trino:472
-    container_name: ${DEVKIT_PREFIX:-}trino
     hostname: trino
     profiles: [analytics]
     depends_on:

@@ -315,7 +315,7 @@ just start 5 zerozone analytics     # 5-node + zone router + query engines
 
 ## Namespace (Multi-Instance Isolation)
 
-Run multiple DevKit instances on the same machine without port conflicts. Each namespace gets a unique container prefix and port offset.
+Run multiple DevKit instances on the same machine without port conflicts. Each namespace gets a unique `COMPOSE_PROJECT_NAME` and port offset.
 
 **Requires separate git worktrees** — each worktree has its own `devkit/` directory and `.devkit/compose.env`, so each instance is fully isolated. You cannot run multiple namespaces from the same devkit directory.
 
@@ -334,7 +334,6 @@ just clear-ns
 
 - Name: 1-8 chars, must start with a letter, only `[a-z0-9-]`
 - ID: 1-9, determines port offset (`ID * 100`)
-- Containers are prefixed with `dk-<name>-` (e.g. `dk-lag-test-node-0`)
 - Config is stored in `.devkit/compose.env` (gitignored)
 
 ## Port Allocation
