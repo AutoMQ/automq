@@ -353,6 +353,8 @@ Other services:
 | `S3_DATA_BUCKET` | `automq-data` | Data bucket |
 | `S3_OPS_BUCKET` | `automq-ops` | Ops bucket |
 | `S3_PATH_STYLE` | `true` | Path-style access (required for MinIO) |
+| `S3_ACCESS_KEY` | `admin` | S3 access key (exported as `KAFKA_S3_ACCESS_KEY` to containers) |
+| `S3_SECRET_KEY` | `password` | S3 secret key (exported as `KAFKA_S3_SECRET_KEY` to containers) |
 
 **Per-node variables** (computed per node, Layer 2/3/4):
 
@@ -373,6 +375,8 @@ S3_ENDPOINT    := "https://s3.ap-northeast-1.amazonaws.com"
 S3_DATA_BUCKET := "my-automq-data"
 S3_OPS_BUCKET  := "my-automq-ops"
 S3_PATH_STYLE  := "false"
+S3_ACCESS_KEY  := "AKIA..."
+S3_SECRET_KEY  := "..."
 ```
 
 **Change listeners (e.g. SASL)** — edit `config/role/server.properties`:

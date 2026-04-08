@@ -12,10 +12,11 @@ x-automq-common: &automq-common
   labels:
     com.automq.devkit: "true"
   environment:
-    - KAFKA_S3_ACCESS_KEY=admin
-    - KAFKA_S3_SECRET_KEY=password
+    - KAFKA_S3_ACCESS_KEY=${KAFKA_S3_ACCESS_KEY}
+    - KAFKA_S3_SECRET_KEY=${KAFKA_S3_SECRET_KEY}
     - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G}
     - KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UseZGC -XX:ZCollectionInterval=5
+    - LOG_DIR=/tmp/kafka-logs
   depends_on:
     mc:
       condition: service_completed_successfully
@@ -35,15 +36,15 @@ services:
   # ==================== Infrastructure ====================
   minio:
     image: minio/minio:RELEASE.2025-05-24T17-08-30Z
-    container_name: minio
+    container_name: ${DEVKIT_PREFIX:-}minio
     hostname: warehouse.minio
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD=password
       - MINIO_DOMAIN=minio
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
     command: ["server", "/data", "--console-address", ":9001"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://minio:9000/minio/health/live"]
@@ -53,7 +54,7 @@ services:
 
   mc:
     image: minio/mc:RELEASE.2025-05-21T01-59-54Z
-    container_name: mc
+    container_name: ${DEVKIT_PREFIX:-}mc
     depends_on:
       minio:
         condition: service_healthy
@@ -69,13 +70,13 @@ services:
   # ==================== AutoMQ Nodes ====================
   node-0:
     <<: *automq-common
-    container_name: node-0
+    container_name: ${DEVKIT_PREFIX:-}node-0
     hostname: node-0
     profiles: [single, cluster, cluster4, cluster5]
     ports:
-      - "9092:9192"
-      - "5005:5005"
-      - "9999:9999"
+      - "${NODE0_KAFKA_PORT:-9092}:9192"
+      - "${NODE0_DEBUG_PORT:-5005}:5005"
+      - "${NODE0_JMX_PORT:-9999}:9999"
     command:
       - bash
       - -c
@@ -88,12 +89,12 @@ services:
 
   node-1:
     <<: *automq-common
-    container_name: node-1
+    container_name: ${DEVKIT_PREFIX:-}node-1
     hostname: node-1
     profiles: [cluster, cluster4, cluster5]
     ports:
-      - "19092:9192"
-      - "5006:5005"
+      - "${NODE1_KAFKA_PORT:-19092}:9192"
+      - "${NODE1_DEBUG_PORT:-5006}:5005"
     command:
       - bash
       - -c
@@ -106,12 +107,12 @@ services:
 
   node-2:
     <<: *automq-common
-    container_name: node-2
+    container_name: ${DEVKIT_PREFIX:-}node-2
     hostname: node-2
     profiles: [cluster, cluster4, cluster5]
     ports:
-      - "29092:9192"
-      - "5007:5005"
+      - "${NODE2_KAFKA_PORT:-29092}:9192"
+      - "${NODE2_DEBUG_PORT:-5007}:5005"
     command:
       - bash
       - -c
@@ -124,12 +125,12 @@ services:
 
   node-3:
     <<: *automq-common
-    container_name: node-3
+    container_name: ${DEVKIT_PREFIX:-}node-3
     hostname: node-3
     profiles: [cluster4, cluster5]
     ports:
-      - "39092:9192"
-      - "5008:5005"
+      - "${NODE3_KAFKA_PORT:-39092}:9192"
+      - "${NODE3_DEBUG_PORT:-5008}:5005"
     command:
       - bash
       - -c
@@ -142,12 +143,12 @@ services:
 
   node-4:
     <<: *automq-common
-    container_name: node-4
+    container_name: ${DEVKIT_PREFIX:-}node-4
     hostname: node-4
     profiles: [cluster5]
     ports:
-      - "49092:9192"
-      - "5009:5005"
+      - "${NODE4_KAFKA_PORT:-49092}:9192"
+      - "${NODE4_DEBUG_PORT:-5009}:5005"
     command:
       - bash
       - -c
@@ -161,11 +162,11 @@ services:
   # ==================== TableTopic ====================
   schema-registry:
     image: confluentinc/cp-schema-registry:7.7.8
-    container_name: schema-registry
+    container_name: ${DEVKIT_PREFIX:-}schema-registry
     hostname: schema-registry
     profiles: [tabletopic]
     ports:
-      - "8081:8081"
+      - "${SCHEMA_REGISTRY_PORT:-8081}:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: node-0:9092
@@ -179,11 +180,11 @@ services:
 
   rest:
     image: apache/iceberg-rest-fixture
-    container_name: iceberg-rest
+    container_name: ${DEVKIT_PREFIX:-}iceberg-rest
     hostname: rest
     profiles: [tabletopic]
     ports:
-      - "8181:8181"
+      - "${ICEBERG_REST_PORT:-8181}:8181"
     depends_on:
       minio:
         condition: service_healthy
@@ -204,7 +205,7 @@ services:
   # ==================== Analytics ====================
   spark-iceberg:
     image: tabulario/spark-iceberg:3.5.5_1.8.1
-    container_name: spark
+    container_name: ${DEVKIT_PREFIX:-}spark
     hostname: spark-iceberg
     profiles: [analytics]
     depends_on:
@@ -215,18 +216,18 @@ services:
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
     ports:
-      - "8888:8888"
-      - "8080:8080"
+      - "${SPARK_NOTEBOOK_PORT:-8888}:8888"
+      - "${SPARK_UI_PORT:-8080}:8080"
 
   trino:
     image: trinodb/trino:472
-    container_name: trino
+    container_name: ${DEVKIT_PREFIX:-}trino
     hostname: trino
     profiles: [analytics]
     depends_on:
       minio:
         condition: service_healthy
     ports:
-      - "8090:8080"
+      - "${TRINO_PORT:-8090}:8080"
     volumes:
       - ./config/trino-catalog:/etc/trino/catalog
