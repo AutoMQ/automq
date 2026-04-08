@@ -21,6 +21,7 @@ import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -53,10 +54,10 @@ public class KVImageTest {
 
     static {
         SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
-        TimelineHashMap<String, ByteBuffer> map = new TimelineHashMap<>(registry, 10000);
+        TimelineHashMap<KVKey, ByteBuffer> map = new TimelineHashMap<>(registry, 10000);
         RegistryRef ref = new RegistryRef(registry, 0, new ArrayList<>());
-        map.put("key1", ByteBuffer.wrap(new String("value1").getBytes()));
-        map.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
+        map.put(KVKey.of("key1"), ByteBuffer.wrap("value1".getBytes()));
+        map.put(KVKey.of("key2"), ByteBuffer.wrap("value2".getBytes()));
         registry.getOrCreateSnapshot(0);
 
         IMAGE1 = new KVImage(map, ref);
@@ -75,11 +76,11 @@ public class KVImageTest {
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
         registry = new SnapshotRegistry(new LogContext());
-        TimelineHashMap<String, ByteBuffer> map2 = new TimelineHashMap<>(registry, 10000);
+        TimelineHashMap<KVKey, ByteBuffer> map2 = new TimelineHashMap<>(registry, 10000);
         RegistryRef ref2 = new RegistryRef(registry, 0, new ArrayList<>());
 
-        map2.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
-        map2.put("key3", ByteBuffer.wrap(new String("value3").getBytes()));
+        map2.put(KVKey.of("key2"), ByteBuffer.wrap("value2".getBytes()));
+        map2.put(KVKey.of("key3"), ByteBuffer.wrap("value3".getBytes()));
         registry.getOrCreateSnapshot(0);
 
         IMAGE2 = new KVImage(map2, ref2);

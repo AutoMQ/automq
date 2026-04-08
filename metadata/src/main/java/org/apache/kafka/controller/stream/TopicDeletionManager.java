@@ -118,8 +118,8 @@ public class TopicDeletionManager {
             List<String> metaStreamKvList = new ArrayList<>();
             String metaStreamKvPrefix = ObjectUtils.genMetaStreamKvPrefix(topicId);
             kvControlManager.kv().forEach((k, v) -> {
-                if (k.startsWith(metaStreamKvPrefix)) {
-                    metaStreamKvList.add(k);
+                if (k.key().startsWith(metaStreamKvPrefix)) {
+                    metaStreamKvList.add(k.toString());
                 }
             });
             records.add(new ApiMessageAndVersion(new RemoveKVRecord().setKeys(metaStreamKvList), (short) 0));

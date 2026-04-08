@@ -40,10 +40,12 @@ public enum AutoMQVersion implements FeatureVersion {
     // Support zero zone v2
     V3((short) 4, MetadataVersion.IBP_3_9_IV0),
     // Support proxy-main dual mapping
-    V4((short) 5, MetadataVersion.IBP_3_9_IV0);
+    V4((short) 5, MetadataVersion.IBP_3_9_IV0),
+    // Support KV namespace
+    V5((short) 6, MetadataVersion.IBP_3_9_IV0);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V4;
+    public static final AutoMQVersion LATEST = V5;
 
     private final short level;
     private final Version s3streamVersion;
@@ -127,6 +129,10 @@ public enum AutoMQVersion implements FeatureVersion {
         return isAtLeast(V4);
     }
 
+    public boolean isKVNamespaceSupported() {
+        return isAtLeast(V5);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -159,6 +165,10 @@ public enum AutoMQVersion implements FeatureVersion {
         }
     }
 
+    public short kvRecordVersion() {
+        return isKVNamespaceSupported() ? (short) 1 : (short) 0;
+    }
+
     public Version s3streamVersion() {
         return s3streamVersion;
     }
@@ -170,7 +180,7 @@ public enum AutoMQVersion implements FeatureVersion {
     private Version mapS3StreamVersion(short automqVersion) {
         return switch (automqVersion) {
             case 1, 2 -> Version.V0;
-            case 3, 4, 5 -> Version.V1;
+            case 3, 4, 5, 6 -> Version.V1;
             default -> throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
         };
     }

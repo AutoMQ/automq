@@ -35,6 +35,7 @@ import org.apache.kafka.common.message._
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.MetadataResponse
+import org.apache.kafka.controller.stream.KVKey
 import org.apache.kafka.image.{MetadataImage, S3StreamMetadataImage}
 import org.apache.kafka.metadata.{BrokerRegistration, PartitionRegistration, Replicas}
 import org.apache.kafka.server.common.automq.AutoMQVersion
@@ -97,7 +98,7 @@ class KRaftMetadataCache(
   private def checkFailoverSuccess(topicPartition: TopicPartition, topicId: Uuid, tpRegistration: PartitionRegistration): Boolean = {
     safeRun((image: MetadataImage) => {
       val key = ElasticLog.formatStreamKey(ElasticLogManager.NAMESPACE, topicPartition, Some(topicId))
-      val buffer = image.kv().getValue(key)
+      val buffer = image.kv().getValue(KVKey.of(key))
       if (buffer == null) {
         // when immediately request after topic creation, the key may not be found
         return false
@@ -668,7 +669,7 @@ class KRaftMetadataCache(
   }
 
   override def getValue(key: String): ByteBuffer = {
-    _currentImage.kv().getValue(key)
+    _currentImage.kv().getValue(KVKey.of(key))
   }
 
   override def getStreamEndOffset(streamId: Long): OptionalLong = {
