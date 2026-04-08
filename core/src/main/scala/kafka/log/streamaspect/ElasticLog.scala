@@ -207,7 +207,13 @@ class ElasticLog(val metaStream: MetaStream,
             APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST.update(System.nanoTime() - startTimestamp)
         }
 
-        activeSegment.append(lastOffset, records)
+        try {
+            activeSegment.append(lastOffset, records)
+        } catch {
+            case e: Throwable =>
+                APPEND_PERMIT_SEMAPHORE.release(permit)
+                throw e
+        }
 
         APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
         val endOffset = lastOffset + 1
@@ -621,7 +627,7 @@ class ElasticLog(val metaStream: MetaStream,
             })
             segments.clear()
             logMeta.getSegmentMetas.forEach(segMeta => {
-                val segment = new ElasticLogSegment(dir, segMeta, streamSliceManager, config, time, (_, _) => {}, logIdent)
+                val segment = new ElasticLogSegment(dir, segMeta, streamSliceManager, config, time, (_, _, _) => {}, logIdent)
                 segments.add(segment)
             })
         }

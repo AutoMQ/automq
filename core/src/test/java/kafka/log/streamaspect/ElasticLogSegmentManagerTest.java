@@ -8,17 +8,22 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.atMost;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
@@ -39,13 +44,19 @@ public class ElasticLogSegmentManagerTest {
         ElasticLogStreamManager elasticLogStreamManager = mock(ElasticLogStreamManager.class);
 
         ElasticLogSegmentManager manager = spy(new ElasticLogSegmentManager(metaStream, elasticLogStreamManager, "testLargeScaleSegmentDelete"));
+        manager.put(1, logSegment);
 
-        when(manager.remove(anyLong())).thenReturn(logSegment);
-
-        when(manager.asyncPersistLogMeta()).thenReturn(CompletableFuture.completedFuture(logMeta));
+        doReturn(CompletableFuture.completedFuture(logMeta)).when(manager).asyncPersistLogMeta();
 
         ElasticLogSegmentManager.EventListener listener = manager.new EventListener();
-        listener.onEvent(1, ElasticLogSegmentEvent.SEGMENT_DELETE);
+
+        // mismatch
+        listener.onEvent(1, mock(ElasticLogSegment.class), ElasticLogSegmentEvent.SEGMENT_DELETE);
+        assertEquals(1, manager.segments.size());
+
+        // match
+        listener.onEvent(1, logSegment, ElasticLogSegmentEvent.SEGMENT_DELETE);
+        assertEquals(0, manager.segments.size());
 
         verify(manager, atLeastOnce()).asyncPersistLogMeta();
         verify(manager, atMost(2)).asyncPersistLogMeta();
@@ -54,7 +65,6 @@ public class ElasticLogSegmentManagerTest {
     @Test
     public void testLargeScaleSegmentDelete() throws InterruptedException {
         ElasticLogMeta logMeta = mock(ElasticLogMeta.class);
-        ElasticLogSegment logSegment = mock(ElasticLogSegment.class);
         MetaStream metaStream = mock(MetaStream.class);
 
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(CompletableFuture.completedFuture(null));
@@ -62,33 +72,38 @@ public class ElasticLogSegmentManagerTest {
         ElasticLogStreamManager elasticLogStreamManager = mock(ElasticLogStreamManager.class);
 
         ElasticLogSegmentManager manager = spy(new ElasticLogSegmentManager(metaStream, elasticLogStreamManager, "testLargeScaleSegmentDelete"));
+        List<ElasticLogSegment> segments = new ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            ElasticLogSegment segment = mock(ElasticLogSegment.class);
+            manager.put(i, segment);
+            segments.add(segment);
+        }
 
         Set<Long> removedSegmentId = new HashSet<>();
 
-        when(manager.remove(anyLong())).thenAnswer(invocation -> {
+        when(manager.remove(anyLong(), any())).thenAnswer(invocation -> {
             long id = invocation.getArgument(0);
             removedSegmentId.add(id);
-            return logSegment;
+            return invocation.callRealMethod();
         });
 
         CountDownLatch latch = new CountDownLatch(2);
 
-        when(manager.asyncPersistLogMeta())
-            .thenAnswer(invocation -> {
-                CompletableFuture<Object> cf = new CompletableFuture<>()
-                    .completeOnTimeout(logMeta, 100, TimeUnit.MILLISECONDS);
+        doAnswer(invocation -> {
+            CompletableFuture<Object> cf = new CompletableFuture<>()
+                .completeOnTimeout(logMeta, 100, TimeUnit.MILLISECONDS);
 
-                cf.whenComplete((res, e) -> {
-                    latch.countDown();
-                });
-
-                return cf;
+            cf.whenComplete((res, e) -> {
+                latch.countDown();
             });
+
+            return cf;
+        }).when(manager).asyncPersistLogMeta();
 
         ElasticLogSegmentManager.EventListener listener = spy(manager.new EventListener());
 
-        for (long i = 0L; i < 10L; i++) {
-            listener.onEvent(i, ElasticLogSegmentEvent.SEGMENT_DELETE);
+        for (int i = 0; i < 10; i++) {
+            listener.onEvent(i, segments.get(i), ElasticLogSegmentEvent.SEGMENT_DELETE);
         }
 
         latch.await();

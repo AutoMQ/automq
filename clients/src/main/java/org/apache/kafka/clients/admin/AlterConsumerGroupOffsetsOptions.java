@@ -27,4 +27,16 @@ import java.util.Map;
  */
 @InterfaceStability.Evolving
 public class AlterConsumerGroupOffsetsOptions extends AbstractOptions<AlterConsumerGroupOffsetsOptions> {
+    // AutoMQ inject start
+    private boolean force = false;
+
+    public AlterConsumerGroupOffsetsOptions force(boolean force) {
+        this.force = force;
+        return this;
+    }
+
+    public boolean force() {
+        return force;
+    }
+    // AutoMQ inject end
 }

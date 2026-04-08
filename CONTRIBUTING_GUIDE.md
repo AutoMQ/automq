@@ -9,6 +9,42 @@ or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or Wechat
 follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Suggested Onboarding Path for New Contributors
+
+## Quick Start for First-Time Contributors (Recommended)
+
+If you are new to AutoMQ, we recommend starting with the simplest path before diving into local builds.
+
+**Option 1: Quick exploration (recommended for beginners)**
+- Run AutoMQ using Docker as described in the README
+- Verify you can:
+  - Start the broker
+  - Create a topic
+  - Produce and consume messages
+- This helps you understand AutoMQ behavior without local environment setup
+
+**Option 2: DevKit local development (recommended for code contributions)**
+- Use the Docker Compose-based DevKit to start a local AutoMQ cluster with MinIO and JDWP debug ports
+- Quick start:
+  - `cd devkit`
+  - `just start-build` (single node) or `just start-build 3` (3-node cluster)
+- Useful shortcuts: `just topic-list`, `just produce <topic>`, `just logs`
+- See full instructions in [devkit/README.md](devkit/README.md)
+
+**Option 3: Manual local development setup**
+- Follow the steps below to build and run AutoMQ locally with IDEA/manual configuration
+- This path is useful when you need full control over local components and configs
+
+> Tip: If you encounter setup issues, check [devkit/README.md](devkit/README.md), “Local Debug with IDEA”, and S3 configuration sections below.
+
+
+If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
+This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
+
+After gaining familiarity, contributors who want to work on code can follow the steps in this guide to build and run AutoMQ locally.
+For most contributors, we recommend starting with DevKit (`devkit/README.md`) and using the manual setup only when deeper environment customization is needed.
+
+
 ## Code Contributions
 
 Most of the issues open for contributions are tagged with 'good first issue.' To claim one, simply reply with 'pick up' in the issue and the AutoMQ maintainers will assign the issue to you. If you have any questions about the 'good first issue' please feel free to ask. We will do our best to clarify any doubts you may have.
