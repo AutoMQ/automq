@@ -1178,10 +1178,19 @@ public class DistributedHerder extends AbstractHerder implements Runnable {
                         }
 
                         log.trace("Submitting connector config {} {} {}", connName, allowReplace, configState.connectors());
-                        writeToConfigTopicAsLeader(
-                                "writing a config for connector " + connName + " to the config topic",
-                                () -> configBackingStore.putConnectorConfig(connName, config, targetState)
-                        );
+
+                        // KAFKA-17719: Skip writing to config topic if the connector config is unchanged.
+                        // This avoids unnecessary task config generation which can cause task restarts
+                        // even when the connector configuration hasn't actually changed.
+                        Map<String, String> existingConfig = configState.rawConnectorConfig(connName);
+                        if (exists && config.equals(existingConfig) && targetState == null) {
+                            log.debug("Connector {} config unchanged, skipping write to config topic", connName);
+                        } else {
+                            writeToConfigTopicAsLeader(
+                                    "writing a config for connector " + connName + " to the config topic",
+                                    () -> configBackingStore.putConnectorConfig(connName, config, targetState)
+                            );
+                        }
 
                         // Note that we use the updated connector config despite the fact that we don't have an updated
                         // snapshot yet. The existing task info should still be accurate.
