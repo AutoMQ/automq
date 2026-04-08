@@ -2565,6 +2565,120 @@ public class DistributedHerderTest {
     }
 
     @Test
+    public void testPutConnectorConfigUnchangedSkipsWrite() throws Exception {
+        // KAFKA-17719: Verify that when connector config is unchanged, we skip writing to config topic
+        when(herder.connectorType(anyMap())).thenReturn(ConnectorType.SOURCE);
+        when(member.memberId()).thenReturn("leader");
+        when(statusBackingStore.connectors()).thenReturn(Collections.emptySet());
+
+        // The connector is pre-existing with CONN1_CONFIG
+        expectConfigRefreshAndSnapshot(SNAPSHOT);
+        when(member.currentProtocolVersion()).thenReturn(CONNECT_PROTOCOL_V0);
+
+        expectMemberPoll();
+
+        expectRebalance(1, singletonList(CONN1), Collections.emptyList(), true);
+
+        ArgumentCaptor<Callback<ConfigInfos>> validateCallback = ArgumentCaptor.forClass(Callback.class);
+        doAnswer(invocation -> {
+            validateCallback.getValue().onCompletion(null, CONN1_CONFIG_INFOS);
+            return null;
+        }).when(herder).validateConnectorConfig(eq(CONN1_CONFIG), validateCallback.capture());
+
+        // Put the same config (unchanged)
+        FutureCallback<Herder.Created<ConnectorInfo>> putCallback = new FutureCallback<>();
+        herder.putConnectorConfig(CONN1, CONN1_CONFIG, true, putCallback);
+        herder.tick();
+        assertTrue(putCallback.isDone());
+
+        // Verify the callback succeeded
+        Herder.Created<ConnectorInfo> result = putCallback.get();
+        assertFalse(result.created()); // Not newly created
+        assertEquals(CONN1_CONFIG, result.result().config());
+
+        // KAFKA-17719: The key assertion - putConnectorConfig should NOT be called
+        // because the config is unchanged
+        verify(configBackingStore, never()).putConnectorConfig(any(), any(), any());
+        verifyNoMoreInteractions(configBackingStore);
+    }
+
+    @Test
+    public void testPutConnectorConfigUnchangedWithTargetStateStillWrites() throws Exception {
+        // KAFKA-17719: Verify that when connector config is unchanged but targetState is specified,
+        // we still write to config topic (because targetState needs to be updated)
+        when(herder.connectorType(anyMap())).thenReturn(ConnectorType.SOURCE);
+        when(member.memberId()).thenReturn("leader");
+        when(statusBackingStore.connectors()).thenReturn(Collections.emptySet());
+
+        // The connector is pre-existing with CONN1_CONFIG
+        expectConfigRefreshAndSnapshot(SNAPSHOT);
+        when(member.currentProtocolVersion()).thenReturn(CONNECT_PROTOCOL_V0);
+
+        expectMemberPoll();
+
+        expectRebalance(1, singletonList(CONN1), Collections.emptyList(), true);
+
+        ArgumentCaptor<Callback<ConfigInfos>> validateCallback = ArgumentCaptor.forClass(Callback.class);
+        doAnswer(invocation -> {
+            validateCallback.getValue().onCompletion(null, CONN1_CONFIG_INFOS);
+            return null;
+        }).when(herder).validateConnectorConfig(eq(CONN1_CONFIG), validateCallback.capture());
+
+        // Put the same config but with a targetState
+        FutureCallback<Herder.Created<ConnectorInfo>> putCallback = new FutureCallback<>();
+        herder.putConnectorConfig(CONN1, CONN1_CONFIG, TargetState.PAUSED, true, putCallback);
+        herder.tick();
+        assertTrue(putCallback.isDone());
+
+        // Verify the callback succeeded
+        Herder.Created<ConnectorInfo> result = putCallback.get();
+        assertFalse(result.created());
+
+        // Even though config is unchanged, putConnectorConfig SHOULD be called because targetState is specified
+        verify(configBackingStore).putConnectorConfig(eq(CONN1), eq(CONN1_CONFIG), eq(TargetState.PAUSED));
+    }
+
+    @Test
+    public void testPatchConnectorConfigUnchangedSkipsWrite() throws Exception {
+        // KAFKA-17719: Verify that PATCH with no actual changes also skips writing to config topic
+        when(herder.connectorType(anyMap())).thenReturn(ConnectorType.SOURCE);
+        when(member.memberId()).thenReturn("leader");
+        when(statusBackingStore.connectors()).thenReturn(Collections.emptySet());
+
+        // The connector is pre-existing with CONN1_CONFIG
+        expectConfigRefreshAndSnapshot(SNAPSHOT);
+        when(member.currentProtocolVersion()).thenReturn(CONNECT_PROTOCOL_V0);
+
+        expectMemberPoll();
+
+        expectRebalance(1, singletonList(CONN1), Collections.emptyList(), true);
+
+        // Patch with values that result in the same config (setting existing values)
+        Map<String, String> noOpPatch = new HashMap<>();
+        noOpPatch.put(ConnectorConfig.NAME_CONFIG, CONN1); // Same as existing
+
+        ArgumentCaptor<Callback<ConfigInfos>> validateCallback = ArgumentCaptor.forClass(Callback.class);
+        doAnswer(invocation -> {
+            validateCallback.getValue().onCompletion(null, CONN1_CONFIG_INFOS);
+            return null;
+        }).when(herder).validateConnectorConfig(eq(CONN1_CONFIG), validateCallback.capture());
+
+        FutureCallback<Herder.Created<ConnectorInfo>> patchCallback = new FutureCallback<>();
+        herder.patchConnectorConfig(CONN1, noOpPatch, patchCallback);
+        herder.tick();
+        assertTrue(patchCallback.isDone());
+
+        // Verify the callback succeeded
+        Herder.Created<ConnectorInfo> result = patchCallback.get();
+        assertFalse(result.created());
+        assertEquals(CONN1_CONFIG, result.result().config());
+
+        // KAFKA-17719: putConnectorConfig should NOT be called because the patched config equals existing
+        verify(configBackingStore, never()).putConnectorConfig(any(), any(), any());
+        verifyNoMoreInteractions(configBackingStore);
+    }
+
+    @Test
     public void testKeyRotationWhenWorkerBecomesLeader() {
         long rotationTtlDelay = DistributedConfig.INTER_WORKER_KEY_TTL_MS_MS_DEFAULT;
         when(member.memberId()).thenReturn("member");
