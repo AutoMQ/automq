@@ -98,9 +98,11 @@ versions += [
   gradle: "8.10.2",
   grgit: "4.1.1",
   httpclient: "4.5.14",
+  // AutoMQ inject start
   jackson: "2.20.0",
   // jackson-annotations uses "2.20" instead of "2.20.0"
   jacksonAnnotationsVersion: "2.20",
+  // AutoMQ inject end
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
   jetty: "9.4.57.v20241219",
@@ -148,8 +150,10 @@ versions += [
   metrics: "2.2.0",
   netty: "4.1.119.Final",
   opentelemetryProto: "1.0.0-alpha",
+  // AutoMQ inject start
   protobuf: "4.32.1",
   protoGoogleCommonProtos: "2.40.0",
+  // AutoMQ inject end
   pcollections: "4.0.1",
   reflections: "0.10.2",
   reload4j: "1.2.25",
@@ -163,7 +167,9 @@ versions += [
   scoverage: "2.0.11",
   slf4j: "1.7.36",
   jclOverSlf4j: "1.7.36",
+  // AutoMQ inject start
   snakeyaml: "2.5",
+  // AutoMQ inject end
   snappy: "1.1.10.5",
   spotbugs: "4.8.6",
   zinc: "1.9.2",
@@ -212,7 +218,9 @@ libs += [
   commonsCli: "commons-cli:commons-cli:$versions.commonsCli",
   commonsIo: "commons-io:commons-io:$versions.commonsIo",
   commonsValidator: "commons-validator:commons-validator:$versions.commonsValidator",
+  // AutoMQ inject start
   jacksonAnnotations: "com.fasterxml.jackson.core:jackson-annotations:$versions.jacksonAnnotationsVersion",
+  // AutoMQ inject end
   jacksonDatabind: "com.fasterxml.jackson.core:jackson-databind:$versions.jackson",
   jacksonDataformatCsv: "com.fasterxml.jackson.dataformat:jackson-dataformat-csv:$versions.jackson",
   jacksonModuleScala: "com.fasterxml.jackson.module:jackson-module-scala_$versions.baseScala:$versions.jackson",
@@ -220,8 +228,10 @@ libs += [
   jacksonAfterburner: "com.fasterxml.jackson.module:jackson-module-afterburner:$versions.jackson",
   jacksonJaxrsJsonProvider: "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:$versions.jackson",
   jacksonYaml: "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$versions.jackson",
+  // AutoMQ inject start
   snakeyaml: "org.yaml:snakeyaml:$versions.snakeyaml",
   protoGoogleCommonProtos: "com.google.api.grpc:proto-google-common-protos:$versions.protoGoogleCommonProtos",
+  // AutoMQ inject end
   jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
   jaxbApi: "javax.xml.bind:jaxb-api:$versions.jaxb",
   jaxrsApi: "javax.ws.rs:javax.ws.rs-api:$versions.jaxrs",

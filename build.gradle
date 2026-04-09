@@ -157,6 +157,7 @@ allprojects {
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
       resolutionStrategy {
+        // AutoMQ inject start
         eachDependency { details ->
           if (details.requested.group == 'io.netty' &&
               details.requested.name != 'netty' &&
@@ -165,6 +166,7 @@ allprojects {
             details.because('Release packaging must align all Netty modules to a single version')
           }
         }
+        // AutoMQ inject end
         force(
           // be explicit about the javassist dependency version instead of relying on the transitive version
           libs.javassist,
@@ -172,7 +174,9 @@ allprojects {
           libs.scalaLibrary,
           libs.scalaReflect,
           libs.jacksonAnnotations,
+          // AutoMQ inject start
           libs.snakeyaml,
+          // AutoMQ inject end
           // be explicit about the Netty dependency version instead of relying on the version set by
           // ZooKeeper (potentially older and containing CVEs)
           libs.nettyHandler,
