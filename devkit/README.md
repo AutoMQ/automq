@@ -313,6 +313,29 @@ just start 5 zerozone analytics     # 5-node + zone router + query engines
 | `telemetry` | OTel metrics export via OTLP HTTP — **edit `config/features/telemetry.properties` to set collector endpoint before use** | — (config only) |
 | `analytics` | Spark + Trino for querying Iceberg tables | Spark (:8888), Trino (:8090) |
 
+## Namespace (Multi-Instance Isolation)
+
+Run multiple DevKit instances on the same machine without port conflicts. Each namespace gets a unique `COMPOSE_PROJECT_NAME` and port offset.
+
+**Requires separate git worktrees** — each worktree has its own `devkit/` directory and `.devkit/compose.env`, so each instance is fully isolated. You cannot run multiple namespaces from the same devkit directory.
+
+```bash
+# In worktree A:
+just set-ns lag-test 1    # ID=1 → ports offset by +100
+just start 3
+
+# In worktree B:
+just set-ns perf 2        # ID=2 → ports offset by +200
+just start
+
+# Revert to default ports
+just clear-ns
+```
+
+- Name: 1-8 chars, must start with a letter, only `[a-z0-9-]`
+- ID: 1-9, determines port offset (`ID * 100`)
+- Config is stored in `.devkit/compose.env` (gitignored)
+
 ## Port Allocation
 
 | Node | Kafka | Controller | JDWP | JMX |
@@ -353,6 +376,8 @@ Other services:
 | `S3_DATA_BUCKET` | `automq-data` | Data bucket |
 | `S3_OPS_BUCKET` | `automq-ops` | Ops bucket |
 | `S3_PATH_STYLE` | `true` | Path-style access (required for MinIO) |
+| `S3_ACCESS_KEY` | `admin` | S3 access key (exported as `KAFKA_S3_ACCESS_KEY` to containers) |
+| `S3_SECRET_KEY` | `password` | S3 secret key (exported as `KAFKA_S3_SECRET_KEY` to containers) |
 
 **Per-node variables** (computed per node, Layer 2/3/4):
 
@@ -373,6 +398,8 @@ S3_ENDPOINT    := "https://s3.ap-northeast-1.amazonaws.com"
 S3_DATA_BUCKET := "my-automq-data"
 S3_OPS_BUCKET  := "my-automq-ops"
 S3_PATH_STYLE  := "false"
+S3_ACCESS_KEY  := "AKIA..."
+S3_SECRET_KEY  := "..."
 ```
 
 **Change listeners (e.g. SASL)** — edit `config/role/server.properties`:
