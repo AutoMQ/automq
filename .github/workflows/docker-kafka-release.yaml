@@ -12,9 +12,6 @@ on:
     types:
       - completed
 
-env:
-  KAFKA_VERSION: "3.9.1"
-
 jobs:
   automq-kafka-release:
     name: AutoMQ Kafka Docker Image Release
@@ -29,6 +26,21 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2.12.0
+
+      - name: Get project version
+        id: get_project_version
+        run: |
+          project_version=$(./gradlew properties | grep "version:" | awk '{print $2}')
+          echo "PROJECT_VERSION=${project_version}" >> $GITHUB_OUTPUT
+
       - name: Get release tag
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
@@ -40,6 +52,7 @@ jobs:
             TAG="${{ github.event.workflow_run.head_branch }}"
           fi
 
+          KAFKA_VERSION="${{ steps.get_project_version.outputs.PROJECT_VERSION }}"
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
           {

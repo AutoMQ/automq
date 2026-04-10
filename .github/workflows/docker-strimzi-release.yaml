@@ -13,7 +13,6 @@ on:
       - completed
 
 env:
-  KAFKA_VERSION: "3.9.1"
   STRIMZI_REPO: "https://github.com/AutoMQ/strimzi-kafka-operator.git"
   STRIMZI_BRANCH: "main"
 
@@ -34,6 +33,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2.12.0
+
+      - name: Get project version
+        id: get_project_version
+        run: |
+          project_version=$(./gradlew properties | grep "version:" | awk '{print $2}')
+          echo "PROJECT_VERSION=${project_version}" >> $GITHUB_OUTPUT
+
       - name: Get release tag
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.tag }}" ]]; then
@@ -45,18 +59,14 @@ jobs:
             TAG="${{ github.event.workflow_run.head_branch }}"
           fi
 
+          KAFKA_VERSION="${{ steps.get_project_version.outputs.PROJECT_VERSION }}"
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
           {
             echo "AUTOMQ_VERSION=${TAG}"
             echo "AUTOMQ_URL=${AUTOMQ_URL}"
+            echo "KAFKA_VERSION=${KAFKA_VERSION}"
           } >> $GITHUB_ENV
-
-      - name: Set up JDK ${{ matrix.jdk }}
-        uses: actions/setup-java@v3
-        with:
-          java-version: ${{ matrix.jdk }}
-          distribution: "zulu"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
