@@ -31,7 +31,7 @@
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/grab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/lguplus?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/tencent?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="50" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/honda?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="25" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/honda?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="35" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/jd?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="25" /></a></td>
   </tr>
   <tr>
