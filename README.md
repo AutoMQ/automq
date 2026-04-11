@@ -43,20 +43,21 @@
     <img alt="Trip" src="https://github.com/user-attachments/assets/0cb4ae63-6dc1-43dc-9416-625a08dca2e5" width="19%" />
 </a>
 <a href="https://www.automq.com/customers/iqiyi?utm_source=github_automq" target="_blank">
-    <img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" width="19%" />
+    <img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" width="11%" />
 </a>
 <a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" width="19%" />
+    <img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" width="11%" />
 </a>
 <a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" width="19%" />
+    <img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" width="11%" />
 </a>
 <a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" width="19%" />
+    <img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" width="11%" />
 </a>
 <a href="https://www.automq.com/customer" target="_blank">
     <img alt="LG" src="https://github.com/user-attachments/assets/ed9e0f87-abc6-4552-977c-f342ecb105a0" width="19%" />
 </a>
+<br>
 <a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank">
     <img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="19%" />
 </a> 
