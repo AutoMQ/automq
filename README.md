@@ -28,39 +28,39 @@
 
 <table>
   <tr>
-    <td align="center" valign="middle" width="20%" style="padding:20px"><a href="https://www.automq.com/customers/grab" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
-    <td align="center" valign="middle" width="20%" style="padding:20px"><a href="https://www.automq.com/customers/tencent" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" style="padding:20px"><a href="https://www.automq.com/customers/lguplus" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" style="padding:20px"><a href="https://www.automq.com/customers/geely" target="_blank"><img alt="Geely" src="https://www.automq.com/customers/geely.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" style="padding:20px"><a href="https://www.automq.com/customers/bambulab" target="_blank"><img alt="Bambu Lab" src="https://www.automq.com/customers/bambulab.webp" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/grab" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
+    <td align="center" valign="middle" width="20%" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/tencent" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/lguplus" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/geely" target="_blank"><img alt="Geely" src="https://www.automq.com/customers/geely.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/bambulab" target="_blank"><img alt="Bambu Lab" src="https://www.automq.com/customers/bambulab.webp" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/honda" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/aviagames" target="_blank"><img alt="Avia Games" src="https://www.automq.com/customers/aviagames.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/jd" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/iqiyi" target="_blank"><img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/poizon" target="_blank"><img alt="Poizon" src="https://www.automq.com/customers/poizon.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/honda" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/aviagames" target="_blank"><img alt="Avia Games" src="https://www.automq.com/customers/aviagames.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/jd" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/iqiyi" target="_blank"><img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/poizon" target="_blank"><img alt="Poizon" src="https://www.automq.com/customers/poizon.svg" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/customers/tencent-music" target="_blank"><img alt="Tencent Music" src="https://www.automq.com/customers/tencent-music.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="HubSpot" src="https://www.automq.com/customers/hubspot.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="PalmPay" src="https://www.automq.com/customers/palmpay.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="CaoCao" src="https://www.automq.com/customers/caocao.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="RS21" src="https://www.automq.com/customers/rs21.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/customers/tencent-music" target="_blank"><img alt="Tencent Music" src="https://www.automq.com/customers/tencent-music.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="HubSpot" src="https://www.automq.com/customers/hubspot.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="PalmPay" src="https://www.automq.com/customers/palmpay.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="CaoCao" src="https://www.automq.com/customers/caocao.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="RS21" src="https://www.automq.com/customers/rs21.webp" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="Angaza" src="https://www.automq.com/customers/angaza.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="Fresha" src="https://www.automq.com/customers/fresha.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="Oneiot" src="https://www.automq.com/customers/oneiot.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="XPENG" src="https://www.automq.com/customers/xpeng.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="Xiaohongshu" src="https://www.automq.com/customers/xiaohongshu.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="Angaza" src="https://www.automq.com/customers/angaza.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="Fresha" src="https://www.automq.com/customers/fresha.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="Oneiot" src="https://www.automq.com/customers/oneiot.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="XPENG" src="https://www.automq.com/customers/xpeng.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="Xiaohongshu" src="https://www.automq.com/customers/xiaohongshu.svg" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="TokenPocket" src="https://www.automq.com/customers/tokenpocket.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="WeBank" src="https://www.automq.com/customers/weizhong.svg" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="ThinkingData" src="https://www.automq.com/customers/thinkingdata.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="Trip.com" src="https://www.automq.com/customers/tripcom.webp" height="40" /></a></td>
-    <td align="center" valign="middle" style="padding:20px"><a href="https://www.automq.com/contact" target="_blank"><img alt="OceanBase" src="https://www.automq.com/customers/oceanbase.png" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="TokenPocket" src="https://www.automq.com/customers/tokenpocket.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="WeBank" src="https://www.automq.com/customers/weizhong.svg" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="ThinkingData" src="https://www.automq.com/customers/thinkingdata.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="Trip.com" src="https://www.automq.com/customers/tripcom.webp" height="40" /></a></td>
+    <td align="center" valign="middle" style="padding:20px;background:#fff"><a href="https://www.automq.com/contact" target="_blank"><img alt="OceanBase" src="https://www.automq.com/customers/oceanbase.png" height="40" /></a></td>
   </tr>
 </table>
 </div>
