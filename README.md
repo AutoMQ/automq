@@ -65,7 +65,6 @@
 </table>
 </div>
 
-
 - [Grab: Reduced Processing from Hours to Seconds, Tripled Efficiency](https://www.automq.com/customers/grab)
 - [Tencent: First-Party Service for Tencent Cloud EMR](https://www.automq.com/customers/tencent)
 - [LG U+: 2.2B Daily Messages with Stateless Kafka Architecture](https://www.automq.com/customers/lguplus)
