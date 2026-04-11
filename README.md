@@ -28,18 +28,18 @@
 
 <table frame="void" rules="none" cellspacing="0" cellpadding="0">
   <tr>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/grab" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/lguplus" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/tencent" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/honda" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/jd" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/grab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/lguplus?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/tencent?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/honda?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/jd?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/bambulab" target="_blank"><img alt="Bambu Lab" src="https://www.automq.com/customers/bambulab.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" height="40" /></a></td>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/aviagames" target="_blank"><img alt="Avia Games" src="https://www.automq.com/customers/aviagames.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/bambulab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Bambu Lab" src="https://www.automq.com/customers/bambulab.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/aviagames?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Avia Games" src="https://www.automq.com/customers/aviagames.svg" height="40" /></a></td>
   </tr>
 </table>
 </div>
