@@ -7,7 +7,7 @@
     target="_blank"
   ><b>Documentation</b></a>&nbsp&nbsp&nbsp
   🔥&nbsp <a
-    href="https://account.automq.cloud?utm_source=github_automq"
+    href="https://account.automq.cloud?utm_source=github&utm_medium=readme&utm_campaign=playground"
     target="_blank"
   ><b>Explore AutoMQ Playground Now</b></a>&nbsp&nbsp&nbsp
 </p>
