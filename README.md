@@ -98,8 +98,8 @@
 - [Avia Games: Eliminating Maintenance Disruptions by Migrating from AWS MSK to AutoMQ](https://www.automq.com/customers/aviagames?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
 - [Why JD.com Replaces Kafka with AutoMQ at 40 GiB/s Scale](https://www.automq.com/customers/jd?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
 - [iQIYI: Architectural Agility for a Cloud-Native Streaming Journey](https://www.automq.com/customers/iqiyi?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
-- [Mihoyo: Eliminating Kafka Over-Provisioning with True On-Demand Scaling](https://www.automq.com/solutions/gaming?utm_source=github_automq)
-- [Funplus: Diskless Kafka Eliminates AWS Cross-AZ Traffic Costs for Real Savings](https://www.automq.com/solutions/gaming?utm_source=github_automq)
+- [miHoYo: Eliminating Kafka Over-Provisioning with True On-Demand Scaling](https://www.automq.com/solutions/gaming?utm_source=github_automq)
+- [FunPlus: Diskless Kafka Eliminates AWS Cross-AZ Traffic Costs for Real Savings](https://www.automq.com/solutions/gaming?utm_source=github_automq)
 - [Hungry Studio: Building a Multi-Cloud Real-Time Streaming Analytics Architecture on AutoMQ](https://www.automq.com/solutions/gaming?utm_source=github_automq)
 
 
