@@ -26,66 +26,36 @@
 
 <img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/f8b65049-231f-4df2-aa10-b20745ae558c" />
 
-<a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
-    <img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="19%" />
-</a> 
-
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Avia" src="https://github.com/user-attachments/assets/d2845e1c-caf4-444a-93f0-97b13c9c8490" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Tencent" src="https://github.com/user-attachments/assets/2bdd205f-38c1-4110-9af1-d4c782db3395" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Honda" src="https://github.com/user-attachments/assets/ee65af29-8ee3-404b-bf81-a004fe0c327c" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Trip" src="https://github.com/user-attachments/assets/0cb4ae63-6dc1-43dc-9416-625a08dca2e5" width="19%" />
-</a>
-<a href="https://www.automq.com/customers/iqiyi?utm_source=github_automq" target="_blank">
-    <img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" width="11%" />
-</a>
-<a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" width="11%" />
-</a>
-<a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" width="11%" />
-</a>
-<a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank">
-    <img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" width="11%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="LG" src="https://github.com/user-attachments/assets/ed9e0f87-abc6-4552-977c-f342ecb105a0" width="19%" />
-</a>
-<br>
-<a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank">
-    <img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="19%" />
-</a> 
-
-<a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank">
-    <img alt="Geely" src="https://github.com/user-attachments/assets/d61f7c51-0d80-4290-a428-a941441c7ec9" width="19%" />
-</a>
-<a href="https://www.automq.com/blog/dewu-builds-trillion-level-monitoring-system-based-on-automq" target="_blank">
-    <img alt="Poizon" src="https://github.com/user-attachments/assets/45f4c642-0495-4bcc-9224-d2c5c2b2f0d5" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Bitkub" src="https://github.com/user-attachments/assets/3b95cd26-973d-4405-9d2c-289c5807bb39" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="PalmPay" src="https://github.com/user-attachments/assets/b22f70f5-7553-4283-ac20-f034868b0121" width="19%" />
-</a> 
-<a href="https://www.automq.com/blog/automq-vs-kafka-evaluation-and-comparison-by-little-red-book" target="_blank">
-    <img alt="RedNote" src="https://github.com/user-attachments/assets/4a62f1f3-e171-4d58-9d7e-ebabad6f8e23" width="19%" />
-</a> 
-<a href="https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq" target="_blank">
-    <img alt="XPENG" src="https://github.com/user-attachments/assets/8b32c484-a4bf-4793-80d0-f454da254337" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="OPPO" src="https://github.com/user-attachments/assets/2b6d3cf0-ae54-4073-bc06-c6623e31c6d0" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="BambuLab" src="https://github.com/user-attachments/assets/d09ded1b-3696-49ac-b38f-d02f9598b3bb" width="19%" />
-</a>
+<table border="0" cellspacing="0" cellpadding="0">
+  <tr>
+    <td align="center" valign="middle" width="20%"><a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank"><img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="Avia" src="https://github.com/user-attachments/assets/d2845e1c-caf4-444a-93f0-97b13c9c8490" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="Tencent" src="https://github.com/user-attachments/assets/2bdd205f-38c1-4110-9af1-d4c782db3395" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="Honda" src="https://github.com/user-attachments/assets/ee65af29-8ee3-404b-bf81-a004fe0c327c" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="Trip" src="https://github.com/user-attachments/assets/0cb4ae63-6dc1-43dc-9416-625a08dca2e5" width="100%"/></a></td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customers/iqiyi?utm_source=github_automq" target="_blank"><img alt="iQIYI" src="https://www.automq.com/customers/iqiyi.svg" width="55%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank"><img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" width="55%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank"><img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" width="55%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/solutions/gaming?utm_source=github_automq" target="_blank"><img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" width="55%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="LG" src="https://github.com/user-attachments/assets/ed9e0f87-abc6-4552-977c-f342ecb105a0" width="100%"/></a></td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank"><img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank"><img alt="Geely" src="https://github.com/user-attachments/assets/d61f7c51-0d80-4290-a428-a941441c7ec9" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/blog/dewu-builds-trillion-level-monitoring-system-based-on-automq" target="_blank"><img alt="Poizon" src="https://github.com/user-attachments/assets/45f4c642-0495-4bcc-9224-d2c5c2b2f0d5" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="Bitkub" src="https://github.com/user-attachments/assets/3b95cd26-973d-4405-9d2c-289c5807bb39" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="PalmPay" src="https://github.com/user-attachments/assets/b22f70f5-7553-4283-ac20-f034868b0121" width="100%"/></a></td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/blog/automq-vs-kafka-evaluation-and-comparison-by-little-red-book" target="_blank"><img alt="RedNote" src="https://github.com/user-attachments/assets/4a62f1f3-e171-4d58-9d7e-ebabad6f8e23" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq" target="_blank"><img alt="XPENG" src="https://github.com/user-attachments/assets/8b32c484-a4bf-4793-80d0-f454da254337" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="OPPO" src="https://github.com/user-attachments/assets/2b6d3cf0-ae54-4073-bc06-c6623e31c6d0" width="100%"/></a></td>
+    <td align="center" valign="middle" width="20%"><a href="https://www.automq.com/customer" target="_blank"><img alt="BambuLab" src="https://github.com/user-attachments/assets/d09ded1b-3696-49ac-b38f-d02f9598b3bb" width="100%"/></a></td>
+    <td width="20%"></td>
+  </tr>
+</table>
 </div>
 
 
