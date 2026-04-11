@@ -35,7 +35,7 @@
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/jd" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="40" /></a></td>
   </tr>
   <tr>
-    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/contact" target="_blank"><img alt="Trip.com" src="https://www.automq.com/customers/tripcom.webp" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/bambulab" target="_blank"><img alt="Bambu Lab" src="https://www.automq.com/customers/bambulab.svg" height="40" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" height="40" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" height="40" /></a></td>
     <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming" target="_blank"><img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" height="40" /></a></td>
