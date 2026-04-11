@@ -66,14 +66,13 @@
 </div>
 
 
-- [Grab: Driving Efficiency with AutoMQ in DataStreaming Platform](https://www.youtube.com/watch?v=IB8sh639Rsg)
-- [JD.com x AutoMQ x CubeFS: A Cost-Effective Journey](https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging?utm_source=github_automq)
-- [Palmpay Uses AutoMQ to Replace Kafka, Optimizing Costs by 50%+](https://www.automq.com/blog/palmpay-uses-automq-to-replace-kafka?utm_source=github_automq)
-- [AutoMQ help Geely Auto(Fortune Global 500) solve the pain points of Kafka elasticity in the V2X scenario](https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario?utm_source=github_automq)
-- [How Asia’s Quora Zhihu uses AutoMQ to reduce Kafka cost and maintenance complexity](https://www.automq.com/blog/how-asias-quora-zhihu-use-automq-to-reduce-kafka-cost-and-maintenance-complexity?utm_source=github_automq)
-- [XPENG Motors Reduces Costs by 50%+ by Replacing Kafka with AutoMQ](https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq?utm_source=github_automq)
-- [Asia's GOAT, Poizon uses AutoMQ Kafka to build observability platform for massive data(30 GB/s)](https://www.automq.com/blog/asiax27s-goat-poizon-uses-automq-kafka-to-build-a-new-generation-observability-platform-for-massive-data?utm_source=github_automq)
-- [AutoMQ Helps CaoCao Mobility Address Kafka Scalability During Holidays](https://www.automq.com/blog/automq-helps-caocao-mobility-address-kafka-scalability-issues-during-mid-autumn-and-national-day?utm_source=github_automq)
+- [Grab: Reduced Processing from Hours to Seconds, Tripled Efficiency](https://www.automq.com/customers/grab)
+- [Tencent: First-Party Service for Tencent Cloud EMR](https://www.automq.com/customers/tencent)
+- [LG U+: 2.2B Daily Messages with Stateless Kafka Architecture](https://www.automq.com/customers/lguplus)
+- [Geely: Streaming Infrastructure for 10-Million-Vehicle Fleet](https://www.automq.com/customers/geely)
+- [Bambu Lab: Unified Streaming Architecture Across Multiple Clouds](https://www.automq.com/customers/bambulab)
+- [Honda: Slashed Kafka TCO by 50% with Diskless Architecture](https://www.automq.com/customers/honda)
+- [Avia Games: Regained Control from Unpredictable MSK Maintenance](https://www.automq.com/customers/aviagames)
 
 
 ### Prerequisites
