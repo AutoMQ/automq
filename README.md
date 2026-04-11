@@ -7,9 +7,9 @@
     target="_blank"
   ><b>Documentation</b></a>&nbsp&nbsp&nbsp
   🔥&nbsp <a
-    href="https://www.automq.com/docs/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace?utm_source=github_automq"
+    href="https://account.automq.cloud?utm_source=github&utm_medium=readme&utm_campaign=playground"
     target="_blank"
-  ><b>Free trial of AutoMQ on AWS</b></a>&nbsp&nbsp&nbsp
+  ><b>Explore AutoMQ Playground Now</b></a>&nbsp&nbsp&nbsp
 </p>
 
 [![Linkedin Badge](https://img.shields.io/badge/-LinkedIn-blue?style=flat-square&logo=Linkedin&logoColor=white&link=https://www.linkedin.com/company/automq)](https://www.linkedin.com/company/automq)
@@ -24,66 +24,39 @@
 
 <div align="center">
 
-<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/bdf6c5f5-7fe1-4004-8e15-54f1aa6bc32f" />
+<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/f8b65049-231f-4df2-aa10-b20745ae558c" />
 
-<a href="https://www.youtube.com/watch?v=IB8sh639Rsg" target="_blank">
-    <img alt="Grab" src="https://github.com/user-attachments/assets/01668da4-3916-4f49-97af-18f91b25f8c1" width="19%" />
-</a> 
-
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Avia" src="https://github.com/user-attachments/assets/d2845e1c-caf4-444a-93f0-97b13c9c8490" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Tencent" src="https://github.com/user-attachments/assets/2bdd205f-38c1-4110-9af1-d4c782db3395" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Honda" src="https://github.com/user-attachments/assets/ee65af29-8ee3-404b-bf81-a004fe0c327c" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Trip" src="https://github.com/user-attachments/assets/0cb4ae63-6dc1-43dc-9416-625a08dca2e5" width="19%" />
-</a>
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="LG" src="https://github.com/user-attachments/assets/ed9e0f87-abc6-4552-977c-f342ecb105a0" width="19%" />
-</a>
-<a href="https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging" target="_blank">
-    <img alt="JD" src="https://github.com/user-attachments/assets/a7a86d2c-66fa-4575-b181-6cf56a31f880" width="19%" />
-</a> 
-
-<a href="https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario" target="_blank">
-    <img alt="Geely" src="https://github.com/user-attachments/assets/d61f7c51-0d80-4290-a428-a941441c7ec9" width="19%" />
-</a>
-<a href="https://www.automq.com/blog/dewu-builds-trillion-level-monitoring-system-based-on-automq" target="_blank">
-    <img alt="Poizon" src="https://github.com/user-attachments/assets/45f4c642-0495-4bcc-9224-d2c5c2b2f0d5" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="Bitkub" src="https://github.com/user-attachments/assets/3b95cd26-973d-4405-9d2c-289c5807bb39" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="PalmPay" src="https://github.com/user-attachments/assets/b22f70f5-7553-4283-ac20-f034868b0121" width="19%" />
-</a> 
-<a href="https://www.automq.com/blog/automq-vs-kafka-evaluation-and-comparison-by-little-red-book" target="_blank">
-    <img alt="RedNote" src="https://github.com/user-attachments/assets/4a62f1f3-e171-4d58-9d7e-ebabad6f8e23" width="19%" />
-</a> 
-<a href="https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq" target="_blank">
-    <img alt="XPENG" src="https://github.com/user-attachments/assets/8b32c484-a4bf-4793-80d0-f454da254337" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="OPPO" src="https://github.com/user-attachments/assets/2b6d3cf0-ae54-4073-bc06-c6623e31c6d0" width="19%" />
-</a> 
-<a href="https://www.automq.com/customer" target="_blank">
-    <img alt="BambuLab" src="https://github.com/user-attachments/assets/d09ded1b-3696-49ac-b38f-d02f9598b3bb" width="19%" />
-</a>
+<table frame="void" rules="none" cellspacing="0" cellpadding="0">
+  <tr>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/grab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Grab" src="https://www.automq.com/customers/grab.svg" height="30" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/lguplus?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="LG U+" src="https://www.automq.com/customers/lguplus.png" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/tencent?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Tencent" src="https://www.automq.com/customers/tencent.svg" height="50" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/honda?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Honda" src="https://www.automq.com/customers/honda.svg" height="25" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/jd?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="JD" src="https://www.automq.com/customers/jd.svg" height="25" /></a></td>
+  </tr>
+  <tr>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/bambulab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Bambu Lab" src="https://github.com/user-attachments/assets/d09ded1b-3696-49ac-b38f-d02f9598b3bb" height="55" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="miHoYo" src="https://www.automq.com/customers/mihoyo.svg" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Hungry Studio" src="https://www.automq.com/gaming/hungry-studio-logo.webp" height="40" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/solutions/gaming?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="FunPlus" src="https://www.automq.com/gaming/funplus-logo.webp" height="50" /></a></td>
+    <td align="center" valign="middle" width="20%" height="80"><a href="https://www.automq.com/customers/aviagames?utm_source=github&utm_medium=readme&utm_campaign=customer-cases" target="_blank"><img alt="Avia Games" src="https://www.automq.com/customers/aviagames.svg" height="40" /></a></td>
+  </tr>
+</table>
 </div>
 
 
-- [Grab: Driving Efficiency with AutoMQ in DataStreaming Platform](https://www.youtube.com/watch?v=IB8sh639Rsg)
-- [JD.com x AutoMQ x CubeFS: A Cost-Effective Journey](https://www.automq.com/blog/jdcom-automq-cubefs-trillion-scale-kafka-messaging?utm_source=github_automq)
-- [Palmpay Uses AutoMQ to Replace Kafka, Optimizing Costs by 50%+](https://www.automq.com/blog/palmpay-uses-automq-to-replace-kafka?utm_source=github_automq)
-- [AutoMQ help Geely Auto(Fortune Global 500) solve the pain points of Kafka elasticity in the V2X scenario](https://www.automq.com/blog/automq-help-geely-auto-solve-the-pain-points-of-kafka-elasticity-in-the-v2x-scenario?utm_source=github_automq)
-- [How Asia’s Quora Zhihu uses AutoMQ to reduce Kafka cost and maintenance complexity](https://www.automq.com/blog/how-asias-quora-zhihu-use-automq-to-reduce-kafka-cost-and-maintenance-complexity?utm_source=github_automq)
-- [XPENG Motors Reduces Costs by 50%+ by Replacing Kafka with AutoMQ](https://www.automq.com/blog/xpeng-motors-reduces-costs-by-50-by-replacing-kafka-with-automq?utm_source=github_automq)
-- [Asia's GOAT, Poizon uses AutoMQ Kafka to build observability platform for massive data(30 GB/s)](https://www.automq.com/blog/asiax27s-goat-poizon-uses-automq-kafka-to-build-a-new-generation-observability-platform-for-massive-data?utm_source=github_automq)
-- [AutoMQ Helps CaoCao Mobility Address Kafka Scalability During Holidays](https://www.automq.com/blog/automq-helps-caocao-mobility-address-kafka-scalability-issues-during-mid-autumn-and-national-day?utm_source=github_automq)
+- [From 6 Hours to Seconds: How Grab Achieved 3x Data Streaming Efficiency with AutoMQ](https://www.automq.com/customers/grab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Tencent Cloud EMR uses AutoMQ as a first-party service](https://www.automq.com/customers/tencent?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [2.2B Messages a Day: LG U+ Modernizes Log Pipelines with AutoMQ on AWS](https://www.automq.com/customers/lguplus?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Geely: Powering Hybrid Cloud Streaming for a 10-Million-Vehicle Fleet](https://www.automq.com/customers/geely?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Bambu Lab: Unifying Multi-Cloud Data Streaming with Stateless Kafka](https://www.automq.com/customers/bambulab?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Honda: Slashing Kafka TCO by 50% with Cloud-Native Diskless Architecture](https://www.automq.com/customers/honda?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Avia Games: Eliminating Maintenance Disruptions by Migrating from AWS MSK to AutoMQ](https://www.automq.com/customers/aviagames?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [Why JD.com Replaces Kafka with AutoMQ at 40 GiB/s Scale](https://www.automq.com/customers/jd?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [iQIYI: Architectural Agility for a Cloud-Native Streaming Journey](https://www.automq.com/customers/iqiyi?utm_source=github&utm_medium=readme&utm_campaign=customer-cases)
+- [miHoYo: Eliminating Kafka Over-Provisioning with True On-Demand Scaling](https://www.automq.com/solutions/gaming?utm_source=github_automq)
+- [FunPlus: Diskless Kafka Eliminates AWS Cross-AZ Traffic Costs for Real Savings](https://www.automq.com/solutions/gaming?utm_source=github_automq)
+- [Hungry Studio: Building a Multi-Cloud Real-Time Streaming Analytics Architecture on AutoMQ](https://www.automq.com/solutions/gaming?utm_source=github_automq)
 
 
 ### Prerequisites
