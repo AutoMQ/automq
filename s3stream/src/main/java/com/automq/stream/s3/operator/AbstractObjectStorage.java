@@ -344,7 +344,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         data.release();
                         fastRetryPermit.release();
 
-                        // OCI concurrent write exception, if one write has succeeded, do not log failed records.
+                        // OCI S3 and AWS S3 have different write mechanisms for conditional operations.
+                        // AWS silently overwrites objects, while OCI returns the following error:
+                        // FAILED_PRECONDITION: A concurrent update to object xx was modified concurrently.
+                        // If one write has succeeded, do not log failed records.
                         if (!completedFlag.get()) {
                             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                         }
@@ -363,7 +366,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 finalCf.complete(null);
             }
         }).exceptionally(ex -> {
-            // OCI concurrent write exception, if one write has succeeded, do not log failed records.
+            // OCI S3 and AWS S3 have different write mechanisms for conditional operations.
+            // AWS silently overwrites objects, while OCI returns the following error:
+            // FAILED_PRECONDITION: A concurrent update to object xx was modified concurrently.
+            // If one write has succeeded, do not log failed records.
             if (completedFlag.get()) {
                 data.release();
                 return null;
