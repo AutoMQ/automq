@@ -33,7 +33,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{AsyncFetchListener, ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.clients.admin.ClusterEventPublisher
 import org.apache.kafka.common.config.ConfigException
@@ -66,8 +66,7 @@ import java.util
 import java.util.Optional
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.{Condition, ReentrantLock}
-import java.util.concurrent.{CompletableFuture, ExecutionException, ExecutorService, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit, TimeoutException}
-import org.apache.kafka.common.utils.ThreadUtils
+import java.util.concurrent.{CompletableFuture, ExecutionException, ExecutorService, TimeUnit, TimeoutException}
 import scala.collection.Map
 import scala.compat.java8.OptionConverters.RichOptionForJava8
 import scala.jdk.CollectionConverters._
@@ -430,16 +429,10 @@ class BrokerServer(
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
       // AutoMQ inject start
       val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
-      fetchListenerExecutor = new ThreadPoolExecutor(
-        1, 1, 0L, TimeUnit.MILLISECONDS,
-        new LinkedBlockingQueue[Runnable](1024),
-        ThreadUtils.createThreadFactory("fetch-listener-executor", true),
-        new ThreadPoolExecutor.DiscardOldestPolicy()
-      )
-      val asyncFetchListener = new AsyncFetchListener(fetchListener, fetchListenerExecutor)
+      fetchListenerExecutor = newFetchListenerExecutor()
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
-          asyncFetchListener.onSessionClosedBatch(sessionId, partitions)
+          fetchListener.onSessionClosedBatch(sessionId, partitions)
         }
       }
       // AutoMQ inject end
@@ -616,7 +609,7 @@ class BrokerServer(
       trafficInterceptor = newTrafficInterceptor()
       val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
       elasticKafkaApis.setTrafficInterceptor(trafficInterceptor)
-      elasticKafkaApis.setFetchListener(asyncFetchListener)
+      elasticKafkaApis.setFetchListener(fetchListener)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
       replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
 
@@ -933,6 +926,10 @@ class BrokerServer(
   // AutoMQ inject start
   protected def newFetchListener(): FetchListener = {
     FetchListener.NOOP
+  }
+
+  protected def newFetchListenerExecutor(): ExecutorService = {
+    null
   }
 
   protected def newEnterpriseBrokerFacade(): AnyRef = {

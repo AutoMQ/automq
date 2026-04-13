@@ -19,6 +19,8 @@
 
 package kafka.server.streamaspect;
 
+import kafka.server.CachedPartition;
+import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchMetadata;
 
@@ -43,4 +45,10 @@ public interface FetchListener {
     void onFetch(TopicPartition topicPartition, int sessionId, long fetchOffset, long timestamp);
 
     void onSessionClosed(TopicPartition topicPartition, int sessionId);
+
+    default void onSessionClosedBatch(int sessionId, ImplicitLinkedHashCollection<CachedPartition> partitions) {
+        for (CachedPartition partition : partitions) {
+            onSessionClosed(new TopicPartition(partition.topic(), partition.partition()), sessionId);
+        }
+    }
 }
