@@ -20,9 +20,10 @@
 package kafka.server.streamaspect;
 
 import kafka.server.CachedPartition;
-import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
+
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchMetadata;
+import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
 
 public interface FetchListener {
     int NONE_SESSION_ID = FetchMetadata.INVALID_SESSION_ID;
