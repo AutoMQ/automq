@@ -312,6 +312,8 @@ public class LogCache {
         for (; ; ) {
             LogCacheBlock left;
             LogCacheBlock right;
+            long leftFreeOpsModCount;
+            long rightFreeOpsModCount;
             writeLock.lock();
             try {
                 if (blocks.size() <= MERGE_BLOCK_THRESHOLD || mergeStartIndex + 1 >= blocks.size()) {
@@ -326,6 +328,8 @@ public class LogCache {
                     mergeStartIndex++;
                     continue;
                 }
+                leftFreeOpsModCount = left.freeOpsModCount;
+                rightFreeOpsModCount = right.freeOpsModCount;
             } finally {
                 writeLock.unlock();
             }
@@ -343,6 +347,8 @@ public class LogCache {
                 if (blocks.size() > mergeStartIndex + 1
                     && blocks.get(mergeStartIndex) == left
                     && blocks.get(mergeStartIndex + 1) == right
+                    && left.freeOpsModCount == leftFreeOpsModCount
+                    && right.freeOpsModCount == rightFreeOpsModCount
                 ) {
                     blocks.set(mergeStartIndex, newBlock);
                     blocks.remove(mergeStartIndex + 1);
@@ -428,6 +434,7 @@ public class LogCache {
         private final AtomicLong size = new AtomicLong();
         private final List<FreeListener> freeListeners = new ArrayList<>();
         volatile boolean free;
+        long freeOpsModCount;
         private RecordOffset lastRecordOffset;
 
         public LogCacheBlock(long maxSize, int maxStreamCount) {
@@ -497,6 +504,7 @@ public class LogCache {
 
         public void free() {
             suppress(() -> {
+                freeOpsModCount++;
                 List<StreamRangeBound> streams = new ArrayList<>(map.size());
                 map.forEach((streamId, records) -> {
                     streams.add(new StreamRangeBound(streamId, records.startOffset(), records.endOffset()));
@@ -510,6 +518,7 @@ public class LogCache {
         public void free(long streamId) {
             StreamCache streamCache = map.remove(streamId);
             if (streamCache != null) {
+                freeOpsModCount++;
                 LOG_CACHE_ASYNC_EXECUTOR.execute(() -> suppress(streamCache::free, LOGGER));
             }
         }
