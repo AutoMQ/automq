@@ -24,7 +24,7 @@
 
 <div align="center">
 
-<img width="97%" alt="automq-solgan" src="https://github.com/user-attachments/assets/f8b65049-231f-4df2-aa10-b20745ae558c" />
+<img width="100%" alt="automq-solgan" src="https://github.com/user-attachments/assets/f8b65049-231f-4df2-aa10-b20745ae558c" />
 
 <table frame="void" rules="none" cellspacing="0" cellpadding="0">
   <tr>
