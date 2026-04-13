@@ -167,7 +167,6 @@ class BrokerServer(
   var routerChannelProvider: RouterChannelProvider = _
   var confirmWALProvider: ConfirmWALProvider = _
   var trafficInterceptor: TrafficInterceptor = _
-  var fetchListenerExecutor: ExecutorService = _
 
   var backPressureManager: BackPressureManager = _
 
@@ -429,7 +428,6 @@ class BrokerServer(
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
       // AutoMQ inject start
       val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
-      fetchListenerExecutor = newFetchListenerExecutor()
       val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
         override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
           fetchListener.onSessionClosedBatch(sessionId, partitions)
@@ -762,10 +760,6 @@ class BrokerServer(
         }
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
-      if (fetchListenerExecutor != null) {
-        CoreUtils.swallow(fetchListenerExecutor.shutdown(), this)
-        CoreUtils.swallow(fetchListenerExecutor.awaitTermination(5, TimeUnit.SECONDS), this)
-      }
       // AutoMQ for Kafka inject end
 
       // Stop socket server to stop accepting any more connections and requests.
@@ -926,10 +920,6 @@ class BrokerServer(
   // AutoMQ inject start
   protected def newFetchListener(): FetchListener = {
     FetchListener.NOOP
-  }
-
-  protected def newFetchListenerExecutor(): ExecutorService = {
-    null
   }
 
   protected def newEnterpriseBrokerFacade(): AnyRef = {
