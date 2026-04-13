@@ -163,7 +163,6 @@ public class KVControlManagerTest {
 
     @Test
     public void testNamespacedOverwrite() {
-        manager.putKV(new PutKVRequest().setKey("k").setValue("v1".getBytes()).setNamespace("ns"));
         ControllerResult<PutKVResponse> put1 = manager.putKV(new PutKVRequest()
             .setKey("k").setValue("v1".getBytes()).setNamespace("ns"));
         replay(manager, put1.records());
