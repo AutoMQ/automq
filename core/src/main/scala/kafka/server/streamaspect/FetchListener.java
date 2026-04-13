@@ -25,6 +25,9 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchMetadata;
 import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
 
+/**
+ * All callbacks are invoked on the request-handler I/O path; implementations must not block.
+ */
 public interface FetchListener {
     int NONE_SESSION_ID = FetchMetadata.INVALID_SESSION_ID;
     FetchListener NOOP = new FetchListener() {
