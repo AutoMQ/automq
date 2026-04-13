@@ -170,7 +170,10 @@ allprojects {
           libs.nettyHandler,
           libs.nettyTransportNativeEpoll,
 	  // be explicit about the reload4j version instead of relying on the transitive versions
-	  libs.reload4j
+	  libs.reload4j,
+	  // pin OTel sender versions to prevent version conflicts with Strimzi thirdparty-libs
+	  libs.opentelemetryExporterSenderJdk,
+	  libs.opentelemetryExporterSenderGrpcManagedChannel
         )
       }
     }
@@ -2357,6 +2360,8 @@ project(':automq-metrics') {
     api libs.opentelemetryExporterProm
     api libs.opentelemetryExporterOTLP
     api libs.opentelemetryExporterSenderJdk
+    api libs.opentelemetryExporterSenderGrpcManagedChannel
+    api libs.grpcNettyShaded
     api libs.opentelemetryJmx
 
     // Logging dependencies
