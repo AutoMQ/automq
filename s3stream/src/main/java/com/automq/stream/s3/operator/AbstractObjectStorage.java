@@ -344,8 +344,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         data.release();
                         fastRetryPermit.release();
 
-                        // The fast retry request will not retry again.
-                        S3OperationStats.getInstance().putObjectStats(objectSize, false).record(retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                        // OCI S3 and AWS S3 have different write mechanisms for conditional operations.
+                        // AWS silently overwrites objects, while OCI returns the following error:
+                        // FAILED_PRECONDITION: A concurrent update to object xx was modified concurrently.
+                        // If one write has succeeded, do not log failed records.
+                        if (!completedFlag.get()) {
+                            S3OperationStats.getInstance().putObjectStats(objectSize, false).record(retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                        }
                         return null;
                     });
                 } else {
@@ -361,6 +366,15 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 finalCf.complete(null);
             }
         }).exceptionally(ex -> {
+            // OCI S3 and AWS S3 have different write mechanisms for conditional operations.
+            // AWS silently overwrites objects, while OCI returns the following error:
+            // FAILED_PRECONDITION: A concurrent update to object xx was modified concurrently.
+            // If one write has succeeded, do not log failed records.
+            if (completedFlag.get()) {
+                data.release();
+                return null;
+            }
+
             S3OperationStats.getInstance().putObjectStats(objectSize, false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
