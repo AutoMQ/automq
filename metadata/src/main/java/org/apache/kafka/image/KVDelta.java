@@ -19,19 +19,21 @@ package org.apache.kafka.image;
 
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.timeline.TimelineHashMap;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public final class KVDelta {
     private final KVImage image;
 
-    private final Map<String/*key*/, ByteBuffer/*value*/> changedKV = new HashMap<>();
-    private final Set<String/*key*/> removedKeys = new HashSet<>();
+    private final Map<KVKey, ByteBuffer> changedKV = new HashMap<>();
+    private final Set<KVKey> removedKeys = new HashSet<>();
 
     public KVDelta(KVImage image) {
         this.image = image;
@@ -43,22 +45,31 @@ public final class KVDelta {
 
     public void replay(KVRecord record) {
         record.keyValues().forEach(keyValue -> {
-            changedKV.put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
-            removedKeys.remove(keyValue.key());
+            KVKey kvKey = KVKey.of(keyValue.namespace(), keyValue.key());
+            changedKV.put(kvKey, ByteBuffer.wrap(keyValue.value()));
+            removedKeys.remove(kvKey);
         });
     }
 
     public void replay(RemoveKVRecord record) {
-        record.keys().forEach(key -> {
-            removedKeys.add(key);
-            changedKV.remove(key);
-        });
+        List<String> keys = record.keys();
+        List<String> namespaces = record.namespaces();
+        if (namespaces != null && namespaces.size() != keys.size()) {
+            throw new IllegalArgumentException("RemoveKVRecord: namespaces length " + namespaces.size()
+                + " does not match keys length " + keys.size());
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            String ns = namespaces != null ? namespaces.get(i) : null;
+            KVKey kvKey = KVKey.of(ns, keys.get(i));
+            removedKeys.add(kvKey);
+            changedKV.remove(kvKey);
+        }
     }
 
     public KVImage apply() {
         RegistryRef registry = image.registryRef();
         // get original objects first
-        TimelineHashMap<String, ByteBuffer> newKVs;
+        TimelineHashMap<KVKey, ByteBuffer> newKVs;
 
         if (registry == RegistryRef.NOOP) {
             registry = new RegistryRef();
@@ -67,7 +78,8 @@ public final class KVDelta {
             newKVs = image.timelineKVs();
         }
 
-        registry.inLock(() -> {
+        RegistryRef finalRegistry = registry;
+        finalRegistry.inLock(() -> {
             newKVs.putAll(changedKV);
             removedKeys.forEach(newKVs::remove);
         });
@@ -77,7 +89,7 @@ public final class KVDelta {
         return new KVImage(newKVs, registry);
     }
 
-    public Map<String, ByteBuffer> changedKV() {
+    public Map<KVKey, ByteBuffer> changedKV() {
         return changedKV;
     }
 }

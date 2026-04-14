@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
@@ -125,7 +126,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (delta.kvDelta() == null) {
             return;
         }
-        ByteBuffer value = delta.kvDelta().changedKV().get(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY);
+        ByteBuffer value = delta.kvDelta().changedKV().get(KVKey.of(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY));
         if (value == null) {
             return;
         }

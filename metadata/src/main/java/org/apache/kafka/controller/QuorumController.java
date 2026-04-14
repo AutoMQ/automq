@@ -2061,9 +2061,6 @@ public final class QuorumController implements Controller {
         this.time = time;
         this.controllerMetrics = controllerMetrics;
         this.snapshotRegistry = new SnapshotRegistry(logContext);
-        // AutoMQ for Kafka inject start
-        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext);
-        // AutoMQ for Kafka inject end
         this.deferredEventQueue = new DeferredEventQueue(logContext);
         this.deferredUnstableEventQueue = new DeferredEventQueue(logContext);
         this.offsetControl = new OffsetControlManager.Builder().
@@ -2100,6 +2097,9 @@ public final class QuorumController implements Controller {
             setMetadataVersion(MetadataVersion.MINIMUM_KRAFT_VERSION).
             setClusterFeatureSupportDescriber(clusterSupportDescriber).
             build();
+        // AutoMQ for Kafka inject start
+        this.kvControlManager = new KVControlManager(snapshotRegistry, logContext, featureControl::autoMQVersion);
+        // AutoMQ for Kafka inject end
         this.clusterControl = new ClusterControlManager.Builder().
             setLogContext(logContext).
             setClusterId(clusterId).
