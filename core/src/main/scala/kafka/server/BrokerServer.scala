@@ -174,6 +174,7 @@ class BrokerServer(
   config.addReconfigurable(clientRackProvider)
 
   var tableManager: TableManager = _
+  var requestErrorAccumulator: RequestErrorAccumulator = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -461,6 +462,22 @@ class BrokerServer(
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
         config.numIoThreads, s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
         DataPlaneAcceptor.ThreadPrefix)
+
+      // AutoMQ inject start - cluster event publisher and request error accumulator
+      try {
+        val publisherConfig = new java.util.HashMap[String, Object]()
+        kafka.automq.utils.ClientUtils.clusterClientBaseConfig(config).forEach { (k, v) =>
+          publisherConfig.put(k.toString, v)
+        }
+        config.rack.foreach(rack => publisherConfig.put("client.id", "automq_az=" + rack))
+        org.apache.kafka.clients.admin.ClusterEventPublisher.setup(publisherConfig)
+        requestErrorAccumulator = new RequestErrorAccumulator(config.nodeId, 30000L)
+        socketServer.dataPlaneRequestChannel.requestErrorAccumulator = requestErrorAccumulator
+      } catch {
+        case e: Throwable =>
+          error("Failed to initialize ClusterEventPublisher/RequestErrorAccumulator", e)
+      }
+      // AutoMQ inject end
 
       // Start RemoteLogManager before initializing broker metadata publishers.
       remoteLogManagerOpt.foreach { rlm =>
@@ -796,6 +813,12 @@ class BrokerServer(
 
       if (quotaManagers != null)
         CoreUtils.swallow(quotaManagers.shutdown(), this)
+
+      // AutoMQ inject start - shutdown request error accumulator and cluster event publisher
+      if (requestErrorAccumulator != null)
+        CoreUtils.swallow(requestErrorAccumulator.close(), this)
+      CoreUtils.swallow(org.apache.kafka.clients.admin.ClusterEventPublisher.shutdown(), this)
+      // AutoMQ inject end
 
       if (socketServer != null)
         CoreUtils.swallow(socketServer.shutdown(), this)

@@ -24,10 +24,11 @@ import kafka.controller.KafkaController
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.utils.Logging
 import org.apache.kafka.clients.ClientResponse
+import org.apache.kafka.clients.admin.ClusterEventsConfig
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.InvalidTopicException
 import org.apache.kafka.common.internals.Topic
-import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, TABLE_TOPIC_CONTROL_TOPIC_NAME, TABLE_TOPIC_DATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME}
+import org.apache.kafka.common.internals.Topic.{CLUSTER_EVENTS_TOPIC_NAME, GROUP_METADATA_TOPIC_NAME, TABLE_TOPIC_CONTROL_TOPIC_NAME, TABLE_TOPIC_DATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME}
 import org.apache.kafka.common.message.CreateTopicsRequestData
 import org.apache.kafka.common.message.CreateTopicsRequestData.{CreatableTopic, CreatableTopicConfig, CreatableTopicConfigCollection}
 import org.apache.kafka.common.message.MetadataResponseData.MetadataResponseTopic
@@ -262,6 +263,15 @@ class DefaultAutoTopicCreationManager(
         new CreatableTopic()
           .setName(topic)
           .setNumPartitions(50)
+          .setReplicationFactor(1)
+          .setConfigs(convertToTopicConfigCollections(configs))
+      }
+      case CLUSTER_EVENTS_TOPIC_NAME => {
+        val configs = new Properties()
+        configs.put(TopicConfig.RETENTION_MS_CONFIG, ClusterEventsConfig.DEFAULT_RETENTION_MS)
+        new CreatableTopic()
+          .setName(topic)
+          .setNumPartitions(ClusterEventsConfig.DEFAULT_PARTITIONS)
           .setReplicationFactor(1)
           .setConfigs(convertToTopicConfigCollections(configs))
       }

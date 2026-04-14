@@ -335,5 +335,10 @@ public class ForwardingAdmin implements Admin {
         return delegate.exportClusterManifest(options);
     }
 
+    @Override
+    public ClusterEventsReader describeClusterEvents(Long sinceMs) {
+        return delegate.describeClusterEvents(sinceMs);
+    }
+
     // AutoMQ inject end
 }

@@ -420,6 +420,10 @@ public class KafkaAdminClient extends AdminClient {
     private final boolean clientTelemetryEnabled;
     private final MetadataRecoveryStrategy metadataRecoveryStrategy;
 
+    // AutoMQ inject start
+    private final AdminClientConfig adminClientConfig;
+    // AutoMQ inject end
+
     /**
      * The telemetry requests client instance id.
      */
@@ -633,6 +637,9 @@ public class KafkaAdminClient extends AdminClient {
             CommonClientConfigs.RETRY_BACKOFF_JITTER);
         this.clientTelemetryEnabled = config.getBoolean(AdminClientConfig.ENABLE_METRICS_PUSH_CONFIG);
         this.metadataRecoveryStrategy = MetadataRecoveryStrategy.forName(config.getString(AdminClientConfig.METADATA_RECOVERY_STRATEGY_CONFIG));
+        // AutoMQ inject start
+        this.adminClientConfig = config;
+        // AutoMQ inject end
         config.logUnused();
         AppInfoParser.registerAppInfo(JMX_PREFIX, clientId, metrics, time.milliseconds());
         log.debug("Kafka admin client initialized");
@@ -2458,7 +2465,7 @@ public class KafkaAdminClient extends AdminClient {
         return new TopicDescription(topic.name(), topic.isInternal(), partitions, authorisedOperations, topic.topicId());
     }
 
-    // AutoMQ for Kafka inject start
+    // AutoMQ inject start
     @Override
     public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
@@ -2615,7 +2622,12 @@ public class KafkaAdminClient extends AdminClient {
         runnable.call(call, now);
         return new ExportClusterManifestResult(future);
     }
-    // AutoMQ for Kafka inject end
+
+    @Override
+    public ClusterEventsReader describeClusterEvents(Long sinceMs) {
+        return new ClusterEventsReader(ClusterEventsReader.buildConsumerConfig(adminClientConfig), sinceMs);
+    }
+    // AutoMQ inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
                                                             Integer authorizedOperations) {

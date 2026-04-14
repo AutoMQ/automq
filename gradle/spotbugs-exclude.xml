@@ -636,6 +636,10 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"/>
         </Or>
     </Match>
+    <!-- Suppress all warnings for protobuf-generated classes -->
+    <Match>
+        <Package name="~com\.automq\.events"/>
+    </Match>
     <!-- AutoMQ inject end -->
 
     <Match>

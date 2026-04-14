@@ -44,6 +44,7 @@ plugins {
   // Updating the shadow plugin version to 8.1.1 causes issue with signing and publishing the shadowed
   // artifacts - see https://github.com/johnrengelman/shadow/issues/901
   id 'com.github.johnrengelman.shadow' version '8.1.0' apply false
+  id 'com.google.protobuf' version '0.9.4' apply false
   //  Spotless 6.13.0 has issue with Java 21 (see https://github.com/diffplug/spotless/pull/1920), and Spotless 6.14.0+ requires JRE 11
   //  We are going to drop JDK8 support. Hence, the spotless is upgrade to newest version and be applied only if the build env is compatible with JDK 11.
   //  spotless 6.15.0+ has issue in runtime with JDK8 even through we define it with `apply:false`. see https://github.com/diffplug/spotless/issues/2156 for more details
@@ -789,7 +790,7 @@ subprojects {
     apply plugin: 'com.diffplug.spotless'
     spotless {
       java {
-        targetExclude('src/generated/**/*.java','src/generated-test/**/*.java')
+        targetExclude('src/generated/**/*.java', 'src/generated-test/**/*.java', 'build/generated/**/*.java')
         importOrder('kafka', 'org.apache.kafka', 'com', 'net', 'org', 'java', 'javax', '', '\\#')
         removeUnusedImports()
       }
@@ -1704,6 +1705,8 @@ project(':generator') {
 }
 
 project(':clients') {
+  apply plugin: 'com.google.protobuf'
+
   base {
     archivesName = "kafka-clients"
   }
@@ -1720,6 +1723,10 @@ project(':clients') {
     implementation libs.slf4jApi
     implementation libs.opentelemetryProto
     implementation libs.protobuf
+
+    // AutoMQ inject start
+    implementation libs.cloudeventsKafka
+    // AutoMQ inject end
 
     // libraries which should be added as runtime dependencies in generated pom.xml should be defined here:
     shadowed libs.zstd
@@ -1839,7 +1846,7 @@ project(':clients') {
   sourceSets {
     main {
       java {
-        srcDirs = ["src/generated/java", "src/main/java"]
+        srcDirs = ["src/generated/java", "src/main/java", "$buildDir/generated/source/proto/main/java"] // AutoMQ: add proto source
       }
     }
     test {
@@ -1849,7 +1856,28 @@ project(':clients') {
     }
   }
 
+  protobuf {
+    protoc {
+      artifact = "com.google.protobuf:protoc:$versions.protobuf"
+    }
+  }
+
+  // Exclude protobuf-generated sources from checkstyle and spotless
+  afterEvaluate {
+    checkstyleMain.source = checkstyleMain.source.filter { !it.path.contains('/generated/source/proto/') }
+    if (tasks.findByName('spotlessJava')) {
+      spotless {
+        java {
+          targetExclude('build/generated/source/proto/**/*.java')
+        }
+      }
+    }
+  }
+
   compileJava.dependsOn 'processMessages'
+  // AutoMQ inject start: ensure proto sources are generated before compilation
+  compileJava.dependsOn 'generateProto'
+  // AutoMQ inject end
   srcJar.dependsOn 'processMessages'
 
   compileTestJava.dependsOn 'processTestMessages'
@@ -2499,6 +2527,8 @@ project(':tools') {
     implementation (libs.oshi) {
       exclude group: 'org.slf4j', module: 'slf4j-api'
     }
+    implementation libs.cloudeventsKafka
+    implementation libs.protobuf
     // AutoMQ inject end
 
     // for SASL/OAUTHBEARER JWT validation

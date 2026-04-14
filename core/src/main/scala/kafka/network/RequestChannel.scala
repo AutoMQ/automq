@@ -21,7 +21,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.typesafe.scalalogging.Logger
 import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.network
-import kafka.server.{KafkaConfig, RequestLocal}
+import kafka.server.{KafkaConfig, RequestErrorAccumulator, RequestLocal, ResourceErrorExtractor}
 import kafka.utils.Implicits._
 import kafka.utils.{Logging, Pool}
 import org.apache.kafka.common.config.ConfigResource
@@ -187,6 +187,12 @@ object RequestChannel extends Logging {
           throw new ClassCastException(s"Expected request with type ${classTag.runtimeClass}, but found ${r.getClass}")
       }
     }
+
+    // AutoMQ inject start
+    def body[T <: AbstractRequest](clazz: Class[T]): T = {
+      clazz.cast(bodyAndSize.request)
+    }
+    // AutoMQ inject end
 
     def loggableRequest: AbstractRequest = {
 
@@ -392,6 +398,10 @@ class RequestChannel(val queueSize: Int,
   private val multiCallbackQueue = new java.util.ArrayList[ArrayBlockingQueue[BaseRequest]]()
   private var notifiedShutdown = false
 
+  // AutoMQ inject start - request error accumulator
+  @volatile var requestErrorAccumulator: RequestErrorAccumulator = _
+  // AutoMQ inject end
+
   metricsGroup.newGauge(requestQueueSizeMetricName, () => {
     if (multiRequestQueue.size() != 0) {
       multiRequestQueue.stream().mapToInt(q => q.size()).sum()
@@ -456,6 +466,9 @@ class RequestChannel(val queueSize: Int,
     // This case is used when the request handler has encountered an error, but the client
     // does not expect a response (e.g. when produce request has acks set to 0)
     updateErrorMetrics(request.header.apiKey, errorCounts.asScala)
+    // AutoMQ inject start
+    maybeRecordRequestErrorsFromMap(request, errorCounts)
+    // AutoMQ inject end
     sendResponse(new RequestChannel.CloseConnectionResponse(request))
   }
 
@@ -465,6 +478,9 @@ class RequestChannel(val queueSize: Int,
     onComplete: Option[Send => Unit]
   ): Unit = {
     updateErrorMetrics(request.header.apiKey, response.errorCounts.asScala)
+    // AutoMQ inject start
+    maybeRecordRequestErrors(request, response)
+    // AutoMQ inject end
     sendResponse(new RequestChannel.SendResponse(
       request,
       request.buildResponseSend(response),
@@ -567,6 +583,40 @@ class RequestChannel(val queueSize: Int,
   @Deprecated
   def receiveRequest(): RequestChannel.BaseRequest =
     requestQueue.take()
+
+  // AutoMQ inject start
+  private def maybeRecordRequestErrors(
+    request: RequestChannel.Request,
+    response: AbstractResponse
+  ): Unit = {
+    val acc = requestErrorAccumulator
+    if (acc == null) return
+    val errors = ResourceErrorExtractor.extract(request, response)
+    if (errors.isEmpty) return
+    val clientIp = request.context.clientAddress.getHostAddress
+    val clientId = request.header.clientId
+    val apiKey = request.header.apiKey.id
+    errors.forEach { re =>
+      acc.record(apiKey, re.errorCode, re.resource, clientIp, clientId)
+    }
+  }
+
+  private def maybeRecordRequestErrorsFromMap(
+    request: RequestChannel.Request,
+    errorCounts: java.util.Map[Errors, Integer]
+  ): Unit = {
+    val acc = requestErrorAccumulator
+    if (acc == null) return
+    val clientIp = request.context.clientAddress.getHostAddress
+    val clientId = request.header.clientId
+    val apiKey = request.header.apiKey.id
+    val resource = ResourceErrorExtractor.extractResourceFromRequest(request)
+    errorCounts.forEach { (error, _) =>
+      if (RequestErrorAccumulator.isRecordable(error.code))
+        acc.record(apiKey, error.code, resource, clientIp, clientId)
+    }
+  }
+  // AutoMQ inject end
 
   def updateErrorMetrics(apiKey: ApiKeys, errors: collection.Map[Errors, Integer]): Unit = {
     errors.forKeyValue { (error, count) =>
