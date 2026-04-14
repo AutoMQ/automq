@@ -26,11 +26,15 @@ import org.apache.kafka.image.node.MetadataNode;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 public class KVImageNode implements MetadataNode {
     public static final String NAME = "kv";
+    /** Node name used for KV entries that have no namespace (legacy v0 records). */
+    public static final String DEFAULT_NAMESPACE = "__automq_default";
+
     private final KVImage kvImage;
 
     public KVImageNode(KVImage kvImage) {
@@ -39,19 +43,54 @@ public class KVImageNode implements MetadataNode {
 
     @Override
     public Collection<String> childNames() {
-        List<String> keys = new LinkedList<>();
-        kvImage.kvs().forEach((k, v) -> keys.add(k));
-        return keys;
+        // Return the set of namespace node names
+        Map<String, Object> namespaces = new HashMap<>();
+        kvImage.kvs().forEach((k, v) -> namespaces.put(nodeName(k.namespace()), null));
+        return namespaces.keySet();
     }
 
     @Override
     public MetadataNode child(String name) {
-        ByteBuffer valueBuf = kvImage.getValue(name);
-        if (valueBuf == null) {
+        // name is a namespace node name; return a sub-node for that namespace
+        String namespace = name.equals(DEFAULT_NAMESPACE) ? null : name;
+        Map<String, ByteBuffer> entries = new HashMap<>();
+        kvImage.kvs().forEach((k, v) -> {
+            if (Objects.equals(k.namespace(), namespace)) {
+                entries.put(k.key(), v);
+            }
+        });
+        if (entries.isEmpty()) {
             return null;
         }
-        byte[] value = new byte[valueBuf.remaining()];
-        valueBuf.duplicate().get(value);
-        return new MetadataLeafNode(Arrays.toString(value));
+        return new NamespaceNode(entries);
+    }
+
+    private static String nodeName(String namespace) {
+        return namespace == null ? DEFAULT_NAMESPACE : namespace;
+    }
+
+    /** A directory node representing one namespace, whose children are the KV keys. */
+    private static class NamespaceNode implements MetadataNode {
+        private final Map<String, ByteBuffer> entries;
+
+        NamespaceNode(Map<String, ByteBuffer> entries) {
+            this.entries = entries;
+        }
+
+        @Override
+        public Collection<String> childNames() {
+            return entries.keySet();
+        }
+
+        @Override
+        public MetadataNode child(String name) {
+            ByteBuffer valueBuf = entries.get(name);
+            if (valueBuf == null) {
+                return null;
+            }
+            byte[] value = new byte[valueBuf.remaining()];
+            valueBuf.duplicate().get(value);
+            return new MetadataLeafNode(Arrays.toString(value));
+        }
     }
 }

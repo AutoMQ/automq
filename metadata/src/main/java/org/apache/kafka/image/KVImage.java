@@ -20,18 +20,20 @@ package org.apache.kafka.image;
 
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.TimelineHashMap;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -41,34 +43,32 @@ public final class KVImage extends AbstractReferenceCounted {
 
     private final RegistryRef registryRef;
 
-    private final TimelineHashMap<String, ByteBuffer> kv;
+    private final TimelineHashMap<KVKey, ByteBuffer> kv;
 
-    public KVImage(TimelineHashMap<String, ByteBuffer> kv, RegistryRef registryRef) {
+    public KVImage(TimelineHashMap<KVKey, ByteBuffer> kv, RegistryRef registryRef) {
         this.registryRef = registryRef;
         this.kv = kv;
     }
 
-    public ByteBuffer getValue(String key) {
+    public ByteBuffer getValue(KVKey kvKey) {
         if (kv == null || registryRef == RegistryRef.NOOP) {
             return null;
         }
-
-        return registryRef.inLock(() -> this.kv.get(key, registryRef.epoch()));
+        return registryRef.inLock(() -> this.kv.get(kvKey, registryRef.epoch()));
     }
 
-    public Map<String, ByteBuffer> kvs() {
+    public Map<KVKey, ByteBuffer> kvs() {
         if (kv == null || registryRef == RegistryRef.NOOP) {
             return Collections.emptyMap();
         }
-
         return registryRef.inLock(() -> {
-            Map<String, ByteBuffer> result = new HashMap<>();
+            Map<KVKey, ByteBuffer> result = new HashMap<>();
             kv.entrySet(registryRef().epoch()).forEach(e -> result.put(e.getKey(), e.getValue()));
             return result;
         });
     }
 
-    public TimelineHashMap<String, ByteBuffer> timelineKVs() {
+    public TimelineHashMap<KVKey, ByteBuffer> timelineKVs() {
         return kv;
     }
 
@@ -81,14 +81,19 @@ public final class KVImage extends AbstractReferenceCounted {
             return;
         }
 
-        List<List<KeyValue>> keyValues = registryRef.inLock(() -> kv.entrySet(registryRef.epoch())
-            .stream()
-            .map(e -> List.of(new KeyValue().setKey(e.getKey()).setValue(e.getValue().array())))
-            .collect(Collectors.toList()));
+        AutoMQVersion autoMQVersion = options.metadataVersion().autoMQVersion();
+        short kvVersion = autoMQVersion.kvRecordVersion();
 
-        keyValues.forEach(kvs -> {
+        List<Map.Entry<KVKey, ByteBuffer>> entries = registryRef.inLock(() ->
+            new ArrayList<>(kv.entrySet(registryRef.epoch())));
+
+        entries.forEach(e -> {
+            KVKey kvKey = e.getKey();
+            String namespace = kvVersion >= 1 ? kvKey.namespace() : null;
             writer.write(new ApiMessageAndVersion(new KVRecord()
-                .setKeyValues(kvs), (short) 0));
+                .setKeyValues(Collections.singletonList(
+                    new KeyValue().setKey(kvKey.key()).setValue(e.getValue().array()).setNamespace(namespace))),
+                kvVersion));
         });
     }
 
