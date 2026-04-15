@@ -1465,6 +1465,11 @@ public class MockAdminClient extends AdminClient {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public ClusterEventsReader describeClusterEvents(Long sinceMs) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ inject end
 
 }

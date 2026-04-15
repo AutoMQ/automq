@@ -635,5 +635,20 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"/>
         </Or>
     </Match>
+    <!-- Suppress all warnings for protobuf-generated classes -->
+    <Match>
+        <Package name="~com\.automq\.events"/>
+    </Match>
+    <!-- AutoMQ inject end -->
+
+    <Match>
+        <!-- Suppress warning about SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR in multiple class -->
+        <Or>
+            <Class name="org.apache.kafka.common.Node"/>
+            <Class name="org.apache.kafka.common.record.UnalignedMemoryRecords"/>
+            <Class name="org.apache.kafka.clients.Metadata$LeaderAndEpoch"/>
+        </Or>
+        <Bug pattern="SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
+    </Match>
 
 </FindBugsFilter>
