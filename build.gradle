@@ -183,7 +183,10 @@ allprojects {
           // AutoMQ inject start
           // pin OTel sender versions to prevent version conflicts with Strimzi thirdparty-libs
           libs.opentelemetryExporterSenderJdk,
-          libs.opentelemetryExporterSenderGrpcManagedChannel
+          libs.opentelemetryExporterSenderGrpcManagedChannel,
+          // unify JAXB versions across all modules to avoid duplicate jars in release packaging
+          libs.jaxbApi,
+          libs.jaxbImpl
           // AutoMQ inject end
         )
         // AutoMQ inject start
