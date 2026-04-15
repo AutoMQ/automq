@@ -67,3 +67,7 @@ __pycache__
 bin/
 !/bin/
 release/.venv/
+
+# Claude Code project config
+.claude/settings.local.json
+.claude/plans/

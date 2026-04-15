@@ -1321,10 +1321,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         autoTopicCreationManager.createTopics(nonExistingTopics, controllerMutationQuota, Some(request.context))
       } else {
         // AutoMQ inject start
-        for (tableTopic <- Set(Topic.TABLE_TOPIC_CONTROL_TOPIC_NAME, Topic.TABLE_TOPIC_DATA_TOPIC_NAME)) {
-          if (nonExistingTopics.contains(tableTopic)) {
+        for (autoCreateTopic <- Set(Topic.TABLE_TOPIC_CONTROL_TOPIC_NAME, Topic.TABLE_TOPIC_DATA_TOPIC_NAME, Topic.CLUSTER_EVENTS_TOPIC_NAME)) {
+          if (nonExistingTopics.contains(autoCreateTopic)) {
             val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(request)
-            autoTopicCreationManager.createTopics(Set(tableTopic), controllerMutationQuota, Some(request.context))
+            autoTopicCreationManager.createTopics(Set(autoCreateTopic), controllerMutationQuota, Some(request.context))
           }
         }
         // AutoMQ inject end

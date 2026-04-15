@@ -35,6 +35,7 @@ public class Topic {
     public static final String AUTO_BALANCER_METRICS_TOPIC_NAME = "__auto_balancer_metrics";
     public static final String TABLE_TOPIC_CONTROL_TOPIC_NAME = "__automq_table_control";
     public static final String TABLE_TOPIC_DATA_TOPIC_NAME = "__automq_table_data";
+    public static final String CLUSTER_EVENTS_TOPIC_NAME = "__automq_cluster_events";
     // Full name: __automq_consumer_group_force_commit
     public static final String FORCE_COMMIT_SENTINEL_TOPIC = "__a.c.g.f.c";
     // AutoMQ inject end
