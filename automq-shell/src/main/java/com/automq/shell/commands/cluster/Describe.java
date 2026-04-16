@@ -66,6 +66,8 @@ public class Describe implements Callable<Integer> {
             for (NodeMetadata nodeMetadata : nodeMetadataList) {
                 System.out.println(nodeMetadata);
             }
+            GetNodesResult.RouterChannelEpoch epoch = rst.routerChannelEpoch().get();
+            System.out.println("RouterChannelEpoch: " + epoch);
         }
         return 0;
     }
