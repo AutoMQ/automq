@@ -112,6 +112,7 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKey;
 import org.apache.kafka.common.message.ApiVersionsResponseData.SupportedFeatureKey;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData.AclCreation;
 import org.apache.kafka.common.message.CreateAclsResponseData.AclCreationResult;
@@ -4964,6 +4965,7 @@ public class KafkaAdminClient extends AdminClient {
     @Override
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
         final KafkaFutureImpl<List<NodeMetadata>> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<GetNodesResult.RouterChannelEpoch> routerChannelEpochFuture = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call(
             "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
@@ -4982,19 +4984,30 @@ public class KafkaAdminClient extends AdminClient {
                 final AutomqGetNodesResponse resp = (AutomqGetNodesResponse) response;
                 if (resp.data().errorCode() == Errors.NONE.code()) {
                     future.complete(createResult(resp));
+                    AutomqGetNodesResponseData.RouterChannelEpoch epochData = resp.data().routerChannelEpoch();
+                    routerChannelEpochFuture.complete(
+                        new GetNodesResult.RouterChannelEpoch(
+                            epochData.committed(),
+                            epochData.fenced(),
+                            epochData.current(),
+                            epochData.lastBumpUpTimestamp()
+                        )
+                    );
                 } else {
                     future.completeExceptionally(Errors.forCode(resp.data().errorCode()).exception());
+                    routerChannelEpochFuture.completeExceptionally(Errors.forCode(resp.data().errorCode()).exception());
                 }
             }
 
             @Override
             void handleFailure(Throwable throwable) {
-                completeAllExceptionally(Collections.singletonList(future), throwable);
+                future.completeExceptionally(throwable);
+                routerChannelEpochFuture.completeExceptionally(throwable);
             }
         };
 
         runnable.call(call, now);
-        return new GetNodesResult(future);
+        return new GetNodesResult(future, routerChannelEpochFuture);
     }
 
     @Override
