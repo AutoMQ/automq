@@ -45,7 +45,7 @@ public class KVImageNode implements MetadataNode {
     public Collection<String> childNames() {
         // Return the set of namespace node names
         Map<String, Object> namespaces = new HashMap<>();
-        kvImage.kvs().forEach((k, v) -> namespaces.put(nodeName(k.namespace()), null));
+        kvImage.forEach((k, v) -> namespaces.put(nodeName(k.namespace()), null));
         return namespaces.keySet();
     }
 
@@ -54,7 +54,7 @@ public class KVImageNode implements MetadataNode {
         // name is a namespace node name; return a sub-node for that namespace
         String namespace = name.equals(DEFAULT_NAMESPACE) ? null : name;
         Map<String, ByteBuffer> entries = new HashMap<>();
-        kvImage.kvs().forEach((k, v) -> {
+        kvImage.forEach((k, v) -> {
             if (Objects.equals(k.namespace(), namespace)) {
                 entries.put(k.key(), v);
             }

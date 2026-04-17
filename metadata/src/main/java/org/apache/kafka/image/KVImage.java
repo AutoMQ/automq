@@ -34,6 +34,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.BiConsumer;
 
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
@@ -57,7 +58,16 @@ public final class KVImage extends AbstractReferenceCounted {
         return registryRef.inLock(() -> this.kv.get(kvKey, registryRef.epoch()));
     }
 
-    public Map<KVKey, ByteBuffer> kvs() {
+    public void forEach(BiConsumer<KVKey, ByteBuffer> action) {
+        if (kv == null || registryRef == RegistryRef.NOOP) {
+            return;
+        }
+        registryRef.inLock(() -> {
+            kv.entrySet(registryRef.epoch()).forEach(e -> action.accept(e.getKey(), e.getValue()));
+        });
+    }
+
+    Map<KVKey, ByteBuffer> kvs() {
         if (kv == null || registryRef == RegistryRef.NOOP) {
             return Collections.emptyMap();
         }
