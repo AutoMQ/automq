@@ -126,7 +126,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (delta.kvDelta() == null) {
             return;
         }
-        ByteBuffer value = delta.kvDelta().changedKV().get(KVKey.of(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY));
+        ByteBuffer value = delta.kvDelta().getChangedKV(KVKey.of(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY));
         if (value == null) {
             return;
         }

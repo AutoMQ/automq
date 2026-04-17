@@ -89,7 +89,11 @@ public final class KVDelta {
         return new KVImage(newKVs, registry);
     }
 
-    public Map<KVKey, ByteBuffer> changedKV() {
+    public ByteBuffer getChangedKV(KVKey kvKey) {
+        return changedKV.get(kvKey);
+    }
+
+    Map<KVKey, ByteBuffer> changedKV() {
         return changedKV;
     }
 }
