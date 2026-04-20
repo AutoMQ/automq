@@ -35,6 +35,7 @@ import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
 import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
+import org.apache.kafka.clients.admin.ClusterEventPublisher
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
 import org.apache.kafka.common.metrics.Metrics
@@ -470,8 +471,9 @@ class BrokerServer(
           publisherConfig.put(k.toString, v)
         }
         config.rack.foreach(rack => publisherConfig.put("client.id", "automq_az=" + rack))
-        org.apache.kafka.clients.admin.ClusterEventPublisher.setup(publisherConfig)
-        requestErrorAccumulator = new RequestErrorAccumulator(config.nodeId, 30000L)
+        ClusterEventPublisher.setup(publisherConfig)
+        requestErrorAccumulator = new RequestErrorAccumulator(config.nodeId)
+        ClusterEventPublisher.registerEmitter(requestErrorAccumulator)
         socketServer.dataPlaneRequestChannel.requestErrorAccumulator = requestErrorAccumulator
       } catch {
         case e: Throwable =>
@@ -814,10 +816,8 @@ class BrokerServer(
       if (quotaManagers != null)
         CoreUtils.swallow(quotaManagers.shutdown(), this)
 
-      // AutoMQ inject start - shutdown request error accumulator and cluster event publisher
-      if (requestErrorAccumulator != null)
-        CoreUtils.swallow(requestErrorAccumulator.close(), this)
-      CoreUtils.swallow(org.apache.kafka.clients.admin.ClusterEventPublisher.shutdown(), this)
+      // AutoMQ inject start - shutdown cluster event publisher (also stops emitter scheduler)
+      CoreUtils.swallow(ClusterEventPublisher.shutdown(), this)
       // AutoMQ inject end
 
       if (socketServer != null)
