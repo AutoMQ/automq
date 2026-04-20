@@ -97,7 +97,11 @@ versions += [
   gradle: "8.8",
   grgit: "4.1.1",
   httpclient: "4.5.14",
-  jackson: "2.17.1",
+  // AutoMQ inject start
+  jackson: "2.20.0",
+  // jackson-annotations uses "2.20" instead of "2.20.0"
+  jacksonAnnotationsVersion: "2.20",
+  // AutoMQ inject end
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
   jetty: "9.4.54.v20240208",
@@ -108,6 +112,7 @@ versions += [
   scalaLogging: "3.9.5",
   jaxAnnotation: "1.3.2",
   jaxb: "2.3.1",
+  jaxbRI: "2.3.1", // JAXB Reference Implementation version matching jaxb-api 2.3.1
   jaxrs: "2.1.1",
   jfreechart: "1.0.0",
   jopt: "5.0.4",
@@ -142,6 +147,10 @@ versions += [
   metrics: "2.2.0",
   netty: "4.1.111.Final",
   opentelemetryProto: "1.0.0-alpha",
+  // AutoMQ inject start
+  protobuf: "4.32.1",
+  protoGoogleCommonProtos: "2.40.0",
+  // AutoMQ inject end
   pcollections: "4.0.1",
   reflections: "0.10.2",
   reload4j: "1.2.25",
@@ -155,6 +164,9 @@ versions += [
   scoverage: "2.0.11",
   slf4j: "1.7.36",
   jclOverSlf4j: "1.7.36",
+  // AutoMQ inject start
+  snakeyaml: "2.5",
+  // AutoMQ inject end
   snappy: "1.1.10.5",
   spotbugs: "4.8.0",
   zinc: "1.9.2",
@@ -168,9 +180,8 @@ versions += [
   opentelemetrySDK: "1.40.0",
   opentelemetrySDKAlpha: "1.40.0-alpha",
   opentelemetryInstrument: "2.6.0-alpha",
-  oshi: "6.4.7",
   awsSdk:"2.29.26",
-  bucket4j:"8.5.0",
+  bucket4j:"8.10.1",
   jna:"5.2.0",
   guava:"32.0.1-jre",
   hdrHistogram:"2.1.12",
@@ -202,7 +213,9 @@ libs += [
   caffeine: "com.github.ben-manes.caffeine:caffeine:$versions.caffeine",
   commonsCli: "commons-cli:commons-cli:$versions.commonsCli",
   commonsValidator: "commons-validator:commons-validator:$versions.commonsValidator",
-  jacksonAnnotations: "com.fasterxml.jackson.core:jackson-annotations:$versions.jackson",
+  // AutoMQ inject start
+  jacksonAnnotations: "com.fasterxml.jackson.core:jackson-annotations:$versions.jacksonAnnotationsVersion",
+  // AutoMQ inject end
   jacksonDatabind: "com.fasterxml.jackson.core:jackson-databind:$versions.jackson",
   jacksonDataformatCsv: "com.fasterxml.jackson.dataformat:jackson-dataformat-csv:$versions.jackson",
   jacksonModuleScala: "com.fasterxml.jackson.module:jackson-module-scala_$versions.baseScala:$versions.jackson",
@@ -210,8 +223,14 @@ libs += [
   jacksonAfterburner: "com.fasterxml.jackson.module:jackson-module-afterburner:$versions.jackson",
   jacksonJaxrsJsonProvider: "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:$versions.jackson",
   jacksonYaml: "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$versions.jackson",
+  // AutoMQ inject start
+  snakeyaml: "org.yaml:snakeyaml:$versions.snakeyaml",
+  protobuf: "com.google.protobuf:protobuf-java:$versions.protobuf",
+  protoGoogleCommonProtos: "com.google.api.grpc:proto-google-common-protos:$versions.protoGoogleCommonProtos",
+  // AutoMQ inject end
   jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
   jaxbApi: "javax.xml.bind:jaxb-api:$versions.jaxb",
+  jaxbImpl: "com.sun.xml.bind:jaxb-impl:$versions.jaxbRI",
   jaxrsApi: "javax.ws.rs:javax.ws.rs-api:$versions.jaxrs",
   javassist: "org.javassist:javassist:$versions.javassist",
   jettyServer: "org.eclipse.jetty:jetty-server:$versions.jetty",
@@ -305,7 +324,6 @@ libs += [
   opentelemetryExporterSenderGrpcManagedChannel: "io.opentelemetry:opentelemetry-exporter-sender-grpc-managed-channel:$versions.opentelemetrySDK",
   grpcNettyShaded: "io.grpc:grpc-netty-shaded:$versions.grpc",
   opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryInstrument",
-  oshi: "com.github.oshi:oshi-core-java11:$versions.oshi",
   bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",
   jna: "net.java.dev.jna:jna:$versions.jna",
   guava: "com.google.guava:guava:$versions.guava",
