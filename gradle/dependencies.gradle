@@ -225,6 +225,7 @@ libs += [
   jacksonYaml: "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$versions.jackson",
   // AutoMQ inject start
   snakeyaml: "org.yaml:snakeyaml:$versions.snakeyaml",
+  protobuf: "com.google.protobuf:protobuf-java:$versions.protobuf",
   protoGoogleCommonProtos: "com.google.api.grpc:proto-google-common-protos:$versions.protoGoogleCommonProtos",
   // AutoMQ inject end
   jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
