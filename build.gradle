@@ -158,6 +158,16 @@ allprojects {
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
       resolutionStrategy {
+        // AutoMQ inject start
+        eachDependency { details ->
+          if (details.requested.group == 'io.netty' &&
+              details.requested.name != 'netty' &&
+              !details.requested.name.startsWith('netty-tcnative')) {
+            details.useVersion versions.netty
+            details.because('Release packaging must align all Netty modules to a single version')
+          }
+        }
+        // AutoMQ inject end
         force(
           // be explicit about the javassist dependency version instead of relying on the transitive version
           libs.javassist,
@@ -165,6 +175,9 @@ allprojects {
           libs.scalaLibrary,
           libs.scalaReflect,
           libs.jacksonAnnotations,
+          // AutoMQ inject start
+          libs.snakeyaml,
+          // AutoMQ inject end
           // be explicit about the Netty dependency version instead of relying on the version set by
           // ZooKeeper (potentially older and containing CVEs)
           libs.nettyHandler,
@@ -995,7 +1008,7 @@ project(':core') {
     // table topic start
     implementation ("org.apache.avro:avro:${versions.avro}")
     implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
-    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation libs.protobuf
     implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
@@ -1005,7 +1018,7 @@ project(':core') {
     implementation ("org.apache.iceberg:iceberg-nessie:${versions.iceberg}")
     implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
     implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
-    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
+    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.8'
 
     implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
       exclude group: 'org.eclipse.jetty', module: '*'
@@ -1053,7 +1066,7 @@ project(':core') {
     //   Wire Runtime for schema handling
     implementation ("com.squareup.wire:wire-schema:${versions.wire}")
     implementation ("com.squareup.wire:wire-runtime:${versions.wire}")
-    implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
+    implementation libs.protoGoogleCommonProtos
     // > Protobuf ext end
 
     // table topic end
@@ -2403,7 +2416,7 @@ project(':automq-metrics') {
     implementation('io.opentelemetry:opentelemetry-sdk:1.40.0')
     implementation("io.opentelemetry.semconv:opentelemetry-semconv:1.25.0-alpha")
     implementation("io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:2.6.0-alpha")
-    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation libs.protobuf
     implementation('org.xerial.snappy:snappy-java:1.1.10.5')
   }
 
@@ -2461,8 +2474,8 @@ project(':tools') {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
     implementation libs.bucket4j
-    implementation (libs.oshi){
-      exclude group: 'org.slf4j', module: '*'
+    implementation (libs.oshi) {
+      exclude group: 'org.slf4j', module: 'slf4j-api'
     }
     // AutoMQ inject end
 
