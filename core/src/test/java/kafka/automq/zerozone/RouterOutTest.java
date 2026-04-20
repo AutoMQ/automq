@@ -30,11 +30,11 @@ import org.junit.jupiter.api.Timeout;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(60)
@@ -113,7 +113,7 @@ public class RouterOutTest {
         // After router, data should be nullified for GC
         request.afterRouter();
 
-        assertEquals(null, request.data, "Data should be null after afterRouter() for GC");
+        assertNull(request.data, "Data should be null after afterRouter() for GC");
     }
 
     @Test
