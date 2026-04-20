@@ -1718,6 +1718,7 @@ project(':clients') {
     implementation libs.snappy
     implementation libs.slf4jApi
     implementation libs.opentelemetryProto
+    implementation libs.protobuf
 
     // AutoMQ inject start
     implementation libs.cloudeventsKafka

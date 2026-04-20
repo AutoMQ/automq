@@ -16,7 +16,8 @@
  */
 package kafka.server;
 
-import org.apache.kafka.clients.admin.ClusterEventPublisher;
+import org.apache.kafka.clients.admin.ClusterEventEmitter;
+import org.apache.kafka.clients.admin.IClusterEventPublisher;
 import org.apache.kafka.clients.admin.RequestErrorEventData;
 import org.apache.kafka.common.protocol.ApiKeys;
 
@@ -28,12 +29,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
-public class RequestErrorAccumulator implements AutoCloseable {
+public class RequestErrorAccumulator implements ClusterEventEmitter {
 
     private static final Logger log = LoggerFactory.getLogger(RequestErrorAccumulator.class);
 
@@ -49,19 +47,10 @@ public class RequestErrorAccumulator implements AutoCloseable {
 
     private final ConcurrentHashMap<ErrorKey, ErrorBucket> buckets = new ConcurrentHashMap<>();
     private final int brokerId;
-    private final long flushIntervalMs;
-    private final ScheduledExecutorService scheduler;
+    private volatile long lastEmitMs = System.currentTimeMillis();
 
-    public RequestErrorAccumulator(int brokerId, long flushIntervalMs) {
+    public RequestErrorAccumulator(int brokerId) {
         this.brokerId = brokerId;
-        this.flushIntervalMs = flushIntervalMs;
-        this.scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "request-error-accumulator-flush");
-            t.setDaemon(true);
-            return t;
-        });
-        this.scheduler.scheduleAtFixedRate(this::flush,
-            flushIntervalMs, flushIntervalMs, TimeUnit.MILLISECONDS);
     }
 
     public static boolean isRecordable(short errorCode) {
@@ -81,16 +70,11 @@ public class RequestErrorAccumulator implements AutoCloseable {
         }
     }
 
-    void flush() {
-        try {
-            doFlush();
-        } catch (Throwable e) {
-            log.warn("Error flushing request error events", e);
-        }
-    }
-
-    private void doFlush() {
-        double intervalSec = flushIntervalMs / 1000.0;
+    @Override
+    public void emit(IClusterEventPublisher publisher) {
+        long now = System.currentTimeMillis();
+        double intervalSec = Math.max(now - lastEmitMs, 1) / 1000.0;
+        lastEmitMs = now;
         Iterator<Map.Entry<ErrorKey, ErrorBucket>> it = buckets.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<ErrorKey, ErrorBucket> entry = it.next();
@@ -119,17 +103,12 @@ public class RequestErrorAccumulator implements AutoCloseable {
             String subject = key.resource().isEmpty()
                 ? apiName : apiName + ":" + key.resource();
 
-            ClusterEventPublisher.publish(
+            publisher.publishEvent(
                 RequestErrorEventData.TYPE,
                 "/automq/broker/" + brokerId,
                 subject,
                 RequestErrorEventData.DATA_SCHEMA,
                 data.toByteArray());
         }
-    }
-
-    @Override
-    public void close() {
-        scheduler.shutdownNow();
     }
 }
