@@ -112,6 +112,7 @@ versions += [
   scalaLogging: "3.9.5",
   jaxAnnotation: "1.3.2",
   jaxb: "2.3.1",
+  jaxbRI: "2.3.1", // JAXB Reference Implementation version matching jaxb-api 2.3.1
   jaxrs: "2.1.1",
   jfreechart: "1.0.0",
   jopt: "5.0.4",
@@ -228,6 +229,7 @@ libs += [
   // AutoMQ inject end
   jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
   jaxbApi: "javax.xml.bind:jaxb-api:$versions.jaxb",
+  jaxbImpl: "com.sun.xml.bind:jaxb-impl:$versions.jaxbRI",
   jaxrsApi: "javax.ws.rs:javax.ws.rs-api:$versions.jaxrs",
   javassist: "org.javassist:javassist:$versions.javassist",
   jettyServer: "org.eclipse.jetty:jetty-server:$versions.jetty",
