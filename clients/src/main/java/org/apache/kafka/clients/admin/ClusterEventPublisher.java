@@ -29,8 +29,12 @@ import org.slf4j.LoggerFactory;
 import java.net.URI;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -45,12 +49,18 @@ import io.cloudevents.kafka.CloudEventSerializer;
  * a warning is logged and the event is dropped. Events must never block or fail the critical path
  * (rebalancing, failover, request handling).
  *
+ * <p>Registered {@link ClusterEventEmitter}s are invoked periodically by an internal scheduler
+ * to flush accumulated data as events.
+ *
  * <p>Example usage:
  * <pre>{@code
  * // At broker startup
  * ClusterEventPublisher.setup(Map.of("bootstrap.servers", "localhost:9092"));
  *
- * // From any code path
+ * // Register emitters
+ * ClusterEventPublisher.registerEmitter(requestErrorAccumulator);
+ *
+ * // From any code path (direct publish)
  * ClusterEventPublisher.publish(
  *     "com.automq.risk.request_error",
  *     "/automq/broker/0",
@@ -68,6 +78,19 @@ public class ClusterEventPublisher implements IClusterEventPublisher {
 
     private static final AtomicReference<IClusterEventPublisher> INSTANCE =
         new AtomicReference<>(NoopClusterEventPublisher.INSTANCE);
+
+    private static final List<ClusterEventEmitter> EMITTERS = new CopyOnWriteArrayList<>();
+
+    private static final long FLUSH_INTERVAL_MS = 30_000L;
+
+    static {
+        Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "cluster-event-publisher-flush");
+            t.setDaemon(true);
+            return t;
+        }).scheduleAtFixedRate(ClusterEventPublisher::flushEmitters,
+            FLUSH_INTERVAL_MS, FLUSH_INTERVAL_MS, TimeUnit.MILLISECONDS);
+    }
 
     private final KafkaProducer<String, CloudEvent> producer;
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -95,8 +118,8 @@ public class ClusterEventPublisher implements IClusterEventPublisher {
     // ---- Global singleton ----
 
     /**
-     * Initialize the global singleton publisher. If already set up, the previous instance
-     * is closed and replaced.
+     * Initialize the global singleton publisher.
+     * If already set up, the previous instance is closed and replaced.
      *
      * @param config producer configuration map
      */
@@ -108,13 +131,28 @@ public class ClusterEventPublisher implements IClusterEventPublisher {
     }
 
     /**
-     * Shut down the global singleton publisher, reverting to the no-op instance.
+     * Shut down the global singleton publisher and clear all emitters.
      */
     public static void shutdown() {
+        EMITTERS.clear();
         IClusterEventPublisher prev = INSTANCE.getAndSet(NoopClusterEventPublisher.INSTANCE);
         if (prev != null) {
             prev.close();
         }
+    }
+
+    /**
+     * Register an emitter to be invoked on each flush cycle.
+     */
+    public static void registerEmitter(ClusterEventEmitter emitter) {
+        EMITTERS.add(emitter);
+    }
+
+    /**
+     * Remove a previously registered emitter.
+     */
+    public static void removeEmitter(ClusterEventEmitter emitter) {
+        EMITTERS.remove(emitter);
     }
 
     /**
@@ -123,6 +161,19 @@ public class ClusterEventPublisher implements IClusterEventPublisher {
      */
     public static void publish(String type, String source, String subject, String dataSchema, byte[] data) {
         INSTANCE.get().publishEvent(type, source, subject, dataSchema, data);
+    }
+
+    // ---- Flush logic ----
+
+    private static void flushEmitters() {
+        IClusterEventPublisher publisher = INSTANCE.get();
+        for (ClusterEventEmitter emitter : EMITTERS) {
+            try {
+                emitter.emit(publisher);
+            } catch (Throwable e) {
+                log.warn("Error invoking cluster event emitter {}", emitter.getClass().getSimpleName(), e);
+            }
+        }
     }
 
     // ---- Instance methods ----
