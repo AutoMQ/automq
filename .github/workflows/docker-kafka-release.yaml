@@ -12,9 +12,6 @@ on:
     types:
       - completed
 
-env:
-  KAFKA_VERSION: "3.9.0"
-
 jobs:
   automq-kafka-release:
     name: AutoMQ Kafka Docker Image Release
@@ -35,11 +32,12 @@ jobs:
             TAG="${{ github.event.inputs.tag }}"
           # use the latest tag if not specified
           elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG=$(git ls-remote --tags https://github.com/AutoMQ/automq.git | grep -v '\^{}' | tail -1 | sed 's/.*refs\/tags\///')
+            TAG=$(git ls-remote --tags https://github.com/AutoMQ/automq.git | grep -v '\^{}' | grep -E 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' | tail -1 | sed 's/.*refs\/tags\///')
           else
             TAG="${{ github.event.workflow_run.head_branch }}"
           fi
 
+          KAFKA_VERSION=$(git show ${TAG}:gradle.properties | grep "^version=" | cut -d'=' -f2)
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
           {
