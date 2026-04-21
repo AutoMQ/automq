@@ -13,7 +13,6 @@ on:
       - completed
 
 env:
-  KAFKA_VERSION: "3.9.0"
   STRIMZI_REPO: "https://github.com/AutoMQ/strimzi-kafka-operator.git"
   STRIMZI_BRANCH: "main"
 
@@ -45,11 +44,13 @@ jobs:
             TAG="${{ github.event.workflow_run.head_branch }}"
           fi
 
+          KAFKA_VERSION=$(git show ${TAG}:gradle.properties | grep "^version=" | cut -d'=' -f2)
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
           {
             echo "AUTOMQ_VERSION=${TAG}"
             echo "AUTOMQ_URL=${AUTOMQ_URL}"
+            echo "KAFKA_VERSION=${KAFKA_VERSION}"
           } >> $GITHUB_ENV
 
       - name: Set up JDK ${{ matrix.jdk }}
