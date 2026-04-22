@@ -29,7 +29,6 @@ import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.NoSuchProviderException;
-import java.security.Principal;
 import java.security.PublicKey;
 import java.security.SignatureException;
 import java.security.cert.CertificateEncodingException;
@@ -320,9 +319,12 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
             return this.origCertificate.getBasicConstraints();
         }
 
+        // Suppressing deprecation warning: We must override this deprecated abstract method,
+        // but we return X500Principal (non-deprecated) via getIssuerX500Principal()
+        @SuppressWarnings("deprecation")
         @Override
-        public Principal getIssuerDN() {
-            return this.origCertificate.getIssuerDN();
+        public X500Principal getIssuerDN() {
+            return this.origCertificate.getIssuerX500Principal();
         }
 
         @Override
@@ -370,9 +372,12 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
             return this.origCertificate.getSignature();
         }
 
+        // Suppressing deprecation warning: We must override this deprecated abstract method,
+        // but we return X500Principal (non-deprecated) via getSubjectX500Principal()
+        @SuppressWarnings("deprecation")
         @Override
-        public Principal getSubjectDN() {
-            return this.origCertificate.getSubjectDN();
+        public X500Principal getSubjectDN() {
+            return this.origCertificate.getSubjectX500Principal();
         }
 
         @Override
