@@ -37,6 +37,7 @@ jobs:
             TAG="${{ github.event.workflow_run.head_branch }}"
           fi
 
+          git fetch --depth=1 origin refs/tags/${TAG}
           KAFKA_VERSION=$(git show ${TAG}:gradle.properties | grep "^version=" | cut -d'=' -f2)
           AUTOMQ_URL="https://github.com/AutoMQ/automq/releases/download/${TAG}/automq-${TAG}_kafka-${KAFKA_VERSION}.tgz"
 
