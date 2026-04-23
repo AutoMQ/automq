@@ -490,6 +490,7 @@ public class StreamObjectCompactor {
         // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
         long groupSize = 0;
+        long groupStartOffset = -1L;
         long groupNextOffset = -1L;
         List<S3ObjectMetadata> group = new LinkedList<>();
         int partCount = 0;
@@ -503,6 +504,7 @@ public class StreamObjectCompactor {
                 continue;
             }
             if (groupNextOffset == -1L) {
+                groupStartOffset = object.startOffset();
                 groupNextOffset = object.startOffset();
             }
             // group the objects when the object's range is continuous
@@ -512,10 +514,16 @@ public class StreamObjectCompactor {
                 // object count in a group is larger than MAX_OBJECT_GROUP_COUNT
                 || group.size() >= MAX_OBJECT_GROUP_COUNT
                 || partCount + objectPartCount > Writer.MAX_PART_COUNT
+                // the group offset delta would exceed int32
+                || object.endOffset() - groupStartOffset > Integer.MAX_VALUE
             ) {
-                objectGroups.add(group);
+                if (!group.isEmpty()) {
+                    objectGroups.add(group);
+                }
                 group = new LinkedList<>();
                 groupSize = 0;
+                groupStartOffset = object.startOffset();
+                partCount = 0;
             }
             group.add(object);
             groupSize += object.objectSize();
