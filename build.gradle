@@ -1728,7 +1728,9 @@ project(':clients') {
     implementation libs.protobuf
 
     // AutoMQ inject start
-    implementation libs.cloudeventsKafka
+    implementation (libs.cloudeventsKafka) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
     // AutoMQ inject end
 
     // libraries which should be added as runtime dependencies in generated pom.xml should be defined here:
@@ -2530,7 +2532,9 @@ project(':tools') {
     implementation (libs.oshi) {
       exclude group: 'org.slf4j', module: 'slf4j-api'
     }
-    implementation libs.cloudeventsKafka
+    implementation (libs.cloudeventsKafka) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
     implementation libs.protobuf
     // AutoMQ inject end
 
