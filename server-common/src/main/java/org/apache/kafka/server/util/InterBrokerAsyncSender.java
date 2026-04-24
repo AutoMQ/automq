@@ -27,19 +27,26 @@ import org.apache.kafka.common.utils.Time;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 public class InterBrokerAsyncSender implements AsyncSender {
 
     private final SendThread sendThread;
     private final ConcurrentLinkedQueue<PendingRequest> pendingRequests = new ConcurrentLinkedQueue<>();
+    private final Set<CompletableFuture<ClientResponse>> inFlightFutures = ConcurrentHashMap.newKeySet();
     private final Time time;
+    private final int requestTimeoutMs;
     private volatile boolean closed = false;
 
     // Package-private: tests use this to avoid starting the thread
     InterBrokerAsyncSender(String name, KafkaClient networkClient, int requestTimeoutMs, Time time) {
         this.time = time;
+        this.requestTimeoutMs = requestTimeoutMs;
         this.sendThread = new SendThread(name, networkClient, requestTimeoutMs, time);
     }
 
@@ -60,6 +67,7 @@ public class InterBrokerAsyncSender implements AsyncSender {
             return future;
         }
         CompletableFuture<ClientResponse> future = new CompletableFuture<>();
+        inFlightFutures.add(future);
         PendingRequest request = new PendingRequest(node, requestBuilder, future, time.milliseconds());
         pendingRequests.offer(request);
         sendThread.wakeup();
@@ -69,12 +77,25 @@ public class InterBrokerAsyncSender implements AsyncSender {
     @Override
     public void close() {
         closed = true;
+        sendThread.wakeup();
+
+        if (!inFlightFutures.isEmpty()) {
+            try {
+                CompletableFuture.allOf(inFlightFutures.toArray(new CompletableFuture[0]))
+                    .get(requestTimeoutMs, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+                // request failed or drain timed out — proceed to force shutdown
+            }
+        }
+
         try {
             sendThread.shutdown();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-        // Drain pending requests and fail their futures so callers are not stuck waiting
+
         PendingRequest pending;
         while ((pending = pendingRequests.poll()) != null) {
             pending.future.completeExceptionally(
@@ -129,6 +150,7 @@ public class InterBrokerAsyncSender implements AsyncSender {
                         } else {
                             request.future.complete(response);
                         }
+                        inFlightFutures.remove(request.future);
                     }
                 };
                 requests.add(new RequestAndCompletionHandler(

@@ -35,8 +35,10 @@ import org.mockito.ArgumentMatchers;
 
 import java.util.Collections;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -266,6 +268,63 @@ public class InterBrokerAsyncSenderTest {
     public void testClose() throws Exception {
         sender.close();
         verify(networkClient).close();
+    }
+
+    @Test
+    public void testCloseWaitsForInFlightRequests() throws Exception {
+        ClientRequest clientRequest = mock(ClientRequest.class);
+        ClientResponse response = mock(ClientResponse.class);
+        when(response.responseBody()).thenReturn(mock(AbstractResponse.class));
+
+        ArgumentCaptor<RequestCompletionHandler> handlerCaptor = ArgumentCaptor.forClass(RequestCompletionHandler.class);
+
+        when(networkClient.newClientRequest(
+            ArgumentMatchers.eq("1"),
+            same(requestBuilder),
+            anyLong(),
+            ArgumentMatchers.eq(true),
+            ArgumentMatchers.eq(requestTimeoutMs),
+            handlerCaptor.capture()
+        )).thenReturn(clientRequest);
+
+        when(networkClient.ready(node, time.milliseconds())).thenReturn(true);
+        when(networkClient.poll(anyLong(), anyLong())).thenReturn(Collections.emptyList());
+
+        CompletableFuture<ClientResponse> future = sender.sendRequest(node, requestBuilder);
+        sender.pollOnce(100);
+
+        // Close in a separate thread — it should block waiting for the in-flight request
+        AtomicReference<Thread> closeThread = new AtomicReference<>();
+        CountDownLatch closeStarted = new CountDownLatch(1);
+        CountDownLatch closeDone = new CountDownLatch(1);
+        closeThread.set(new Thread(() -> {
+            closeStarted.countDown();
+            sender.close();
+            closeDone.countDown();
+        }));
+        closeThread.get().start();
+        assertTrue(closeStarted.await(1, TimeUnit.SECONDS));
+
+        // close should still be blocking
+        Thread.sleep(50);
+        assertEquals(1, closeDone.getCount());
+
+        // Complete the in-flight request
+        handlerCaptor.getValue().onComplete(response);
+
+        // Now close should finish
+        assertTrue(closeDone.await(1, TimeUnit.SECONDS));
+        assertEquals(response, future.get(100, TimeUnit.MILLISECONDS));
+    }
+
+    @Test
+    public void testCloseRejectsNewRequests() {
+        sender.close();
+
+        CompletableFuture<ClientResponse> future = sender.sendRequest(node, requestBuilder);
+        ExecutionException exception = assertThrows(ExecutionException.class,
+            () -> future.get(100, TimeUnit.MILLISECONDS));
+        assertInstanceOf(IllegalStateException.class, exception.getCause());
     }
 
     @Test
