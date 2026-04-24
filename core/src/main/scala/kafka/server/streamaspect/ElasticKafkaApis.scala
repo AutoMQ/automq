@@ -654,7 +654,7 @@ class ElasticKafkaApis(
       val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
       responsePartitionData.foreach { case (tp, data) =>
         notifyFetchListener(
-          tp.topicPartition(),
+          tp,
           if (requestSessionId == JFetchMetadata.INVALID_SESSION_ID) FetchListener.NONE_SESSION_ID else requestSessionId,
           requestFetchOffsets.getOrElse(tp, -1L),
           data.records
@@ -910,13 +910,13 @@ class ElasticKafkaApis(
     enterpriseFacadeRef
   }
 
-  private def notifyFetchListener(topicPartition: TopicPartition,
+  private def notifyFetchListener(topicIdPartition: TopicIdPartition,
                                   sessionId: Int,
                                   fetchOffset: Long,
                                   records: Records): Unit = {
     if (fetchListener eq FetchListener.NOOP) return
     val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
-    fetchListener.onFetch(topicPartition, sessionId, reportedOffset, timestamp)
+    fetchListener.onFetch(topicIdPartition, sessionId, reportedOffset, timestamp)
   }
 
   private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {

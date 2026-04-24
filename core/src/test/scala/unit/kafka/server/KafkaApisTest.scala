@@ -4633,7 +4633,7 @@ class KafkaApisTest extends Logging {
     verifyNoThrottling[FetchResponse](request)
 
     verify(listener, timeout(1000)).onFetch(
-      ArgumentMatchers.eq(tp),
+      ArgumentMatchers.eq(tidp),
       ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
       ArgumentMatchers.eq(0L),
       ArgumentMatchers.eq(RecordBatch.NO_TIMESTAMP)
@@ -4700,7 +4700,7 @@ class KafkaApisTest extends Logging {
     verifyNoThrottling[FetchResponse](request)
 
     verify(listener, timeout(1000)).onFetch(
-      ArgumentMatchers.eq(tp),
+      ArgumentMatchers.eq(tidp),
       ArgumentMatchers.eq(JFetchMetadata.INVALID_SESSION_ID),
       ArgumentMatchers.eq(10L),
       ArgumentMatchers.eq(1111L)
@@ -4713,22 +4713,27 @@ class KafkaApisTest extends Logging {
     val cacheShard = new FetchSessionCacheShard(10, 1000, Int.MaxValue, 0, new FetchSessionCacheShard.SessionRemovalListener {
       override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
         partitions.forEach { partition =>
-          listener.onSessionClosed(new TopicPartition(partition.topic, partition.partition), sessionId)
+          listener.onSessionClosed(
+            new TopicIdPartition(partition.topicId, new TopicPartition(partition.topic, partition.partition)),
+            sessionId
+          )
         }
       }
     })
+    val topicId0 = Uuid.randomUuid()
+    val topicId1 = Uuid.randomUuid()
     val sessionId = cacheShard.maybeCreateSession(0, privileged = false, size = 2, usesTopicIds = true, () => {
       val partitions = new FetchSession.CACHE_MAP(2)
-      partitions.add(new CachedPartition("foo", Uuid.randomUuid(), 0))
-      partitions.add(new CachedPartition("foo", Uuid.randomUuid(), 1))
+      partitions.add(new CachedPartition("foo", topicId0, 0))
+      partitions.add(new CachedPartition("foo", topicId1, 1))
       partitions
     })
     assertTrue(sessionId > 0)
 
     cacheShard.remove(sessionId)
 
-    verify(listener).onSessionClosed(new TopicPartition("foo", 0), sessionId)
-    verify(listener).onSessionClosed(new TopicPartition("foo", 1), sessionId)
+    verify(listener).onSessionClosed(new TopicIdPartition(topicId0, new TopicPartition("foo", 0)), sessionId)
+    verify(listener).onSessionClosed(new TopicIdPartition(topicId1, new TopicPartition("foo", 1)), sessionId)
   }
   // AutoMQ inject end
 

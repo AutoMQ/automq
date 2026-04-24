@@ -21,6 +21,7 @@ package kafka.server.streamaspect;
 
 import kafka.server.CachedPartition;
 
+import org.apache.kafka.common.TopicIdPartition;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.requests.FetchMetadata;
 import org.apache.kafka.common.utils.ImplicitLinkedHashCollection;
@@ -32,11 +33,11 @@ public interface FetchListener {
     int NONE_SESSION_ID = FetchMetadata.INVALID_SESSION_ID;
     FetchListener NOOP = new FetchListener() {
         @Override
-        public void onFetch(TopicPartition topicPartition, int sessionId, long fetchOffset, long timestamp) {
+        public void onFetch(TopicIdPartition topicIdPartition, int sessionId, long fetchOffset, long timestamp) {
         }
 
         @Override
-        public void onSessionClosed(TopicPartition topicPartition, int sessionId) {
+        public void onSessionClosed(TopicIdPartition topicIdPartition, int sessionId) {
         }
     };
 
@@ -46,13 +47,17 @@ public interface FetchListener {
      * For now, {@code fetchOffset} and {@code timestamp} are derived from the last batch in returned records:
      * {@code lastBatch.lastOffset()} and {@code lastBatch.maxTimestamp()}.
      */
-    void onFetch(TopicPartition topicPartition, int sessionId, long fetchOffset, long timestamp);
+    void onFetch(TopicIdPartition topicIdPartition, int sessionId, long fetchOffset, long timestamp);
 
-    void onSessionClosed(TopicPartition topicPartition, int sessionId);
+    void onSessionClosed(TopicIdPartition topicIdPartition, int sessionId);
 
     default void onSessionClosedBatch(int sessionId, ImplicitLinkedHashCollection<CachedPartition> partitions) {
         for (CachedPartition partition : partitions) {
-            onSessionClosed(new TopicPartition(partition.topic(), partition.partition()), sessionId);
+            onSessionClosed(
+                new TopicIdPartition(
+                    partition.topicId(),
+                    new TopicPartition(partition.topic(), partition.partition())),
+                sessionId);
         }
     }
 }
