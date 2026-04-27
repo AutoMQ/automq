@@ -301,7 +301,7 @@ just chaos-reset
 Append feature names to `just start`. Multiple features can be combined.
 
 ```bash
-just start 1 telemetry              # Single node + OTel metrics
+just start 1 telemetry              # Single node + OTel metrics (OTLP + Prometheus)
 just start 3 tabletopic             # 3-node + Iceberg table topic
 just start 5 zerozone analytics     # 5-node + zone router + query engines
 ```
@@ -310,7 +310,7 @@ just start 5 zerozone analytics     # 5-node + zone router + query engines
 |---------|----------------|----------------|
 | `tabletopic` | Iceberg table topic, REST catalog, schema registry | Schema Registry (:8081), Iceberg REST (:8181) |
 | `zerozone` | Zone router, auto AZ assignment (round-robin: az-0/1/2) | — (config only) |
-| `telemetry` | OTel metrics export via OTLP HTTP — **edit `config/features/telemetry.properties` to set collector endpoint before use** | — (config only) |
+| `telemetry` | OTel metrics export via OTLP HTTP plus in-container Prometheus scrape endpoint — **edit `config/features/telemetry.properties` to set collector endpoint before use** | — (config only) |
 | `analytics` | Spark + Trino for querying Iceberg tables | Spark (:8888), Trino (:8090) |
 
 ## Namespace (Multi-Instance Isolation)
@@ -352,6 +352,11 @@ Other services:
 - Iceberg REST: http://localhost:8181 (with tabletopic)
 - Spark: http://localhost:8888 (with analytics)
 - Trino: http://localhost:8090 (with analytics)
+
+With `telemetry` enabled:
+- OTLP push target is configured in `config/features/telemetry.properties`
+- Prometheus scrape endpoint listens inside each node container on `http://0.0.0.0:9090/metrics`
+- Example: `docker compose -f devkit/docker-compose.yml exec node-0 curl -sf http://localhost:9090/metrics`
 
 ## Configuration
 
