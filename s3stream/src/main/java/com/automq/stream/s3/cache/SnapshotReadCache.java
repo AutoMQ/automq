@@ -119,11 +119,12 @@ public class SnapshotReadCache {
                 // Copy the record to the SeqAlloc to reduce fragmentation.
                 StreamRecordBatch copy = StreamRecordBatch.parse(batch.encoded(), true, ENCODE_ALLOC);
                 batch.release();
-                if (cache.put(copy)) {
-                    // the block is full
+                if (!cache.put(copy)) {
+                    // record was not added, archive current block and retry
                     LogCache.LogCacheBlock cacheBlock = cache.archiveCurrentBlock();
                     cacheBlock.addFreeListener(cacheFreeListener);
                     cache.markFree(cacheBlock);
+                    cache.put(copy);
                 }
                 expectedNextOffset.set(copy.getLastOffset());
             }

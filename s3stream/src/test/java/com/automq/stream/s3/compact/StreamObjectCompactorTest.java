@@ -186,6 +186,33 @@ class StreamObjectCompactorTest {
         assertFalse(doCleanupWhenMajorV1Compaction);
     }
 
+    /**
+     * group0 must not emit empty groups when a single object's offset delta exceeds Integer.MAX_VALUE.
+     */
+    @Test
+    public void testGroup0_singleObjectExceedsIntMax() {
+        long hugeEnd = Integer.MAX_VALUE + 100L;
+        S3ObjectMetadata bigObject = new S3ObjectMetadata(
+            1, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, 0, hugeEnd)),
+            System.currentTimeMillis(), System.currentTimeMillis(), 100, 1);
+        S3ObjectMetadata normalObject = new S3ObjectMetadata(
+            2, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, hugeEnd, hugeEnd + 10)),
+            System.currentTimeMillis(), System.currentTimeMillis(), 100, 2);
+
+        List<List<S3ObjectMetadata>> groups = group0(
+            List.of(bigObject, normalObject), Long.MAX_VALUE, obj -> true);
+
+        // No group should be empty
+        for (List<S3ObjectMetadata> g : groups) {
+            assertFalse(g.isEmpty());
+        }
+        // Both objects must appear in some group
+        long totalObjects = groups.stream().mapToLong(List::size).sum();
+        assertEquals(2, totalObjects);
+    }
+
     @Test
     public void testCompact() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
