@@ -354,7 +354,7 @@ Other services:
 - Trino: http://localhost:8090 (with analytics)
 
 With `telemetry` enabled:
-- OTLP push target is configured in [`config/features/telemetry.properties`](/Users/gezi/Dev/automq/devkit/config/features/telemetry.properties)
+- OTLP push target is configured in `config/features/telemetry.properties`
 - Prometheus scrape endpoint listens inside each node container on `http://0.0.0.0:9090/metrics`
 - Example: `docker compose -f devkit/docker-compose.yml exec node-0 curl -sf http://localhost:9090/metrics`
 
