@@ -1354,6 +1354,7 @@ public final class QuorumController implements Controller {
             curClaimEpoch = epoch;
             offsetControl.activate(newNextWriteOffset);
             clusterControl.activate();
+            extension.activate();
 
             // Prepend the activate event. It is important that this event go at the beginning
             // of the queue rather than the end (hence prepend rather than append). It's also
@@ -1413,6 +1414,7 @@ public final class QuorumController implements Controller {
                     newWrongControllerException(OptionalInt.empty()));
             offsetControl.deactivate();
             clusterControl.deactivate();
+            extension.deactivate();
             cancelMaybeFenceReplicas();
             cancelMaybeBalancePartitionLeaders();
             cancelMaybeNextElectUncleanLeaders();

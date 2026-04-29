@@ -29,7 +29,7 @@ import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
@@ -92,6 +92,7 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  @volatile private var enterpriseFacadeRef: AnyRef = null
   private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
   private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
     createBrokerExtensionHandleDispatcher(brokerExtensionContext)
@@ -100,6 +101,7 @@ class ElasticKafkaApis(
     BrokerExtensionHandleDispatcher.load(context)
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+  @volatile private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -639,6 +641,11 @@ class ElasticKafkaApis(
       }
     }
 
+    val requestSessionId = fetchRequest.metadata.sessionId
+    val requestFetchOffsets = interesting.map { case (tp, partitionData) =>
+      tp -> partitionData.fetchOffset
+    }.toMap
+
     // the callback for process a fetch response, invoked before throttling
     def processResponseCallback(responsePartitionData: Seq[(TopicIdPartition, FetchPartitionData)]): Unit = {
       val partitions = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]
@@ -646,6 +653,12 @@ class ElasticKafkaApis(
       val nodeEndpoints = new mutable.HashMap[Int, Node]
       val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
       responsePartitionData.foreach { case (tp, data) =>
+        notifyFetchListener(
+          tp,
+          if (requestSessionId == JFetchMetadata.INVALID_SESSION_ID) FetchListener.NONE_SESSION_ID else requestSessionId,
+          requestFetchOffsets.getOrElse(tp, -1L),
+          data.records
+        )
         val abortedTransactions = data.abortedTransactions.orElse(null)
         val lastStableOffset: Long = data.lastStableOffset.orElse(FetchResponse.INVALID_LAST_STABLE_OFFSET)
         if (data.isReassignmentFetch) reassigningPartitions.add(tp)
@@ -885,6 +898,44 @@ class ElasticKafkaApis(
     this.snapshotAwaitReadySupplier = supplier
   }
 
+  def setFetchListener(fetchListener: FetchListener): Unit = {
+    this.fetchListener = if (fetchListener == null) FetchListener.NOOP else fetchListener
+  }
+
+  def setEnterpriseFacade(enterpriseFacade: AnyRef): Unit = {
+    this.enterpriseFacadeRef = enterpriseFacade
+  }
+
+  private[streamaspect] def enterpriseFacade(): AnyRef = {
+    enterpriseFacadeRef
+  }
+
+  private def notifyFetchListener(topicIdPartition: TopicIdPartition,
+                                  sessionId: Int,
+                                  fetchOffset: Long,
+                                  records: Records): Unit = {
+    if (fetchListener eq FetchListener.NOOP) return
+    val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
+    fetchListener.onFetch(topicIdPartition, sessionId, reportedOffset, timestamp)
+  }
+
+  private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {
+    if (records == null) {
+      (defaultOffset, RecordBatch.NO_TIMESTAMP)
+    } else {
+      val batches = records.batches().iterator()
+      if (!batches.hasNext) {
+        (defaultOffset, RecordBatch.NO_TIMESTAMP)
+      } else {
+        var lastBatch = batches.next()
+        while (batches.hasNext) {
+          lastBatch = batches.next()
+        }
+        (lastBatch.lastOffset(), lastBatch.maxTimestamp())
+      }
+    }
+  }
+
   private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
     override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.forwardToControllerOrFail(request)
@@ -906,6 +957,15 @@ class ElasticKafkaApis(
 
     override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
       ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
+
+    override def getTopicName(topicId: Uuid): Optional[String] =
+      OptionConverters.toJava(metadataCache.getTopicName(topicId))
+
+    override def getPartition(topicPartition: TopicPartition): HostedPartition =
+      replicaManager.getPartition(topicPartition)
+
+    override def enterpriseFacade(): AnyRef =
+      ElasticKafkaApis.this.enterpriseFacade()
   }
 
 }

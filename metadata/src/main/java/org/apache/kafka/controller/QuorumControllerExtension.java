@@ -79,4 +79,16 @@ public interface QuorumControllerExtension {
 
     Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
         BrokerHeartbeatRequestData request, long registerBrokerRecordOffset);
+
+    /**
+     * Called when this controller becomes the active leader.
+     */
+    default void activate() {
+    }
+
+    /**
+     * Called when this controller is no longer the active leader.
+     */
+    default void deactivate() {
+    }
 }

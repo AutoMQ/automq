@@ -156,6 +156,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 
   def highestOffsetInRemoteStorage(): Long = _highestOffsetInRemoteStorage
 
+  // AutoMQ inject start
+  @volatile private var _latestAppendState: Option[LatestAppendState] = None
+  // AutoMQ inject end
+
   locally {
     def updateLocalLogStartOffset(offset: Long): Unit = {
       _localLogStartOffset = offset
@@ -910,6 +914,11 @@ class UnifiedLog(@volatile var logStartOffset: Long,
               // ProducerStateManager will not be updated and the last stable offset will not advance
               // if the append to the transaction index fails.
               localLog.append(appendInfo.lastOffset, validRecords)
+              // AutoMQ inject start
+              if (appendInfo.maxTimestamp >= 0 && appendInfo.lastOffset >= 0) {
+                _latestAppendState = Some(LatestAppendState(appendInfo.lastOffset, appendInfo.maxTimestamp))
+              }
+              // AutoMQ inject end
               updateHighWatermarkWithLogEndOffset()
 
               // update the producer state
@@ -1692,6 +1701,16 @@ class UnifiedLog(@volatile var logStartOffset: Long,
   def logEndOffsetMetadata: LogOffsetMetadata = localLog.logEndOffsetMetadata
 
   /**
+   * The latest append-time sparse sample from the most recent successful append.
+   *
+   * maxTimestampOffset is sourced from LogAppendInfo.lastOffset.
+   * maxTimestamp is sourced from LogAppendInfo.maxTimestamp.
+   */
+  // AutoMQ inject start
+  def latestAppendState: Option[LatestAppendState] = _latestAppendState
+  // AutoMQ inject end
+
+  /**
    * Roll the log over to a new empty log segment if necessary.
    * The segment will be rolled if one of the following conditions met:
    * 1. The logSegment is full
@@ -1887,6 +1906,9 @@ class UnifiedLog(@volatile var logStartOffset: Long,
             leaderEpochCache.foreach(_.truncateFromEndAsyncFlush(targetOffset))
             logStartOffset = math.min(targetOffset, logStartOffset)
             rebuildProducerState(targetOffset, producerStateManager)
+            // AutoMQ inject start
+            _latestAppendState = None
+            // AutoMQ inject end
             if (highWatermark >= localLog.logEndOffset)
               updateHighWatermark(localLog.logEndOffsetMetadata)
           }
@@ -1913,6 +1935,9 @@ class UnifiedLog(@volatile var logStartOffset: Long,
         logStartOffset = logStartOffsetOpt.getOrElse(newOffset)
         if (remoteLogEnabled()) _localLogStartOffset = newOffset
         rebuildProducerState(newOffset, producerStateManager)
+        // AutoMQ inject start
+        _latestAppendState = None
+        // AutoMQ inject end
         updateHighWatermark(localLog.logEndOffsetMetadata)
       }
     }
@@ -2037,6 +2062,10 @@ class UnifiedLog(@volatile var logStartOffset: Long,
 }
 
 object UnifiedLog extends Logging {
+  // AutoMQ inject start
+  case class LatestAppendState(maxTimestampOffset: Long, maxTimestamp: Long)
+  // AutoMQ inject end
+
   val LogFileSuffix: String = LogFileUtils.LOG_FILE_SUFFIX
 
   val IndexFileSuffix: String = LogFileUtils.INDEX_FILE_SUFFIX
