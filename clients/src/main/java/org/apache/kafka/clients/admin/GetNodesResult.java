@@ -24,25 +24,25 @@ import org.apache.kafka.common.KafkaFuture;
 import java.util.List;
 
 public class GetNodesResult {
-    private final KafkaFuture<WrapperResult> future;
+    private final KafkaFuture<Response> future;
 
-    public GetNodesResult(KafkaFuture<WrapperResult> future) {
+    public GetNodesResult(KafkaFuture<Response> future) {
         this.future = future;
     }
 
     public KafkaFuture<List<NodeMetadata>> nodes() {
-        return future.thenApply(WrapperResult::nodes);
+        return future.thenApply(Response::nodes);
     }
 
     public KafkaFuture<RouterChannelEpoch> routerChannelEpoch() {
-        return future.thenApply(WrapperResult::routerChannelEpoch);
+        return future.thenApply(Response::routerChannelEpoch);
     }
 
-    static class WrapperResult {
+    static class Response {
         private final List<NodeMetadata> nodes;
         private final RouterChannelEpoch routerChannelEpoch;
 
-        WrapperResult(List<NodeMetadata> nodes, RouterChannelEpoch routerChannelEpoch) {
+        Response(List<NodeMetadata> nodes, RouterChannelEpoch routerChannelEpoch) {
             this.nodes = nodes;
             this.routerChannelEpoch = routerChannelEpoch;
         }
