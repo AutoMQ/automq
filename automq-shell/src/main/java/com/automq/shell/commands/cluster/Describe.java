@@ -63,11 +63,13 @@ public class Describe implements Callable<Integer> {
             GetNodesResult rst = admin.getNodes(Collections.emptyList(), new GetNodesOptions());
             List<NodeMetadata> nodeMetadataList = rst.nodes().get();
             nodeMetadataList.sort(Comparator.comparingInt(NodeMetadata::getNodeId));
+            System.out.println("Nodes:");
             for (NodeMetadata nodeMetadata : nodeMetadataList) {
-                System.out.println(nodeMetadata);
+                System.out.println("  " + nodeMetadata);
             }
             GetNodesResult.RouterChannelEpoch epoch = rst.routerChannelEpoch().get();
-            System.out.println("RouterChannelEpoch: " + epoch);
+            System.out.println("RouterChannelEpoch:");
+            System.out.println("  " + epoch);
         }
         return 0;
     }

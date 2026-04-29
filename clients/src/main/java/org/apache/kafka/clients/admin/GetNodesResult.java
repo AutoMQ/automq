@@ -24,25 +24,36 @@ import org.apache.kafka.common.KafkaFuture;
 import java.util.List;
 
 public class GetNodesResult {
-    private final KafkaFuture<List<NodeMetadata>> future;
-    private final KafkaFuture<RouterChannelEpoch> routerChannelEpochFuture;
+    private final KafkaFuture<WrapperResult> future;
 
-    public GetNodesResult(KafkaFuture<List<NodeMetadata>> future) {
-        this(future, KafkaFuture.completedFuture(new RouterChannelEpoch(-3, -2, 0, 0)));
-    }
-
-    public GetNodesResult(KafkaFuture<List<NodeMetadata>> future,
-                          KafkaFuture<RouterChannelEpoch> routerChannelEpochFuture) {
+    public GetNodesResult(KafkaFuture<WrapperResult> future) {
         this.future = future;
-        this.routerChannelEpochFuture = routerChannelEpochFuture;
     }
 
     public KafkaFuture<List<NodeMetadata>> nodes() {
-        return future;
+        return future.thenApply(WrapperResult::nodes);
     }
 
     public KafkaFuture<RouterChannelEpoch> routerChannelEpoch() {
-        return routerChannelEpochFuture;
+        return future.thenApply(WrapperResult::routerChannelEpoch);
+    }
+
+    static class WrapperResult {
+        private final List<NodeMetadata> nodes;
+        private final RouterChannelEpoch routerChannelEpoch;
+
+        WrapperResult(List<NodeMetadata> nodes, RouterChannelEpoch routerChannelEpoch) {
+            this.nodes = nodes;
+            this.routerChannelEpoch = routerChannelEpoch;
+        }
+
+        List<NodeMetadata> nodes() {
+            return nodes;
+        }
+
+        RouterChannelEpoch routerChannelEpoch() {
+            return routerChannelEpoch;
+        }
     }
 
     public static class RouterChannelEpoch {
