@@ -1884,6 +1884,7 @@ project(':clients') {
   compileJava.dependsOn 'generateProto'
   // AutoMQ inject end
   srcJar.dependsOn 'processMessages'
+  srcJar.dependsOn 'generateProto'
 
   compileTestJava.dependsOn 'processTestMessages'
 
