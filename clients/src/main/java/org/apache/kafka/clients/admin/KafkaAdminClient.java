@@ -4991,14 +4991,21 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
-        final KafkaFutureImpl<List<NodeMetadata>> future = new KafkaFutureImpl<>();
-        final KafkaFutureImpl<GetNodesResult.RouterChannelEpoch> routerChannelEpochFuture = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<GetNodesResult.WrapperResult> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call(
             "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
 
-            private List<NodeMetadata> createResult(final AutomqGetNodesResponse response) {
-                return response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+            private GetNodesResult.WrapperResult createResult(final AutomqGetNodesResponse response) {
+                List<NodeMetadata> nodes = response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+                AutomqGetNodesResponseData.RouterChannelEpoch epochData = response.data().routerChannelEpoch();
+                GetNodesResult.RouterChannelEpoch routerChannelEpoch = new GetNodesResult.RouterChannelEpoch(
+                    epochData.committed(),
+                    epochData.fenced(),
+                    epochData.current(),
+                    epochData.lastBumpUpTimestamp()
+                );
+                return new GetNodesResult.WrapperResult(nodes, routerChannelEpoch);
             }
 
             @Override
@@ -5011,30 +5018,19 @@ public class KafkaAdminClient extends AdminClient {
                 final AutomqGetNodesResponse resp = (AutomqGetNodesResponse) response;
                 if (resp.data().errorCode() == Errors.NONE.code()) {
                     future.complete(createResult(resp));
-                    AutomqGetNodesResponseData.RouterChannelEpoch epochData = resp.data().routerChannelEpoch();
-                    routerChannelEpochFuture.complete(
-                        new GetNodesResult.RouterChannelEpoch(
-                            epochData.committed(),
-                            epochData.fenced(),
-                            epochData.current(),
-                            epochData.lastBumpUpTimestamp()
-                        )
-                    );
                 } else {
                     future.completeExceptionally(Errors.forCode(resp.data().errorCode()).exception());
-                    routerChannelEpochFuture.completeExceptionally(Errors.forCode(resp.data().errorCode()).exception());
                 }
             }
 
             @Override
             void handleFailure(Throwable throwable) {
                 future.completeExceptionally(throwable);
-                routerChannelEpochFuture.completeExceptionally(throwable);
             }
         };
 
         runnable.call(call, now);
-        return new GetNodesResult(future, routerChannelEpochFuture);
+        return new GetNodesResult(future);
     }
 
     @Override
