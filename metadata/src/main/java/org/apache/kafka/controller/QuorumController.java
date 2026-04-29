@@ -150,6 +150,7 @@ import org.apache.kafka.controller.metrics.QuorumControllerMetrics;
 import org.apache.kafka.controller.stream.DefaultNodeRuntimeInfoManager;
 import org.apache.kafka.controller.stream.KVControlManager;
 import org.apache.kafka.controller.stream.NodeControlManager;
+import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.controller.stream.RouterChannelEpochControlManager;
 import org.apache.kafka.controller.stream.S3ObjectControlManager;
 import org.apache.kafka.controller.stream.StreamClient;
@@ -2819,7 +2820,19 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<AutomqGetNodesResponseData> getNodes(ControllerRequestContext context, AutomqGetNodesRequest req) {
-        return appendWriteEvent("getNodes", context.deadlineNs(), () -> nodeControlManager.getMetadata(req));
+        return appendWriteEvent("getNodes", context.deadlineNs(), () -> {
+            ControllerResult<AutomqGetNodesResponseData> result = nodeControlManager.getMetadata(req);
+            AutomqGetNodesResponseData resp = result.response();
+            RouterChannelEpoch epoch = routerChannelEpochControlManager.getRouterChannelEpoch();
+            resp.setRouterChannelEpoch(
+                new AutomqGetNodesResponseData.RouterChannelEpoch()
+                    .setCommitted(epoch.getCommitted())
+                    .setFenced(epoch.getFenced())
+                    .setCurrent(epoch.getCurrent())
+                    .setLastBumpUpTimestamp(epoch.getLastBumpUpTimestamp())
+            );
+            return result;
+        });
     }
 
     @Override

@@ -24,14 +24,75 @@ import org.apache.kafka.common.KafkaFuture;
 import java.util.List;
 
 public class GetNodesResult {
-    private final KafkaFuture<List<NodeMetadata>> future;
+    private final KafkaFuture<Response> future;
 
-    public GetNodesResult(KafkaFuture<List<NodeMetadata>> future) {
+    public GetNodesResult(KafkaFuture<Response> future) {
         this.future = future;
     }
 
     public KafkaFuture<List<NodeMetadata>> nodes() {
-        return future;
+        return future.thenApply(Response::nodes);
     }
 
+    public KafkaFuture<RouterChannelEpoch> routerChannelEpoch() {
+        return future.thenApply(Response::routerChannelEpoch);
+    }
+
+    static class Response {
+        private final List<NodeMetadata> nodes;
+        private final RouterChannelEpoch routerChannelEpoch;
+
+        Response(List<NodeMetadata> nodes, RouterChannelEpoch routerChannelEpoch) {
+            this.nodes = nodes;
+            this.routerChannelEpoch = routerChannelEpoch;
+        }
+
+        List<NodeMetadata> nodes() {
+            return nodes;
+        }
+
+        RouterChannelEpoch routerChannelEpoch() {
+            return routerChannelEpoch;
+        }
+    }
+
+    public static class RouterChannelEpoch {
+        private final long committed;
+        private final long fenced;
+        private final long current;
+        private final long lastBumpUpTimestamp;
+
+        public RouterChannelEpoch(long committed, long fenced, long current, long lastBumpUpTimestamp) {
+            this.committed = committed;
+            this.fenced = fenced;
+            this.current = current;
+            this.lastBumpUpTimestamp = lastBumpUpTimestamp;
+        }
+
+        public long getCommitted() {
+            return committed;
+        }
+
+        public long getFenced() {
+            return fenced;
+        }
+
+        public long getCurrent() {
+            return current;
+        }
+
+        public long getLastBumpUpTimestamp() {
+            return lastBumpUpTimestamp;
+        }
+
+        @Override
+        public String toString() {
+            return "RouterChannelEpoch{" +
+                "committed=" + committed +
+                ", fenced=" + fenced +
+                ", current=" + current +
+                ", lastBumpUpTimestamp=" + lastBumpUpTimestamp +
+                '}';
+        }
+    }
 }
