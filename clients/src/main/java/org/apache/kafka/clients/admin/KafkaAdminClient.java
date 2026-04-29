@@ -4991,12 +4991,12 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
-        final KafkaFutureImpl<GetNodesResult.WrapperResult> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<GetNodesResult.Response> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call(
             "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
 
-            private GetNodesResult.WrapperResult createResult(final AutomqGetNodesResponse response) {
+            private GetNodesResult.Response createResult(final AutomqGetNodesResponse response) {
                 List<NodeMetadata> nodes = response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
                 AutomqGetNodesResponseData.RouterChannelEpoch epochData = response.data().routerChannelEpoch();
                 GetNodesResult.RouterChannelEpoch routerChannelEpoch = new GetNodesResult.RouterChannelEpoch(
@@ -5005,7 +5005,7 @@ public class KafkaAdminClient extends AdminClient {
                     epochData.current(),
                     epochData.lastBumpUpTimestamp()
                 );
-                return new GetNodesResult.WrapperResult(nodes, routerChannelEpoch);
+                return new GetNodesResult.Response(nodes, routerChannelEpoch);
             }
 
             @Override
