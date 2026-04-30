@@ -112,6 +112,7 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKey;
 import org.apache.kafka.common.message.ApiVersionsResponseData.SupportedFeatureKey;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData.AclCreation;
 import org.apache.kafka.common.message.CreateAclsResponseData.AclCreationResult;
@@ -4990,13 +4991,21 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
-        final KafkaFutureImpl<List<NodeMetadata>> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<GetNodesResult.Response> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call(
             "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
 
-            private List<NodeMetadata> createResult(final AutomqGetNodesResponse response) {
-                return response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+            private GetNodesResult.Response createResult(final AutomqGetNodesResponse response) {
+                List<NodeMetadata> nodes = response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+                AutomqGetNodesResponseData.RouterChannelEpoch epochData = response.data().routerChannelEpoch();
+                GetNodesResult.RouterChannelEpoch routerChannelEpoch = new GetNodesResult.RouterChannelEpoch(
+                    epochData.committed(),
+                    epochData.fenced(),
+                    epochData.current(),
+                    epochData.lastBumpUpTimestamp()
+                );
+                return new GetNodesResult.Response(nodes, routerChannelEpoch);
             }
 
             @Override
@@ -5016,7 +5025,7 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             void handleFailure(Throwable throwable) {
-                completeAllExceptionally(Collections.singletonList(future), throwable);
+                future.completeExceptionally(throwable);
             }
         };
 
