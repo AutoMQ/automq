@@ -39,6 +39,7 @@ import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData.To
 import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData.TopicCollection;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotResponse;
+import org.apache.kafka.common.utils.ThreadUtils;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
@@ -46,6 +47,9 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.ConfirmWAL;
 import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -56,19 +60,27 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import io.netty.util.concurrent.FastThreadLocal;
 
 public class PartitionSnapshotsManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PartitionSnapshotsManager.class);
     private static final int NOOP_SESSION_ID = 0;
+    static final long LONG_POLL_TIMEOUT_MS = 1000;
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;
     private final ConfirmWAL confirmWAL;
+    private final ScheduledExecutorService longPollExecutor = Threads.newSingleThreadScheduledExecutor(
+        ThreadUtils.createThreadFactory("automq-partition-snapshot-long-poll", true), LOGGER, true);
+    private final AtomicBoolean partitionNotificationPending = new AtomicBoolean(false);
 
     public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL,
         Supplier<AutoMQVersion> versionGetter) {
@@ -89,8 +101,9 @@ public class PartitionSnapshotsManager {
     public void onPartitionOpen(Partition partition) {
         PartitionWithVersion partitionWithVersion = new PartitionWithVersion(partition, PartitionSnapshotVersion.create());
         snapshotVersions.add(partitionWithVersion);
-        partition.maybeAddListener(newPartitionListener(partitionWithVersion));
-        partition.addLogEventListener(newLogEventListener(partitionWithVersion));
+        partition.maybeAddListener(newPartitionListener(partitionWithVersion, this::notifySnapshotChanged));
+        partition.addLogEventListener(newLogEventListener(partitionWithVersion, this::notifySnapshotChanged));
+        notifySnapshotChanged();
     }
 
     public void onPartitionClose(Partition partition) {
@@ -98,6 +111,7 @@ public class PartitionSnapshotsManager {
         synchronized (this) {
             sessions.values().forEach(s -> s.onPartitionClose(partition));
         }
+        notifySnapshotChanged();
     }
 
     public CompletableFuture<AutomqGetPartitionSnapshotResponse> handle(AutomqGetPartitionSnapshotRequest request) {
@@ -142,6 +156,32 @@ public class PartitionSnapshotsManager {
         });
     }
 
+    private void notifySnapshotChanged() {
+        if (partitionNotificationPending.compareAndSet(false, true)) {
+            longPollExecutor.execute(this::tryNotifySnapshotChanged);
+        }
+    }
+
+    private void tryNotifySnapshotChanged() {
+        List<Session> sessionsSnapshot;
+        synchronized (this) {
+            partitionNotificationPending.set(false);
+            sessionsSnapshot = new ArrayList<>(sessions.values());
+        }
+        sessionsSnapshot.forEach(Session::tryCompletePendingLongPoll);
+    }
+
+    /*
+     * A session returns partition/WAL deltas immediately when available. Otherwise, the request is parked as a
+     * pending long-poll and is completed by the first later partition/WAL change that produces deltas, or by timeout.
+     *
+     * Partition-change notifications are coalesced at the manager level, while WAL append notifications are
+     * coalesced per session. Both paths enqueue at most one async longPollExecutor wakeup while a prior notification is
+     * pending.
+     *
+     * Session mutable state is serialized by the Session monitor. The manager monitor is only used for the session
+     * map; session wakeups run after the manager lock is released.
+     */
     class Session {
         private static final short ZERO_ZONE_V0_REQUEST_VERSION = (short) 0;
         private static final FastThreadLocal<List<CompletableFuture<Void>>> COMPLETE_CF_LIST_LOCAL = new FastThreadLocal<>() {
@@ -157,14 +197,18 @@ public class PartitionSnapshotsManager {
         private long lastGetSnapshotsTimestamp = time.milliseconds();
         private final Set<CompletableFuture<Void>> inflightCommitCfSet = ConcurrentHashMap.newKeySet();
         private final ConfirmWalDataDelta delta;
+        private final AtomicBoolean walAppendNotificationPending = new AtomicBoolean(false);
+        private PendingLongPoll pendingLongPoll;
 
         public Session(int sessionId) {
             this.sessionId = sessionId;
-            this.delta = new ConfirmWalDataDelta(confirmWAL);
+            this.delta = new ConfirmWalDataDelta(confirmWAL,
+                this::notifyWalAppended);
         }
 
         public synchronized void close() {
             delta.close();
+            completePendingLongPoll();
         }
 
         public synchronized int sessionEpoch() {
@@ -173,42 +217,22 @@ public class PartitionSnapshotsManager {
 
         public synchronized CompletableFuture<AutomqGetPartitionSnapshotResponse> snapshotsDelta(
             AutomqGetPartitionSnapshotRequest request, boolean requestCommit) {
-            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
-            sessionEpoch++;
-            lastGetSnapshotsTimestamp = time.milliseconds();
-            resp.setSessionId(sessionId);
-            resp.setSessionEpoch(sessionEpoch);
-            long finalSessionEpoch = sessionEpoch;
-            CompletableFuture<Void> collectPartitionSnapshotsCf;
-            if (!requestCommit && inflightCommitCfSet.isEmpty()) {
-                collectPartitionSnapshotsCf = collectPartitionSnapshots(request.data().version(), resp);
-            } else {
-                collectPartitionSnapshotsCf = CompletableFuture.completedFuture(null);
+            if (pendingLongPoll != null) {
+                // Same-session requests with the current epoch are retries of the outstanding long-poll request.
+                lastGetSnapshotsTimestamp = time.milliseconds();
+                return pendingLongPoll.future;
             }
-            boolean newSession = finalSessionEpoch == 1;
-            return collectPartitionSnapshotsCf
-                .thenApply(nil -> {
-                    if (request.data().version() > ZERO_ZONE_V0_REQUEST_VERSION) {
-                        if (newSession) {
-                            // return the WAL config in the session first response
-                            resp.setConfirmWalConfig(confirmWAL.uri());
-                        }
-                        delta.handle(request.version(), resp);
+            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
+            if (!requestCommit && inflightCommitCfSet.isEmpty()) {
+                CompletableFuture<Void> collectPartitionSnapshotsCf = collectPartitionSnapshots(request.data().version(), resp);
+                return collectPartitionSnapshotsCf.thenCompose(nil -> {
+                    synchronized (Session.this) {
+                        return maybeLongPollOrComplete(request, resp);
                     }
-                    if (requestCommit) {
-                        // Commit after generating the snapshots.
-                        // Then the snapshot-read partitions could read from snapshot-read cache or block cache.
-                        CompletableFuture<Void> commitCf = newSession ?
-                            // The proxy node's first snapshot-read request needs to commit immediately to ensure the data could be read.
-                            confirmWAL.commit(0, false)
-                            // The proxy node's snapshot-read cache isn't enough to hold the 'uncommitted' data,
-                            // so the proxy node request a commit to ensure the data could be read from block cache.
-                            : confirmWAL.commit(1000, false);
-                        inflightCommitCfSet.add(commitCf);
-                        commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
-                    }
-                    return new AutomqGetPartitionSnapshotResponse(resp);
                 });
+            } else {
+                return completeResponse(request, requestCommit, resp);
+            }
         }
 
         public synchronized void onPartitionClose(Partition partition) {
@@ -217,6 +241,137 @@ public class PartitionSnapshotsManager {
 
         public synchronized boolean expired() {
             return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
+        }
+
+        private CompletableFuture<AutomqGetPartitionSnapshotResponse> maybeLongPollOrComplete(
+            AutomqGetPartitionSnapshotRequest request,
+            AutomqGetPartitionSnapshotResponseData resp
+        ) {
+            if (hasResponseDeltas(request, resp)) {
+                return completeResponse(request, false, resp);
+            }
+            return createPendingLongPoll(request);
+        }
+
+        private CompletableFuture<AutomqGetPartitionSnapshotResponse> completeResponse(
+            AutomqGetPartitionSnapshotRequest request,
+            boolean requestCommit,
+            AutomqGetPartitionSnapshotResponseData resp
+        ) {
+            cancelPendingLongPoll();
+            sessionEpoch++;
+            lastGetSnapshotsTimestamp = time.milliseconds();
+            resp.setSessionId(sessionId);
+            resp.setSessionEpoch(sessionEpoch);
+            boolean newSession = sessionEpoch == 1;
+            if (request.data().version() > ZERO_ZONE_V0_REQUEST_VERSION) {
+                if (newSession) {
+                    // return the WAL config in the session first response
+                    resp.setConfirmWalConfig(confirmWAL.uri());
+                }
+                delta.handle(request.version(), resp);
+            }
+            if (requestCommit) {
+                // Commit after generating the snapshots.
+                // Then the snapshot-read partitions could read from snapshot-read cache or block cache.
+                CompletableFuture<Void> commitCf = newSession ?
+                    // The proxy node's first snapshot-read request needs to commit immediately to ensure the data could be read.
+                    confirmWAL.commit(0, false)
+                    // The proxy node's snapshot-read cache isn't enough to hold the 'uncommitted' data,
+                    // so the proxy node request a commit to ensure the data could be read from block cache.
+                    : confirmWAL.commit(1000, false);
+                inflightCommitCfSet.add(commitCf);
+                commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
+            }
+            return CompletableFuture.completedFuture(new AutomqGetPartitionSnapshotResponse(resp));
+        }
+
+        private CompletableFuture<AutomqGetPartitionSnapshotResponse> createPendingLongPoll(
+            AutomqGetPartitionSnapshotRequest request
+        ) {
+            CompletableFuture<AutomqGetPartitionSnapshotResponse> future = new CompletableFuture<>();
+            PendingLongPoll pending = new PendingLongPoll(request, future);
+            pending.timeoutTask = longPollExecutor.schedule(
+                () -> {
+                    synchronized (Session.this) {
+                        if (pendingLongPoll == pending) {
+                            completePendingLongPoll();
+                        }
+                    }
+                },
+                LONG_POLL_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS
+            );
+            pendingLongPoll = pending;
+            return future;
+        }
+
+        private synchronized void tryCompletePendingLongPoll() {
+            completePendingLongPoll();
+        }
+
+        private void notifyWalAppended() {
+            if (walAppendNotificationPending.compareAndSet(false, true)) {
+                longPollExecutor.execute(this::tryNotifyWalAppended);
+            }
+        }
+
+        private synchronized void tryNotifyWalAppended() {
+            walAppendNotificationPending.set(false);
+            completePendingLongPoll();
+        }
+
+        private void completePendingLongPoll() {
+            PendingLongPoll pending = pendingLongPoll;
+            if (pending == null) {
+                return;
+            }
+            if (pending.completing) {
+                return;
+            }
+            pending.completing = true;
+            pending.cancelTimeout();
+            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
+            collectPartitionSnapshots(pending.request.data().version(), resp).whenComplete((nil, ex) -> {
+                synchronized (Session.this) {
+                    if (pendingLongPoll == pending) {
+                        finishPendingLongPoll(pending, resp, ex);
+                    }
+                }
+            });
+        }
+
+        private void finishPendingLongPoll(PendingLongPoll pending,
+            AutomqGetPartitionSnapshotResponseData resp,
+            Throwable ex) {
+            pendingLongPoll = null;
+            if (ex != null) {
+                pending.future.completeExceptionally(ex);
+                return;
+            }
+            completeResponse(pending.request, false, resp).whenComplete((response, completeEx) -> {
+                if (completeEx != null) {
+                    pending.future.completeExceptionally(completeEx);
+                } else {
+                    pending.future.complete(response);
+                }
+            });
+        }
+
+        private void cancelPendingLongPoll() {
+            PendingLongPoll pending = pendingLongPoll;
+            if (pending == null) {
+                return;
+            }
+            pendingLongPoll = null;
+            pending.cancelTimeout();
+            pending.future.cancel(false);
+        }
+
+        private boolean hasResponseDeltas(AutomqGetPartitionSnapshotRequest request,
+            AutomqGetPartitionSnapshotResponseData resp) {
+            return hasSnapshotDeltas(resp)
+                || (request.data().version() > ZERO_ZONE_V0_REQUEST_VERSION && delta.hasNewEndOffset());
         }
 
         private CompletableFuture<Void> collectPartitionSnapshots(short funcVersion,
@@ -295,6 +450,10 @@ public class PartitionSnapshotsManager {
 
     }
 
+    static boolean hasSnapshotDeltas(AutomqGetPartitionSnapshotResponseData resp) {
+        return resp.topics() != null && !resp.topics().isEmpty();
+    }
+
     static AutomqGetPartitionSnapshotResponseData.LogOffsetMetadata logOffsetMetadata(LogOffsetMetadata src) {
         if (src == null) {
             return null;
@@ -357,22 +516,46 @@ public class PartitionSnapshotsManager {
         }
     }
 
-    static PartitionListener newPartitionListener(PartitionWithVersion version) {
+    static PartitionListener newPartitionListener(PartitionWithVersion version, Runnable notifySnapshotChanged) {
         return new PartitionListener() {
             @Override
             public void onNewLeaderEpoch(long oldEpoch, long newEpoch) {
                 version.version.incrementRecordsVersion();
+                notifySnapshotChanged.run();
             }
 
             @Override
             public void onNewAppend(TopicPartition partition, long offset) {
                 version.version.incrementRecordsVersion();
+                notifySnapshotChanged.run();
             }
         };
     }
 
-    static LogEventListener newLogEventListener(PartitionWithVersion version) {
-        return (segment, event) -> version.version.incrementSegmentsVersion();
+    static LogEventListener newLogEventListener(PartitionWithVersion version, Runnable notifySnapshotChanged) {
+        return (segment, event) -> {
+            version.version.incrementSegmentsVersion();
+            notifySnapshotChanged.run();
+        };
+    }
+
+    static class PendingLongPoll {
+        final AutomqGetPartitionSnapshotRequest request;
+        final CompletableFuture<AutomqGetPartitionSnapshotResponse> future;
+        ScheduledFuture<?> timeoutTask;
+        boolean completing;
+
+        PendingLongPoll(AutomqGetPartitionSnapshotRequest request,
+            CompletableFuture<AutomqGetPartitionSnapshotResponse> future) {
+            this.request = request;
+            this.future = future;
+        }
+
+        void cancelTimeout() {
+            if (timeoutTask != null) {
+                timeoutTask.cancel(false);
+            }
+        }
     }
 
 }
