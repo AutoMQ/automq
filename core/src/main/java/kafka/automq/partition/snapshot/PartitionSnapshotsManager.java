@@ -46,6 +46,7 @@ import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.ConfirmWAL;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -222,15 +223,18 @@ public class PartitionSnapshotsManager {
                 lastGetSnapshotsTimestamp = time.milliseconds();
                 return pendingLongPoll.future;
             }
-            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
             if (!requestCommit && inflightCommitCfSet.isEmpty()) {
-                CompletableFuture<Void> collectPartitionSnapshotsCf = collectPartitionSnapshots(request.data().version(), resp);
-                return collectPartitionSnapshotsCf.thenCompose(nil -> {
+                PendingLongPoll pending = new PendingLongPoll(request, new CompletableFuture<>());
+                pendingLongPoll = pending;
+                pending.future.whenComplete((response, ex) -> {
                     synchronized (Session.this) {
-                        return maybeLongPollOrComplete(request, resp);
+                        cleanupPendingLongPoll(pending);
                     }
                 });
+                registerLongPolling(pending);
+                return pending.future;
             } else {
+                AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
                 return completeResponse(request, requestCommit, resp);
             }
         }
@@ -243,14 +247,46 @@ public class PartitionSnapshotsManager {
             return time.milliseconds() - lastGetSnapshotsTimestamp > 60000;
         }
 
-        private CompletableFuture<AutomqGetPartitionSnapshotResponse> maybeLongPollOrComplete(
-            AutomqGetPartitionSnapshotRequest request,
-            AutomqGetPartitionSnapshotResponseData resp
-        ) {
-            if (hasResponseDeltas(request, resp)) {
-                return completeResponse(request, false, resp);
+        private void registerLongPolling(PendingLongPoll pending) {
+            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
+            CompletableFuture<Void> collectPartitionSnapshotsCf = collectPartitionSnapshots(
+                pending.request.data().version(), resp);
+            if (hasResponseDeltas(pending.request, resp)) {
+                collectPartitionSnapshotsCf.whenComplete((nil, ex) -> {
+                    synchronized (Session.this) {
+                        if (pendingLongPoll == pending) {
+                            completePendingResponse(pending, resp, ex);
+                        }
+                    }
+                });
+                return;
             }
-            return createPendingLongPoll(request);
+
+            pending.timeoutTask = longPollExecutor.schedule(
+                () -> {
+                    synchronized (Session.this) {
+                        if (pendingLongPoll == pending) {
+                            completePendingLongPoll();
+                        }
+                    }
+                },
+                LONG_POLL_TIMEOUT_MS,
+                TimeUnit.MILLISECONDS
+            );
+            pending.triggerCf.thenCompose(nil -> {
+                pending.cancelTimeout();
+                AutomqGetPartitionSnapshotResponseData triggeredResp = new AutomqGetPartitionSnapshotResponseData();
+                return collectPartitionSnapshots(pending.request.data().version(), triggeredResp)
+                    .thenApply(ignored -> triggeredResp);
+            }).whenComplete((triggeredResp, ex) -> {
+                synchronized (Session.this) {
+                    if (pendingLongPoll == pending) {
+                        // A partition/WAL trigger is a liveness signal for the parked request: complete the long poll
+                        // even when the collected response is empty because the triggering delta may have been consumed.
+                        completePendingResponse(pending, triggeredResp, ex);
+                    }
+                }
+            });
         }
 
         private CompletableFuture<AutomqGetPartitionSnapshotResponse> completeResponse(
@@ -258,7 +294,6 @@ public class PartitionSnapshotsManager {
             boolean requestCommit,
             AutomqGetPartitionSnapshotResponseData resp
         ) {
-            cancelPendingLongPoll();
             sessionEpoch++;
             lastGetSnapshotsTimestamp = time.milliseconds();
             resp.setSessionId(sessionId);
@@ -286,26 +321,6 @@ public class PartitionSnapshotsManager {
             return CompletableFuture.completedFuture(new AutomqGetPartitionSnapshotResponse(resp));
         }
 
-        private CompletableFuture<AutomqGetPartitionSnapshotResponse> createPendingLongPoll(
-            AutomqGetPartitionSnapshotRequest request
-        ) {
-            CompletableFuture<AutomqGetPartitionSnapshotResponse> future = new CompletableFuture<>();
-            PendingLongPoll pending = new PendingLongPoll(request, future);
-            pending.timeoutTask = longPollExecutor.schedule(
-                () -> {
-                    synchronized (Session.this) {
-                        if (pendingLongPoll == pending) {
-                            completePendingLongPoll();
-                        }
-                    }
-                },
-                LONG_POLL_TIMEOUT_MS,
-                TimeUnit.MILLISECONDS
-            );
-            pendingLongPoll = pending;
-            return future;
-        }
-
         private synchronized void tryCompletePendingLongPoll() {
             completePendingLongPoll();
         }
@@ -326,46 +341,24 @@ public class PartitionSnapshotsManager {
             if (pending == null) {
                 return;
             }
-            if (pending.completing) {
-                return;
-            }
-            pending.completing = true;
-            pending.cancelTimeout();
-            AutomqGetPartitionSnapshotResponseData resp = new AutomqGetPartitionSnapshotResponseData();
-            collectPartitionSnapshots(pending.request.data().version(), resp).whenComplete((nil, ex) -> {
-                synchronized (Session.this) {
-                    if (pendingLongPoll == pending) {
-                        finishPendingLongPoll(pending, resp, ex);
-                    }
-                }
-            });
+            pending.triggerCf.complete(null);
         }
 
-        private void finishPendingLongPoll(PendingLongPoll pending,
-            AutomqGetPartitionSnapshotResponseData resp,
+        private void completePendingResponse(PendingLongPoll pending, AutomqGetPartitionSnapshotResponseData resp,
             Throwable ex) {
-            pendingLongPoll = null;
             if (ex != null) {
                 pending.future.completeExceptionally(ex);
                 return;
             }
-            completeResponse(pending.request, false, resp).whenComplete((response, completeEx) -> {
-                if (completeEx != null) {
-                    pending.future.completeExceptionally(completeEx);
-                } else {
-                    pending.future.complete(response);
-                }
-            });
+            FutureUtil.propagate(completeResponse(pending.request, false, resp), pending.future);
         }
 
-        private void cancelPendingLongPoll() {
-            PendingLongPoll pending = pendingLongPoll;
-            if (pending == null) {
+        private void cleanupPendingLongPoll(PendingLongPoll pending) {
+            if (pendingLongPoll != pending) {
                 return;
             }
             pendingLongPoll = null;
             pending.cancelTimeout();
-            pending.future.cancel(false);
         }
 
         private boolean hasResponseDeltas(AutomqGetPartitionSnapshotRequest request,
@@ -408,7 +401,11 @@ public class PartitionSnapshotsManager {
             resp.setTopics(topics);
             CompletableFuture<Void> retCf = CompletableFuture.allOf(completeCfList.toArray(new CompletableFuture[0]));
             completeCfList.clear();
-            return retCf;
+            return retCf.exceptionally(ex -> {
+                LOGGER.warn("Partition snapshot completion failed, returning collected snapshot delta anyway. sessionId={}",
+                    sessionId, ex);
+                return null;
+            });
         }
 
         private PartitionSnapshot snapshot(short funcVersion, Partition partition,
@@ -542,8 +539,8 @@ public class PartitionSnapshotsManager {
     static class PendingLongPoll {
         final AutomqGetPartitionSnapshotRequest request;
         final CompletableFuture<AutomqGetPartitionSnapshotResponse> future;
+        final CompletableFuture<Void> triggerCf = new CompletableFuture<>();
         ScheduledFuture<?> timeoutTask;
-        boolean completing;
 
         PendingLongPoll(AutomqGetPartitionSnapshotRequest request,
             CompletableFuture<AutomqGetPartitionSnapshotResponse> future) {

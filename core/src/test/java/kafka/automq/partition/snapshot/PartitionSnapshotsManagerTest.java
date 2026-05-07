@@ -38,10 +38,12 @@ import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -51,7 +53,6 @@ import scala.Option;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -154,7 +155,7 @@ public class PartitionSnapshotsManagerTest {
     }
 
     @Test
-    public void testAlreadyFailedSnapshotFuturePropagates() throws Exception {
+    public void testAlreadyFailedSnapshotFutureStillCompletesCollectedDelta() throws Exception {
         Uuid topicId = Uuid.randomUuid();
         CompletableFuture<Void> failedSnapshotCf = new CompletableFuture<>();
         failedSnapshotCf.completeExceptionally(new IllegalStateException("snapshot failed"));
@@ -165,7 +166,12 @@ public class PartitionSnapshotsManagerTest {
         CompletableFuture<AutomqGetPartitionSnapshotResponse> second = manager.handle(
             request(first.data().sessionId(), first.data().sessionEpoch(), false));
 
-        assertThrows(ExecutionException.class, () -> second.get(1, TimeUnit.SECONDS));
+        AutomqGetPartitionSnapshotResponse response = second.get(1, TimeUnit.SECONDS);
+        assertEquals(first.data().sessionId(), response.data().sessionId());
+        assertEquals(first.data().sessionEpoch() + 1, response.data().sessionEpoch());
+        assertEquals(1, response.data().topics().size());
+        assertEquals(topicId, response.data().topics().find(topicId).topicId());
+        assertEquals(3, response.data().topics().find(topicId).partitions().get(0).partitionIndex());
     }
 
     @Test
@@ -239,6 +245,66 @@ public class PartitionSnapshotsManagerTest {
         assertEquals(topicId, retryResponse.data().topics().find(topicId).topicId());
     }
 
+    @Test
+    public void testInFlightCollectionCompletesConcurrentPendingRetry() throws Exception {
+        AutomqGetPartitionSnapshotResponse first = manager.handle(request(0, 0, false)).get(1, TimeUnit.SECONDS);
+
+        Uuid topicId = Uuid.randomUuid();
+        CompletableFuture<Void> slowSnapshotCf = new CompletableFuture<>();
+        manager.onPartitionOpen(partition(topicId, 3, 7, 9, slowSnapshotCf));
+
+        CompletableFuture<AutomqGetPartitionSnapshotResponse> collecting = manager.handle(
+            request(first.data().sessionId(), first.data().sessionEpoch(), false));
+        assertFalse(collecting.isDone());
+
+        CompletableFuture<AutomqGetPartitionSnapshotResponse> retry = manager.handle(
+            request(first.data().sessionId(), first.data().sessionEpoch(), false));
+        assertFalse(retry.isDone());
+
+        slowSnapshotCf.complete(null);
+        AutomqGetPartitionSnapshotResponse collectingResponse = collecting.get(1, TimeUnit.SECONDS);
+        AutomqGetPartitionSnapshotResponse retryResponse = retry.get(1, TimeUnit.SECONDS);
+        assertEquals(collectingResponse.data().sessionId(), retryResponse.data().sessionId());
+        assertEquals(collectingResponse.data().sessionEpoch(), retryResponse.data().sessionEpoch());
+        assertEquals(1, retryResponse.data().topics().size());
+        assertEquals(topicId, retryResponse.data().topics().find(topicId).topicId());
+        assertEquals(3, retryResponse.data().topics().find(topicId).partitions().get(0).partitionIndex());
+    }
+
+    @Test
+    public void testStaleWalNotificationForceCompletesIdleLongPoll() throws Exception {
+        when(confirmWAL.confirmOffset()).thenReturn(DefaultRecordOffset.of(1, 0, 0));
+        AutomqGetPartitionSnapshotResponse first = manager.handle(request(0, 0, false, (short) 1, (short) 2))
+            .get(1, TimeUnit.SECONDS);
+
+        CountDownLatch executorBlocked = new CountDownLatch(1);
+        CountDownLatch releaseExecutor = new CountDownLatch(1);
+        longPollExecutor().execute(() -> {
+            executorBlocked.countDown();
+            try {
+                releaseExecutor.await(5, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(executorBlocked.await(1, TimeUnit.SECONDS));
+
+        appendWalRecord(0, 0);
+        AutomqGetPartitionSnapshotResponse walResponse = manager.handle(
+            request(first.data().sessionId(), first.data().sessionEpoch(), false, (short) 1, (short) 2))
+            .get(1, TimeUnit.SECONDS);
+
+        CompletableFuture<AutomqGetPartitionSnapshotResponse> pending = manager.handle(
+            request(walResponse.data().sessionId(), walResponse.data().sessionEpoch(), false, (short) 1, (short) 2));
+        assertFalse(pending.isDone());
+
+        releaseExecutor.countDown();
+
+        AutomqGetPartitionSnapshotResponse response = pending.get(1, TimeUnit.SECONDS);
+        assertEquals(walResponse.data().sessionEpoch() + 1, response.data().sessionEpoch());
+        assertTrue(response.data().topics().isEmpty());
+    }
+
     private static AutomqGetPartitionSnapshotRequest request(int sessionId, int sessionEpoch, boolean requestCommit) {
         return request(sessionId, sessionEpoch, requestCommit, (short) 0, (short) 0);
     }
@@ -263,6 +329,12 @@ public class PartitionSnapshotsManagerTest {
             DefaultRecordOffset.of(1, walOffset + 1, 0)
         );
         record.release();
+    }
+
+    private ScheduledExecutorService longPollExecutor() throws Exception {
+        Field field = PartitionSnapshotsManager.class.getDeclaredField("longPollExecutor");
+        field.setAccessible(true);
+        return (ScheduledExecutorService) field.get(manager);
     }
 
     private static Partition partition(Uuid topicId, int partitionId, int leaderEpoch, long endOffset) {
