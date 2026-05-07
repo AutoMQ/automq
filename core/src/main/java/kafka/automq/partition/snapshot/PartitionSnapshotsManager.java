@@ -74,7 +74,7 @@ import io.netty.util.concurrent.FastThreadLocal;
 public class PartitionSnapshotsManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionSnapshotsManager.class);
     private static final int NOOP_SESSION_ID = 0;
-    static final long LONG_POLL_TIMEOUT_MS = 1000;
+    static final long LONG_POLL_TIMEOUT_MS = 100;
     private final Map<Integer, Session> sessions = new HashMap<>();
     private final List<PartitionWithVersion> snapshotVersions = new CopyOnWriteArrayList<>();
     private final Time time;

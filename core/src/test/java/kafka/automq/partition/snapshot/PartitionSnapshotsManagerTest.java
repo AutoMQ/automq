@@ -90,7 +90,6 @@ public class PartitionSnapshotsManagerTest {
         CompletableFuture<AutomqGetPartitionSnapshotResponse> second = manager.handle(
             request(first.data().sessionId(), first.data().sessionEpoch(), false));
 
-        Thread.sleep(100);
         assertFalse(second.isDone());
 
         AutomqGetPartitionSnapshotResponse timeoutResponse = second.get(2, TimeUnit.SECONDS);
@@ -200,13 +199,14 @@ public class PartitionSnapshotsManagerTest {
     @Test
     public void testTimeoutDoesNotDropInFlightCollectedDeltas() throws Exception {
         AutomqGetPartitionSnapshotResponse first = manager.handle(request(0, 0, false)).get(1, TimeUnit.SECONDS);
-        CompletableFuture<AutomqGetPartitionSnapshotResponse> pending = manager.handle(
-            request(first.data().sessionId(), first.data().sessionEpoch(), false));
-        assertFalse(pending.isDone());
 
         Uuid topicId = Uuid.randomUuid();
         CompletableFuture<Void> slowSnapshotCf = new CompletableFuture<>();
         manager.onPartitionOpen(partition(topicId, 3, 7, 9, slowSnapshotCf));
+
+        CompletableFuture<AutomqGetPartitionSnapshotResponse> pending = manager.handle(
+            request(first.data().sessionId(), first.data().sessionEpoch(), false));
+        assertFalse(pending.isDone());
 
         Thread.sleep(PartitionSnapshotsManager.LONG_POLL_TIMEOUT_MS + 100);
         assertFalse(pending.isDone());
