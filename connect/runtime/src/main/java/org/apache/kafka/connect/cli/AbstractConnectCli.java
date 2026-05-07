@@ -53,6 +53,8 @@ import java.util.Properties;
  */
 public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfig> {
 
+    static final String STARTUP_FAILURE_LOG_PREFIX = "AUTOMQ_CONNECT_STARTUP_FAILURE";
+
     private static Logger getLogger() {
         return LoggerFactory.getLogger(AbstractConnectCli.class);
     }
@@ -122,6 +124,7 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             connect.awaitStop();
 
         } catch (Throwable t) {
+            logStartupFailure("run", t);
             getLogger().error("Stopping due to error", t);
             Exit.exit(2);
         }
@@ -165,12 +168,47 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         try {
             connect.start();
         } catch (Exception e) {
+            logStartupFailure("connect.start", e);
             getLogger().error("Failed to start Connect", e);
             connect.stop();
             Exit.exit(3);
         }
 
         return connect;
+    }
+
+    static void logStartupFailure(String stage, Throwable failure) {
+        String errorClass = failure == null ? "unknown" : failure.getClass().getName();
+        String message = failure == null ? "" : failure.getMessage();
+        getLogger().error("{} {{\"stage\":\"{}\",\"errorClass\":\"{}\",\"message\":\"{}\"}}",
+            STARTUP_FAILURE_LOG_PREFIX, jsonEscape(stage), jsonEscape(errorClass), jsonEscape(message));
+    }
+
+    private static String jsonEscape(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder escaped = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char ch = value.charAt(i);
+            switch (ch) {
+                case '"' -> escaped.append("\\\"");
+                case '\\' -> escaped.append("\\\\");
+                case '\b' -> escaped.append("\\b");
+                case '\f' -> escaped.append("\\f");
+                case '\n' -> escaped.append("\\n");
+                case '\r' -> escaped.append("\\r");
+                case '\t' -> escaped.append("\\t");
+                default -> {
+                    if (ch < 0x20) {
+                        escaped.append(String.format("\\u%04x", (int) ch));
+                    } else {
+                        escaped.append(ch);
+                    }
+                }
+            }
+        }
+        return escaped.toString();
     }
 
     private void initializeTelemetry(Map<String, String> workerProps) {
