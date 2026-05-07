@@ -352,7 +352,7 @@ public class IcebergWriter implements Writer {
         Set<Integer> identifierFieldIds = table.schema().identifierFieldIds();
         if (!config.idColumns().isEmpty()) {
             identifierFieldIds = config.idColumns().stream()
-                .map(colName -> table.schema().findField(colName).fieldId())
+                .map(colName -> table.schema().findField(kafka.automq.table.utils.TableIdentifierUtil.sanitize(colName)).fieldId())
                 .collect(toSet());
         }
         // Use a consistent partition spec instead of retrieve from table in real times.

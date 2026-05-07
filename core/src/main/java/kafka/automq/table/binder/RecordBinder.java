@@ -59,7 +59,7 @@ public class RecordBinder {
 
 
     public RecordBinder(GenericRecord avroRecord) {
-        this(AvroSchemaUtil.toIceberg(avroRecord.getSchema()), avroRecord.getSchema());
+        this(sanitizeIcebergSchema(AvroSchemaUtil.toIceberg(avroRecord.getSchema())), avroRecord.getSchema());
     }
 
     public RecordBinder(org.apache.iceberg.Schema icebergSchema, Schema avroSchema) {
@@ -132,9 +132,12 @@ public class RecordBinder {
 
         for (int icebergPos = 0; icebergPos < icebergSchema.columns().size(); icebergPos++) {
             Types.NestedField icebergField = icebergSchema.columns().get(icebergPos);
-            String fieldName = icebergField.name();
+            String icebergFieldName = icebergField.name();
 
-            Schema.Field avroField = recordSchema.getField(fieldName);
+            // Try to find the Avro field by the original name (if we had a mapping)
+            // or by searching for a field that sanitizes to this name.
+            Schema.Field avroField = findAvroField(recordSchema, icebergFieldName);
+
             if (avroField != null) {
                 mappings[icebergPos] = buildFieldMapping(
                     avroField.name(),
@@ -322,6 +325,63 @@ public class RecordBinder {
             Schema valueAvroSchema = avroSchema.getValueType();
             createStructBinder(valueType.asStructType(), valueAvroSchema, binders, typeAdapter);
         }
+    }
+
+    private static org.apache.iceberg.Schema sanitizeIcebergSchema(org.apache.iceberg.Schema schema) {
+        Types.StructType sanitizedStruct = sanitizeType(schema.asStruct()).asStructType();
+        return new org.apache.iceberg.Schema(sanitizedStruct.fields());
+    }
+
+    private static Type sanitizeType(Type type) {
+        if (type.isPrimitiveType()) {
+            return type;
+        }
+        if (type.isStructType()) {
+            List<Types.NestedField> fields = type.asStructType().fields();
+            List<Types.NestedField> sanitizedFields = new ArrayList<>(fields.size());
+            for (Types.NestedField field : fields) {
+                sanitizedFields.add(Types.NestedField.of(
+                    field.fieldId(),
+                    field.isOptional(),
+                    kafka.automq.table.utils.TableIdentifierUtil.sanitize(field.name()),
+                    sanitizeType(field.type()),
+                    field.doc()
+                ));
+            }
+            return Types.StructType.of(sanitizedFields);
+        } else if (type.isListType()) {
+            Types.ListType list = type.asListType();
+            return Types.ListType.of(
+                list.isElementOptional(),
+                list.elementId(),
+                sanitizeType(list.elementType())
+            );
+        } else if (type.isMapType()) {
+            Types.MapType map = type.asMapType();
+            return Types.MapType.of(
+                map.isValueOptional(),
+                map.keyId(),
+                map.valueId(),
+                sanitizeType(map.keyType()),
+                sanitizeType(map.valueType())
+            );
+        }
+        return type;
+    }
+
+    private Schema.Field findAvroField(Schema recordSchema, String sanitizedName) {
+        // First try exact match
+        Schema.Field field = recordSchema.getField(sanitizedName);
+        if (field != null) {
+            return field;
+        }
+        // Then try matching by sanitizing Avro field names
+        for (Schema.Field f : recordSchema.getFields()) {
+            if (kafka.automq.table.utils.TableIdentifierUtil.sanitize(f.name()).equals(sanitizedName)) {
+                return f;
+            }
+        }
+        return null;
     }
 
     private static class AvroRecordView implements Record {
