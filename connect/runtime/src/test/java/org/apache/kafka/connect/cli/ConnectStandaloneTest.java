@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.connect.cli;
 
+import org.apache.kafka.common.utils.LogCaptureAppender;
 import org.apache.kafka.connect.runtime.rest.entities.CreateConnectorRequest;
 import org.apache.kafka.test.TestUtils;
 
@@ -28,12 +29,14 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
 import static org.apache.kafka.connect.runtime.ConnectorConfig.NAME_CONFIG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ConnectStandaloneTest {
 
@@ -125,5 +128,19 @@ public class ConnectStandaloneTest {
         CreateConnectorRequest parsedRequest = connectStandalone.parseConnectorConfigurationFile(connectorConfigurationFile.getAbsolutePath());
         CreateConnectorRequest expectedRequest = new CreateConnectorRequest(CONNECTOR_NAME, CONNECTOR_CONFIG, null);
         assertEquals(expectedRequest, parsedRequest);
+    }
+
+    @Test
+    public void testStartupFailureLogIsStructured() {
+        try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(AbstractConnectCli.class)) {
+            AbstractConnectCli.logStartupFailure("connect.start", new IllegalStateException("bad \"plugin\"\npath"));
+
+            List<String> messages = logCaptureAppender.getMessages();
+            assertTrue(messages.stream().anyMatch(message ->
+                message.contains(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX)
+                    && message.contains("\"stage\":\"connect.start\"")
+                    && message.contains("\"errorClass\":\"java.lang.IllegalStateException\"")
+                    && message.contains("\"message\":\"bad \\\"plugin\\\"\\npath\"")));
+        }
     }
 }
