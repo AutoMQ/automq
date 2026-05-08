@@ -608,6 +608,17 @@ class ElasticLogTest {
         assertEquals(4L, abortedTxns(1).asInstanceOf[FetchResponseData.AbortedTransaction].firstOffset())
     }
 
+    @Test
+    def testReadCommittedEmptyFetchReturnsEmptyAbortedTransactions(): Unit = {
+        appendRecords(kvsToRecords(Seq(KeyValue("a=", "1"))), initialOffset = 0)
+
+        val fetchDataInfo = log.read(0, 0, minOneMessage = false, log.logEndOffsetMetadata, includeAbortedTxns = true)
+
+        assertEquals(0, fetchDataInfo.records.sizeInBytes)
+        assertTrue(fetchDataInfo.abortedTransactions.isPresent)
+        assertTrue(fetchDataInfo.abortedTransactions.get.isEmpty)
+    }
+
     private def createElasticLogWithActiveSegment(dir: File = logDir,
         config: LogConfig,
         scheduler: Scheduler = mockTime.scheduler,

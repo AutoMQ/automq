@@ -396,6 +396,16 @@ class ElasticLog(val metaStream: MetaStream,
         segment: LogSegment,
         fetchInfo: FetchDataInfo, upperBoundOffsetOpt: Option[Long]): FetchDataInfo = {
         val fetchSize = fetchInfo.records.sizeInBytes
+        // A zero-byte fetch contains no record batches, so there are no aborted
+        // transactions for the consumer to filter. Returning an empty aborted list also
+        // avoids falling back to ElasticLogSegment.fetchUpperBoundOffset, which is not
+        // implemented for elastic segments and is unnecessary for empty fetch results.
+        if (fetchSize == 0) {
+            return new FetchDataInfo(fetchInfo.fetchOffsetMetadata,
+                fetchInfo.records,
+                fetchInfo.firstEntryIncomplete,
+                Optional.of(Collections.emptyList()))
+        }
         val startOffsetPosition = new OffsetPosition(fetchInfo.fetchOffsetMetadata.messageOffset,
             fetchInfo.fetchOffsetMetadata.relativePositionInSegment)
         val upperBoundOffset = upperBoundOffsetOpt match {
