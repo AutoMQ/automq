@@ -53,7 +53,9 @@ import java.util.Properties;
  */
 public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfig> {
 
+    // AutoMQ inject start
     static final String STARTUP_FAILURE_LOG_PREFIX = "AUTOMQ_CONNECT_STARTUP_FAILURE";
+    // AutoMQ inject end
 
     private static Logger getLogger() {
         return LoggerFactory.getLogger(AbstractConnectCli.class);
@@ -124,7 +126,9 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             connect.awaitStop();
 
         } catch (Throwable t) {
+            // AutoMQ inject start
             logStartupFailure("run", t);
+            // AutoMQ inject end
             getLogger().error("Stopping due to error", t);
             Exit.exit(2);
         }
@@ -168,7 +172,9 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         try {
             connect.start();
         } catch (Exception e) {
+            // AutoMQ inject start
             logStartupFailure("connect.start", e);
+            // AutoMQ inject end
             getLogger().error("Failed to start Connect", e);
             connect.stop();
             Exit.exit(3);
@@ -177,10 +183,11 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         return connect;
     }
 
+    // AutoMQ inject start
     static void logStartupFailure(String stage, Throwable failure) {
         String errorClass = failure == null ? "unknown" : failure.getClass().getName();
         String message = failure == null ? "" : failure.getMessage();
-        getLogger().error("{} {{\"stage\":\"{}\",\"errorClass\":\"{}\",\"message\":\"{}\"}}",
+        getLogger().error("{} {\"stage\":\"{}\",\"errorClass\":\"{}\",\"message\":\"{}\"}",
             STARTUP_FAILURE_LOG_PREFIX, jsonEscape(stage), jsonEscape(errorClass), jsonEscape(message));
     }
 
@@ -210,6 +217,7 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         }
         return escaped.toString();
     }
+    // AutoMQ inject end
 
     private void initializeTelemetry(Map<String, String> workerProps) {
         List<String> exporterUris = parseTelemetryExporterUris(workerProps.get(MetricsConfigConstants.EXPORTER_URI_KEY));

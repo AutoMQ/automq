@@ -20,6 +20,7 @@ import org.apache.kafka.common.utils.LogCaptureAppender;
 import org.apache.kafka.connect.runtime.rest.entities.CreateConnectorRequest;
 import org.apache.kafka.test.TestUtils;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -131,16 +132,23 @@ public class ConnectStandaloneTest {
     }
 
     @Test
-    public void testStartupFailureLogIsStructured() {
+    public void testStartupFailureLogIsStructured() throws Exception {
         try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(AbstractConnectCli.class)) {
             AbstractConnectCli.logStartupFailure("connect.start", new IllegalStateException("bad \"plugin\"\npath"));
 
             List<String> messages = logCaptureAppender.getMessages();
-            assertTrue(messages.stream().anyMatch(message ->
-                message.contains(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX)
-                    && message.contains("\"stage\":\"connect.start\"")
-                    && message.contains("\"errorClass\":\"java.lang.IllegalStateException\"")
-                    && message.contains("\"message\":\"bad \\\"plugin\\\"\\npath\"")));
+            String startupFailureLog = messages.stream()
+                .filter(message -> message.contains(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX))
+                .findFirst()
+                .orElseThrow();
+            int jsonStart = startupFailureLog.indexOf('{',
+                startupFailureLog.indexOf(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX));
+            assertTrue(jsonStart >= 0);
+
+            JsonNode startupFailure = new ObjectMapper().readTree(startupFailureLog.substring(jsonStart));
+            assertEquals("connect.start", startupFailure.path("stage").asText());
+            assertEquals("java.lang.IllegalStateException", startupFailure.path("errorClass").asText());
+            assertEquals("bad \"plugin\"\npath", startupFailure.path("message").asText());
         }
     }
 }
