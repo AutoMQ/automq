@@ -44,7 +44,7 @@ import org.slf4j.LoggerFactory
 import java.util
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{CompletableFuture, ExecutorService, TimeUnit}
-import java.util.function.Supplier
+import java.util.function.{BiConsumer, Supplier}
 import java.util.stream.IntStream
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -840,11 +840,17 @@ class ElasticKafkaApis(
 
   override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
     val cf = snapshotAwaitReadySupplier.get()
-    offsetForLeaderEpochExecutor.execute(() => {
-      // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
-      cf.join()
-      super.handleOffsetForLeaderEpochRequest(request)
-    })
+    def handleOffsetForLeaderEpoch(): Unit = super.handleOffsetForLeaderEpochRequest(request)
+    // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
+    cf.whenCompleteAsync(new BiConsumer[Void, Throwable] {
+      override def accept(nil: Void, ex: Throwable): Unit = {
+        if (ex != null) {
+          handleError(request, ex)
+        } else {
+          handleOffsetForLeaderEpoch()
+        }
+      }
+    }, offsetForLeaderEpochExecutor)
   }
 
   override protected def metadataTopicsInterceptor(clientId: ClientIdMetadata, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
