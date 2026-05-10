@@ -45,7 +45,7 @@ ensure-cluster-id:
 
 # Override to skip or replace the Java build step, e.g.:
 #   DEVKIT_BUILD_CMD="echo skipped" just start-build
-JAVA_BUILD_CMD := env_var_or_default("DEVKIT_BUILD_CMD", "./gradlew :core:build :tools:build :shell:build -x test")
+JAVA_BUILD_CMD := env_var_or_default("DEVKIT_BUILD_CMD", "./gradlew build -x test")
 
 [private]
 build:
