@@ -413,16 +413,14 @@ public class LogCache {
         synchronized (left) {
             left.size.addAndGet(right.size());
             left.lastRecordOffset = right.lastRecordOffset;
-            left.map.forEach((streamId, leftStreamCache) -> {
-                StreamCache rightStreamCache = right.map.get(streamId);
-                if (rightStreamCache != null) {
+            right.map.forEach((streamId, rightStreamCache) -> {
+                StreamCache leftStreamCache = left.map.get(streamId);
+                if (leftStreamCache == null) {
+                    left.map.put(streamId, new StreamCache(rightStreamCache));
+                } else {
                     leftStreamCache.records.addAll(rightStreamCache.records);
                     leftStreamCache.endOffset(rightStreamCache.endOffset());
-                }
-            });
-            right.map.forEach((streamId, rightStreamCache) -> {
-                if (!left.map.containsKey(streamId)) {
-                    left.map.put(streamId, rightStreamCache);
+                    leftStreamCache.offsetIndexMap.clear();
                 }
             });
         }
@@ -596,6 +594,12 @@ public class LogCache {
 
         public StreamCache() {
             this.records = new ArrayList<>();
+        }
+
+        StreamCache(StreamCache other) {
+            this.records = new ArrayList<>(other.records);
+            this.startOffset = other.startOffset();
+            this.endOffset = other.endOffset();
         }
 
         /**
