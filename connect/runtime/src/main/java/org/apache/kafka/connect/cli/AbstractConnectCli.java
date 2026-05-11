@@ -34,6 +34,9 @@ import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestClient;
 import org.apache.kafka.connect.runtime.rest.RestServer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +58,7 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
 
     // AutoMQ inject start
     static final String STARTUP_FAILURE_LOG_PREFIX = "AUTOMQ_CONNECT_STARTUP_FAILURE";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     // AutoMQ inject end
 
     private static Logger getLogger() {
@@ -185,37 +189,17 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
 
     // AutoMQ inject start
     static void logStartupFailure(String stage, Throwable failure) {
-        String errorClass = failure == null ? "unknown" : failure.getClass().getName();
-        String message = failure == null ? "" : failure.getMessage();
-        getLogger().error("{} {\"stage\":\"{}\",\"errorClass\":\"{}\",\"message\":\"{}\"}",
-            STARTUP_FAILURE_LOG_PREFIX, jsonEscape(stage), jsonEscape(errorClass), jsonEscape(message));
-    }
-
-    private static String jsonEscape(String value) {
-        if (value == null) {
-            return "";
+        Map<String, String> payload = Map.of(
+            "stage", stage == null ? "" : stage,
+            "errorClass", failure == null ? "unknown" : failure.getClass().getName(),
+            "message", failure == null || failure.getMessage() == null ? "" : failure.getMessage()
+        );
+        try {
+            getLogger().error("{} {}", STARTUP_FAILURE_LOG_PREFIX, OBJECT_MAPPER.writeValueAsString(payload));
+        } catch (JsonProcessingException e) {
+            getLogger().error("{} stage={} errorClass={} message={}", STARTUP_FAILURE_LOG_PREFIX,
+                payload.get("stage"), payload.get("errorClass"), payload.get("message"));
         }
-        StringBuilder escaped = new StringBuilder(value.length() + 16);
-        for (int i = 0; i < value.length(); i++) {
-            char ch = value.charAt(i);
-            switch (ch) {
-                case '"' -> escaped.append("\\\"");
-                case '\\' -> escaped.append("\\\\");
-                case '\b' -> escaped.append("\\b");
-                case '\f' -> escaped.append("\\f");
-                case '\n' -> escaped.append("\\n");
-                case '\r' -> escaped.append("\\r");
-                case '\t' -> escaped.append("\\t");
-                default -> {
-                    if (ch < 0x20) {
-                        escaped.append(String.format("\\u%04x", (int) ch));
-                    } else {
-                        escaped.append(ch);
-                    }
-                }
-            }
-        }
-        return escaped.toString();
     }
     // AutoMQ inject end
 
