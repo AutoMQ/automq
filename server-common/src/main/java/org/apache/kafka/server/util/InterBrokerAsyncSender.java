@@ -27,6 +27,7 @@ import org.apache.kafka.common.utils.Time;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -61,12 +62,21 @@ public class InterBrokerAsyncSender implements AsyncSender {
     public <T extends AbstractRequest> CompletableFuture<ClientResponse> sendRequest(
         Node node, AbstractRequest.Builder<T> requestBuilder
     ) {
+        CompletableFuture<ClientResponse> future = new CompletableFuture<>();
         if (closed) {
-            CompletableFuture<ClientResponse> future = new CompletableFuture<>();
             future.completeExceptionally(new IllegalStateException("InterBrokerAsyncSender is closed"));
             return future;
         }
-        CompletableFuture<ClientResponse> future = new CompletableFuture<>();
+        if (node == null || node.isEmpty()) {
+            future.completeExceptionally(new IllegalArgumentException("Cannot send request to empty node " + node));
+            return future;
+        }
+        try {
+            Objects.requireNonNull(requestBuilder, "requestBuilder must not be null");
+        } catch (RuntimeException e) {
+            future.completeExceptionally(e);
+            return future;
+        }
         inFlightFutures.add(future);
         PendingRequest request = new PendingRequest(node, requestBuilder, future, time.milliseconds());
         pendingRequests.offer(request);
@@ -137,20 +147,25 @@ public class InterBrokerAsyncSender implements AsyncSender {
                 RequestCompletionHandler handler = new RequestCompletionHandler() {
                     @Override
                     public void onComplete(ClientResponse response) {
-                        if (response.authenticationException() != null) {
-                            request.future.completeExceptionally(response.authenticationException());
-                        } else if (response.versionMismatch() != null) {
-                            request.future.completeExceptionally(response.versionMismatch());
-                        } else if (response.wasDisconnected()) {
-                            if (response.wasTimedOut()) {
-                                request.future.completeExceptionally(new TimeoutException("Request timed out"));
+                        try {
+                            if (response.authenticationException() != null) {
+                                request.future.completeExceptionally(response.authenticationException());
+                            } else if (response.versionMismatch() != null) {
+                                request.future.completeExceptionally(response.versionMismatch());
+                            } else if (response.wasDisconnected()) {
+                                if (response.wasTimedOut()) {
+                                    request.future.completeExceptionally(new TimeoutException("Request timed out"));
+                                } else {
+                                    request.future.completeExceptionally(new DisconnectException("Disconnected from " + request.node));
+                                }
                             } else {
-                                request.future.completeExceptionally(new DisconnectException("Disconnected from " + request.node));
+                                request.future.complete(response);
                             }
-                        } else {
-                            request.future.complete(response);
+                        } catch (Throwable t) {
+                            request.future.completeExceptionally(t);
+                        } finally {
+                            inFlightFutures.remove(request.future);
                         }
-                        inFlightFutures.remove(request.future);
                     }
                 };
                 requests.add(new RequestAndCompletionHandler(
