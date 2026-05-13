@@ -40,6 +40,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -50,6 +51,7 @@ import static org.mockito.ArgumentMatchers.anyShort;
 import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -325,6 +327,51 @@ public class InterBrokerAsyncSenderTest {
         ExecutionException exception = assertThrows(ExecutionException.class,
             () -> future.get(100, TimeUnit.MILLISECONDS));
         assertInstanceOf(IllegalStateException.class, exception.getCause());
+    }
+
+    @Test
+    public void testSendRequestRejectsEmptyNode() {
+        CompletableFuture<ClientResponse> future = sender.sendRequest(Node.noNode(), requestBuilder);
+
+        ExecutionException exception = assertThrows(ExecutionException.class,
+            () -> future.get(100, TimeUnit.MILLISECONDS));
+        assertInstanceOf(IllegalArgumentException.class, exception.getCause());
+        verify(networkClient, never()).wakeup();
+    }
+
+    @Test
+    public void testSendRequestRejectsNullRequestBuilder() {
+        CompletableFuture<ClientResponse> future = sender.sendRequest(node, null);
+
+        ExecutionException exception = assertThrows(ExecutionException.class,
+            () -> future.get(100, TimeUnit.MILLISECONDS));
+        assertInstanceOf(NullPointerException.class, exception.getCause());
+        verify(networkClient, never()).wakeup();
+    }
+
+    @Test
+    public void testCompletionHandlerTurnsUnexpectedExceptionIntoFutureFailure() throws Exception {
+        ClientRequest clientRequest = mock(ClientRequest.class);
+        ArgumentCaptor<RequestCompletionHandler> handlerCaptor = ArgumentCaptor.forClass(RequestCompletionHandler.class);
+
+        when(networkClient.newClientRequest(
+            ArgumentMatchers.eq("1"),
+            same(requestBuilder),
+            anyLong(),
+            ArgumentMatchers.eq(true),
+            ArgumentMatchers.eq(requestTimeoutMs),
+            handlerCaptor.capture()
+        )).thenReturn(clientRequest);
+        when(networkClient.ready(node, time.milliseconds())).thenReturn(true);
+        when(networkClient.poll(anyLong(), anyLong())).thenReturn(Collections.emptyList());
+
+        CompletableFuture<ClientResponse> future = sender.sendRequest(node, requestBuilder);
+        sender.pollOnce(100);
+
+        assertDoesNotThrow(() -> handlerCaptor.getValue().onComplete(null));
+        ExecutionException exception = assertThrows(ExecutionException.class,
+            () -> future.get(100, TimeUnit.MILLISECONDS));
+        assertInstanceOf(NullPointerException.class, exception.getCause());
     }
 
     @Test
