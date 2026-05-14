@@ -1,7 +1,7 @@
 {
     "apiKey": 10000,
     "type": "request",
-    "listeners": ["controller"],
+    "listeners": ["controller", "broker"],
     "name": "DescribeAutoBalancerDecisionTraceRequest",
     "validVersions": "0",
     "flexibleVersions": "0+",

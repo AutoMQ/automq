@@ -193,6 +193,7 @@ class ElasticKafkaApis(
         case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
+        case ApiKeys.DESCRIBE_AUTO_BALANCER_DECISION_TRACE => forwardToControllerOrFail(request)
         case apiKey if isExtensionApi(apiKey) =>
           brokerExtensionHandleDispatcher.handle(request, requestLocal) match {
             case BrokerExtensionHandleDispatcher.Handled =>
@@ -231,7 +232,8 @@ class ElasticKafkaApis(
            | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT
            | ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
-           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST
+           | ApiKeys.DESCRIBE_AUTO_BALANCER_DECISION_TRACE => handleExtensionRequest(request, requestLocal)
       case apiKey if isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
