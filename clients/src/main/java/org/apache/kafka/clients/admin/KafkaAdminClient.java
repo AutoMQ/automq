@@ -135,6 +135,7 @@ import org.apache.kafka.common.message.DeleteAclsResponseData.DeleteAclsMatching
 import org.apache.kafka.common.message.DeleteTopicsRequestData;
 import org.apache.kafka.common.message.DeleteTopicsRequestData.DeleteTopicState;
 import org.apache.kafka.common.message.DeleteTopicsResponseData.DeletableTopicResult;
+import org.apache.kafka.common.message.DescribeAutoBalancerDecisionTraceRequestData;
 import org.apache.kafka.common.message.DescribeClusterRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
@@ -254,6 +255,8 @@ import org.apache.kafka.common.requests.UpdateFeaturesRequest;
 import org.apache.kafka.common.requests.UpdateFeaturesResponse;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
+import org.apache.kafka.common.requests.s3.DescribeAutoBalancerDecisionTraceRequest;
+import org.apache.kafka.common.requests.s3.DescribeAutoBalancerDecisionTraceResponse;
 import org.apache.kafka.common.requests.s3.DescribeLicenseRequest;
 import org.apache.kafka.common.requests.s3.DescribeLicenseResponse;
 import org.apache.kafka.common.requests.s3.ExportClusterManifestRequest;
@@ -2614,6 +2617,52 @@ public class KafkaAdminClient extends AdminClient {
 
         runnable.call(call, now);
         return new ExportClusterManifestResult(future);
+    }
+
+    @Override
+    public DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace(
+        final DescribeAutoBalancerDecisionTraceOptions options) {
+        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("describeAutoBalancerDecisionTrace", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider(true)) {
+
+            @Override
+            DescribeAutoBalancerDecisionTraceRequest.Builder createRequest(int timeoutMs) {
+                return new DescribeAutoBalancerDecisionTraceRequest.Builder(
+                    new DescribeAutoBalancerDecisionTraceRequestData()
+                        .setQueryType(options.queryType())
+                        .setTraceId(options.traceId() == null ? "" : options.traceId())
+                        .setLimit(options.limit()));
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final DescribeAutoBalancerDecisionTraceResponse response =
+                    (DescribeAutoBalancerDecisionTraceResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(response.data().resultJson());
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new DescribeAutoBalancerDecisionTraceResult(future);
     }
     // AutoMQ for Kafka inject end
 

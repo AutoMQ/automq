@@ -1,0 +1,13 @@
+{
+    "apiKey": 10000,
+    "type": "request",
+    "listeners": ["controller"],
+    "name": "DescribeAutoBalancerDecisionTraceRequest",
+    "validVersions": "0",
+    "flexibleVersions": "0+",
+    "fields": [
+        { "name": "QueryType", "type": "string", "versions": "0+", "default": "LATEST" },
+        { "name": "TraceId", "type": "string", "versions": "0+", "default": "" },
+        { "name": "Limit", "type": "int32", "versions": "0+", "default": "20" }
+    ]
+}

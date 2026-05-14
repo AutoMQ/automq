@@ -148,6 +148,7 @@ public enum ApiKeys {
     UPDATE_LICENSE(ApiMessageType.UPDATE_LICENSE, false, true),
     DESCRIBE_LICENSE(ApiMessageType.DESCRIBE_LICENSE, false, true),
     EXPORT_CLUSTER_MANIFEST(ApiMessageType.EXPORT_CLUSTER_MANIFEST, false, true),
+    DESCRIBE_AUTO_BALANCER_DECISION_TRACE(ApiMessageType.DESCRIBE_AUTO_BALANCER_DECISION_TRACE, false, true),
     AUTOMQ_REGISTER_NODE(ApiMessageType.AUTOMQ_REGISTER_NODE, false, false),
     AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, true),
     AUTOMQ_ZONE_ROUTER(ApiMessageType.AUTOMQ_ZONE_ROUTER, false, false),

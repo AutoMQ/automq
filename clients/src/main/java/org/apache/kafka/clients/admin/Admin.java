@@ -1757,6 +1757,12 @@ public interface Admin extends AutoCloseable {
     }
 
     ExportClusterManifestResult exportClusterManifest(ExportClusterManifestOptions options);
+
+    default DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace() {
+        return describeAutoBalancerDecisionTrace(new DescribeAutoBalancerDecisionTraceOptions());
+    }
+
+    DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace(DescribeAutoBalancerDecisionTraceOptions options);
     // AutoMQ inject end
 
     /**
