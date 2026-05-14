@@ -32,6 +32,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -42,21 +43,17 @@ public class NodeApiVersionsTest {
     @Test
     public void testUnsupportedVersionsToString() {
         NodeApiVersions versions = new NodeApiVersions(new ApiVersionCollection(), Collections.emptyList(), false);
-        StringBuilder bld = new StringBuilder();
-        String prefix = "(";
+        TreeMap<Short, String> expected = new TreeMap<>();
         for (ApiKeys apiKey : ApiKeys.clientApis()) {
-            bld.append(prefix).append(apiKey.name).
-                    append("(").append(apiKey.id).append("): UNSUPPORTED");
-            prefix = ", ";
+            expected.put(apiKey.id, apiKey.name + "(" + apiKey.id + "): UNSUPPORTED");
         }
-        bld.append(")");
-        assertEquals(bld.toString(), versions.toString());
+        assertEquals("(" + String.join(", ", expected.values()) + ")", versions.toString());
     }
 
     @Test
     public void testUnknownApiVersionsToString() {
         NodeApiVersions versions = NodeApiVersions.create((short) 337, (short) 0, (short) 1);
-        assertTrue(versions.toString().endsWith("UNKNOWN(337): 0 to 1)"));
+        assertTrue(versions.toString().contains("UNKNOWN(337): 0 to 1"));
     }
 
     @Test
@@ -71,13 +68,12 @@ public class NodeApiVersionsTest {
             } else versionList.add(ApiVersionsResponse.toApiVersion(apiKey));
         }
         NodeApiVersions versions = new NodeApiVersions(versionList, Collections.emptyList(), false);
-        StringBuilder bld = new StringBuilder();
-        String prefix = "(";
+        TreeMap<Short, String> expected = new TreeMap<>();
         for (ApiKeys apiKey : ApiKeys.values()) {
-            bld.append(prefix);
             if (apiKey == ApiKeys.DELETE_TOPICS) {
-                bld.append("DeleteTopics(20): 10000 to 10001 [unusable: node too new]");
+                expected.put(apiKey.id, "DeleteTopics(20): 10000 to 10001 [unusable: node too new]");
             } else {
+                StringBuilder bld = new StringBuilder();
                 bld.append(apiKey.name).append("(").
                         append(apiKey.id).append("): ");
                 if (apiKey.oldestVersion() ==
@@ -90,11 +86,10 @@ public class NodeApiVersionsTest {
                 }
                 bld.append(" [usable: ").append(apiKey.latestVersion()).
                         append("]");
+                expected.put(apiKey.id, bld.toString());
             }
-            prefix = ", ";
         }
-        bld.append(")");
-        assertEquals(bld.toString(), versions.toString());
+        assertEquals("(" + String.join(", ", expected.values()) + ")", versions.toString());
     }
 
     @Test

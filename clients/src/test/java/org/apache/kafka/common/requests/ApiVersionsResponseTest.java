@@ -85,6 +85,14 @@ public class ApiVersionsResponseTest {
     }
 
     @Test
+    public void shouldExposeDescribeAutoBalancerDecisionTraceOnBrokerAndControllerListeners() {
+        assertNotNull(TestUtils.defaultApiVersionsResponse(ListenerType.BROKER)
+            .apiVersion(ApiKeys.DESCRIBE_AUTO_BALANCER_DECISION_TRACE.id));
+        assertNotNull(TestUtils.defaultApiVersionsResponse(ListenerType.CONTROLLER)
+            .apiVersion(ApiKeys.DESCRIBE_AUTO_BALANCER_DECISION_TRACE.id));
+    }
+
+    @Test
     public void shouldHaveCommonlyAgreedApiVersionResponseWithControllerOnForwardableAPIs() {
         final ApiKeys forwardableAPIKey = ApiKeys.CREATE_ACLS;
         final ApiKeys nonForwardableAPIKey = ApiKeys.JOIN_GROUP;
