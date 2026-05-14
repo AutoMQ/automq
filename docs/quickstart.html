@@ -46,6 +46,12 @@ $ cd kafka_{{scalaVersion}}-{{fullDotVersion}}</code></pre>
 
         <p>Apache Kafka can be started using KRaft or ZooKeeper. To get started with either configuration follow one of the sections below but not both.</p>
 
+        <p class="note">
+          NOTE: KRaft and ZooKeeper modes are mutually exclusive.
+          Make sure to follow <strong>only one</strong> of the sections below.
+          Mixing steps from both configurations will result in startup errors.
+        </p>
+
         <h5>Kafka with KRaft</h5>
 
         <p>Kafka can be run using KRaft mode using local scripts and downloaded files or the docker image. Follow one of the sections below but not both to start the kafka server.</p>
