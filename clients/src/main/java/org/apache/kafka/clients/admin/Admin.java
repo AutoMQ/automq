@@ -1765,6 +1765,12 @@ public interface Admin extends AutoCloseable {
      * @return a {@link ClusterEventsReader} that must be closed when done
      */
     ClusterEventsReader describeClusterEvents(Long sinceMs);
+
+    default DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace() {
+        return describeAutoBalancerDecisionTrace(new DescribeAutoBalancerDecisionTraceOptions());
+    }
+
+    DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace(DescribeAutoBalancerDecisionTraceOptions options);
     // AutoMQ inject end
 
     /**

@@ -340,5 +340,11 @@ public class ForwardingAdmin implements Admin {
         return delegate.describeClusterEvents(sinceMs);
     }
 
+    @Override
+    public DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace(
+        DescribeAutoBalancerDecisionTraceOptions options) {
+        return delegate.describeAutoBalancerDecisionTrace(options);
+    }
+
     // AutoMQ inject end
 }
