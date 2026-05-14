@@ -16,9 +16,11 @@
  */
 package org.apache.kafka.connect.cli;
 
+import org.apache.kafka.common.utils.LogCaptureAppender;
 import org.apache.kafka.connect.runtime.rest.entities.CreateConnectorRequest;
 import org.apache.kafka.test.TestUtils;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -28,12 +30,14 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
 import static org.apache.kafka.connect.runtime.ConnectorConfig.NAME_CONFIG;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ConnectStandaloneTest {
 
@@ -125,5 +129,26 @@ public class ConnectStandaloneTest {
         CreateConnectorRequest parsedRequest = connectStandalone.parseConnectorConfigurationFile(connectorConfigurationFile.getAbsolutePath());
         CreateConnectorRequest expectedRequest = new CreateConnectorRequest(CONNECTOR_NAME, CONNECTOR_CONFIG, null);
         assertEquals(expectedRequest, parsedRequest);
+    }
+
+    @Test
+    public void testStartupFailureLogIsStructured() throws Exception {
+        try (LogCaptureAppender logCaptureAppender = LogCaptureAppender.createAndRegister(AbstractConnectCli.class)) {
+            AbstractConnectCli.logStartupFailure("connect.start", new IllegalStateException("bad \"plugin\"\npath"));
+
+            List<String> messages = logCaptureAppender.getMessages();
+            String startupFailureLog = messages.stream()
+                .filter(message -> message.contains(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX))
+                .findFirst()
+                .orElseThrow();
+            int jsonStart = startupFailureLog.indexOf('{',
+                startupFailureLog.indexOf(AbstractConnectCli.STARTUP_FAILURE_LOG_PREFIX));
+            assertTrue(jsonStart >= 0);
+
+            JsonNode startupFailure = new ObjectMapper().readTree(startupFailureLog.substring(jsonStart));
+            assertEquals("connect.start", startupFailure.path("stage").asText());
+            assertEquals("java.lang.IllegalStateException", startupFailure.path("errorClass").asText());
+            assertEquals("bad \"plugin\"\npath", startupFailure.path("message").asText());
+        }
     }
 }
