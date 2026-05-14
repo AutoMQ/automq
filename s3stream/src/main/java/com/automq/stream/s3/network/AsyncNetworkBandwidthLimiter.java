@@ -106,7 +106,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         lock.lock();
         try {
             this.availableTokens.getAndUpdate(old -> Math.min(old + this.tokenSize, this.maxTokens));
-            condition.signalAll();
+            condition.signal();
         } finally {
             lock.unlock();
         }
@@ -157,7 +157,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             try {
                 if (availableTokens.get() <= 0 || !queuedCallbacks.isEmpty()) {
                     queuedCallbacks.offer(new BucketItem(throttleStrategy, size, cf));
-                    condition.signalAll();
                 } else {
                     reduceToken(size);
                     satisfied = true;
