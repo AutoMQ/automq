@@ -1465,6 +1465,13 @@ public class MockAdminClient extends AdminClient {
         throw new UnsupportedOperationException();
     }
 
+    @Override
+    public DescribeAutoBalancerDecisionTraceResult describeAutoBalancerDecisionTrace(
+        DescribeAutoBalancerDecisionTraceOptions options
+    ) {
+        throw new UnsupportedOperationException();
+    }
+
     // AutoMQ inject end
 
 }
