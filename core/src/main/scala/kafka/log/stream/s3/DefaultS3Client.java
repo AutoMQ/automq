@@ -54,8 +54,6 @@ import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.BrokerResourceStats;
-import com.automq.stream.s3.metrics.stats.MinIntervalRate;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
@@ -85,10 +83,7 @@ import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_
 
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
-    private static final long NETWORK_RATE_MIN_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
     protected final Config config;
-    protected MinIntervalRate networkInboundRate;
-    protected MinIntervalRate networkOutboundRate;
     private StreamMetadataManager metadataManager;
 
     protected ControllerRequestSender requestSender;
@@ -126,8 +121,6 @@ public class DefaultS3Client implements Client {
     public DefaultS3Client(BrokerServer brokerServer, Config config) {
         this.brokerServer = brokerServer;
         this.config = config;
-        this.networkInboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
-        this.networkOutboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
     }
 
     @Override
@@ -141,16 +134,13 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.INBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkInboundRate.update(
-                NetworkStats.getInstance().networkInboundUsageTotal().get()));
+            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkInboundRate());
         // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting tail-reading performance.
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth() * 5);
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkOutboundRate.update(
-                NetworkStats.getInstance().networkOutboundUsageTotal().get()));
-        BrokerResourceStats.getInstance().setNetworkUtilSupplier(this::networkUtil);
+            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkOutboundRate());
 
         this.localIndexCache = new LocalStreamRangeIndexCache();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
@@ -188,14 +178,6 @@ public class DefaultS3Client implements Client {
         this.storage.startup();
         this.compactionManager.start();
         LOGGER.info("S3Client started");
-    }
-
-    protected double networkUtil() {
-        double inboundUtil = networkInboundRate.update(NetworkStats.getInstance().networkInboundUsageTotal().get())
-            / config.networkBaselineBandwidth();
-        double outboundUtil = networkOutboundRate.update(NetworkStats.getInstance().networkOutboundUsageTotal().get())
-            / config.networkBaselineBandwidth();
-        return Math.max(inboundUtil, outboundUtil);
     }
 
     @Override

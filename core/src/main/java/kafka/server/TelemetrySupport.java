@@ -30,14 +30,11 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.BrokerResourceStats;
-import com.sun.management.OperatingSystemMXBean;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -109,17 +106,7 @@ public final class TelemetrySupport {
         S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel, Attributes.empty(), metricsIntervalMs));
         S3StreamKafkaMetricsManager.initMetrics(meter, KAFKA_METRICS_PREFIX);
 
-        BrokerResourceStats.getInstance().setCpuUtilSupplier(TelemetrySupport::processCpuLoad);
-
         TableTopicMetricsManager.initMetrics(meter);
-    }
-
-    private static double processCpuLoad() {
-        OperatingSystemMXBean mxBean = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
-        if (mxBean != null) {
-            return mxBean.getProcessCpuLoad();
-        }
-        return Double.NaN;
     }
 
     private static MetricsLevel parseMetricsLevel(String rawLevel) {
