@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import com.sun.management.OperatingSystemMXBean;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.Meter;
 import scala.collection.immutable.Set;
@@ -114,9 +115,9 @@ public final class TelemetrySupport {
     }
 
     private static double processCpuLoad() {
-        java.lang.management.OperatingSystemMXBean mxBean = ManagementFactory.getOperatingSystemMXBean();
-        if (mxBean instanceof com.sun.management.OperatingSystemMXBean) {
-            return ((com.sun.management.OperatingSystemMXBean) mxBean).getProcessCpuLoad();
+        OperatingSystemMXBean mxBean = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+        if (mxBean != null) {
+            return mxBean.getProcessCpuLoad();
         }
         return Double.NaN;
     }

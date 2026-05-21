@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
 import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
@@ -20,7 +21,7 @@ class MetricsGaugeTest {
     void longGaugeShouldRecordFromSupplierDuringCallback() throws Exception {
         Metrics.LongGaugeBundle.LongGauge gauge = Metrics.instance()
             .longGauge("test_long_supplier", "test", "")
-            .register(MetricsLevel.INFO, io.opentelemetry.api.common.Attributes.empty());
+            .register(MetricsLevel.INFO, Attributes.empty());
         AtomicLong value = new AtomicLong(10);
         ObservableLongMeasurement measurement = mock(ObservableLongMeasurement.class);
 
@@ -39,7 +40,7 @@ class MetricsGaugeTest {
     void doubleGaugeShouldClearSupplierMode() throws Exception {
         Metrics.DoubleGaugeBundle.DoubleGauge gauge = Metrics.instance()
             .doubleGauge("test_double_supplier", "test", "")
-            .register(MetricsLevel.INFO, io.opentelemetry.api.common.Attributes.empty());
+            .register(MetricsLevel.INFO, Attributes.empty());
         ObservableDoubleMeasurement measurement = mock(ObservableDoubleMeasurement.class);
 
         gauge.record(() -> 0.5);
