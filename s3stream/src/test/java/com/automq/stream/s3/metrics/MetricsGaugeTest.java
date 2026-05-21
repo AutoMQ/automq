@@ -1,10 +1,12 @@
 package com.automq.stream.s3.metrics;
 
-import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
-import io.opentelemetry.api.metrics.ObservableLongMeasurement;
+import org.junit.jupiter.api.Test;
+
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicLong;
-import org.junit.jupiter.api.Test;
+
+import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
+import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
