@@ -28,7 +28,9 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.DoubleSupplier;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.LongCounter;
@@ -245,6 +247,7 @@ public class Metrics {
             private final Attributes gaugeAttributes;
             private final AtomicLong value = new AtomicLong();
             private final AtomicBoolean hasValue = new AtomicBoolean(false);
+            private final AtomicReference<LongSupplier> valueGetter = new AtomicReference<>();
             private Attributes finalAttributes = Attributes.empty();
             private volatile boolean shouldRecord = true;
 
@@ -268,16 +271,33 @@ public class Metrics {
             }
 
             public void record(long newValue) {
+                valueGetter.set(null);
                 value.set(newValue);
                 hasValue.set(true);
             }
 
+            public void record(LongSupplier valueGetter) {
+                this.valueGetter.set(valueGetter);
+                hasValue.set(false);
+            }
+
             public void clear() {
+                valueGetter.set(null);
                 hasValue.set(false);
             }
 
             private void record(ObservableLongMeasurement measurement) {
-                if (shouldRecord && hasValue.get()) {
+                if (!shouldRecord) {
+                    return;
+                }
+                LongSupplier getter = valueGetter.get();
+                if (getter != null) {
+                    try {
+                        measurement.record(getter.getAsLong(), finalAttributes);
+                    } catch (Throwable ignored) {
+                        // Skip one callback sample when the dynamic value supplier is temporarily unavailable.
+                    }
+                } else if (hasValue.get()) {
                     measurement.record(value.get(), finalAttributes);
                 }
             }
@@ -327,6 +347,7 @@ public class Metrics {
             private final Attributes gaugeAttributes;
             private final AtomicReference<Double> value = new AtomicReference<>(0.0);
             private final AtomicBoolean hasValue = new AtomicBoolean(false);
+            private final AtomicReference<DoubleSupplier> valueGetter = new AtomicReference<>();
             private Attributes finalAttributes = Attributes.empty();
             private volatile boolean shouldRecord = true;
 
@@ -350,16 +371,33 @@ public class Metrics {
             }
 
             public void record(double newValue) {
+                valueGetter.set(null);
                 value.set(newValue);
                 hasValue.set(true);
             }
 
+            public void record(DoubleSupplier valueGetter) {
+                this.valueGetter.set(valueGetter);
+                hasValue.set(false);
+            }
+
             public void clear() {
+                valueGetter.set(null);
                 hasValue.set(false);
             }
 
             private void record(ObservableDoubleMeasurement measurement) {
-                if (shouldRecord && hasValue.get()) {
+                if (!shouldRecord) {
+                    return;
+                }
+                DoubleSupplier getter = valueGetter.get();
+                if (getter != null) {
+                    try {
+                        measurement.record(getter.getAsDouble(), finalAttributes);
+                    } catch (Throwable ignored) {
+                        // Skip one callback sample when the dynamic value supplier is temporarily unavailable.
+                    }
+                } else if (hasValue.get()) {
                     measurement.record(value.get(), finalAttributes);
                 }
             }

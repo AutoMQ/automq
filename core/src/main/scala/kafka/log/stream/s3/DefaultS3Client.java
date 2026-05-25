@@ -19,7 +19,6 @@
 
 package kafka.log.stream.s3;
 
-import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.node.NodeManager;
@@ -85,8 +84,6 @@ import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
-    protected final Derivator networkInboundRate = new Derivator();
-    protected final Derivator networkOutboundRate = new Derivator();
     private StreamMetadataManager metadataManager;
 
     protected ControllerRequestSender requestSender;
@@ -137,15 +134,13 @@ public class DefaultS3Client implements Client {
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.INBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkInboundRate.derive(
-                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkInboundUsageTotal().get()));
+            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkInboundRate());
         // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting tail-reading performance.
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth() * 5);
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
         S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
-                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
+            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkOutboundRate());
 
         this.localIndexCache = LocalStreamRangeIndexCache.create();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);

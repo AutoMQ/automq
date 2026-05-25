@@ -33,13 +33,17 @@ import org.apache.commons.lang3.tuple.Pair;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public class NetworkStats {
+    private static final long NETWORK_RATE_MIN_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
     private static final NetworkStats INSTANCE = new NetworkStats();
     // <StreamId, <FastReadBytes, SlowReadBytes>>
     private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
     private final Counter networkInboundUsageTotal = new Counter();
     private final Counter networkOutboundUsageTotal = new Counter();
+    private final MinIntervalRate networkInboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
+    private final MinIntervalRate networkOutboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
     private final Map<ThrottleStrategy, CounterMetric> networkInboundUsageTotalStats = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, CounterMetric> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, HistogramMetric> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
@@ -81,6 +85,32 @@ public class NetworkStats {
 
     public Counter networkOutboundUsageTotal() {
         return networkOutboundUsageTotal;
+    }
+
+    /**
+     * Returns inbound network usage bytes per second using a minimum 30-second smoothing interval.
+     */
+    public double networkInboundRate() {
+        return networkInboundRate.update(networkInboundUsageTotal.get());
+    }
+
+    /**
+     * Returns outbound network usage bytes per second using a minimum 30-second smoothing interval.
+     */
+    public double networkOutboundRate() {
+        return networkOutboundRate.update(networkOutboundUsageTotal.get());
+    }
+
+    /**
+     * Returns the broker-level network utilization against the configured baseline bandwidth.
+     */
+    public double networkUtil(long baselineBandwidth) {
+        if (baselineBandwidth <= 0) {
+            return Double.NaN;
+        }
+        double inboundUtil = networkInboundRate() / baselineBandwidth;
+        double outboundUtil = networkOutboundRate() / baselineBandwidth;
+        return Math.max(inboundUtil, outboundUtil);
     }
 
     public void createStreamReadBytesStats(long streamId) {
