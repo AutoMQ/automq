@@ -22,6 +22,7 @@ import java.util.{Properties, Map => JMap}
 import java.util.concurrent.{CompletionStage, TimeUnit}
 import java.util.concurrent.atomic.AtomicReference
 import kafka.controller.KafkaController
+import kafka.automq.AutoMQConfig
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -55,6 +56,12 @@ import scala.jdk.CollectionConverters._
 import scala.collection.Set
 
 class DynamicBrokerConfigTest {
+
+  @Test
+  def testRetryStormBackoffConfigsAreDynamic(): Unit = {
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG))
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG))
+  }
 
   @Test
   def testConfigUpdate(): Unit = {
