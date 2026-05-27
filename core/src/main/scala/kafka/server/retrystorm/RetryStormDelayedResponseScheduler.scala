@@ -31,10 +31,11 @@ class RetryStormDelayedResponseScheduler(tickMs: Long = 100L) {
   private val timer = new HashedWheelTimer(tickMs, TimeUnit.MILLISECONDS)
   private val pending = new ConcurrentHashMap[Timeout, ScheduledSend]()
   private val closed = new AtomicBoolean(false)
+  private val lifecycleLock = new Object
 
   def schedule(request: AnyRef, response: AnyRef, delayMs: Long, reason: String, sendNow: () => Unit): Unit = {
     val _ = (request, response, reason)
-    if (delayMs <= 0 || closed.get()) {
+    if (delayMs <= 0) {
       sendNow()
       return
     }
@@ -42,17 +43,24 @@ class RetryStormDelayedResponseScheduler(tickMs: Long = 100L) {
     val roundedDelayMs = roundUpToTick(delayMs)
     val scheduledSend = new ScheduledSend(sendNow)
     try {
-      val timeout = timer.newTimeout(timeout => {
-        val scheduled = pending.remove(timeout)
-        if (scheduled != null) {
-          scheduled.send()
+      var sendImmediately = false
+      lifecycleLock.synchronized {
+        if (closed.get()) {
+          sendImmediately = true
+        } else {
+          val timeout = timer.newTimeout(timeout => {
+            val scheduled = lifecycleLock.synchronized {
+              pending.remove(timeout)
+            }
+            if (scheduled != null) {
+              scheduled.send()
+            }
+          }, roundedDelayMs, TimeUnit.MILLISECONDS)
+          pending.put(timeout, scheduledSend)
         }
-      }, roundedDelayMs, TimeUnit.MILLISECONDS)
-      if (closed.get()) {
-        timeout.cancel()
+      }
+      if (sendImmediately) {
         scheduledSend.send()
-      } else {
-        pending.put(timeout, scheduledSend)
       }
     } catch {
       case _: IllegalStateException =>
@@ -61,13 +69,20 @@ class RetryStormDelayedResponseScheduler(tickMs: Long = 100L) {
   }
 
   def shutdown(): Unit = {
-    closed.set(true)
-    val iterator = pending.entrySet().iterator()
+    val sends = new java.util.ArrayList[ScheduledSend]()
+    lifecycleLock.synchronized {
+      closed.set(true)
+      val iterator = pending.entrySet().iterator()
+      while (iterator.hasNext) {
+        val entry = iterator.next()
+        iterator.remove()
+        entry.getKey.cancel()
+        sends.add(entry.getValue)
+      }
+    }
+    val iterator = sends.iterator()
     while (iterator.hasNext) {
-      val entry = iterator.next()
-      iterator.remove()
-      entry.getKey.cancel()
-      entry.getValue.send()
+      iterator.next().send()
     }
     timer.stop()
   }

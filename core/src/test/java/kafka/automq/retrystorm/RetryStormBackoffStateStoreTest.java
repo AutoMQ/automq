@@ -88,6 +88,19 @@ public class RetryStormBackoffStateStoreTest {
         assertFalse(recovered.delayed());
     }
 
+    @Test
+    public void testDelayingStateSurvivesDelayBeforeQuietTimeout() throws Exception {
+        RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 20L, 30L, 100000);
+
+        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 30L);
+        assertTrue(store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1L, 30L).delayed());
+
+        Thread.sleep(25L);
+        RetryStormBackoffStateStore.StateDecision stillDelaying =
+            store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 40L, 30L);
+        assertTrue(stillDelaying.delayed());
+    }
+
     private static RetryStormBackoffStateStore newStore() {
         return new RetryStormBackoffStateStore(1000L, 1000L, 1000L, 100000);
     }

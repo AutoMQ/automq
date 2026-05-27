@@ -54,7 +54,7 @@ public class RetryStormBackoffStateStore {
         this.delayMs = delayMs;
         this.maxTrackedDimensions = maxTrackedDimensions;
         this.states = CacheBuilder.newBuilder()
-            .expireAfterAccess(Math.max(slidingWindowMs, recoveryQuietMs), TimeUnit.MILLISECONDS)
+            .expireAfterAccess(Math.max(slidingWindowMs, recoveryQuietMs + Math.max(delayMs, 0L)), TimeUnit.MILLISECONDS)
             .build();
     }
 
