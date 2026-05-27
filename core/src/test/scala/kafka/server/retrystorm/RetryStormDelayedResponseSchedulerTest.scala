@@ -66,6 +66,17 @@ class RetryStormDelayedResponseSchedulerTest {
     assertEquals(1, sends.get())
   }
 
+  @Test
+  def testScheduleAfterShutdownSendsImmediately(): Unit = {
+    val scheduler = new RetryStormDelayedResponseScheduler(1000L)
+    val sends = new AtomicInteger(0)
+
+    scheduler.shutdown()
+    scheduler.schedule(null, null, 10000L, "protective-error", () => sends.incrementAndGet())
+
+    assertEquals(1, sends.get())
+  }
+
   private def eventually(timeoutMs: Long)(assertion: => Unit): Unit = {
     val deadline = System.currentTimeMillis() + timeoutMs
     var lastError: AssertionError = null

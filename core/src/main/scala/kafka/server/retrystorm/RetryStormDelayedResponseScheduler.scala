@@ -30,26 +30,38 @@ import java.util.concurrent.atomic.AtomicBoolean
 class RetryStormDelayedResponseScheduler(tickMs: Long = 100L) {
   private val timer = new HashedWheelTimer(tickMs, TimeUnit.MILLISECONDS)
   private val pending = new ConcurrentHashMap[Timeout, ScheduledSend]()
+  private val closed = new AtomicBoolean(false)
 
   def schedule(request: AnyRef, response: AnyRef, delayMs: Long, reason: String, sendNow: () => Unit): Unit = {
     val _ = (request, response, reason)
-    if (delayMs <= 0) {
+    if (delayMs <= 0 || closed.get()) {
       sendNow()
       return
     }
 
     val roundedDelayMs = roundUpToTick(delayMs)
     val scheduledSend = new ScheduledSend(sendNow)
-    val timeout = timer.newTimeout(timeout => {
-      val scheduled = pending.remove(timeout)
-      if (scheduled != null) {
-        scheduled.send()
+    try {
+      val timeout = timer.newTimeout(timeout => {
+        val scheduled = pending.remove(timeout)
+        if (scheduled != null) {
+          scheduled.send()
+        }
+      }, roundedDelayMs, TimeUnit.MILLISECONDS)
+      if (closed.get()) {
+        timeout.cancel()
+        scheduledSend.send()
+      } else {
+        pending.put(timeout, scheduledSend)
       }
-    }, roundedDelayMs, TimeUnit.MILLISECONDS)
-    pending.put(timeout, scheduledSend)
+    } catch {
+      case _: IllegalStateException =>
+        scheduledSend.send()
+    }
   }
 
   def shutdown(): Unit = {
+    closed.set(true)
     val iterator = pending.entrySet().iterator()
     while (iterator.hasNext) {
       val entry = iterator.next()
