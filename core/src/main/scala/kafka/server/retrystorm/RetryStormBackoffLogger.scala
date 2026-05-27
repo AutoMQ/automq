@@ -21,6 +21,8 @@ package kafka.server.retrystorm
 
 import kafka.utils.Logging
 
+import java.util.concurrent.atomic.AtomicLong
+
 trait RetryStormBackoffLogger {
   def logDelayed(context: RetryStormRequestContext, responseSummary: ResponseSummary, decision: BackoffDecision): Unit
 }
@@ -33,9 +35,14 @@ object RetryStormBackoffLogger {
   }
 }
 
-class SampledRetryStormBackoffLogger extends RetryStormBackoffLogger with Logging {
+class SampledRetryStormBackoffLogger(sampleEvery: Long = 1000L) extends RetryStormBackoffLogger with Logging {
+  private val delayedDecisions = new AtomicLong(0L)
+
   override def logDelayed(context: RetryStormRequestContext, responseSummary: ResponseSummary, decision: BackoffDecision): Unit = {
-    info(s"Retry storm delayed response apiKey=${context.apiKey} delayMs=${decision.delayMs} " +
-      s"reason=${decision.reason} resources=${responseSummary.resources.map(_.resourceKey).mkString(",")}")
+    val count = delayedDecisions.incrementAndGet()
+    if (sampleEvery <= 1 || count == 1 || count % sampleEvery == 0) {
+      info(s"Retry storm delayed response apiKey=${context.apiKey} delayMs=${decision.delayMs} " +
+        s"reason=${decision.reason} resources=${responseSummary.resources.map(_.resourceKey).mkString(",")}")
+    }
   }
 }

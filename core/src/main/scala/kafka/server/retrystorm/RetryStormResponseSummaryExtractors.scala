@@ -162,6 +162,8 @@ object OffsetForLeaderEpochResponseSummaryExtractor extends RetryStormResponseSu
 object MetadataResponseSummaryExtractor extends RetryStormResponseSummaryExtractor {
   override def apply(request: AnyRef, response: AnyRef): ResponseSummary = {
     val metadataResponse = response.asInstanceOf[MetadataResponse]
+    val hasClusterMetadata = metadataResponse.data().brokers().asScala.nonEmpty ||
+      metadataResponse.data().controllerId() >= 0
     val resources = metadataResponse.data().topics().asScala.flatMap { topic =>
       val topicName = if (topic.name() != null) topic.name() else topic.topicId().toString
       val topicResult = RetryStormResponseSummaryExtractors.classify(
@@ -180,8 +182,11 @@ object MetadataResponseSummaryExtractor extends RetryStormResponseSummaryExtract
       }
       topicResult +: partitionResults.toSeq
     }.toSeq
-    if (resources.nonEmpty) ResponseSummary(resources)
-    else ResponseSummary(Seq(ResourceResult("cluster", valid = metadataResponse.data().brokers().asScala.nonEmpty, delayableTransient = false, protective = false)))
+    if (resources.nonEmpty) {
+      ResponseSummary(ResourceResult("cluster", valid = hasClusterMetadata, delayableTransient = false, protective = false) +: resources)
+    } else {
+      ResponseSummary(Seq(ResourceResult("cluster", valid = hasClusterMetadata, delayableTransient = false, protective = false)))
+    }
   }
 }
 
@@ -221,7 +226,7 @@ object FindCoordinatorResponseSummaryExtractor extends RetryStormResponseSummary
         coordinators.asScala.map { coordinator =>
           val error = Errors.forCode(coordinator.errorCode())
           ResourceResult(
-            resourceKey = coordinator.key(),
+            resourceKey = s"${coordinatorType(request)}-${coordinator.key()}",
             valid = error == Errors.NONE && coordinator.nodeId() >= 0,
             delayableTransient = RetryStormResponseSummaryExtractors.DelayableCoordinatorErrors.contains(error),
             protective = error != Errors.NONE
@@ -248,12 +253,21 @@ object FindCoordinatorResponseSummaryExtractor extends RetryStormResponseSummary
     if (body == null) {
       "coordinator"
     } else {
-      val keyType = FindCoordinatorRequest.CoordinatorType.forId(body.data().keyType()).name().toLowerCase
       val key = Option(body.data().key()).filter(_.nonEmpty)
         .orElse(body.data().coordinatorKeys().asScala.headOption)
         .getOrElse("")
-      s"$keyType-$key"
+      s"${coordinatorType(body)}-$key"
     }
+  }
+
+  private def coordinatorType(request: AnyRef): String = {
+    val body = request match {
+      case channelRequest: RequestChannel.Request => channelRequest.body[FindCoordinatorRequest]
+      case findCoordinatorRequest: FindCoordinatorRequest => findCoordinatorRequest
+      case _ => null
+    }
+    if (body == null) "coordinator"
+    else FindCoordinatorRequest.CoordinatorType.forId(body.data().keyType()).name().toLowerCase
   }
 }
 

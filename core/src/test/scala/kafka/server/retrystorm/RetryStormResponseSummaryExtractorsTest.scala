@@ -20,14 +20,14 @@
 package kafka.server.retrystorm
 
 import org.apache.kafka.common.message.FetchResponseData.{FetchableTopicResponse, PartitionData}
-import org.apache.kafka.common.message.{JoinGroupRequestData, JoinGroupResponseData}
+import org.apache.kafka.common.message.{FindCoordinatorRequestData, JoinGroupRequestData, JoinGroupResponseData}
 import org.apache.kafka.common.message.ListOffsetsResponseData.{ListOffsetsPartitionResponse, ListOffsetsTopicResponse}
-import org.apache.kafka.common.message.MetadataResponseData.{MetadataResponsePartition, MetadataResponseTopic}
+import org.apache.kafka.common.message.MetadataResponseData.{MetadataResponseBroker, MetadataResponsePartition, MetadataResponseTopic}
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.{EpochEndOffset, OffsetForLeaderTopicResult, OffsetForLeaderTopicResultCollection}
 import org.apache.kafka.common.message.ProduceResponseData.{PartitionProduceResponse, TopicProduceResponse}
 import org.apache.kafka.common.message.{FetchResponseData, FindCoordinatorResponseData, ListOffsetsResponseData, MetadataResponseData, OffsetForLeaderEpochResponseData, ProduceResponseData}
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.requests.{FetchResponse, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
+import org.apache.kafka.common.requests.{FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -98,6 +98,19 @@ class RetryStormResponseSummaryExtractorsTest {
   }
 
   @Test
+  def testMetadataExtractorTreatsClusterMetadataAsValid(): Unit = {
+    val data = new MetadataResponseData()
+    data.brokers().add(new MetadataResponseBroker().setNodeId(1).setHost("localhost").setPort(9092))
+    data.setControllerId(1)
+    data.topics().add(new MetadataResponseTopic().setName("topic").setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setPartitions(java.util.List.of(
+      new MetadataResponsePartition().setPartitionIndex(0).setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setLeaderId(-1)
+    )))
+
+    val summary = MetadataResponseSummaryExtractor(null, new MetadataResponse(data, 12.toShort))
+    assertTrue(summary.resources.exists(resource => resource.resourceKey == "cluster" && resource.valid))
+  }
+
+  @Test
   def testFindCoordinatorExtractorClassifiesCoordinatorLoading(): Unit = {
     val data = new FindCoordinatorResponseData()
     data.coordinators().add(new FindCoordinatorResponseData.Coordinator()
@@ -106,6 +119,24 @@ class RetryStormResponseSummaryExtractorsTest {
       .setNodeId(-1))
 
     val summary = FindCoordinatorResponseSummaryExtractor(null, new FindCoordinatorResponse(data))
+    assertTrue(summary.resources.head.delayableTransient)
+  }
+
+  @Test
+  def testFindCoordinatorBatchResourceKeyIncludesCoordinatorType(): Unit = {
+    val request = new FindCoordinatorRequest.Builder(
+      new FindCoordinatorRequestData()
+        .setKeyType(FindCoordinatorRequest.CoordinatorType.TRANSACTION.id())
+        .setCoordinatorKeys(java.util.List.of("shared-key"))
+    ).build(4.toShort)
+    val data = new FindCoordinatorResponseData()
+    data.coordinators().add(new FindCoordinatorResponseData.Coordinator()
+      .setKey("shared-key")
+      .setErrorCode(Errors.COORDINATOR_LOAD_IN_PROGRESS.code())
+      .setNodeId(-1))
+
+    val summary = FindCoordinatorResponseSummaryExtractor(request, new FindCoordinatorResponse(data))
+    assertEquals("transaction-shared-key", summary.resources.head.resourceKey)
     assertTrue(summary.resources.head.delayableTransient)
   }
 
