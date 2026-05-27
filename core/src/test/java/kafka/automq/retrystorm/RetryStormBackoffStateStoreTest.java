@@ -101,6 +101,22 @@ public class RetryStormBackoffStateStoreTest {
         assertTrue(stillDelaying.delayed());
     }
 
+    @Test
+    public void testDelayingStateSurvivesDynamicDelayLargerThanStoreDefault() {
+        RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 20L, 30L, 100000);
+
+        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 100L);
+        assertTrue(store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1L, 100L).delayed());
+
+        RetryStormBackoffStateStore.BackoffKey nextKey =
+            new RetryStormBackoffStateStore.BackoffKey(ApiKeys.PRODUCE.id, "topic-next", "connection-1");
+        store.recordAndDecide(nextKey, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 80L, 100L);
+
+        RetryStormBackoffStateStore.StateDecision stillDelaying =
+            store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 90L, 100L);
+        assertTrue(stillDelaying.delayed());
+    }
+
     private static RetryStormBackoffStateStore newStore() {
         return new RetryStormBackoffStateStore(1000L, 1000L, 1000L, 100000);
     }
