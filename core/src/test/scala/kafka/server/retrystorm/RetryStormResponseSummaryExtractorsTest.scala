@@ -24,11 +24,12 @@ import org.apache.kafka.common.message.DescribeTopicPartitionsResponseData.{Desc
 import org.apache.kafka.common.message.{FindCoordinatorRequestData, JoinGroupRequestData, JoinGroupResponseData}
 import org.apache.kafka.common.message.ListOffsetsResponseData.{ListOffsetsPartitionResponse, ListOffsetsTopicResponse}
 import org.apache.kafka.common.message.MetadataResponseData.{MetadataResponseBroker, MetadataResponsePartition, MetadataResponseTopic}
+import org.apache.kafka.common.message.OffsetFetchResponseData.{OffsetFetchResponseGroup, OffsetFetchResponsePartitions, OffsetFetchResponseTopics}
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.{EpochEndOffset, OffsetForLeaderTopicResult, OffsetForLeaderTopicResultCollection}
 import org.apache.kafka.common.message.ProduceResponseData.{PartitionProduceResponse, TopicProduceResponse}
-import org.apache.kafka.common.message.{DescribeTopicPartitionsResponseData, FetchResponseData, FindCoordinatorResponseData, ListOffsetsResponseData, MetadataResponseData, OffsetForLeaderEpochResponseData, ProduceResponseData}
+import org.apache.kafka.common.message.{DescribeTopicPartitionsResponseData, FetchResponseData, FindCoordinatorResponseData, ListOffsetsResponseData, MetadataResponseData, OffsetFetchResponseData, OffsetForLeaderEpochResponseData, ProduceResponseData}
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.requests.{DescribeTopicPartitionsResponse, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
+import org.apache.kafka.common.requests.{DescribeTopicPartitionsResponse, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetFetchResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -73,6 +74,21 @@ class RetryStormResponseSummaryExtractorsTest {
     val summary = ListOffsetsResponseSummaryExtractor(null, new ListOffsetsResponse(data))
     assertTrue(summary.resources.exists(_.valid))
     assertTrue(summary.resources.exists(resource => resource.protective && !resource.delayableTransient))
+  }
+
+  @Test
+  def testListOffsetsExtractorTreatsOldStyleOffsetsAsValid(): Unit = {
+    val data = new ListOffsetsResponseData()
+    data.topics().add(new ListOffsetsTopicResponse().setName("topic").setPartitions(java.util.List.of(
+      new ListOffsetsPartitionResponse()
+        .setPartitionIndex(0)
+        .setErrorCode(Errors.NONE.code())
+        .setOffset(ListOffsetsResponse.UNKNOWN_OFFSET)
+        .setOldStyleOffsets(java.util.List.of(42L))
+    )))
+
+    val summary = ListOffsetsResponseSummaryExtractor(null, new ListOffsetsResponse(data))
+    assertTrue(summary.resources.exists(resource => resource.resourceKey == "topic-0" && resource.valid))
   }
 
   @Test
@@ -215,5 +231,28 @@ class RetryStormResponseSummaryExtractorsTest {
     val summary = CoordinatorResponseSummaryExtractor(request, response)
     assertEquals("group-group-a", summary.resources.head.resourceKey)
     assertTrue(summary.resources.head.delayableTransient)
+  }
+
+  @Test
+  def testOffsetFetchBatchExtractorUsesPerGroupResourceKeys(): Unit = {
+    val data = new OffsetFetchResponseData()
+    data.groups().add(offsetFetchGroup("group-a", Errors.COORDINATOR_LOAD_IN_PROGRESS))
+    data.groups().add(offsetFetchGroup("group-b", Errors.NOT_COORDINATOR))
+
+    val summary = CoordinatorResponseSummaryExtractor(null, new OffsetFetchResponse(data, 8.toShort))
+    assertEquals(Set("group-group-a", "group-group-b"), summary.resources.map(_.resourceKey).toSet)
+    assertTrue(summary.resources.forall(_.delayableTransient))
+  }
+
+  private def offsetFetchGroup(groupId: String, error: Errors): OffsetFetchResponseGroup = {
+    new OffsetFetchResponseGroup()
+      .setGroupId(groupId)
+      .setErrorCode(error.code())
+      .setTopics(java.util.List.of(new OffsetFetchResponseTopics()
+        .setName("topic")
+        .setPartitions(java.util.List.of(new OffsetFetchResponsePartitions()
+          .setPartitionIndex(0)
+          .setErrorCode(error.code())
+          .setCommittedOffset(OffsetFetchResponse.INVALID_OFFSET)))))
   }
 }

@@ -131,7 +131,10 @@ object ListOffsetsResponseSummaryExtractor extends RetryStormResponseSummaryExtr
         val error = Errors.forCode(partition.errorCode())
         ResourceResult(
           resourceKey = s"${topic.name()}-${partition.partitionIndex()}",
-          valid = error == Errors.NONE && partition.offset() != ListOffsetsResponse.UNKNOWN_OFFSET,
+          valid = error == Errors.NONE && (
+            partition.offset() != ListOffsetsResponse.UNKNOWN_OFFSET ||
+              partition.oldStyleOffsets().asScala.nonEmpty
+            ),
           delayableTransient = RetryStormResponseSummaryExtractors.DelayableLeaderErrors.contains(error),
           protective = error != Errors.NONE
         )
@@ -284,6 +287,12 @@ object FindCoordinatorResponseSummaryExtractor extends RetryStormResponseSummary
 
 object CoordinatorResponseSummaryExtractor extends RetryStormResponseSummaryExtractor {
   override def apply(request: AnyRef, response: AnyRef): ResponseSummary = {
+    response match {
+      case offsetFetchResponse: OffsetFetchResponse if offsetFetchResponse.data().groups().asScala.nonEmpty =>
+        return offsetFetchSummary(offsetFetchResponse)
+      case _ =>
+    }
+
     val abstractResponse = response.asInstanceOf[AbstractResponse]
     val errors = abstractResponse.errorCounts().keySet().asScala.toSeq
     val hasValid = errors.contains(Errors.NONE)
@@ -296,6 +305,23 @@ object CoordinatorResponseSummaryExtractor extends RetryStormResponseSummaryExtr
       delayableTransient = allCoordinatorTransient,
       protective = nonSuccessErrors.nonEmpty
     )))
+  }
+
+  private def offsetFetchSummary(response: OffsetFetchResponse): ResponseSummary = {
+    val resources = response.data().groups().asScala.map { group =>
+      val groupError = Errors.forCode(group.errorCode())
+      val partitionErrors = group.topics().asScala.flatMap { topic =>
+        topic.partitions().asScala.map(partition => Errors.forCode(partition.errorCode()))
+      }.toSeq
+      val errors = (groupError +: partitionErrors).filter(_ != Errors.NONE)
+      ResourceResult(
+        resourceKey = groupKey(group.groupId()),
+        valid = groupError == Errors.NONE || partitionErrors.contains(Errors.NONE),
+        delayableTransient = errors.nonEmpty && errors.forall(RetryStormResponseSummaryExtractors.DelayableCoordinatorErrors.contains),
+        protective = errors.nonEmpty
+      )
+    }.toSeq
+    ResponseSummary(resources)
   }
 
   private def coordinatorResourceKey(request: AnyRef): String = {
