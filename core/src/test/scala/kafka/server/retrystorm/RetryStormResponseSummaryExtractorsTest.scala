@@ -20,14 +20,15 @@
 package kafka.server.retrystorm
 
 import org.apache.kafka.common.message.FetchResponseData.{FetchableTopicResponse, PartitionData}
+import org.apache.kafka.common.message.DescribeTopicPartitionsResponseData.{DescribeTopicPartitionsResponsePartition, DescribeTopicPartitionsResponseTopic}
 import org.apache.kafka.common.message.{FindCoordinatorRequestData, JoinGroupRequestData, JoinGroupResponseData}
 import org.apache.kafka.common.message.ListOffsetsResponseData.{ListOffsetsPartitionResponse, ListOffsetsTopicResponse}
 import org.apache.kafka.common.message.MetadataResponseData.{MetadataResponseBroker, MetadataResponsePartition, MetadataResponseTopic}
 import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData.{EpochEndOffset, OffsetForLeaderTopicResult, OffsetForLeaderTopicResultCollection}
 import org.apache.kafka.common.message.ProduceResponseData.{PartitionProduceResponse, TopicProduceResponse}
-import org.apache.kafka.common.message.{FetchResponseData, FindCoordinatorResponseData, ListOffsetsResponseData, MetadataResponseData, OffsetForLeaderEpochResponseData, ProduceResponseData}
+import org.apache.kafka.common.message.{DescribeTopicPartitionsResponseData, FetchResponseData, FindCoordinatorResponseData, ListOffsetsResponseData, MetadataResponseData, OffsetForLeaderEpochResponseData, ProduceResponseData}
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.requests.{FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
+import org.apache.kafka.common.requests.{DescribeTopicPartitionsResponse, FetchResponse, FindCoordinatorRequest, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataRequest, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
 import org.junit.jupiter.api.Assertions._
 import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
@@ -98,7 +99,7 @@ class RetryStormResponseSummaryExtractorsTest {
   }
 
   @Test
-  def testMetadataExtractorTreatsClusterMetadataAsValid(): Unit = {
+  def testMetadataExtractorTreatsAllTopicsClusterMetadataAsValid(): Unit = {
     val data = new MetadataResponseData()
     data.brokers().add(new MetadataResponseBroker().setNodeId(1).setHost("localhost").setPort(9092))
     data.setControllerId(1)
@@ -106,8 +107,56 @@ class RetryStormResponseSummaryExtractorsTest {
       new MetadataResponsePartition().setPartitionIndex(0).setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setLeaderId(-1)
     )))
 
-    val summary = MetadataResponseSummaryExtractor(null, new MetadataResponse(data, 12.toShort))
+    val request = MetadataRequest.Builder.allTopics().build(12.toShort)
+    val summary = MetadataResponseSummaryExtractor(request, new MetadataResponse(data, 12.toShort))
     assertTrue(summary.resources.exists(resource => resource.resourceKey == "cluster" && resource.valid))
+  }
+
+  @Test
+  def testMetadataExtractorDoesNotLetClusterMetadataMaskExplicitTopicErrors(): Unit = {
+    val request = new MetadataRequest.Builder(java.util.List.of("topic"), true).build(12.toShort)
+    val data = new MetadataResponseData()
+    data.brokers().add(new MetadataResponseBroker().setNodeId(1).setHost("localhost").setPort(9092))
+    data.setControllerId(1)
+    data.topics().add(new MetadataResponseTopic().setName("topic").setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setPartitions(java.util.List.of(
+      new MetadataResponsePartition().setPartitionIndex(0).setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setLeaderId(-1)
+    )))
+
+    val summary = MetadataResponseSummaryExtractor(request, new MetadataResponse(data, 12.toShort))
+    assertFalse(summary.resources.exists(resource => resource.resourceKey == "cluster" && resource.valid))
+    assertFalse(summary.resources.exists(_.valid))
+    assertTrue(summary.resources.exists(_.delayableTransient))
+  }
+
+  @Test
+  def testMetadataExtractorDoesNotLetTopicNoneMaskPartitionTransientErrors(): Unit = {
+    val request = new MetadataRequest.Builder(java.util.List.of("topic"), true).build(12.toShort)
+    val data = new MetadataResponseData()
+    data.topics().add(new MetadataResponseTopic().setName("topic").setErrorCode(Errors.NONE.code()).setPartitions(java.util.List.of(
+      new MetadataResponsePartition().setPartitionIndex(0).setErrorCode(Errors.LEADER_NOT_AVAILABLE.code()).setLeaderId(-1)
+    )))
+
+    val summary = MetadataResponseSummaryExtractor(request, new MetadataResponse(data, 12.toShort))
+    assertFalse(summary.resources.exists(_.valid))
+    assertTrue(summary.resources.exists(resource => resource.resourceKey == "topic-0" && resource.delayableTransient))
+  }
+
+  @Test
+  def testDescribeTopicPartitionsExtractorDoesNotLetTopicNoneMaskPartitionTransientErrors(): Unit = {
+    val data = new DescribeTopicPartitionsResponseData()
+    data.topics().add(new DescribeTopicPartitionsResponseTopic()
+      .setName("topic")
+      .setErrorCode(Errors.NONE.code())
+      .setPartitions(java.util.List.of(
+        new DescribeTopicPartitionsResponsePartition()
+          .setPartitionIndex(0)
+          .setErrorCode(Errors.LEADER_NOT_AVAILABLE.code())
+          .setLeaderId(-1)
+      )))
+
+    val summary = DescribeTopicPartitionsResponseSummaryExtractor(null, new DescribeTopicPartitionsResponse(data))
+    assertFalse(summary.resources.exists(_.valid))
+    assertTrue(summary.resources.exists(resource => resource.resourceKey == "topic-0" && resource.delayableTransient))
   }
 
   @Test

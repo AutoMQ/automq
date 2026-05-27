@@ -69,14 +69,12 @@ class RetryStormBackoffPolicy(config: RetryStormBackoffConfig, stateStore: Retry
       case None => config.maxDelayMs()
     }
 
-    val hasProtectiveOnlyError = responseSummary.resources.exists(resource => resource.protective && !resource.delayableTransient)
     val decisions = responseSummary.resources
       .filter(resource => resource.delayableTransient || resource.protective)
       .map { resource =>
-        val delayableTransient = resource.delayableTransient && !hasProtectiveOnlyError
         stateStore.recordAndDecide(
           backoffKey(apiKey, resource, context),
-          new RetryStormBackoffStateStore.ErrorClassSet(delayableTransient, resource.protective),
+          new RetryStormBackoffStateStore.ErrorClassSet(resource.delayableTransient, resource.protective),
           context.nowMs,
           decisionDelayMs
         )

@@ -166,11 +166,6 @@ object MetadataResponseSummaryExtractor extends RetryStormResponseSummaryExtract
       metadataResponse.data().controllerId() >= 0
     val resources = metadataResponse.data().topics().asScala.flatMap { topic =>
       val topicName = if (topic.name() != null) topic.name() else topic.topicId().toString
-      val topicResult = RetryStormResponseSummaryExtractors.classify(
-        topicName,
-        Errors.forCode(topic.errorCode()),
-        RetryStormResponseSummaryExtractors.DelayableLeaderErrors
-      )
       val partitionResults = topic.partitions().asScala.map { partition =>
         val error = Errors.forCode(partition.errorCode())
         ResourceResult(
@@ -180,13 +175,29 @@ object MetadataResponseSummaryExtractor extends RetryStormResponseSummaryExtract
           protective = error != Errors.NONE
         )
       }
+      val topicError = Errors.forCode(topic.errorCode())
+      val topicResult = ResourceResult(
+        topicName,
+        valid = topicError == Errors.NONE && partitionResults.exists(_.valid),
+        delayableTransient = RetryStormResponseSummaryExtractors.DelayableLeaderErrors.contains(topicError),
+        protective = topicError != Errors.NONE
+      )
       topicResult +: partitionResults.toSeq
     }.toSeq
-    if (resources.nonEmpty) {
+    if (includeClusterValidity(request)) {
       ResponseSummary(ResourceResult("cluster", valid = hasClusterMetadata, delayableTransient = false, protective = false) +: resources)
     } else {
-      ResponseSummary(Seq(ResourceResult("cluster", valid = hasClusterMetadata, delayableTransient = false, protective = false)))
+      ResponseSummary(resources)
     }
+  }
+
+  private def includeClusterValidity(request: AnyRef): Boolean = {
+    val metadataRequest = request match {
+      case channelRequest: RequestChannel.Request => channelRequest.body[MetadataRequest]
+      case metadataRequest: MetadataRequest => metadataRequest
+      case _ => null
+    }
+    metadataRequest == null || metadataRequest.isAllTopics || metadataRequest.data().topics().isEmpty
   }
 }
 
@@ -196,21 +207,21 @@ object DescribeTopicPartitionsResponseSummaryExtractor extends RetryStormRespons
     val resources = describeResponse.data().topics().asScala.flatMap { topic =>
       val topicName = if (topic.name() != null) topic.name() else Uuid.ZERO_UUID.toString
       val topicError = Errors.forCode(topic.errorCode())
-      val topicResult = ResourceResult(
-        topicName,
-        valid = topicError == Errors.NONE && topic.partitions().asScala.nonEmpty,
-        delayableTransient = RetryStormResponseSummaryExtractors.DelayableLeaderErrors.contains(topicError),
-        protective = topicError != Errors.NONE
-      )
       val partitionResults = topic.partitions().asScala.map { partition =>
         val error = Errors.forCode(partition.errorCode())
         ResourceResult(
           s"$topicName-${partition.partitionIndex()}",
-          valid = error == Errors.NONE,
+          valid = error == Errors.NONE && partition.leaderId() >= 0,
           delayableTransient = RetryStormResponseSummaryExtractors.DelayableLeaderErrors.contains(error),
           protective = error != Errors.NONE
         )
       }
+      val topicResult = ResourceResult(
+        topicName,
+        valid = topicError == Errors.NONE && partitionResults.exists(_.valid),
+        delayableTransient = RetryStormResponseSummaryExtractors.DelayableLeaderErrors.contains(topicError),
+        protective = topicError != Errors.NONE
+      )
       topicResult +: partitionResults.toSeq
     }.toSeq
     ResponseSummary(resources)

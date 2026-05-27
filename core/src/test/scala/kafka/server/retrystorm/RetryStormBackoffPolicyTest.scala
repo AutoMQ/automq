@@ -96,7 +96,7 @@ class RetryStormBackoffPolicyTest {
   }
 
   @Test
-  def testMixedTransientAndNonTransientBatchUsesProtectiveThresholdOnly(): Unit = {
+  def testMixedTransientAndNonTransientBatchEvaluatesResourcesIndependently(): Unit = {
     val policy = newPolicy(new RetryStormBackoffConfig(true, 1000L))
     val response = ResponseSummary(Seq(
       ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true),
@@ -104,13 +104,46 @@ class RetryStormBackoffPolicyTest {
     ))
 
     assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1000L)).action)
-    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1001L)).action)
-    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1002L)).action)
-    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1003L)).action)
-    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1004L)).action)
-    val decision = policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1005L))
+    val decision = policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1001L))
     assertEquals(BackoffAction.Delayed, decision.action)
-    assertEquals("protective-error", decision.reason)
+    assertTrue(decision.reason.contains("delayable-transient"))
+  }
+
+  @Test
+  def testBatchAggregatesDelayableAndProtectiveResourceReasons(): Unit = {
+    val policy = newPolicy(new RetryStormBackoffConfig(true, 500L))
+    policy.evaluate(
+      ApiKeys.PRODUCE,
+      RequestSummary(),
+      ResponseSummary(Seq(ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true))),
+      BackoffContext("connection-1", 1000L)
+    )
+    for (i <- 0 until 5) {
+      assertEquals(
+        BackoffAction.Immediate,
+        policy.evaluate(
+          ApiKeys.PRODUCE,
+          RequestSummary(),
+          ResponseSummary(Seq(ResourceResult("topic-1", valid = false, delayableTransient = false, protective = true))),
+          BackoffContext("connection-1", 1000L + i)
+        ).action
+      )
+    }
+
+    val decision = policy.evaluate(
+      ApiKeys.PRODUCE,
+      RequestSummary(),
+      ResponseSummary(Seq(
+        ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true),
+        ResourceResult("topic-1", valid = false, delayableTransient = false, protective = true)
+      )),
+      BackoffContext("connection-1", 1006L)
+    )
+
+    assertEquals(BackoffAction.Delayed, decision.action)
+    assertEquals(500L, decision.delayMs)
+    assertTrue(decision.reason.contains("delayable-transient"))
+    assertTrue(decision.reason.contains("protective-error"))
   }
 
   @Test
