@@ -29,8 +29,10 @@ import org.apache.kafka.common.message.{FetchResponseData, FindCoordinatorRespon
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.{FetchResponse, FindCoordinatorResponse, JoinGroupRequest, JoinGroupResponse, ListOffsetsResponse, MetadataResponse, OffsetsForLeaderEpochResponse, ProduceResponse}
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
+@Tag("S3Unit")
 class RetryStormResponseSummaryExtractorsTest {
 
   @Test

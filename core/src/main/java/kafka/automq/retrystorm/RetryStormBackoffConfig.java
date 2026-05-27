@@ -50,9 +50,11 @@ public class RetryStormBackoffConfig {
 
     public static RetryStormBackoffConfig from(Map<String, ?> raw) {
         Map<String, Object> configs = new HashMap<>(raw);
+        long maxDelayMs = ConfigUtils.getLong(configs, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG);
+        validateMaxDelayMs(maxDelayMs);
         return new RetryStormBackoffConfig(
             ConfigUtils.getBoolean(configs, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG),
-            ConfigUtils.getLong(configs, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
+            maxDelayMs
         );
     }
 

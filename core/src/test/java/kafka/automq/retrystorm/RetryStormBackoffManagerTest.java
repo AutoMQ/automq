@@ -22,6 +22,7 @@ package kafka.automq.retrystorm;
 import kafka.automq.AutoMQConfig;
 
 import org.apache.kafka.common.config.ConfigException;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+@Tag("S3Unit")
 public class RetryStormBackoffManagerTest {
 
     @Test

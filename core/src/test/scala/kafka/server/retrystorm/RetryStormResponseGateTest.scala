@@ -22,10 +22,12 @@ package kafka.server.retrystorm
 import kafka.automq.retrystorm.{RetryStormBackoffConfig, RetryStormBackoffStateStore}
 import org.apache.kafka.common.protocol.ApiKeys
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 import java.util.concurrent.atomic.AtomicInteger
 
+@Tag("S3Unit")
 class RetryStormResponseGateTest {
 
   @Test

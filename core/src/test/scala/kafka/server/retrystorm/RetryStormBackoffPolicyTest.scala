@@ -22,9 +22,11 @@ package kafka.server.retrystorm
 import kafka.automq.retrystorm.{RetryStormBackoffConfig, RetryStormBackoffStateStore}
 import org.apache.kafka.common.protocol.ApiKeys
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import scala.jdk.CollectionConverters._
 
+@Tag("S3Unit")
 class RetryStormBackoffPolicyTest {
 
   @Test
@@ -85,12 +87,30 @@ class RetryStormBackoffPolicyTest {
 
     val batch = ResponseSummary(Seq(
       ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true),
-      ResourceResult("topic-1", valid = false, delayableTransient = false, protective = true)
+      ResourceResult("topic-1", valid = false, delayableTransient = true, protective = true)
     ))
     val decision = policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), batch, BackoffContext("connection-1", 1001L))
     assertEquals(BackoffAction.Delayed, decision.action)
     assertEquals(250L, decision.delayMs)
     assertTrue(decision.reason.contains("delayable-transient"))
+  }
+
+  @Test
+  def testMixedTransientAndNonTransientBatchUsesProtectiveThresholdOnly(): Unit = {
+    val policy = newPolicy(new RetryStormBackoffConfig(true, 1000L))
+    val response = ResponseSummary(Seq(
+      ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true),
+      ResourceResult("topic-1", valid = false, delayableTransient = false, protective = true)
+    ))
+
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1000L)).action)
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1001L)).action)
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1002L)).action)
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1003L)).action)
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1004L)).action)
+    val decision = policy.evaluate(ApiKeys.PRODUCE, RequestSummary(), response, BackoffContext("connection-1", 1005L))
+    assertEquals(BackoffAction.Delayed, decision.action)
+    assertEquals("protective-error", decision.reason)
   }
 
   @Test

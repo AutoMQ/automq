@@ -85,20 +85,7 @@ object ProduceResponseSummaryExtractor extends RetryStormResponseSummaryExtracto
         )
       }
     }.toSeq
-    ResponseSummary(resources, fetchDelayCapMs(request))
-  }
-
-  private def fetchDelayCapMs(request: AnyRef): Option[Long] = {
-    request match {
-      case channelRequest: RequestChannel.Request =>
-        val fetchRequest = channelRequest.body[FetchRequest]
-        val elapsedMs =
-          if (channelRequest.requestDequeueTimeNanos < 0) 0L
-          else TimeUnit.NANOSECONDS.toMillis(Time.SYSTEM.nanoseconds() - channelRequest.requestDequeueTimeNanos)
-        Some(math.max(fetchRequest.maxWait().toLong - elapsedMs, 0L))
-      case _ =>
-        None
-    }
+    ResponseSummary(resources)
   }
 }
 
@@ -119,7 +106,20 @@ object FetchResponseSummaryExtractor extends RetryStormResponseSummaryExtractor 
         )
       }
     }.toSeq
-    ResponseSummary(resources)
+    ResponseSummary(resources, fetchDelayCapMs(request))
+  }
+
+  private def fetchDelayCapMs(request: AnyRef): Option[Long] = {
+    request match {
+      case channelRequest: RequestChannel.Request =>
+        val fetchRequest = channelRequest.body[FetchRequest]
+        val elapsedMs =
+          if (channelRequest.requestDequeueTimeNanos < 0) 0L
+          else TimeUnit.NANOSECONDS.toMillis(Time.SYSTEM.nanoseconds() - channelRequest.requestDequeueTimeNanos)
+        Some(math.max(fetchRequest.maxWait().toLong - elapsedMs, 0L))
+      case _ =>
+        None
+    }
   }
 }
 

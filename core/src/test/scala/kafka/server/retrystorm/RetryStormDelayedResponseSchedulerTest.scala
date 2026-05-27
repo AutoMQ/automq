@@ -20,10 +20,12 @@
 package kafka.server.retrystorm
 
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 
 import java.util.concurrent.atomic.AtomicInteger
 
+@Tag("S3Unit")
 class RetryStormDelayedResponseSchedulerTest {
 
   @Test

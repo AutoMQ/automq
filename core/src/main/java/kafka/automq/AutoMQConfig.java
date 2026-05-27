@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
 import static org.apache.kafka.common.config.ConfigDef.Importance.MEDIUM;
+import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
 import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
@@ -301,7 +302,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
             .define(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DOC)
-            .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
+            .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, atLeast(0), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)

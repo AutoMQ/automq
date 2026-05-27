@@ -123,7 +123,7 @@ class RequestHandlerHelper(
     val appliedThrottleTimeMs = math.max(controllerThrottleTimeMs, requestThrottleTimeMs)
     throttle(quotas.request, request, appliedThrottleTimeMs)
     response.maybeSetThrottleTimeMs(appliedThrottleTimeMs)
-    sendWithRetryStormBackoff(request, response, None)
+    requestChannel.sendResponse(request, response, None)
   }
 
   // Throttle the channel if the request quota is enabled but has been violated. Regardless of throttling, send the
@@ -194,7 +194,7 @@ class RequestHandlerHelper(
                                  response: AbstractResponse,
                                  onComplete: Option[Send => Unit] = None): Unit = {
     quotas.request.maybeRecordExempt(request)
-    sendWithRetryStormBackoff(request, response, onComplete)
+    requestChannel.sendResponse(request, response, onComplete)
   }
 
   def sendResponseThroughRetryStormGate(request: RequestChannel.Request,
@@ -216,6 +216,10 @@ class RequestHandlerHelper(
   private def sendWithRetryStormBackoff(request: RequestChannel.Request,
                                         response: AbstractResponse,
                                         onComplete: Option[Send => Unit]): Unit = {
+    if (request.isForwarded) {
+      requestChannel.sendResponse(request, response, onComplete)
+      return
+    }
     retryStormResponseGate match {
       case Some(gate) =>
         val context = RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())

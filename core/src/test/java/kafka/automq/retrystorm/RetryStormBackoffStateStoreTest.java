@@ -20,12 +20,14 @@
 package kafka.automq.retrystorm;
 
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("S3Unit")
 public class RetryStormBackoffStateStoreTest {
 
     private static final RetryStormBackoffStateStore.BackoffKey KEY =

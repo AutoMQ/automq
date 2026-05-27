@@ -46,6 +46,7 @@ import org.apache.kafka.server.util.KafkaScheduler
 import org.apache.kafka.storage.internals.log.{CleanerConfig, LogConfig, ProducerStateManagerConfig}
 import org.apache.kafka.test.MockMetricsReporter
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.{ArgumentCaptor, ArgumentMatchers, Mockito}
@@ -58,6 +59,7 @@ import scala.collection.Set
 class DynamicBrokerConfigTest {
 
   @Test
+  @Tag("S3Unit")
   def testRetryStormBackoffConfigsAreDynamic(): Unit = {
     assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG))
     assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG))

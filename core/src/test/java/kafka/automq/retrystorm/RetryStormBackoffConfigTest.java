@@ -23,6 +23,7 @@ import kafka.automq.AutoMQConfig;
 
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -32,6 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@Tag("S3Unit")
 public class RetryStormBackoffConfigTest {
 
     @Test
@@ -47,6 +49,16 @@ public class RetryStormBackoffConfigTest {
     @Test
     public void testValidateRejectsNegativeMaxDelayMs() {
         assertThrows(ConfigException.class, () -> RetryStormBackoffConfig.validate(Map.of(
+            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, -1L
+        )));
+    }
+
+    @Test
+    public void testConfigDefRejectsNegativeMaxDelayMs() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+
+        assertThrows(ConfigException.class, () -> configDef.parse(Map.of(
             AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, -1L
         )));
     }
