@@ -93,6 +93,36 @@ class RetryStormBackoffPolicyTest {
     assertTrue(decision.reason.contains("delayable-transient"))
   }
 
+  @Test
+  def testResponseDelayCapLimitsDecisionDelay(): Unit = {
+    val policy = newPolicy(new RetryStormBackoffConfig(true, 1000L))
+    val response = ResponseSummary(
+      Seq(ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true)),
+      delayCapMs = Some(25L)
+    )
+
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.FETCH, RequestSummary(), response, BackoffContext("connection-1", 1000L)).action)
+    val decision = policy.evaluate(ApiKeys.FETCH, RequestSummary(), response, BackoffContext("connection-1", 1001L))
+    assertEquals(BackoffAction.Delayed, decision.action)
+    assertEquals(25L, decision.delayMs)
+  }
+
+  @Test
+  def testZeroResponseDelayCapUpdatesStateButReturnsImmediate(): Unit = {
+    val policy = newPolicy(new RetryStormBackoffConfig(true, 1000L))
+    val capped = ResponseSummary(
+      Seq(ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true)),
+      delayCapMs = Some(0L)
+    )
+    val uncapped = ResponseSummary(Seq(ResourceResult("topic-0", valid = false, delayableTransient = true, protective = true)))
+
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.FETCH, RequestSummary(), capped, BackoffContext("connection-1", 1000L)).action)
+    assertEquals(BackoffAction.Immediate, policy.evaluate(ApiKeys.FETCH, RequestSummary(), capped, BackoffContext("connection-1", 1001L)).action)
+    val decision = policy.evaluate(ApiKeys.FETCH, RequestSummary(), uncapped, BackoffContext("connection-1", 1002L))
+    assertEquals(BackoffAction.Delayed, decision.action)
+    assertEquals(1000L, decision.delayMs)
+  }
+
   private def newPolicy(): RetryStormBackoffPolicy = {
     newPolicy(new RetryStormBackoffConfig(true, 1000L))
   }

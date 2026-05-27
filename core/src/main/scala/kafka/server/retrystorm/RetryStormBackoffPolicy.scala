@@ -38,7 +38,7 @@ case class ResourceResult(resourceKey: String,
                           delayableTransient: Boolean,
                           protective: Boolean)
 
-case class ResponseSummary(resources: Seq[ResourceResult])
+case class ResponseSummary(resources: Seq[ResourceResult], delayCapMs: Option[Long] = None)
 
 case class BackoffDecision(action: BackoffAction, delayMs: Long = 0L, reason: String = "") {
   def delayed: Boolean = action == BackoffAction.Delayed
@@ -64,6 +64,11 @@ class RetryStormBackoffPolicy(config: RetryStormBackoffConfig, stateStore: Retry
       return BackoffDecision(BackoffAction.Immediate)
     }
 
+    val decisionDelayMs = responseSummary.delayCapMs match {
+      case Some(delayCapMs) => math.min(config.maxDelayMs(), math.max(delayCapMs, 0L))
+      case None => config.maxDelayMs()
+    }
+
     val decisions = responseSummary.resources
       .filter(resource => resource.delayableTransient || resource.protective)
       .map { resource =>
@@ -71,7 +76,7 @@ class RetryStormBackoffPolicy(config: RetryStormBackoffConfig, stateStore: Retry
           backoffKey(apiKey, resource, context),
           new RetryStormBackoffStateStore.ErrorClassSet(resource.delayableTransient, resource.protective),
           context.nowMs,
-          config.maxDelayMs()
+          decisionDelayMs
         )
       }
 

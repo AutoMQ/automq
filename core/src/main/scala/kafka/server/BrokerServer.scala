@@ -22,6 +22,7 @@ import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, Defau
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.retrystorm.{RetryStormBackoffConfig, RetryStormBackoffManager, RetryStormBackoffStateStore}
 import kafka.automq.table.TableManager
 import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
@@ -33,6 +34,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
+import kafka.server.retrystorm.{RetryStormBackoffPolicy, RetryStormDelayedResponseScheduler, RetryStormResponseGate, RetryStormResponseSummaryExtractors, SampledRetryStormBackoffLogger}
 import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.clients.admin.ClusterEventPublisher
@@ -169,6 +171,7 @@ class BrokerServer(
   var trafficInterceptor: TrafficInterceptor = _
 
   var backPressureManager: BackPressureManager = _
+  var retryStormBackoffManager: RetryStormBackoffManager = _
 
   val clientRackProvider = new DefaultClientRackProvider(config)
   // init reconfigurable before startup
@@ -447,6 +450,22 @@ class BrokerServer(
 
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
+      val retryStormBackoffConfig = RetryStormBackoffConfig.from(config)
+      val retryStormBackoffScheduler = new RetryStormDelayedResponseScheduler()
+      val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, new RetryStormBackoffStateStore())
+      val retryStormResponseGate = new RetryStormResponseGate(
+        retryStormBackoffPolicy,
+        retryStormBackoffScheduler,
+        new SampledRetryStormBackoffLogger(),
+        RetryStormResponseSummaryExtractors.DefaultRegistry
+      )
+      retryStormBackoffManager = new RetryStormBackoffManager(
+        retryStormBackoffConfig,
+        retryStormBackoffPolicy,
+        retryStormResponseGate,
+        retryStormBackoffScheduler
+      )
+
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
       dataPlaneRequestProcessor = new ElasticKafkaApis(
@@ -469,7 +488,8 @@ class BrokerServer(
         time = time,
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
-        clientMetricsManager = Some(clientMetricsManager))
+        clientMetricsManager = Some(clientMetricsManager),
+        retryStormResponseGate = Option(retryStormBackoffManager).map(_.responseGate()))
       dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setEnterpriseFacade(newEnterpriseBrokerFacade())
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
@@ -746,6 +766,9 @@ class BrokerServer(
       // AutoMQ for Kafka inject start
       if (backPressureManager != null) {
         CoreUtils.swallow(backPressureManager.shutdown(), this)
+      }
+      if (retryStormBackoffManager != null) {
+        CoreUtils.swallow(retryStormBackoffManager.shutdown(), this)
       }
 
       // https://github.com/AutoMQ/automq-for-kafka/issues/540

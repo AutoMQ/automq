@@ -22,6 +22,10 @@ package kafka.automq.retrystorm;
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigException;
 
+import kafka.server.retrystorm.RetryStormBackoffPolicy;
+import kafka.server.retrystorm.RetryStormDelayedResponseScheduler;
+import kafka.server.retrystorm.RetryStormResponseGate;
+
 import java.util.Map;
 import java.util.Set;
 
@@ -31,9 +35,22 @@ import java.util.Set;
 public class RetryStormBackoffManager implements Reconfigurable {
 
     private final RetryStormBackoffConfig config;
+    private final RetryStormBackoffPolicy policy;
+    private final RetryStormResponseGate responseGate;
+    private final RetryStormDelayedResponseScheduler scheduler;
 
     public RetryStormBackoffManager(RetryStormBackoffConfig config) {
+        this(config, null, null, null);
+    }
+
+    public RetryStormBackoffManager(RetryStormBackoffConfig config,
+                                    RetryStormBackoffPolicy policy,
+                                    RetryStormResponseGate responseGate,
+                                    RetryStormDelayedResponseScheduler scheduler) {
         this.config = config;
+        this.policy = policy;
+        this.responseGate = responseGate;
+        this.scheduler = scheduler;
     }
 
     @Override
@@ -56,9 +73,20 @@ public class RetryStormBackoffManager implements Reconfigurable {
     }
 
     public void shutdown() {
+        if (scheduler != null) {
+            scheduler.shutdown();
+        }
     }
 
     public RetryStormBackoffConfig config() {
         return config;
+    }
+
+    public RetryStormBackoffPolicy policy() {
+        return policy;
+    }
+
+    public RetryStormResponseGate responseGate() {
+        return responseGate;
     }
 }

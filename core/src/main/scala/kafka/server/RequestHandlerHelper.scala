@@ -20,6 +20,7 @@ package kafka.server
 import kafka.cluster.Partition
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.network.RequestChannel
+import kafka.server.retrystorm.{RetryStormRequestContext, RetryStormResponseGate}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.streamaspect.BrokerQuotaManager
 import org.apache.kafka.common.errors.ClusterAuthorizationException
@@ -60,7 +61,8 @@ object RequestHandlerHelper {
 class RequestHandlerHelper(
   requestChannel: RequestChannel,
   quotas: QuotaManagers,
-  time: Time
+  time: Time,
+  retryStormResponseGate: Option[RetryStormResponseGate] = None
 ) {
 
   def throttle(
@@ -109,7 +111,7 @@ class RequestHandlerHelper(
     if (response == null)
       requestChannel.closeConnection(request, requestBody.errorCounts(error))
     else
-      requestChannel.sendResponse(request, response, None)
+      sendWithRetryStormBackoff(request, response, None)
   }
 
   def sendForwardedResponse(request: RequestChannel.Request,
@@ -121,7 +123,7 @@ class RequestHandlerHelper(
     val appliedThrottleTimeMs = math.max(controllerThrottleTimeMs, requestThrottleTimeMs)
     throttle(quotas.request, request, appliedThrottleTimeMs)
     response.maybeSetThrottleTimeMs(appliedThrottleTimeMs)
-    requestChannel.sendResponse(request, response, None)
+    sendWithRetryStormBackoff(request, response, None)
   }
 
   // Throttle the channel if the request quota is enabled but has been violated. Regardless of throttling, send the
@@ -135,7 +137,7 @@ class RequestHandlerHelper(
     if (!request.isForwarded)
       throttle(quotas.request, request, throttleTimeMs)
     response.maybeSetThrottleTimeMs(throttleTimeMs)
-    requestChannel.sendResponse(request, response, None)
+    sendWithRetryStormBackoff(request, response, None)
   }
 
   def sendResponseMaybeThrottle(request: RequestChannel.Request,
@@ -144,7 +146,7 @@ class RequestHandlerHelper(
     // Only throttle non-forwarded requests
     if (!request.isForwarded)
       throttle(quotas.request, request, throttleTimeMs)
-    requestChannel.sendResponse(request, createResponse(throttleTimeMs), None)
+    sendWithRetryStormBackoff(request, createResponse(throttleTimeMs), None)
   }
 
   def sendErrorResponseMaybeThrottle(request: RequestChannel.Request, error: Throwable): Unit = {
@@ -185,14 +187,20 @@ class RequestHandlerHelper(
     }
 
     response.maybeSetThrottleTimeMs(maxThrottleTimeMs)
-    requestChannel.sendResponse(request, response, None)
+    sendWithRetryStormBackoff(request, response, None)
   }
 
   def sendResponseExemptThrottle(request: RequestChannel.Request,
                                  response: AbstractResponse,
                                  onComplete: Option[Send => Unit] = None): Unit = {
     quotas.request.maybeRecordExempt(request)
-    requestChannel.sendResponse(request, response, onComplete)
+    sendWithRetryStormBackoff(request, response, onComplete)
+  }
+
+  def sendResponseThroughRetryStormGate(request: RequestChannel.Request,
+                                        response: AbstractResponse,
+                                        onComplete: Option[Send => Unit] = None): Unit = {
+    sendWithRetryStormBackoff(request, response, onComplete)
   }
 
   private def sendErrorResponseExemptThrottle(request: RequestChannel.Request, error: Throwable): Unit = {
@@ -203,6 +211,18 @@ class RequestHandlerHelper(
   def sendNoOpResponseExemptThrottle(request: RequestChannel.Request): Unit = {
     quotas.request.maybeRecordExempt(request)
     requestChannel.sendNoOpResponse(request)
+  }
+
+  private def sendWithRetryStormBackoff(request: RequestChannel.Request,
+                                        response: AbstractResponse,
+                                        onComplete: Option[Send => Unit]): Unit = {
+    retryStormResponseGate match {
+      case Some(gate) =>
+        val context = RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
+        gate.sendOrDelay(context, request, response, () => requestChannel.sendResponse(request, response, onComplete))
+      case None =>
+        requestChannel.sendResponse(request, response, onComplete)
+    }
   }
 
 }

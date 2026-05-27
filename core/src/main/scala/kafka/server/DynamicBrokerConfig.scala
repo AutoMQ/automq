@@ -277,6 +277,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     kafkaServer match {
       case brokerServer: BrokerServer =>
         addReconfigurable(brokerServer.backPressureManager)
+        addReconfigurable(brokerServer.retryStormBackoffManager)
       case _ =>
     }
     // AutoMQ inject end
