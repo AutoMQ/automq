@@ -26,13 +26,10 @@ import kafka.server.ResourceErrorExtractor;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 
-import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.OptionalLong;
 import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Collectors;
 
 /**
  * Evaluates all-error resource views and updates per-resource retry storm backoff state.
@@ -93,20 +90,25 @@ public class RetryStormBackoffPolicy {
                                     BackoffContext context,
                                     OptionalLong delayCapMs) {
         if (!config.enabled() || !supports(apiKey) || errors.isEmpty()) {
-            return new BackoffDecision(BackoffAction.IMMEDIATE);
+            return BackoffDecision.immediate();
         }
 
         long decisionDelayMs = delayCapMs.isPresent()
             ? Math.min(config.maxDelayMs(), Math.max(delayCapMs.getAsLong(), 0L))
             : config.maxDelayMs();
-        boolean containsNonTransientError = errors.stream()
-            .anyMatch(error -> !isDelayableTransient(apiKey, Errors.forCode(error.errorCode())));
+        boolean[] delayableTransientByResource = new boolean[errors.size()];
+        boolean allErrorsDelayableTransient = true;
+        for (int i = 0; i < errors.size(); i++) {
+            boolean delayableTransient = isDelayableTransient(apiKey, Errors.forCode(errors.get(i).errorCode()));
+            delayableTransientByResource[i] = delayableTransient;
+            allErrorsDelayableTransient &= delayableTransient;
+        }
 
         long maxDelayMs = 0L;
-        Set<String> reasons = new TreeSet<>();
-        for (ResourceErrorExtractor.ResourceError error : errors) {
-            boolean delayableTransient = !containsNonTransientError
-                && isDelayableTransient(apiKey, Errors.forCode(error.errorCode()));
+        int reasonMask = 0;
+        for (int i = 0; i < errors.size(); i++) {
+            ResourceErrorExtractor.ResourceError error = errors.get(i);
+            boolean delayableTransient = allErrorsDelayableTransient && delayableTransientByResource[i];
             RetryStormBackoffStateStore.StateDecision decision = stateStore.recordAndDecide(
                 backoffKey(apiKey, error, context),
                 new RetryStormBackoffStateStore.ErrorClassSet(delayableTransient, true),
@@ -115,16 +117,14 @@ public class RetryStormBackoffPolicy {
             );
             if (decision.delayed()) {
                 maxDelayMs = Math.max(maxDelayMs, decision.delayMs());
-                reasons.addAll(Arrays.stream(decision.reason().split(","))
-                    .filter(reason -> !reason.isEmpty())
-                    .collect(Collectors.toSet()));
+                reasonMask |= decision.reasonMask();
             }
         }
 
-        if (reasons.isEmpty()) {
-            return new BackoffDecision(BackoffAction.IMMEDIATE);
+        if (reasonMask == 0) {
+            return BackoffDecision.immediate();
         }
-        return new BackoffDecision(BackoffAction.DELAYED, maxDelayMs, String.join(",", reasons));
+        return new BackoffDecision(BackoffAction.DELAYED, maxDelayMs, reasonMask);
     }
 
     /**

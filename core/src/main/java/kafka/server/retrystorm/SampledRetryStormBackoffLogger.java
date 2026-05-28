@@ -19,6 +19,7 @@
 
 package kafka.server.retrystorm;
 
+import kafka.automq.retrystorm.RetryStormBackoffStateStore;
 import kafka.server.ResourceErrorExtractor;
 
 import org.slf4j.Logger;
@@ -64,7 +65,8 @@ public class SampledRetryStormBackoffLogger implements RetryStormBackoffLogger {
                 .map(ResourceErrorExtractor.ResourceError::resource)
                 .collect(Collectors.joining(","));
             LOGGER.info("Retry storm delayed response apiKey={} delayMs={} reason={} resources={}",
-                context.apiKey(), decision.delayMs(), decision.reason(), resources);
+                context.apiKey(), decision.delayMs(),
+                RetryStormBackoffStateStore.reasonString(decision.reasonMask()), resources);
         }
     }
 }

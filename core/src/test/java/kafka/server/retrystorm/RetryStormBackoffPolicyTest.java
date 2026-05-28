@@ -74,7 +74,7 @@ public class RetryStormBackoffPolicyTest {
         assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
         BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
-        assertTrue(decision.reason().contains("delayable-transient"));
+        assertTrue((decision.reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
     }
 
     /** Given repeated delayable-transient errors for one resource, the second failure delays. */
@@ -87,7 +87,7 @@ public class RetryStormBackoffPolicyTest {
         BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(1000L, decision.delayMs());
-        assertTrue(decision.reason().contains("delayable-transient"));
+        assertTrue((decision.reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
     }
 
     /** Given protective-only errors for one resource, the sixth failure in the window delays. */
@@ -102,7 +102,7 @@ public class RetryStormBackoffPolicyTest {
         }
         BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1005L);
         assertEquals(BackoffAction.DELAYED, decision.action());
-        assertTrue(decision.reason().contains("protective-error"));
+        assertTrue((decision.reasonMask() & RetryStormBackoffStateStore.REASON_PROTECTIVE_ERROR) != 0);
     }
 
     /** Given a batch with one resource already delaying, response-level delay uses that resource decision. */
@@ -117,7 +117,7 @@ public class RetryStormBackoffPolicyTest {
         ), 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(250L, decision.delayMs());
-        assertTrue(decision.reason().contains("delayable-transient"));
+        assertTrue((decision.reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
     }
 
     /** Given mixed transient and non-transient errors, the whole response uses protective counting only. */
@@ -134,7 +134,7 @@ public class RetryStormBackoffPolicyTest {
         }
         BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1005L);
         assertEquals(BackoffAction.DELAYED, decision.action());
-        assertEquals("protective-error", decision.reason());
+        assertEquals(RetryStormBackoffStateStore.REASON_PROTECTIVE_ERROR, decision.reasonMask());
     }
 
     /** Given separate protective-only resources reach threshold, response-level delay uses the delayed resource. */
@@ -153,7 +153,7 @@ public class RetryStormBackoffPolicyTest {
         ), 1006L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(500L, decision.delayMs());
-        assertEquals("protective-error", decision.reason());
+        assertEquals(RetryStormBackoffStateStore.REASON_PROTECTIVE_ERROR, decision.reasonMask());
     }
 
     /** Given an extractor delay cap, response delay is bounded below the configured maximum. */

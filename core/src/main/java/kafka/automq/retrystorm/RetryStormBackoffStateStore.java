@@ -45,6 +45,8 @@ public class RetryStormBackoffStateStore {
     public static final long DEFAULT_RECOVERY_QUIET_MS = 1000L;
     public static final long DEFAULT_DELAY_MS = 1000L;
     public static final int DEFAULT_MAX_TRACKED_DIMENSIONS = 100000;
+    public static final int REASON_DELAYABLE_TRANSIENT = 1;
+    public static final int REASON_PROTECTIVE_ERROR = 1 << 1;
 
     private static final String DELAYABLE_TRANSIENT = "delayable-transient";
     private static final String PROTECTIVE_ERROR = "protective-error";
@@ -131,11 +133,19 @@ public class RetryStormBackoffStateStore {
         return (int) states.size();
     }
 
-    private static String joinReasons(boolean delayableReached, boolean protectiveReached) {
+    /**
+     * Converts internal retry storm reason flags into the stable log-facing reason string.
+     */
+    public static String reasonString(int reasonMask) {
+        boolean delayableReached = (reasonMask & REASON_DELAYABLE_TRANSIENT) != 0;
+        boolean protectiveReached = (reasonMask & REASON_PROTECTIVE_ERROR) != 0;
         if (delayableReached && protectiveReached) {
             return DELAYABLE_TRANSIENT + "," + PROTECTIVE_ERROR;
         }
-        return delayableReached ? DELAYABLE_TRANSIENT : PROTECTIVE_ERROR;
+        if (delayableReached) {
+            return DELAYABLE_TRANSIENT;
+        }
+        return protectiveReached ? PROTECTIVE_ERROR : "";
     }
 
     private enum Mode {
@@ -154,7 +164,7 @@ public class RetryStormBackoffStateStore {
         private final ArrayDeque<Long> delayableTransientWindow = new ArrayDeque<>(DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD);
         private final ArrayDeque<Long> protectiveWindow = new ArrayDeque<>(DEFAULT_PROTECTIVE_THRESHOLD);
         private long lastFailureMs;
-        private String delayReason = "";
+        private int delayReasonMask;
 
         private StateDecision recordAndDecide(ErrorClassSet errorClasses,
                                               long nowMs,
@@ -166,8 +176,8 @@ public class RetryStormBackoffStateStore {
                     reset();
                 } else {
                     lastFailureMs = expectedSendTimeMs(nowMs, decisionDelayMs);
-                    delayReason = errorClasses.reason();
-                    return StateDecision.delayed(decisionDelayMs, delayReason);
+                    delayReasonMask = errorClasses.reasonMask();
+                    return StateDecision.delayed(decisionDelayMs, delayReasonMask);
                 }
             }
 
@@ -178,7 +188,7 @@ public class RetryStormBackoffStateStore {
 
             if (delayableReached || protectiveReached) {
                 enterDelaying(nowMs, decisionDelayMs, delayableReached, protectiveReached);
-                return StateDecision.delayed(decisionDelayMs, delayReason);
+                return StateDecision.delayed(decisionDelayMs, delayReasonMask);
             }
 
             recordCandidate(errorClasses, nowMs);
@@ -206,7 +216,7 @@ public class RetryStormBackoffStateStore {
                                    boolean protectiveReached) {
             mode = Mode.DELAYING;
             lastFailureMs = expectedSendTimeMs(nowMs, decisionDelayMs);
-            delayReason = joinReasons(delayableReached, protectiveReached);
+            delayReasonMask = buildReasonMask(delayableReached, protectiveReached);
         }
 
         private void recordCandidate(ErrorClassSet errorClasses, long nowMs) {
@@ -217,7 +227,7 @@ public class RetryStormBackoffStateStore {
                 appendBounded(protectiveWindow, nowMs, DEFAULT_PROTECTIVE_THRESHOLD);
             }
             lastFailureMs = nowMs;
-            delayReason = errorClasses.reason();
+            delayReasonMask = errorClasses.reasonMask();
         }
 
         private void appendBounded(ArrayDeque<Long> window, long nowMs, int capacity) {
@@ -231,7 +241,7 @@ public class RetryStormBackoffStateStore {
             mode = Mode.CANDIDATE;
             delayableTransientWindow.clear();
             protectiveWindow.clear();
-            delayReason = "";
+            delayReasonMask = 0;
         }
 
         private long expectedSendTimeMs(long nowMs, long decisionDelayMs) {
@@ -280,29 +290,43 @@ public class RetryStormBackoffStateStore {
         }
 
         /**
-         * Returns the comma-separated reason labels represented by this class set.
+         * Returns the bit flags for the reason classes represented by this class set.
          */
-        public String reason() {
-            return joinReasons(delayableTransient, protective && !delayableTransient);
+        public int reasonMask() {
+            return buildReasonMask(delayableTransient, protective && !delayableTransient);
         }
     }
 
     /**
      * Resource-level policy result returned by the state store.
      */
-    public record StateDecision(boolean delayed, long delayMs, String reason) {
+    public record StateDecision(boolean delayed, long delayMs, int reasonMask) {
+        private static final StateDecision IMMEDIATE = new StateDecision(false, 0L, 0);
+
         /**
          * Returns an immediate resource decision with no delay reason.
          */
         public static StateDecision immediate() {
-            return new StateDecision(false, 0L, "");
+            return IMMEDIATE;
         }
 
         /**
          * Returns a delayed resource decision when the configured delay is positive.
          */
-        public static StateDecision delayed(long delayMs, String reason) {
-            return new StateDecision(delayMs > 0, delayMs, reason);
+        public static StateDecision delayed(long delayMs, int reasonMask) {
+            return delayMs > 0 ? new StateDecision(true, delayMs, reasonMask) : IMMEDIATE;
         }
+
+    }
+
+    private static int buildReasonMask(boolean delayable, boolean protective) {
+        int reasonMask = 0;
+        if (delayable) {
+            reasonMask |= REASON_DELAYABLE_TRANSIENT;
+        }
+        if (protective) {
+            reasonMask |= REASON_PROTECTIVE_ERROR;
+        }
+        return reasonMask;
     }
 }

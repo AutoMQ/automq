@@ -51,7 +51,7 @@ public class RetryStormBackoffStateStoreTest {
             store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1001L);
         assertTrue(second.delayed());
         assertEquals(1000L, second.delayMs());
-        assertTrue(second.reason().contains("delayable-transient"));
+        assertTrue((second.reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
     }
 
     /**

@@ -115,7 +115,7 @@ public class RetryStormResponseGateTest {
         }
 
         @Override
-        public void schedule(Object request, Object response, long delayMs, String reason, Runnable sendNow) {
+        public void schedule(Object request, Object response, long delayMs, Runnable sendNow) {
             scheduled.incrementAndGet();
         }
     }

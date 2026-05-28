@@ -23,24 +23,33 @@ package kafka.server.retrystorm;
  * Response-level policy decision returned to the response gate.
  */
 public class BackoffDecision {
+    private static final BackoffDecision IMMEDIATE = new BackoffDecision(BackoffAction.IMMEDIATE);
+
     private final BackoffAction action;
     private final long delayMs;
-    private final String reason;
+    private final int reasonMask;
 
     /**
-     * Creates an immediate response decision.
+     * Creates a response decision without delayed-response reason flags.
      */
     public BackoffDecision(BackoffAction action) {
-        this(action, 0L, "");
+        this(action, 0L, 0);
     }
 
     /**
-     * Creates a policy decision with the response action, selected delay, and combined reason.
+     * Creates a policy decision with the response action, selected delay, and combined reason flags.
      */
-    public BackoffDecision(BackoffAction action, long delayMs, String reason) {
+    public BackoffDecision(BackoffAction action, long delayMs, int reasonMask) {
         this.action = action;
         this.delayMs = delayMs;
-        this.reason = reason;
+        this.reasonMask = reasonMask;
+    }
+
+    /**
+     * Returns the shared immediate decision instance.
+     */
+    public static BackoffDecision immediate() {
+        return IMMEDIATE;
     }
 
     /**
@@ -58,10 +67,10 @@ public class BackoffDecision {
     }
 
     /**
-     * Returns a comma-separated reason string describing delayed resource classes.
+     * Returns the internal reason bit flags used for response-level aggregation.
      */
-    public String reason() {
-        return reason;
+    public int reasonMask() {
+        return reasonMask;
     }
 
     /**
