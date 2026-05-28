@@ -194,6 +194,7 @@ public class AutoMQConfig {
 
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
     private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
+    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX = "automq.table.topic.schema.registry.config.";
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
