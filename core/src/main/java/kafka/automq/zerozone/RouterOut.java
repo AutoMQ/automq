@@ -277,6 +277,12 @@ public class RouterOut {
     private void handleRouterResponse(AutomqZoneRouterResponse zoneRouterResponse,
         List<ProxyRequest> proxyRequests) {
         List<AutomqZoneRouterResponseData.Response> responses = zoneRouterResponse.data().responses();
+        if (responses.size() != proxyRequests.size()) {
+            LOGGER.error("[ROUTER_OUT],[SIZE_MISMATCH] Expected {} responses but got {}, completing all requests with error",
+                proxyRequests.size(), responses.size());
+            proxyRequests.forEach(ProxyRequest::completeWithUnknownError);
+            return;
+        }
         for (int i = 0; i < proxyRequests.size(); i++) {
             ProxyRequest proxyRequest = proxyRequests.get(i);
             AutomqZoneRouterResponseData.Response response = responses.get(i);
