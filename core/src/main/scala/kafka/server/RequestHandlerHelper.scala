@@ -20,7 +20,6 @@ package kafka.server
 import kafka.cluster.Partition
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.network.RequestChannel
-import kafka.server.retrystorm.{RetryStormRequestContext, RetryStormResponseGate}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.streamaspect.BrokerQuotaManager
 import org.apache.kafka.common.errors.ClusterAuthorizationException
@@ -61,8 +60,7 @@ object RequestHandlerHelper {
 class RequestHandlerHelper(
   requestChannel: RequestChannel,
   quotas: QuotaManagers,
-  time: Time,
-  retryStormResponseGate: Option[RetryStormResponseGate] = None
+  time: Time
 ) {
 
   def throttle(
@@ -219,17 +217,7 @@ class RequestHandlerHelper(
   private def sendWithRetryStormBackoff(request: RequestChannel.Request,
                                         response: AbstractResponse,
                                         onComplete: Option[Send => Unit]): Unit = {
-    if (request.isForwarded) {
-      requestChannel.sendResponse(request, response, onComplete)
-      return
-    }
-    retryStormResponseGate match {
-      case Some(gate) =>
-        val context = new RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
-        gate.sendOrDelay(context, request, response, () => requestChannel.sendResponse(request, response, onComplete))
-      case None =>
-        requestChannel.sendResponse(request, response, onComplete)
-    }
+    requestChannel.sendResponse(request, response, onComplete)
   }
 
 }

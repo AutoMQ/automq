@@ -207,7 +207,6 @@ public class KafkaApisBuilder {
                              apiVersionManager,
                              OptionConverters.toScala(clientMetricsManager),
                              Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-async-handle-executor-%d", true)),
-                             Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true)),
-                             scala.Option.empty());
+                             Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory("kafka-apis-list-offset-handle-executor-%d", true)));
     }
 }

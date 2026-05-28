@@ -19,9 +19,9 @@
 
 package kafka.server.retrystorm;
 
-import org.apache.kafka.common.protocol.ApiKeys;
+import kafka.server.ResourceErrorExtractor;
 
-import java.util.Map;
+import java.util.OptionalLong;
 
 /**
  * Wraps final response sending with retry storm policy evaluation.
@@ -34,42 +34,42 @@ public class RetryStormResponseGate {
     private final RetryStormBackoffPolicy policy;
     private final RetryStormDelayedResponseScheduler scheduler;
     private final RetryStormBackoffLogger logger;
-    private final Map<ApiKeys, RetryStormResponseSummaryExtractor> extractorRegistry;
 
     /**
-     * Creates a response gate over policy, scheduler, logger, and API-specific summary extractors.
+     * Creates a response gate over policy, scheduler, and logger.
      */
     public RetryStormResponseGate(RetryStormBackoffPolicy policy,
                                   RetryStormDelayedResponseScheduler scheduler,
-                                  RetryStormBackoffLogger logger,
-                                  Map<ApiKeys, RetryStormResponseSummaryExtractor> extractorRegistry) {
+                                  RetryStormBackoffLogger logger) {
         this.policy = policy;
         this.scheduler = scheduler;
         this.logger = logger;
-        this.extractorRegistry = extractorRegistry;
     }
 
     /**
-     * Sends a response immediately or schedules the supplied final-send callback after policy delay.
+     * Sends or delays a response using a shared resource error view extracted by RequestChannel.
      */
-    public void sendOrDelay(RetryStormRequestContext context, Object request, Object response, Runnable sendNow) {
-        RetryStormResponseSummaryExtractor extractor = extractorRegistry.get(context.apiKey());
-        if (extractor == null) {
+    public void sendOrDelay(RetryStormRequestContext context,
+                            ResourceErrorExtractor.ResourceErrorView errorView,
+                            OptionalLong delayCapMs,
+                            Object request,
+                            Object response,
+                            Runnable sendNow) {
+        if (!errorView.allErrorCandidate() || !policy.supports(context.apiKey())) {
             sendNow.run();
             return;
         }
 
-        ResponseSummary summary = extractor.apply(request, response);
         BackoffDecision decision = policy.evaluate(
             context.apiKey(),
-            new RequestSummary(),
-            summary,
-            new BackoffContext(context.clientScope(), context.nowMs())
+            errorView.errors(),
+            new BackoffContext(context.clientScope(), context.nowMs()),
+            delayCapMs
         );
         if (decision.action() == BackoffAction.IMMEDIATE) {
             sendNow.run();
         } else {
-            logger.logDelayed(context, summary, decision);
+            logger.logDelayed(context, errorView.errors(), decision);
             scheduler.schedule(request, response, decision.delayMs(), decision.reason(), sendNow);
         }
     }

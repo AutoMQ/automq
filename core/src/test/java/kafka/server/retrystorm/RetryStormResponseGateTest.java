@@ -21,74 +21,90 @@ package kafka.server.retrystorm;
 
 import kafka.automq.retrystorm.RetryStormBackoffConfig;
 import kafka.automq.retrystorm.RetryStormBackoffStateStore;
+import kafka.server.ResourceErrorExtractor;
 
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/** Covers response gate integration across extractor, policy, logger, scheduler, and final send callback. */
+/** Covers response gate integration across extracted error view, policy, logger, scheduler, and final send callback. */
 @Tag("S3Unit")
 public class RetryStormResponseGateTest {
 
-    /** Given a valid response summary, gate bypasses scheduler and sends immediately. */
+    /** Given an empty error view, gate bypasses policy and sends immediately. */
     @Test
     public void testImmediatePathSendsNow() {
         AtomicInteger sends = new AtomicInteger(0);
         CapturingScheduler scheduler = new CapturingScheduler();
-        RetryStormResponseGate gate = newGate(
-            responseSummary(new ResourceResult("topic-0", true, false, false)),
-            scheduler,
-            RetryStormBackoffLogger.NOOP
-        );
+        RetryStormResponseGate gate = newGate(scheduler, RetryStormBackoffLogger.NOOP);
 
         gate.sendOrDelay(new RetryStormRequestContext(ApiKeys.PRODUCE, "connection-1", 1000L),
-            "request", "response", sends::incrementAndGet);
+            ResourceErrorExtractor.ResourceErrorView.empty(), OptionalLong.empty(), "request", "response", sends::incrementAndGet);
 
         assertEquals(1, sends.get());
         assertEquals(0, scheduler.scheduled.get());
     }
 
-    /** Given repeated transient errors, gate logs and schedules the second response while first is immediate. */
+    /** Given repeated transient all-error views, gate logs and schedules the second response while first is immediate. */
     @Test
     public void testDelayedPathSchedulesAndLogs() {
         AtomicInteger sends = new AtomicInteger(0);
         CapturingScheduler scheduler = new CapturingScheduler();
         CapturingLogger logger = new CapturingLogger();
-        ResponseSummary summary = responseSummary(new ResourceResult("topic-0", false, true, true));
-        RetryStormResponseGate gate = newGate(summary, scheduler, logger);
+        RetryStormResponseGate gate = newGate(scheduler, logger);
+        ResourceErrorExtractor.ResourceErrorView allError = allErrorView();
 
         gate.sendOrDelay(new RetryStormRequestContext(ApiKeys.PRODUCE, "connection-1", 1000L),
-            "request", "response", sends::incrementAndGet);
+            allError, OptionalLong.empty(), "request", "response", sends::incrementAndGet);
         gate.sendOrDelay(new RetryStormRequestContext(ApiKeys.PRODUCE, "connection-1", 1001L),
-            "request", "response", sends::incrementAndGet);
+            allError, OptionalLong.empty(), "request", "response", sends::incrementAndGet);
 
         assertEquals(1, sends.get());
         assertEquals(1, scheduler.scheduled.get());
         assertEquals(1, logger.logged.get());
     }
 
-    private static RetryStormResponseGate newGate(ResponseSummary summary,
-                                                  CapturingScheduler scheduler,
+    /** Given partial success has errors but is not all-error, gate sends immediately without updating state. */
+    @Test
+    public void testNonAllErrorViewDoesNotUpdatePolicyState() {
+        AtomicInteger sends = new AtomicInteger(0);
+        CapturingScheduler scheduler = new CapturingScheduler();
+        RetryStormResponseGate gate = newGate(scheduler, RetryStormBackoffLogger.NOOP);
+        ResourceErrorExtractor.ResourceErrorView partial =
+            new ResourceErrorExtractor.ResourceErrorView(false, List.of(
+                new ResourceErrorExtractor.ResourceError(Errors.NOT_LEADER_OR_FOLLOWER.code(), "topic-0")
+            ));
+        ResourceErrorExtractor.ResourceErrorView allError = allErrorView();
+
+        gate.sendOrDelay(new RetryStormRequestContext(ApiKeys.PRODUCE, "connection-1", 1000L),
+            partial, OptionalLong.empty(), "request", "response", sends::incrementAndGet);
+        gate.sendOrDelay(new RetryStormRequestContext(ApiKeys.PRODUCE, "connection-1", 1001L),
+            allError, OptionalLong.empty(), "request", "response", sends::incrementAndGet);
+
+        assertEquals(2, sends.get());
+        assertEquals(0, scheduler.scheduled.get());
+    }
+
+    private static RetryStormResponseGate newGate(CapturingScheduler scheduler,
                                                   RetryStormBackoffLogger logger) {
         RetryStormBackoffPolicy policy = new RetryStormBackoffPolicy(
             new RetryStormBackoffConfig(true, 1000L),
             new RetryStormBackoffStateStore()
         );
-        Map<ApiKeys, RetryStormResponseSummaryExtractor> extractors = Map.of(
-            ApiKeys.PRODUCE,
-            (request, response) -> summary
-        );
-        return new RetryStormResponseGate(policy, scheduler, logger, extractors);
+        return new RetryStormResponseGate(policy, scheduler, logger);
     }
 
-    private static ResponseSummary responseSummary(ResourceResult resource) {
-        return new ResponseSummary(List.of(resource));
+    private static ResourceErrorExtractor.ResourceErrorView allErrorView() {
+        return new ResourceErrorExtractor.ResourceErrorView(true, List.of(
+            new ResourceErrorExtractor.ResourceError(Errors.NOT_LEADER_OR_FOLLOWER.code(), "topic-0")
+        ));
     }
 
     private static class CapturingScheduler extends RetryStormDelayedResponseScheduler {
@@ -108,7 +124,9 @@ public class RetryStormResponseGateTest {
         private final AtomicInteger logged = new AtomicInteger(0);
 
         @Override
-        public void logDelayed(RetryStormRequestContext context, ResponseSummary responseSummary, BackoffDecision decision) {
+        public void logDelayed(RetryStormRequestContext context,
+                               List<ResourceErrorExtractor.ResourceError> errors,
+                               BackoffDecision decision) {
             logged.incrementAndGet();
         }
     }

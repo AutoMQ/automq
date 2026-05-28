@@ -98,20 +98,6 @@ public class RetryStormBackoffStateStoreTest {
     }
 
     /**
-     * Given a resource reached delaying mode, a valid result clear makes the next error immediate again.
-     */
-    @Test
-    public void testClearResetsState() {
-        RetryStormBackoffStateStore store = newStore();
-
-        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1000L);
-        assertTrue(store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1001L).delayed());
-
-        store.clear(KEY);
-        assertFalse(store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1002L).delayed());
-    }
-
-    /**
      * Given a delaying resource has been quiet past recovery timeout, the next error restarts candidate mode.
      */
     @Test

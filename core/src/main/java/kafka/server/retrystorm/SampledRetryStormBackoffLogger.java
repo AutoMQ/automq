@@ -19,9 +19,12 @@
 
 package kafka.server.retrystorm;
 
+import kafka.server.ResourceErrorExtractor;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
@@ -52,11 +55,13 @@ public class SampledRetryStormBackoffLogger implements RetryStormBackoffLogger {
      * Logs selected delayed response decisions with API key, delay, reason, and affected resources.
      */
     @Override
-    public void logDelayed(RetryStormRequestContext context, ResponseSummary responseSummary, BackoffDecision decision) {
+    public void logDelayed(RetryStormRequestContext context,
+                           List<ResourceErrorExtractor.ResourceError> errors,
+                           BackoffDecision decision) {
         long count = delayedDecisions.incrementAndGet();
         if (sampleEvery <= 1 || count == 1 || count % sampleEvery == 0) {
-            String resources = responseSummary.resources().stream()
-                .map(ResourceResult::resourceKey)
+            String resources = errors.stream()
+                .map(ResourceErrorExtractor.ResourceError::resource)
                 .collect(Collectors.joining(","));
             LOGGER.info("Retry storm delayed response apiKey={} delayMs={} reason={} resources={}",
                 context.apiKey(), decision.delayMs(), decision.reason(), resources);

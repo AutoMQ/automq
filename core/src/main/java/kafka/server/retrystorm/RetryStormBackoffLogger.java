@@ -19,15 +19,21 @@
 
 package kafka.server.retrystorm;
 
+import kafka.server.ResourceErrorExtractor;
+
+import java.util.List;
+
 /**
  * Emits sampled retry storm delayed-response decisions.
  */
 public interface RetryStormBackoffLogger {
-    RetryStormBackoffLogger NOOP = (context, responseSummary, decision) -> {
+    RetryStormBackoffLogger NOOP = (context, errors, decision) -> {
     };
 
     /**
-     * Logs a delayed response decision after the policy selected a response-level delay.
+     * Logs a delayed response decision with the resource errors that contributed to the decision.
      */
-    void logDelayed(RetryStormRequestContext context, ResponseSummary responseSummary, BackoffDecision decision);
+    void logDelayed(RetryStormRequestContext context,
+                    List<ResourceErrorExtractor.ResourceError> errors,
+                    BackoffDecision decision);
 }

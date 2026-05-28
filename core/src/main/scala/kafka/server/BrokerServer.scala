@@ -34,7 +34,7 @@ import kafka.log.streamaspect.ElasticLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.retrystorm.{RetryStormBackoffPolicy, RetryStormDelayedResponseScheduler, RetryStormResponseGate, RetryStormResponseSummaryExtractors, SampledRetryStormBackoffLogger}
+import kafka.server.retrystorm.{RetryStormBackoffPolicy, RetryStormDelayedResponseScheduler, RetryStormResponseGate, SampledRetryStormBackoffLogger}
 import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
 import org.apache.kafka.clients.admin.ClusterEventPublisher
@@ -456,8 +456,7 @@ class BrokerServer(
       val retryStormResponseGate = new RetryStormResponseGate(
         retryStormBackoffPolicy,
         retryStormBackoffScheduler,
-        new SampledRetryStormBackoffLogger(),
-        RetryStormResponseSummaryExtractors.DEFAULT_REGISTRY
+        new SampledRetryStormBackoffLogger()
       )
       retryStormBackoffManager = new RetryStormBackoffManager(
         retryStormBackoffConfig,
@@ -465,6 +464,7 @@ class BrokerServer(
         retryStormResponseGate,
         retryStormBackoffScheduler
       )
+      socketServer.dataPlaneRequestChannel.setRetryStormResponseGate(retryStormResponseGate)
 
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
@@ -488,8 +488,7 @@ class BrokerServer(
         time = time,
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
-        clientMetricsManager = Some(clientMetricsManager),
-        retryStormResponseGate = Option(retryStormBackoffManager).map(_.responseGate()))
+        clientMetricsManager = Some(clientMetricsManager))
       dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setEnterpriseFacade(newEnterpriseBrokerFacade())
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,

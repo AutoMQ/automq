@@ -22,8 +22,10 @@ package kafka.server.retrystorm;
 import kafka.automq.AutoMQConfig;
 import kafka.automq.retrystorm.RetryStormBackoffConfig;
 import kafka.automq.retrystorm.RetryStormBackoffStateStore;
+import kafka.server.ResourceErrorExtractor;
 
 import org.apache.kafka.common.protocol.ApiKeys;
+import org.apache.kafka.common.protocol.Errors;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -43,41 +45,46 @@ public class RetryStormBackoffPolicyTest {
     public void testDisabledConfigReturnsImmediateWithoutStateUpdate() {
         RetryStormBackoffConfig config = new RetryStormBackoffConfig(false, 1000L);
         RetryStormBackoffPolicy policy = newPolicy(config);
-        BackoffContext context = new BackoffContext("connection-1", 1000L);
-        ResponseSummary response = responseSummary(resource("topic-0", false, true, true));
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
 
-        assertEquals(BackoffAction.IMMEDIATE, policy.evaluate(ApiKeys.PRODUCE, new RequestSummary(), response, context).action());
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
 
         config.update(Map.of(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG, true));
-        assertEquals(BackoffAction.IMMEDIATE, policy.evaluate(
-            ApiKeys.PRODUCE,
-            new RequestSummary(),
-            response,
-            new BackoffContext("connection-1", 1001L)
-        ).action());
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1001L).action());
     }
 
-    /** Given a resource reaches delay, a later valid result clears state so the next error is immediate. */
+    /** Given state is error-driven, skipped success or partial-success responses do not clear delaying state. */
     @Test
-    public void testValidResultClearsState() {
+    public void testSkippedValidResultDoesNotClearState() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary error = responseSummary(resource("topic-0", false, true, true));
-        ResponseSummary valid = responseSummary(resource("topic-0", true, false, false));
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
 
-        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, error, 1000L).action());
-        assertEquals(BackoffAction.DELAYED, evaluate(policy, error, 1001L).action());
-        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, valid, 1002L).action());
-        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, error, 1003L).action());
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
+        assertEquals(BackoffAction.DELAYED, evaluate(policy, ApiKeys.PRODUCE, errors, 1001L).action());
+        BackoffDecision stillDelayed = evaluate(policy, ApiKeys.PRODUCE, errors, 1003L);
+        assertEquals(BackoffAction.DELAYED, stillDelayed.action());
+    }
+
+    /** Given resource errors, policy derives retry storm classifications from api key and error code. */
+    @Test
+    public void testPolicyClassifiesResourceErrors() {
+        RetryStormBackoffPolicy policy = newPolicy();
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
+
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1001L);
+        assertEquals(BackoffAction.DELAYED, decision.action());
+        assertTrue(decision.reason().contains("delayable-transient"));
     }
 
     /** Given repeated delayable-transient errors for one resource, the second failure delays. */
     @Test
     public void testDelayableTransientSecondFailureDelays() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary response = responseSummary(resource("topic-0", false, true, true));
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
 
-        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, response, 1000L).action());
-        BackoffDecision decision = evaluate(policy, response, 1001L);
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(1000L, decision.delayMs());
         assertTrue(decision.reason().contains("delayable-transient"));
@@ -87,12 +94,13 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testProtectiveSixthFailureDelays() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary response = responseSummary(resource("topic-0", false, false, true));
+        List<ResourceErrorExtractor.ResourceError> errors =
+            List.of(error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-0"));
 
         for (int i = 0; i < 5; i++) {
-            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, response, 1000L + i).action());
+            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L + i).action());
         }
-        BackoffDecision decision = evaluate(policy, response, 1005L);
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1005L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertTrue(decision.reason().contains("protective-error"));
     }
@@ -101,22 +109,12 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testBatchAggregatesDelayedResources() {
         RetryStormBackoffPolicy policy = newPolicy(new RetryStormBackoffConfig(true, 250L));
-        policy.evaluate(
-            ApiKeys.PRODUCE,
-            new RequestSummary(),
-            responseSummary(resource("topic-0", false, true, true)),
-            new BackoffContext("connection-1", 1000L)
-        );
+        evaluate(policy, ApiKeys.PRODUCE, leaderErrors("topic-0"), 1000L);
 
-        BackoffDecision decision = policy.evaluate(
-            ApiKeys.PRODUCE,
-            new RequestSummary(),
-            responseSummary(
-                resource("topic-0", false, true, true),
-                resource("topic-1", false, true, true)
-            ),
-            new BackoffContext("connection-1", 1001L)
-        );
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, List.of(
+            error(Errors.NOT_LEADER_OR_FOLLOWER, "topic-0"),
+            error(Errors.NOT_LEADER_OR_FOLLOWER, "topic-1")
+        ), 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(250L, decision.delayMs());
         assertTrue(decision.reason().contains("delayable-transient"));
@@ -126,15 +124,15 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testMixedTransientAndNonTransientBatchUsesProtectiveThresholdOnly() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary response = responseSummary(
-            resource("topic-0", false, true, true),
-            resource("topic-1", false, false, true)
+        List<ResourceErrorExtractor.ResourceError> errors = List.of(
+            error(Errors.NOT_LEADER_OR_FOLLOWER, "topic-0"),
+            error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-1")
         );
 
         for (int i = 0; i < 5; i++) {
-            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, response, 1000L + i).action());
+            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L + i).action());
         }
-        BackoffDecision decision = evaluate(policy, response, 1005L);
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1005L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals("protective-error", decision.reason());
     }
@@ -143,24 +141,16 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testBatchAggregatesProtectiveResourceReasons() {
         RetryStormBackoffPolicy policy = newPolicy(new RetryStormBackoffConfig(true, 500L));
+        List<ResourceErrorExtractor.ResourceError> seeded =
+            List.of(error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-1"));
         for (int i = 0; i < 5; i++) {
-            assertEquals(BackoffAction.IMMEDIATE, policy.evaluate(
-                ApiKeys.PRODUCE,
-                new RequestSummary(),
-                responseSummary(resource("topic-1", false, false, true)),
-                new BackoffContext("connection-1", 1000L + i)
-            ).action());
+            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, seeded, 1000L + i).action());
         }
 
-        BackoffDecision decision = policy.evaluate(
-            ApiKeys.PRODUCE,
-            new RequestSummary(),
-            responseSummary(
-                resource("topic-0", false, false, true),
-                resource("topic-1", false, false, true)
-            ),
-            new BackoffContext("connection-1", 1006L)
-        );
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, List.of(
+            error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-0"),
+            error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-1")
+        ), 1006L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(500L, decision.delayMs());
         assertEquals("protective-error", decision.reason());
@@ -170,13 +160,10 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testResponseDelayCapLimitsDecisionDelay() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary response = new ResponseSummary(
-            List.of(resource("topic-0", false, true, true)),
-            OptionalLong.of(25L)
-        );
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
 
-        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, response, 1000L).action());
-        BackoffDecision decision = evaluateFetch(policy, response, 1001L);
+        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, errors, OptionalLong.of(25L), 1000L).action());
+        BackoffDecision decision = evaluateFetch(policy, errors, OptionalLong.of(25L), 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(25L, decision.delayMs());
     }
@@ -185,33 +172,47 @@ public class RetryStormBackoffPolicyTest {
     @Test
     public void testZeroResponseDelayCapUpdatesStateButReturnsImmediate() {
         RetryStormBackoffPolicy policy = newPolicy();
-        ResponseSummary capped = new ResponseSummary(
-            List.of(resource("topic-0", false, true, true)),
-            OptionalLong.of(0L)
-        );
-        ResponseSummary uncapped = responseSummary(resource("topic-0", false, true, true));
+        List<ResourceErrorExtractor.ResourceError> errors = leaderErrors("topic-0");
 
-        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, capped, 1000L).action());
-        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, capped, 1001L).action());
-        BackoffDecision decision = evaluateFetch(policy, uncapped, 1002L);
+        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, errors, OptionalLong.of(0L), 1000L).action());
+        assertEquals(BackoffAction.IMMEDIATE, evaluateFetch(policy, errors, OptionalLong.of(0L), 1001L).action());
+        BackoffDecision decision = evaluateFetch(policy, errors, OptionalLong.empty(), 1002L);
         assertEquals(BackoffAction.DELAYED, decision.action());
         assertEquals(1000L, decision.delayMs());
     }
 
-    private static BackoffDecision evaluate(RetryStormBackoffPolicy policy, ResponseSummary response, long nowMs) {
-        return policy.evaluate(ApiKeys.PRODUCE, new RequestSummary(), response, new BackoffContext("connection-1", nowMs));
+    /** Given an unsupported API has resource errors, policy does not update state or delay. */
+    @Test
+    public void testUnsupportedApiReturnsImmediateWithoutStateUpdate() {
+        RetryStormBackoffPolicy policy = newPolicy();
+        List<ResourceErrorExtractor.ResourceError> errors =
+            List.of(error(Errors.COORDINATOR_NOT_AVAILABLE, "group-a"));
+
+        for (int i = 0; i < 10; i++) {
+            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.HEARTBEAT, errors, 1000L + i).action());
+        }
     }
 
-    private static BackoffDecision evaluateFetch(RetryStormBackoffPolicy policy, ResponseSummary response, long nowMs) {
-        return policy.evaluate(ApiKeys.FETCH, new RequestSummary(), response, new BackoffContext("connection-1", nowMs));
+    private static BackoffDecision evaluate(RetryStormBackoffPolicy policy,
+                                            ApiKeys apiKey,
+                                            List<ResourceErrorExtractor.ResourceError> errors,
+                                            long nowMs) {
+        return policy.evaluate(apiKey, errors, new BackoffContext("connection-1", nowMs), OptionalLong.empty());
     }
 
-    private static ResponseSummary responseSummary(ResourceResult... resources) {
-        return new ResponseSummary(List.of(resources));
+    private static BackoffDecision evaluateFetch(RetryStormBackoffPolicy policy,
+                                                 List<ResourceErrorExtractor.ResourceError> errors,
+                                                 OptionalLong delayCapMs,
+                                                 long nowMs) {
+        return policy.evaluate(ApiKeys.FETCH, errors, new BackoffContext("connection-1", nowMs), delayCapMs);
     }
 
-    private static ResourceResult resource(String resourceKey, boolean valid, boolean delayableTransient, boolean protective) {
-        return new ResourceResult(resourceKey, valid, delayableTransient, protective);
+    private static List<ResourceErrorExtractor.ResourceError> leaderErrors(String resource) {
+        return List.of(error(Errors.NOT_LEADER_OR_FOLLOWER, resource));
+    }
+
+    private static ResourceErrorExtractor.ResourceError error(Errors error, String resource) {
+        return new ResourceErrorExtractor.ResourceError(error.code(), resource);
     }
 
     private static RetryStormBackoffPolicy newPolicy() {

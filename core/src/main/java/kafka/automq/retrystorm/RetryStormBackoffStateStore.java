@@ -29,9 +29,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * Maintains per-resource retry storm backoff state for policy evaluation.
  *
  * <p>Each key tracks independent delayable-transient and protective-error windows,
- * plus a delaying mode that keeps delaying repeated failures until a valid result
- * clears the key or quiet time expires. The store owns state lifecycle while each
- * {@link BackoffState} owns its per-resource state machine and synchronization.</p>
+ * plus a delaying mode that keeps delaying repeated failures until quiet time expires.
+ * The store owns state lifecycle while each {@link BackoffState} owns its per-resource
+ * state machine and synchronization.</p>
  */
 public class RetryStormBackoffStateStore {
     public static final int DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD = 1;
@@ -100,24 +100,6 @@ public class RetryStormBackoffStateStore {
                     continue;
                 }
                 return state.recordAndDecide(errorClasses, nowMs, decisionDelayMs, slidingWindowMs, recoveryQuietMs);
-            }
-        }
-    }
-
-    /**
-     * Removes all retry storm state for a resource after a valid response result.
-     */
-    public void clear(BackoffKey key) {
-        while (true) {
-            BackoffState state = states.get(key);
-            if (state == null) {
-                return;
-            }
-            synchronized (state) {
-                if (states.remove(key, state)) {
-                    state.reset();
-                    return;
-                }
             }
         }
     }
