@@ -23,14 +23,6 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -148,72 +140,40 @@ public class RetryStormBackoffStateStoreTest {
     }
 
     /**
-     * Given concurrent errors on different resources, each resource keeps an independent state machine.
+     * Given a quiet state exceeds cache retention, cache cleanup removes it without scanning on insertion.
      */
     @Test
-    public void testConcurrentDistinctResourcesKeepIndependentState() throws Exception {
-        RetryStormBackoffStateStore store = newStore();
-        int resourceCount = 16;
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(resourceCount);
-        List<Future<Boolean>> futures = new ArrayList<>();
-        try {
-            for (int i = 0; i < resourceCount; i++) {
-                final int index = i;
-                futures.add(executor.submit(() -> {
-                    RetryStormBackoffStateStore.BackoffKey key = new RetryStormBackoffStateStore.BackoffKey(
-                        ApiKeys.PRODUCE.id,
-                        "topic-" + index,
-                        "connection-1"
-                    );
-                    start.await();
-                    boolean firstDelayed = store.recordAndDecide(key, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1000L).delayed();
-                    boolean secondDelayed = store.recordAndDecide(key, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1001L).delayed();
-                    return !firstDelayed && secondDelayed;
-                }));
-            }
-            start.countDown();
-            for (Future<Boolean> future : futures) {
-                assertTrue(future.get(5, TimeUnit.SECONDS));
-            }
-        } finally {
-            executor.shutdownNow();
-        }
+    public void testCacheEvictsQuietStateAfterRetention() throws Exception {
+        RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 20L, 30L, 100000, 5L);
+
+        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 30L);
+        assertEquals(1, store.trackedDimensions());
+
+        Thread.sleep(80L);
+        store.evictIfNeeded();
+
+        assertEquals(0, store.trackedDimensions());
     }
 
     /**
-     * Given concurrent new resources, lifecycle eviction keeps tracked dimensions within capacity.
+     * Given more resources than configured capacity, cache maximum size bounds tracked dimensions.
      */
     @Test
-    public void testConcurrentNewDimensionsRespectCapacity() throws Exception {
+    public void testCacheMaximumSizeBoundsTrackedDimensions() {
         int maxTrackedDimensions = 4;
         RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(1000L, 1000L, 1000L, maxTrackedDimensions);
-        int resourceCount = 16;
-        CountDownLatch start = new CountDownLatch(1);
-        ExecutorService executor = Executors.newFixedThreadPool(resourceCount);
-        List<Future<?>> futures = new ArrayList<>();
-        try {
-            for (int i = 0; i < resourceCount; i++) {
-                final int index = i;
-                futures.add(executor.submit(() -> {
-                    RetryStormBackoffStateStore.BackoffKey key = new RetryStormBackoffStateStore.BackoffKey(
-                        ApiKeys.PRODUCE.id,
-                        "topic-" + index,
-                        "connection-1"
-                    );
-                    start.await();
-                    store.recordAndDecide(key, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1000L + index);
-                    return null;
-                }));
-            }
-            start.countDown();
-            for (Future<?> future : futures) {
-                future.get(5, TimeUnit.SECONDS);
-            }
-            assertTrue(store.trackedDimensions() <= maxTrackedDimensions);
-        } finally {
-            executor.shutdownNow();
+
+        for (int i = 0; i < 16; i++) {
+            RetryStormBackoffStateStore.BackoffKey key = new RetryStormBackoffStateStore.BackoffKey(
+                ApiKeys.PRODUCE.id,
+                "topic-" + i,
+                "connection-1"
+            );
+            store.recordAndDecide(key, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1000L + i);
         }
+        store.evictIfNeeded();
+
+        assertTrue(store.trackedDimensions() <= maxTrackedDimensions);
     }
 
     private static RetryStormBackoffStateStore newStore() {

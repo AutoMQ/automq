@@ -19,19 +19,24 @@
 
 package kafka.automq.retrystorm;
 
+import kafka.automq.AutoMQConfig;
+
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+
 import java.util.ArrayDeque;
 import java.util.Iterator;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Maintains per-resource retry storm backoff state for policy evaluation.
  *
  * <p>Each key tracks independent delayable-transient and protective-error windows,
  * plus a delaying mode that keeps delaying repeated failures until quiet time expires.
- * The store owns state lifecycle while each {@link BackoffState} owns its per-resource
- * state machine and synchronization.</p>
+ * The store owns state lifecycle through a bounded Guava cache while each
+ * {@link BackoffState} owns its per-resource state machine and synchronization.</p>
  */
 public class RetryStormBackoffStateStore {
     public static final int DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD = 1;
@@ -47,9 +52,7 @@ public class RetryStormBackoffStateStore {
     private final long slidingWindowMs;
     private final long recoveryQuietMs;
     private final long defaultDelayMs;
-    private final int maxTrackedDimensions;
-    private final ConcurrentHashMap<BackoffKey, BackoffState> states;
-    private final Object lifecycleLock = new Object();
+    private final LoadingCache<BackoffKey, BackoffState> states;
 
     /**
      * Creates a store with production retry storm thresholds and capacity.
@@ -64,17 +67,35 @@ public class RetryStormBackoffStateStore {
      * @param slidingWindowMs logical window used before a dimension enters delaying mode
      * @param recoveryQuietMs quiet time after the latest expected send time before a dimension returns to candidate mode
      * @param delayMs default delay returned by {@link #recordAndDecide(BackoffKey, ErrorClassSet, long)}
-     * @param maxTrackedDimensions maximum number of dimensions retained before oldest-state eviction
+     * @param maxTrackedDimensions maximum number of dimensions retained by the state cache
      */
     public RetryStormBackoffStateStore(long slidingWindowMs, long recoveryQuietMs, long delayMs, int maxTrackedDimensions) {
+        this(slidingWindowMs, recoveryQuietMs, delayMs, maxTrackedDimensions, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX);
+    }
+
+    RetryStormBackoffStateStore(long slidingWindowMs,
+                                long recoveryQuietMs,
+                                long delayMs,
+                                int maxTrackedDimensions,
+                                long stateRetentionDelayMs) {
         if (maxTrackedDimensions <= 0) {
             throw new IllegalArgumentException("maxTrackedDimensions must be positive");
+        }
+        if (recoveryQuietMs < 0 || stateRetentionDelayMs < 0) {
+            throw new IllegalArgumentException("state retention timing must be non-negative");
         }
         this.slidingWindowMs = slidingWindowMs;
         this.recoveryQuietMs = recoveryQuietMs;
         this.defaultDelayMs = delayMs;
-        this.maxTrackedDimensions = maxTrackedDimensions;
-        this.states = new ConcurrentHashMap<>();
+        this.states = CacheBuilder.newBuilder()
+            .maximumSize(maxTrackedDimensions)
+            .expireAfterAccess(recoveryQuietMs + stateRetentionDelayMs, TimeUnit.MILLISECONDS)
+            .build(new CacheLoader<>() {
+                @Override
+                public BackoffState load(BackoffKey key) {
+                    return new BackoffState();
+                }
+            });
     }
 
     /**
@@ -93,93 +114,21 @@ public class RetryStormBackoffStateStore {
      * {@code nowMs + decisionDelayMs}, so quiet timeout starts after the delayed response can leave.</p>
      */
     public StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs, long decisionDelayMs) {
-        while (true) {
-            BackoffState state = stateFor(key, nowMs);
-            synchronized (state) {
-                if (states.get(key) != state) {
-                    continue;
-                }
-                return state.recordAndDecide(errorClasses, nowMs, decisionDelayMs, slidingWindowMs, recoveryQuietMs);
-            }
+        BackoffState state = states.getUnchecked(key);
+        synchronized (state) {
+            return state.recordAndDecide(errorClasses, nowMs, decisionDelayMs, slidingWindowMs, recoveryQuietMs);
         }
     }
 
     /**
-     * Performs logical-time eviction using the wall clock for external cleanup calls.
+     * Runs cache maintenance for size and quiet-time based state eviction.
      */
     public void evictIfNeeded() {
-        evictIfNeeded(System.currentTimeMillis());
+        states.cleanUp();
     }
 
     int trackedDimensions() {
-        return states.size();
-    }
-
-    private BackoffState stateFor(BackoffKey key, long nowMs) {
-        BackoffState state = states.get(key);
-        if (state != null) {
-            return state;
-        }
-        synchronized (lifecycleLock) {
-            state = states.get(key);
-            if (state != null) {
-                return state;
-            }
-            evictIfNeededLocked(nowMs);
-            while (states.size() >= maxTrackedDimensions && removeOldestStateLocked()) {
-                // Keep removing until the new dimension fits or no removable state remains.
-            }
-            BackoffState newState = new BackoffState();
-            BackoffState existing = states.putIfAbsent(key, newState);
-            return existing == null ? newState : existing;
-        }
-    }
-
-    private void evictIfNeeded(long nowMs) {
-        synchronized (lifecycleLock) {
-            evictIfNeededLocked(nowMs);
-        }
-    }
-
-    private void evictIfNeededLocked(long nowMs) {
-        for (Iterator<Map.Entry<BackoffKey, BackoffState>> iterator = states.entrySet().iterator(); iterator.hasNext(); ) {
-            Map.Entry<BackoffKey, BackoffState> entry = iterator.next();
-            BackoffState state = entry.getValue();
-            synchronized (state) {
-                if (states.get(entry.getKey()) == state && state.isExpired(nowMs, recoveryQuietMs)) {
-                    states.remove(entry.getKey(), state);
-                }
-            }
-        }
-        if (states.size() < maxTrackedDimensions) {
-            return;
-        }
-        removeOldestStateLocked();
-    }
-
-    private boolean removeOldestStateLocked() {
-        BackoffKey oldestKey = null;
-        BackoffState oldestState = null;
-        long oldestFailureMs = Long.MAX_VALUE;
-        for (Map.Entry<BackoffKey, BackoffState> entry : states.entrySet()) {
-            BackoffState state = entry.getValue();
-            synchronized (state) {
-                if (states.get(entry.getKey()) == state && state.lastFailureMs() < oldestFailureMs) {
-                    oldestFailureMs = state.lastFailureMs();
-                    oldestKey = entry.getKey();
-                    oldestState = state;
-                }
-            }
-        }
-        if (oldestKey == null) {
-            return false;
-        }
-        synchronized (oldestState) {
-            if (states.get(oldestKey) == oldestState && oldestState.lastFailureMs() == oldestFailureMs) {
-                return states.remove(oldestKey, oldestState);
-            }
-        }
-        return true;
+        return (int) states.size();
     }
 
     private static String joinReasons(boolean delayableReached, boolean protectiveReached) {
@@ -300,13 +249,6 @@ public class RetryStormBackoffStateStore {
             }
         }
 
-        private boolean isExpired(long nowMs, long recoveryQuietMs) {
-            return nowMs > lastFailureMs + recoveryQuietMs;
-        }
-
-        private long lastFailureMs() {
-            return lastFailureMs;
-        }
     }
 
     /**

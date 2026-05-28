@@ -76,6 +76,37 @@ public class RetryStormBackoffConfigTest {
     }
 
     /**
+     * Given retry storm delay has a bounded retention contract, static config rejects values above 10 seconds.
+     */
+    @Test
+    public void testConfigDefRejectsMaxDelayAboveUpperBound() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+
+        assertThrows(ConfigException.class, () -> configDef.parse(Map.of(
+            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, 10001L
+        )));
+    }
+
+    /**
+     * Given a dynamic config update, validation rejects values above the retry storm delay upper bound.
+     */
+    @Test
+    public void testValidateRejectsMaxDelayAboveUpperBound() {
+        assertThrows(ConfigException.class, () -> RetryStormBackoffConfig.validate(Map.of(
+            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, 10001L
+        )));
+    }
+
+    /**
+     * Given explicit runtime construction, config snapshots reject values above the delay upper bound.
+     */
+    @Test
+    public void testConstructorRejectsMaxDelayAboveUpperBound() {
+        assertThrows(ConfigException.class, () -> new RetryStormBackoffConfig(true, 10001L));
+    }
+
+    /**
      * Given partial dynamic updates, only the supplied retry storm key changes at runtime.
      */
     @Test

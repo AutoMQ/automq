@@ -51,6 +51,7 @@ public class RetryStormBackoffConfig {
      * Creates a runtime config snapshot with explicit values.
      */
     public RetryStormBackoffConfig(boolean enabled, long maxDelayMs) {
+        validateMaxDelayMs(maxDelayMs);
         this.enabled = enabled;
         this.maxDelayMs = maxDelayMs;
     }
@@ -89,12 +90,13 @@ public class RetryStormBackoffConfig {
     }
 
     /**
-     * Rejects negative max delay values so zero remains the only no-delay setting.
+     * Rejects max delay values outside the bounded delayed-response range.
      */
     public static void validateMaxDelayMs(long maxDelayMs) throws ConfigException {
-        if (maxDelayMs < 0) {
+        if (maxDelayMs < 0 || maxDelayMs > AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX) {
             throw new ConfigException(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, maxDelayMs,
-                "The retry storm backoff max delay must be non-negative.");
+                "The retry storm backoff max delay must be between 0 and "
+                    + AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX + " milliseconds.");
         }
     }
 
