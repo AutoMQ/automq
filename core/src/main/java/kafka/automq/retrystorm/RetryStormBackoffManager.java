@@ -30,7 +30,11 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Owns the retry storm runtime config and receives Kafka dynamic broker config updates.
+ * Owns retry storm backoff runtime components for a broker.
+ *
+ * <p>The manager connects Kafka dynamic config callbacks to the shared runtime config,
+ * exposes the response gate to request handlers, and closes delayed response scheduling
+ * during broker shutdown. It does not evaluate responses itself.</p>
  */
 public class RetryStormBackoffManager implements Reconfigurable {
 
@@ -39,10 +43,16 @@ public class RetryStormBackoffManager implements Reconfigurable {
     private final RetryStormResponseGate responseGate;
     private final RetryStormDelayedResponseScheduler scheduler;
 
+    /**
+     * Creates a manager with only config ownership, primarily for dynamic config tests.
+     */
     public RetryStormBackoffManager(RetryStormBackoffConfig config) {
         this(config, null, null, null);
     }
 
+    /**
+     * Creates a broker runtime manager over config, policy, response gate, and scheduler.
+     */
     public RetryStormBackoffManager(RetryStormBackoffConfig config,
                                     RetryStormBackoffPolicy policy,
                                     RetryStormResponseGate responseGate,
@@ -53,39 +63,63 @@ public class RetryStormBackoffManager implements Reconfigurable {
         this.scheduler = scheduler;
     }
 
+    /**
+     * Returns the broker config keys this manager can validate and apply dynamically.
+     */
     @Override
     public Set<String> reconfigurableConfigs() {
         return RetryStormBackoffConfig.RECONFIGURABLE_CONFIGS;
     }
 
+    /**
+     * Validates a dynamic broker config update before Kafka publishes it to the runtime config.
+     */
     @Override
     public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
         RetryStormBackoffConfig.validate(configs);
     }
 
+    /**
+     * Applies a validated dynamic broker config update to later retry storm policy decisions.
+     */
     @Override
     public void reconfigure(Map<String, ?> configs) {
         config.update(configs);
     }
 
+    /**
+     * Kafka Reconfigurable lifecycle hook; retry storm config is initialized by BrokerServer.
+     */
     @Override
     public void configure(Map<String, ?> configs) {
     }
 
+    /**
+     * Closes delayed response scheduling and best-effort sends pending delayed responses.
+     */
     public void shutdown() {
         if (scheduler != null) {
             scheduler.shutdown();
         }
     }
 
+    /**
+     * Returns the shared runtime config snapshot used by policy evaluation.
+     */
     public RetryStormBackoffConfig config() {
         return config;
     }
 
+    /**
+     * Returns the policy owned by this broker, or null in config-only tests.
+     */
     public RetryStormBackoffPolicy policy() {
         return policy;
     }
 
+    /**
+     * Returns the response gate injected into request send paths, or null in config-only tests.
+     */
     public RetryStormResponseGate responseGate() {
         return responseGate;
     }

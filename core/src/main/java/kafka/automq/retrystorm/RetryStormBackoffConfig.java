@@ -29,6 +29,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+/**
+ * Runtime snapshot for retry storm backoff broker configs.
+ *
+ * <p>The object is shared by request-time policy evaluation and Kafka dynamic
+ * config callbacks. Reads are lock-free through volatile fields; updates validate
+ * only retry storm keys and affect later decisions without changing already
+ * scheduled responses.</p>
+ */
 public class RetryStormBackoffConfig {
 
     public static final Set<String> RECONFIGURABLE_CONFIGS = Set.of(
@@ -39,15 +47,24 @@ public class RetryStormBackoffConfig {
     private volatile boolean enabled;
     private volatile long maxDelayMs;
 
+    /**
+     * Creates a runtime config snapshot with explicit values.
+     */
     public RetryStormBackoffConfig(boolean enabled, long maxDelayMs) {
         this.enabled = enabled;
         this.maxDelayMs = maxDelayMs;
     }
 
+    /**
+     * Builds the initial runtime config from the broker's parsed KafkaConfig.
+     */
     public static RetryStormBackoffConfig from(KafkaConfig config) {
         return new RetryStormBackoffConfig(config.retryStormBackoffEnabled(), config.retryStormBackoffMaxDelayMs());
     }
 
+    /**
+     * Builds a runtime config from raw config values and validates max delay before publishing it.
+     */
     public static RetryStormBackoffConfig from(Map<String, ?> raw) {
         Map<String, Object> configs = new HashMap<>(raw);
         long maxDelayMs = ConfigUtils.getLong(configs, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG);
@@ -58,6 +75,9 @@ public class RetryStormBackoffConfig {
         );
     }
 
+    /**
+     * Validates retry storm keys present in a dynamic broker config update.
+     */
     public static void validate(Map<String, ?> raw) throws ConfigException {
         Map<String, Object> configs = new HashMap<>(raw);
         if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)) {
@@ -68,6 +88,9 @@ public class RetryStormBackoffConfig {
         }
     }
 
+    /**
+     * Rejects negative max delay values so zero remains the only no-delay setting.
+     */
     public static void validateMaxDelayMs(long maxDelayMs) throws ConfigException {
         if (maxDelayMs < 0) {
             throw new ConfigException(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, maxDelayMs,
@@ -75,6 +98,9 @@ public class RetryStormBackoffConfig {
         }
     }
 
+    /**
+     * Applies a partial dynamic update; keys absent from {@code raw} keep their current runtime values.
+     */
     public void update(Map<String, ?> raw) {
         Map<String, Object> configs = new HashMap<>(raw);
         if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)) {
@@ -87,10 +113,16 @@ public class RetryStormBackoffConfig {
         }
     }
 
+    /**
+     * Returns whether retry storm delayed responses are enabled for future policy evaluations.
+     */
     public boolean enabled() {
         return enabled;
     }
 
+    /**
+     * Returns the current maximum delay in milliseconds for future policy decisions.
+     */
     public long maxDelayMs() {
         return maxDelayMs;
     }

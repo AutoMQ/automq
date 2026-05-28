@@ -58,6 +58,7 @@ import scala.collection.Set
 
 class DynamicBrokerConfigTest {
 
+  /** Given retry storm configs are dynamic broker configs, registry exposes both keys for AdminClient updates. */
   @Test
   @Tag("S3Unit")
   def testRetryStormBackoffConfigsAreDynamic(): Unit = {

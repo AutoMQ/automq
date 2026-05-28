@@ -27,12 +27,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Covers per-resource retry storm state transitions and logical-time eviction.
+ */
 @Tag("S3Unit")
 public class RetryStormBackoffStateStoreTest {
 
     private static final RetryStormBackoffStateStore.BackoffKey KEY =
         new RetryStormBackoffStateStore.BackoffKey(ApiKeys.PRODUCE.id, "topic-0", "connection-1");
 
+    /**
+     * Given repeated delayable-transient errors, the first failure is immediate and the second delays.
+     */
     @Test
     public void testDelayableTransientThreshold() {
         RetryStormBackoffStateStore store = newStore();
@@ -48,6 +54,9 @@ public class RetryStormBackoffStateStoreTest {
         assertTrue(second.reason().contains("delayable-transient"));
     }
 
+    /**
+     * Given protective-only errors, the sixth error in the sliding window delays and expired windows reset.
+     */
     @Test
     public void testProtectiveThresholdAndWindowExpiration() {
         RetryStormBackoffStateStore store = newStore();
@@ -65,6 +74,9 @@ public class RetryStormBackoffStateStoreTest {
         assertFalse(store.recordAndDecide(nextKey, RetryStormBackoffStateStore.ErrorClassSet.protectiveOnlyError(), 2101L).delayed());
     }
 
+    /**
+     * Given a resource reached delaying mode, a valid result clear makes the next error immediate again.
+     */
     @Test
     public void testClearResetsState() {
         RetryStormBackoffStateStore store = newStore();
@@ -76,6 +88,9 @@ public class RetryStormBackoffStateStoreTest {
         assertFalse(store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1002L).delayed());
     }
 
+    /**
+     * Given a delaying resource has been quiet past recovery timeout, the next error restarts candidate mode.
+     */
     @Test
     public void testQuietTimeoutRecoversToCandidate() {
         RetryStormBackoffStateStore store = newStore();
@@ -88,6 +103,9 @@ public class RetryStormBackoffStateStoreTest {
         assertFalse(recovered.delayed());
     }
 
+    /**
+     * Given a delayed response has not had quiet time after its send time, state remains delaying.
+     */
     @Test
     public void testDelayingStateSurvivesDelayBeforeQuietTimeout() throws Exception {
         RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 20L, 30L, 100000);
@@ -101,6 +119,9 @@ public class RetryStormBackoffStateStoreTest {
         assertTrue(stillDelaying.delayed());
     }
 
+    /**
+     * Given dynamic max delay exceeds store defaults, logical eviction does not remove active delaying state.
+     */
     @Test
     public void testDelayingStateSurvivesDynamicDelayLargerThanStoreDefault() {
         RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 20L, 30L, 100000);

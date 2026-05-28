@@ -197,6 +197,9 @@ class RequestHandlerHelper(
     requestChannel.sendResponse(request, response, onComplete)
   }
 
+  /**
+   * Sends a manually constructed response through retry storm backoff after the caller has handled quota semantics.
+   */
   def sendResponseThroughRetryStormGate(request: RequestChannel.Request,
                                         response: AbstractResponse,
                                         onComplete: Option[Send => Unit] = None): Unit = {
@@ -222,7 +225,7 @@ class RequestHandlerHelper(
     }
     retryStormResponseGate match {
       case Some(gate) =>
-        val context = RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
+        val context = new RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
         gate.sendOrDelay(context, request, response, () => requestChannel.sendResponse(request, response, onComplete))
       case None =>
         requestChannel.sendResponse(request, response, onComplete)

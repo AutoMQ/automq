@@ -457,7 +457,7 @@ class BrokerServer(
         retryStormBackoffPolicy,
         retryStormBackoffScheduler,
         new SampledRetryStormBackoffLogger(),
-        RetryStormResponseSummaryExtractors.DefaultRegistry
+        RetryStormResponseSummaryExtractors.DEFAULT_REGISTRY
       )
       retryStormBackoffManager = new RetryStormBackoffManager(
         retryStormBackoffConfig,

@@ -33,9 +33,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Covers retry storm static and dynamic configuration parsing semantics.
+ */
 @Tag("S3Unit")
 public class RetryStormBackoffConfigTest {
 
+    /**
+     * Given AutoMQ broker config definitions, default retry storm settings are enabled with 1000ms max delay.
+     */
     @Test
     public void testConfigDefDefaults() {
         ConfigDef configDef = new ConfigDef();
@@ -46,6 +52,9 @@ public class RetryStormBackoffConfigTest {
         assertEquals(1000L, defaults.get(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG));
     }
 
+    /**
+     * Given a dynamic config update, validation rejects a negative max delay before runtime update.
+     */
     @Test
     public void testValidateRejectsNegativeMaxDelayMs() {
         assertThrows(ConfigException.class, () -> RetryStormBackoffConfig.validate(Map.of(
@@ -53,6 +62,9 @@ public class RetryStormBackoffConfigTest {
         )));
     }
 
+    /**
+     * Given static broker config parsing, ConfigDef rejects negative max delay values.
+     */
     @Test
     public void testConfigDefRejectsNegativeMaxDelayMs() {
         ConfigDef configDef = new ConfigDef();
@@ -63,6 +75,9 @@ public class RetryStormBackoffConfigTest {
         )));
     }
 
+    /**
+     * Given partial dynamic updates, only the supplied retry storm key changes at runtime.
+     */
     @Test
     public void testPartialDynamicUpdate() {
         RetryStormBackoffConfig config = RetryStormBackoffConfig.from(Map.of(
@@ -79,6 +94,9 @@ public class RetryStormBackoffConfigTest {
         assertEquals(250L, config.maxDelayMs());
     }
 
+    /**
+     * Given Kafka dynamic config registration, both retry storm keys are exposed as reconfigurable.
+     */
     @Test
     public void testReconfigurableConfigKeys() {
         assertTrue(RetryStormBackoffConfig.RECONFIGURABLE_CONFIGS.contains(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG));

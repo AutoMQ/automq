@@ -31,9 +31,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * Covers manager integration with Kafka dynamic broker config callbacks.
+ */
 @Tag("S3Unit")
 public class RetryStormBackoffManagerTest {
 
+    /**
+     * Given a validated dynamic update, reconfigure publishes the new runtime values.
+     */
     @Test
     public void testReconfigureUpdatesRuntimeConfig() {
         RetryStormBackoffConfig config = new RetryStormBackoffConfig(true, 1000L);
@@ -48,6 +54,9 @@ public class RetryStormBackoffManagerTest {
         assertEquals(250L, config.maxDelayMs());
     }
 
+    /**
+     * Given an invalid dynamic update, manager validation rejects it before runtime state changes.
+     */
     @Test
     public void testValidateRejectsInvalidReconfiguration() {
         RetryStormBackoffManager manager = new RetryStormBackoffManager(new RetryStormBackoffConfig(true, 1000L));

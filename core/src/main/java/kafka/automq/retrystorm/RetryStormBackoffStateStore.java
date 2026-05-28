@@ -25,6 +25,14 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Maintains per-resource retry storm backoff state for policy evaluation.
+ *
+ * <p>Each key tracks independent delayable-transient and protective-error windows,
+ * plus a delaying mode that keeps delaying repeated failures until a valid result
+ * clears the key or quiet time expires. The store is synchronized because it is
+ * shared by request handler threads.</p>
+ */
 public class RetryStormBackoffStateStore {
     public static final int DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD = 1;
     public static final int DEFAULT_PROTECTIVE_THRESHOLD = 5;
@@ -41,10 +49,16 @@ public class RetryStormBackoffStateStore {
     private final int maxTrackedDimensions;
     private final Map<BackoffKey, BackoffState> states;
 
+    /**
+     * Creates a store with production retry storm thresholds and capacity.
+     */
     public RetryStormBackoffStateStore() {
         this(DEFAULT_WINDOW_MS, DEFAULT_RECOVERY_QUIET_MS, DEFAULT_DELAY_MS, DEFAULT_MAX_TRACKED_DIMENSIONS);
     }
 
+    /**
+     * Creates a store with testable timing and capacity knobs.
+     */
     public RetryStormBackoffStateStore(long slidingWindowMs, long recoveryQuietMs, long delayMs, int maxTrackedDimensions) {
         this.slidingWindowMs = slidingWindowMs;
         this.recoveryQuietMs = recoveryQuietMs;
@@ -52,10 +66,21 @@ public class RetryStormBackoffStateStore {
         this.states = new HashMap<>();
     }
 
+    /**
+     * Records an error observation using the default delay and returns the resource-level decision.
+     */
     public synchronized StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs) {
         return recordAndDecide(key, errorClasses, nowMs, DEFAULT_DELAY_MS);
     }
 
+    /**
+     * Records an error observation, updates candidate/delaying state, and returns whether this resource should delay.
+     *
+     * <p>In candidate mode the method evaluates thresholds before appending the current timestamp,
+     * making the first delayable-transient failure immediate and the second one delayed. In delaying
+     * mode it refreshes {@code lastFailureMs} to the expected response send time
+     * {@code nowMs + decisionDelayMs}, so quiet timeout starts after the delayed response can leave.</p>
+     */
     public synchronized StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs, long decisionDelayMs) {
         BackoffState state = states.get(key);
         if (state == null) {
@@ -97,10 +122,16 @@ public class RetryStormBackoffStateStore {
         return StateDecision.immediate();
     }
 
+    /**
+     * Removes all retry storm state for a resource after a valid response result.
+     */
     public synchronized void clear(BackoffKey key) {
         states.remove(key);
     }
 
+    /**
+     * Performs logical-time eviction using the wall clock for external cleanup calls.
+     */
     public synchronized void evictIfNeeded() {
         evictIfNeeded(System.currentTimeMillis());
     }
@@ -182,6 +213,9 @@ public class RetryStormBackoffStateStore {
         }
     }
 
+    /**
+     * Identifies the retry storm state dimension: API, resource, and client connection scope.
+     */
     public record BackoffKey(short apiKey, String resourceKey, String clientScope) {
         public BackoffKey {
             Objects.requireNonNull(resourceKey, "resourceKey");
@@ -189,25 +223,46 @@ public class RetryStormBackoffStateStore {
         }
     }
 
+    /**
+     * Describes which retry storm counters a resource error should update.
+     */
     public record ErrorClassSet(boolean delayableTransient, boolean protective) {
+        /**
+         * Returns the class set for allowlisted transient errors, which also count as protective errors.
+         */
         public static ErrorClassSet delayableTransientError() {
             return new ErrorClassSet(true, true);
         }
 
+        /**
+         * Returns the class set for non-transient errors that can only reach the protective threshold.
+         */
         public static ErrorClassSet protectiveOnlyError() {
             return new ErrorClassSet(false, true);
         }
 
+        /**
+         * Returns the comma-separated reason labels represented by this class set.
+         */
         public String reason() {
             return joinReasons(delayableTransient, protective && !delayableTransient);
         }
     }
 
+    /**
+     * Resource-level policy result returned by the state store.
+     */
     public record StateDecision(boolean delayed, long delayMs, String reason) {
+        /**
+         * Returns an immediate resource decision with no delay reason.
+         */
         public static StateDecision immediate() {
             return new StateDecision(false, 0L, "");
         }
 
+        /**
+         * Returns a delayed resource decision when the configured delay is positive.
+         */
         public static StateDecision delayed(long delayMs, String reason) {
             return new StateDecision(delayMs > 0, delayMs, reason);
         }
