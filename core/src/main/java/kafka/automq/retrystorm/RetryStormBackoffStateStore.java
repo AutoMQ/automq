@@ -20,18 +20,18 @@
 package kafka.automq.retrystorm;
 
 import java.util.ArrayDeque;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Maintains per-resource retry storm backoff state for policy evaluation.
  *
  * <p>Each key tracks independent delayable-transient and protective-error windows,
  * plus a delaying mode that keeps delaying repeated failures until a valid result
- * clears the key or quiet time expires. The store is synchronized because it is
- * shared by request handler threads.</p>
+ * clears the key or quiet time expires. The store owns state lifecycle while each
+ * {@link BackoffState} owns its per-resource state machine and synchronization.</p>
  */
 public class RetryStormBackoffStateStore {
     public static final int DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD = 1;
@@ -46,8 +46,10 @@ public class RetryStormBackoffStateStore {
 
     private final long slidingWindowMs;
     private final long recoveryQuietMs;
+    private final long defaultDelayMs;
     private final int maxTrackedDimensions;
-    private final Map<BackoffKey, BackoffState> states;
+    private final ConcurrentHashMap<BackoffKey, BackoffState> states;
+    private final Object lifecycleLock = new Object();
 
     /**
      * Creates a store with production retry storm thresholds and capacity.
@@ -58,19 +60,28 @@ public class RetryStormBackoffStateStore {
 
     /**
      * Creates a store with testable timing and capacity knobs.
+     *
+     * @param slidingWindowMs logical window used before a dimension enters delaying mode
+     * @param recoveryQuietMs quiet time after the latest expected send time before a dimension returns to candidate mode
+     * @param delayMs default delay returned by {@link #recordAndDecide(BackoffKey, ErrorClassSet, long)}
+     * @param maxTrackedDimensions maximum number of dimensions retained before oldest-state eviction
      */
     public RetryStormBackoffStateStore(long slidingWindowMs, long recoveryQuietMs, long delayMs, int maxTrackedDimensions) {
+        if (maxTrackedDimensions <= 0) {
+            throw new IllegalArgumentException("maxTrackedDimensions must be positive");
+        }
         this.slidingWindowMs = slidingWindowMs;
         this.recoveryQuietMs = recoveryQuietMs;
+        this.defaultDelayMs = delayMs;
         this.maxTrackedDimensions = maxTrackedDimensions;
-        this.states = new HashMap<>();
+        this.states = new ConcurrentHashMap<>();
     }
 
     /**
      * Records an error observation using the default delay and returns the resource-level decision.
      */
-    public synchronized StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs) {
-        return recordAndDecide(key, errorClasses, nowMs, DEFAULT_DELAY_MS);
+    public StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs) {
+        return recordAndDecide(key, errorClasses, nowMs, defaultDelayMs);
     }
 
     /**
@@ -81,89 +92,112 @@ public class RetryStormBackoffStateStore {
      * mode it refreshes {@code lastFailureMs} to the expected response send time
      * {@code nowMs + decisionDelayMs}, so quiet timeout starts after the delayed response can leave.</p>
      */
-    public synchronized StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs, long decisionDelayMs) {
-        BackoffState state = states.get(key);
-        if (state == null) {
-            evictIfNeeded(nowMs);
-            state = new BackoffState();
-            states.put(key, state);
-        } else if (state.mode == Mode.DELAYING) {
-            if (nowMs > state.lastFailureMs + recoveryQuietMs) {
-                state.reset();
-            } else {
-                state.lastFailureMs = nowMs + decisionDelayMs;
-                state.delayReason = errorClasses.reason();
-                return StateDecision.delayed(decisionDelayMs, state.delayReason);
+    public StateDecision recordAndDecide(BackoffKey key, ErrorClassSet errorClasses, long nowMs, long decisionDelayMs) {
+        while (true) {
+            BackoffState state = stateFor(key, nowMs);
+            synchronized (state) {
+                if (states.get(key) != state) {
+                    continue;
+                }
+                return state.recordAndDecide(errorClasses, nowMs, decisionDelayMs, slidingWindowMs, recoveryQuietMs);
             }
         }
-
-        state.cleanExpired(nowMs, slidingWindowMs);
-
-        boolean delayableReached = errorClasses.delayableTransient()
-            && state.delayableTransientWindow.size() >= DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD;
-        boolean protectiveReached = errorClasses.protective()
-            && state.protectiveWindow.size() >= DEFAULT_PROTECTIVE_THRESHOLD;
-
-        if (delayableReached || protectiveReached) {
-            state.mode = Mode.DELAYING;
-            state.lastFailureMs = nowMs + decisionDelayMs;
-            state.delayReason = joinReasons(delayableReached, protectiveReached);
-            return StateDecision.delayed(decisionDelayMs, state.delayReason);
-        }
-
-        if (errorClasses.delayableTransient()) {
-            appendBounded(state.delayableTransientWindow, nowMs, DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD);
-        }
-        if (errorClasses.protective()) {
-            appendBounded(state.protectiveWindow, nowMs, DEFAULT_PROTECTIVE_THRESHOLD);
-        }
-        state.lastFailureMs = nowMs;
-        state.delayReason = errorClasses.reason();
-        return StateDecision.immediate();
     }
 
     /**
      * Removes all retry storm state for a resource after a valid response result.
      */
-    public synchronized void clear(BackoffKey key) {
-        states.remove(key);
+    public void clear(BackoffKey key) {
+        while (true) {
+            BackoffState state = states.get(key);
+            if (state == null) {
+                return;
+            }
+            synchronized (state) {
+                if (states.remove(key, state)) {
+                    state.reset();
+                    return;
+                }
+            }
+        }
     }
 
     /**
      * Performs logical-time eviction using the wall clock for external cleanup calls.
      */
-    public synchronized void evictIfNeeded() {
+    public void evictIfNeeded() {
         evictIfNeeded(System.currentTimeMillis());
     }
 
+    int trackedDimensions() {
+        return states.size();
+    }
+
+    private BackoffState stateFor(BackoffKey key, long nowMs) {
+        BackoffState state = states.get(key);
+        if (state != null) {
+            return state;
+        }
+        synchronized (lifecycleLock) {
+            state = states.get(key);
+            if (state != null) {
+                return state;
+            }
+            evictIfNeededLocked(nowMs);
+            while (states.size() >= maxTrackedDimensions && removeOldestStateLocked()) {
+                // Keep removing until the new dimension fits or no removable state remains.
+            }
+            BackoffState newState = new BackoffState();
+            BackoffState existing = states.putIfAbsent(key, newState);
+            return existing == null ? newState : existing;
+        }
+    }
+
     private void evictIfNeeded(long nowMs) {
+        synchronized (lifecycleLock) {
+            evictIfNeededLocked(nowMs);
+        }
+    }
+
+    private void evictIfNeededLocked(long nowMs) {
         for (Iterator<Map.Entry<BackoffKey, BackoffState>> iterator = states.entrySet().iterator(); iterator.hasNext(); ) {
             Map.Entry<BackoffKey, BackoffState> entry = iterator.next();
-            if (entry.getValue().isExpired(nowMs, recoveryQuietMs)) {
-                iterator.remove();
+            BackoffState state = entry.getValue();
+            synchronized (state) {
+                if (states.get(entry.getKey()) == state && state.isExpired(nowMs, recoveryQuietMs)) {
+                    states.remove(entry.getKey(), state);
+                }
             }
         }
         if (states.size() < maxTrackedDimensions) {
             return;
         }
-        BackoffKey oldestKey = null;
-        long oldestFailureMs = Long.MAX_VALUE;
-        for (Map.Entry<BackoffKey, BackoffState> entry : states.entrySet()) {
-            if (entry.getValue().lastFailureMs < oldestFailureMs) {
-                oldestFailureMs = entry.getValue().lastFailureMs;
-                oldestKey = entry.getKey();
-            }
-        }
-        if (oldestKey != null) {
-            states.remove(oldestKey);
-        }
+        removeOldestStateLocked();
     }
 
-    private static void appendBounded(ArrayDeque<Long> window, long nowMs, int capacity) {
-        if (window.size() == capacity) {
-            window.removeFirst();
+    private boolean removeOldestStateLocked() {
+        BackoffKey oldestKey = null;
+        BackoffState oldestState = null;
+        long oldestFailureMs = Long.MAX_VALUE;
+        for (Map.Entry<BackoffKey, BackoffState> entry : states.entrySet()) {
+            BackoffState state = entry.getValue();
+            synchronized (state) {
+                if (states.get(entry.getKey()) == state && state.lastFailureMs() < oldestFailureMs) {
+                    oldestFailureMs = state.lastFailureMs();
+                    oldestKey = entry.getKey();
+                    oldestState = state;
+                }
+            }
         }
-        window.addLast(nowMs);
+        if (oldestKey == null) {
+            return false;
+        }
+        synchronized (oldestState) {
+            if (states.get(oldestKey) == oldestState && oldestState.lastFailureMs() == oldestFailureMs) {
+                return states.remove(oldestKey, oldestState);
+            }
+        }
+        return true;
     }
 
     private static String joinReasons(boolean delayableReached, boolean protectiveReached) {
@@ -178,6 +212,12 @@ public class RetryStormBackoffStateStore {
         DELAYING
     }
 
+    /**
+     * Owns the state machine for one retry storm dimension.
+     *
+     * <p>Callers must synchronize on the instance before invoking methods or reading mutable fields.
+     * The state contains only per-dimension counters and does not manage map lifecycle.</p>
+     */
     static class BackoffState {
         private Mode mode = Mode.CANDIDATE;
         private final ArrayDeque<Long> delayableTransientWindow = new ArrayDeque<>(DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD);
@@ -185,9 +225,75 @@ public class RetryStormBackoffStateStore {
         private long lastFailureMs;
         private String delayReason = "";
 
+        private StateDecision recordAndDecide(ErrorClassSet errorClasses,
+                                              long nowMs,
+                                              long decisionDelayMs,
+                                              long slidingWindowMs,
+                                              long recoveryQuietMs) {
+            if (mode == Mode.DELAYING) {
+                if (nowMs > lastFailureMs + recoveryQuietMs) {
+                    reset();
+                } else {
+                    lastFailureMs = expectedSendTimeMs(nowMs, decisionDelayMs);
+                    delayReason = errorClasses.reason();
+                    return StateDecision.delayed(decisionDelayMs, delayReason);
+                }
+            }
+
+            cleanExpired(nowMs, slidingWindowMs);
+
+            boolean delayableReached = delayableReached(errorClasses);
+            boolean protectiveReached = protectiveReached(errorClasses);
+
+            if (delayableReached || protectiveReached) {
+                enterDelaying(nowMs, decisionDelayMs, delayableReached, protectiveReached);
+                return StateDecision.delayed(decisionDelayMs, delayReason);
+            }
+
+            recordCandidate(errorClasses, nowMs);
+            return StateDecision.immediate();
+        }
+
         private void cleanExpired(long nowMs, long slidingWindowMs) {
             cleanExpired(delayableTransientWindow, nowMs, slidingWindowMs);
             cleanExpired(protectiveWindow, nowMs, slidingWindowMs);
+        }
+
+        private boolean delayableReached(ErrorClassSet errorClasses) {
+            return errorClasses.delayableTransient()
+                && delayableTransientWindow.size() >= DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD;
+        }
+
+        private boolean protectiveReached(ErrorClassSet errorClasses) {
+            return errorClasses.protective()
+                && protectiveWindow.size() >= DEFAULT_PROTECTIVE_THRESHOLD;
+        }
+
+        private void enterDelaying(long nowMs,
+                                   long decisionDelayMs,
+                                   boolean delayableReached,
+                                   boolean protectiveReached) {
+            mode = Mode.DELAYING;
+            lastFailureMs = expectedSendTimeMs(nowMs, decisionDelayMs);
+            delayReason = joinReasons(delayableReached, protectiveReached);
+        }
+
+        private void recordCandidate(ErrorClassSet errorClasses, long nowMs) {
+            if (errorClasses.delayableTransient()) {
+                appendBounded(delayableTransientWindow, nowMs, DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD);
+            }
+            if (errorClasses.protective()) {
+                appendBounded(protectiveWindow, nowMs, DEFAULT_PROTECTIVE_THRESHOLD);
+            }
+            lastFailureMs = nowMs;
+            delayReason = errorClasses.reason();
+        }
+
+        private void appendBounded(ArrayDeque<Long> window, long nowMs, int capacity) {
+            if (window.size() == capacity) {
+                window.removeFirst();
+            }
+            window.addLast(nowMs);
         }
 
         private void reset() {
@@ -195,6 +301,10 @@ public class RetryStormBackoffStateStore {
             delayableTransientWindow.clear();
             protectiveWindow.clear();
             delayReason = "";
+        }
+
+        private long expectedSendTimeMs(long nowMs, long decisionDelayMs) {
+            return nowMs + decisionDelayMs;
         }
 
         private static void cleanExpired(ArrayDeque<Long> window, long nowMs, long slidingWindowMs) {
@@ -210,6 +320,10 @@ public class RetryStormBackoffStateStore {
 
         private boolean isExpired(long nowMs, long recoveryQuietMs) {
             return nowMs > lastFailureMs + recoveryQuietMs;
+        }
+
+        private long lastFailureMs() {
+            return lastFailureMs;
         }
     }
 
