@@ -29,3 +29,11 @@ last_updated: 2026-05-28
   are enough.
 - For stateful runtime code, make ownership of lifecycle, concurrency, and
   cleanup explicit in the API or class documentation.
+
+## 4. Kafka Fork Markers
+
+- When adding or changing AutoMQ logic inside an existing Kafka source file,
+  wrap the logic with `// AutoMQ inject start` and `// AutoMQ inject end`.
+- Do not add inject markers around import-only changes.
+- Keep marker ranges small so future Kafka upstream merges can identify the
+  AutoMQ-owned behavior.

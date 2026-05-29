@@ -31,6 +31,9 @@ last_updated: 2026-05-29
 
 - For narrow changes, run focused `core:S3UnitTest --tests ...` first, then
   broaden to the workflow-style selection before handing off.
+- When adding E2E coverage, include the test in the appropriate
+  `tests/suites/automq_test_suite*.yml` suite so the CI selection can discover
+  it.
 
 ## 4. Required Completion Gate
 
