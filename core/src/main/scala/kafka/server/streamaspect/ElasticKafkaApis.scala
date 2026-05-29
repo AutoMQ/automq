@@ -387,11 +387,7 @@ class ElasticKafkaApis(
           requestHelper.sendNoOpResponseExemptThrottle(request)
         }
       } else {
-        requestChannel.sendResponse(
-          request,
-          new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs, nodeEndpoints.values.toList.asJava),
-          None
-        )
+        requestChannel.sendResponse(request, new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs, nodeEndpoints.values.toList.asJava), None)
       }
 
       PRODUCE_ACK_TIME_HIST.update(timerCallback.elapsedAs(TimeUnit.MICROSECONDS))
