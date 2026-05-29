@@ -35,6 +35,8 @@ import org.junit.jupiter.api.Timeout;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -98,6 +100,26 @@ public class KVImageTest {
     @Test
     public void testApplyDelta1() {
         assertEquals(IMAGE2, DELTA1.apply());
+    }
+
+    @Test
+    public void testFinishSnapshotRemovesMissingKVs() {
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<String, ByteBuffer> map = new TimelineHashMap<>(registry, 10);
+        map.put("key1", ByteBuffer.wrap("value1".getBytes()));
+        map.put("key2", ByteBuffer.wrap("value2".getBytes()));
+        registry.getOrCreateSnapshot(0);
+        KVDelta delta = new KVDelta(new KVImage(map, new RegistryRef(registry, 0, new ArrayList<>())));
+        delta.replay(new KVRecord()
+            .setKeyValues(List.of(new KeyValue()
+                .setKey("key2")
+                .setValue("value2".getBytes()))));
+        delta.finishSnapshot();
+
+        assertEquals(Set.of("key1"), delta.removedKeys());
+        assertEquals(Set.of("key2"), delta.changedKV().keySet());
+
+        assertEquals(Map.of("key2", ByteBuffer.wrap("value2".getBytes())), delta.apply().kvs());
     }
 
     @Test
