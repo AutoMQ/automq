@@ -43,6 +43,7 @@ class QuotaTest(Test):
             ['broker.quota.enabled', 'true'],
             ['broker.quota.produce.bytes', str(broker_quota_in)],
             ['broker.quota.fetch.bytes', str(broker_quota_out)],
+            ['automq.backpressure.enabled', 'false'],
             ['s3.wal.cache.size', str(log_size)],
             ['s3.wal.capacity', str(log_size)],
             ['s3.wal.upload.threshold', str(log_size // 4)],
