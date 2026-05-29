@@ -53,6 +53,7 @@ import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Extracts resource-scoped response errors for request error accounting and retry storm backoff.
@@ -153,6 +154,7 @@ public class ResourceErrorExtractor {
         }
     }
 
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     private static ResourceErrorView doExtractOther(RequestChannel.Request request, AbstractResponse response, ApiKeys apiKey) {
         switch (apiKey) {
             case JOIN_GROUP:
@@ -384,39 +386,36 @@ public class ResourceErrorExtractor {
     private static ResourceErrorView extractCreateTopics(CreateTopicsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().topics().forEach(topic ->
-            {
-                if (topic.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, topic.errorCode(), topic.name());
-            });
+        response.data().topics().forEach(topic -> {
+            if (topic.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topic.name());
+        });
         return view(result, hasValid[0]);
     }
 
     private static ResourceErrorView extractDeleteTopics(DeleteTopicsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().responses().forEach(topic ->
-            {
-                if (topic.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, topic.errorCode(), topic.name() != null ? topic.name() : "");
-            });
+        response.data().responses().forEach(topic -> {
+            if (topic.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topic.name() != null ? topic.name() : "");
+        });
         return view(result, hasValid[0]);
     }
 
     private static ResourceErrorView extractCreatePartitions(CreatePartitionsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().results().forEach(r ->
-            {
-                if (r.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, r.errorCode(), r.name());
-            });
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.name());
+        });
         return view(result, hasValid[0]);
     }
 
@@ -425,26 +424,24 @@ public class ResourceErrorExtractor {
     private static ResourceErrorView extractDescribeGroups(DescribeGroupsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().groups().forEach(g ->
-            {
-                if (g.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, g.errorCode(), g.groupId());
-            });
+        response.data().groups().forEach(g -> {
+            if (g.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, g.errorCode(), g.groupId());
+        });
         return view(result, hasValid[0]);
     }
 
     private static ResourceErrorView extractDeleteGroups(DeleteGroupsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().results().forEach(r ->
-            {
-                if (r.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, r.errorCode(), r.groupId());
-            });
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.groupId());
+        });
         return view(result, hasValid[0]);
     }
 
@@ -492,39 +489,36 @@ public class ResourceErrorExtractor {
     private static ResourceErrorView extractAlterConfigs(AlterConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().responses().forEach(r ->
-            {
-                if (r.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, r.errorCode(), r.resourceName());
-            });
+        response.data().responses().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
         return view(result, hasValid[0]);
     }
 
     private static ResourceErrorView extractDescribeConfigs(DescribeConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().results().forEach(r ->
-            {
-                if (r.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, r.errorCode(), r.resourceName());
-            });
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
         return view(result, hasValid[0]);
     }
 
     private static ResourceErrorView extractIncrementalAlterConfigs(IncrementalAlterConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
         boolean[] hasValid = {false};
-        response.data().responses().forEach(r ->
-            {
-                if (r.errorCode() == Errors.NONE.code()) {
-                    hasValid[0] = true;
-                }
-                maybeAdd(result, r.errorCode(), r.resourceName());
-            });
+        response.data().responses().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
         return view(result, hasValid[0]);
     }
 
@@ -584,7 +578,7 @@ public class ResourceErrorExtractor {
 
     private static String coordinatorType(RequestChannel.Request request) {
         FindCoordinatorRequest body = request.body(FindCoordinatorRequest.class);
-        return FindCoordinatorRequest.CoordinatorType.forId(body.data().keyType()).name().toLowerCase();
+        return FindCoordinatorRequest.CoordinatorType.forId(body.data().keyType()).name().toLowerCase(Locale.ROOT);
     }
 
     private static String groupKey(String groupId) {

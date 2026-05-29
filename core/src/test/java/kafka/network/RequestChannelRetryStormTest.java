@@ -40,6 +40,7 @@ import org.apache.kafka.common.requests.RequestHeader;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.Time;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 

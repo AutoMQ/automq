@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-05-28
+last_updated: 2026-05-29
 ---
 
 # Testing Conventions
@@ -31,3 +31,32 @@ last_updated: 2026-05-28
 
 - For narrow changes, run focused `core:S3UnitTest --tests ...` first, then
   broaden to the workflow-style selection before handing off.
+
+## 4. Required Completion Gate
+
+- Before claiming an AutoMQ coding task is done, run the CI-style formatting,
+  license, and checkstyle gate:
+
+```bash
+./gradlew --build-cache rat checkstyleMain checkstyleTest spotlessJavaCheck
+```
+
+- Also run the SpotBugs gate:
+
+```bash
+./gradlew --build-cache spotbugsMain spotbugsTest
+```
+
+- Do not replace this gate with focused unit tests. Run it in addition to the
+  relevant focused or tagged test selection for the change.
+
+## 5. Checkstyle Suppression
+
+- Use narrow `@SuppressWarnings` only when the rule conflicts with a deliberate
+  structure, such as enum-switch hot-path classification, schema dispatch, or a
+  test class that must cover many generated protocol data types together.
+- Prefer fixing ordinary style issues, unused imports, missing locale, and
+  low-cost complexity reductions instead of suppressing them.
+- When suppressing a Checkstyle rule in code, keep the annotation at the
+  smallest practical scope and include the `checkstyle:` prefix when suppressing
+  a specific method-level Checkstyle rule.

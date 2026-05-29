@@ -26,6 +26,7 @@ import kafka.server.ResourceErrorExtractor;
 
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 

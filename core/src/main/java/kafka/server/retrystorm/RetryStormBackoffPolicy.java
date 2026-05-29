@@ -131,6 +131,7 @@ public class RetryStormBackoffPolicy {
         return new RetryStormBackoffStateStore.BackoffKey(apiKey.id, error.resource(), context.clientScope());
     }
 
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     private boolean isDelayableTransient(ApiKeys apiKey, Errors error) {
         switch (apiKey) {
             case PRODUCE:
