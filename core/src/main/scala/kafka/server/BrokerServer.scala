@@ -451,21 +451,7 @@ class BrokerServer(
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
       // AutoMQ inject start
-      val retryStormBackoffConfig = RetryStormBackoffConfig.from(config)
-      val retryStormBackoffStateStore = new RetryStormBackoffStateStore()
-      val retryStormBackoffScheduler = new RetryStormDelayedResponseScheduler()
-      val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, retryStormBackoffStateStore)
-      val retryStormBackoffLogger = new SampledRetryStormBackoffLogger()
-      val retryStormResponseGate = new RetryStormResponseGate(retryStormBackoffPolicy, retryStormBackoffScheduler)
-      retryStormBackoffManager = new RetryStormBackoffManager(
-        retryStormBackoffConfig,
-        retryStormBackoffPolicy,
-        retryStormResponseGate,
-        retryStormBackoffScheduler,
-        retryStormBackoffStateStore,
-        retryStormBackoffLogger
-      )
-      retryStormBackoffManager.startup()
+      val retryStormResponseGate = startupRetryStormBackoffManager()
       socketServer.dataPlaneRequestChannel.setRetryStormResponseGate(retryStormResponseGate)
       // AutoMQ inject end
 
@@ -942,6 +928,25 @@ class BrokerServer(
       zeroZoneRouter
     }
     trafficInterceptor
+  }
+
+  private def startupRetryStormBackoffManager(): RetryStormResponseGate = {
+    val retryStormBackoffConfig = RetryStormBackoffConfig.from(config)
+    val retryStormBackoffStateStore = new RetryStormBackoffStateStore()
+    val retryStormBackoffScheduler = new RetryStormDelayedResponseScheduler()
+    val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, retryStormBackoffStateStore)
+    val retryStormBackoffLogger = new SampledRetryStormBackoffLogger()
+    val retryStormResponseGate = new RetryStormResponseGate(retryStormBackoffPolicy, retryStormBackoffScheduler)
+    retryStormBackoffManager = new RetryStormBackoffManager(
+      retryStormBackoffConfig,
+      retryStormBackoffPolicy,
+      retryStormResponseGate,
+      retryStormBackoffScheduler,
+      retryStormBackoffStateStore,
+      retryStormBackoffLogger
+    )
+    retryStormBackoffManager.startup()
+    retryStormResponseGate
   }
 
   // AutoMQ inject start

@@ -108,11 +108,8 @@ class RequestHandlerHelper(
     val response = requestBody.getErrorResponse(throttleMs, error)
     if (response == null)
       requestChannel.closeConnection(request, requestBody.errorCounts(error))
-    else {
-      // AutoMQ inject start
-      sendWithRetryStormBackoff(request, response, None)
-      // AutoMQ inject end
-    }
+    else
+      requestChannel.sendResponse(request, response, None)
   }
 
   def sendForwardedResponse(request: RequestChannel.Request,
@@ -138,9 +135,7 @@ class RequestHandlerHelper(
     if (!request.isForwarded)
       throttle(quotas.request, request, throttleTimeMs)
     response.maybeSetThrottleTimeMs(throttleTimeMs)
-    // AutoMQ inject start
-    sendWithRetryStormBackoff(request, response, None)
-    // AutoMQ inject end
+    requestChannel.sendResponse(request, response, None)
   }
 
   def sendResponseMaybeThrottle(request: RequestChannel.Request,
@@ -149,9 +144,7 @@ class RequestHandlerHelper(
     // Only throttle non-forwarded requests
     if (!request.isForwarded)
       throttle(quotas.request, request, throttleTimeMs)
-    // AutoMQ inject start
-    sendWithRetryStormBackoff(request, createResponse(throttleTimeMs), None)
-    // AutoMQ inject end
+    requestChannel.sendResponse(request, createResponse(throttleTimeMs), None)
   }
 
   def sendErrorResponseMaybeThrottle(request: RequestChannel.Request, error: Throwable): Unit = {
@@ -192,9 +185,7 @@ class RequestHandlerHelper(
     }
 
     response.maybeSetThrottleTimeMs(maxThrottleTimeMs)
-    // AutoMQ inject start
-    sendWithRetryStormBackoff(request, response, None)
-    // AutoMQ inject end
+    requestChannel.sendResponse(request, response, None)
   }
 
   def sendResponseExemptThrottle(request: RequestChannel.Request,
@@ -203,17 +194,6 @@ class RequestHandlerHelper(
     quotas.request.maybeRecordExempt(request)
     requestChannel.sendResponse(request, response, onComplete)
   }
-
-  /**
-   * Sends a manually constructed response through retry storm backoff after the caller has handled quota semantics.
-   */
-  // AutoMQ inject start
-  def sendResponseThroughRetryStormGate(request: RequestChannel.Request,
-                                        response: AbstractResponse,
-                                        onComplete: Option[Send => Unit] = None): Unit = {
-    sendWithRetryStormBackoff(request, response, onComplete)
-  }
-  // AutoMQ inject end
 
   private def sendErrorResponseExemptThrottle(request: RequestChannel.Request, error: Throwable): Unit = {
     quotas.request.maybeRecordExempt(request)
@@ -224,13 +204,5 @@ class RequestHandlerHelper(
     quotas.request.maybeRecordExempt(request)
     requestChannel.sendNoOpResponse(request)
   }
-
-  // AutoMQ inject start
-  private def sendWithRetryStormBackoff(request: RequestChannel.Request,
-                                        response: AbstractResponse,
-                                        onComplete: Option[Send => Unit]): Unit = {
-    requestChannel.sendResponse(request, response, onComplete)
-  }
-  // AutoMQ inject end
 
 }

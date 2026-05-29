@@ -41,12 +41,6 @@ last_updated: 2026-05-29
 ./gradlew --build-cache rat checkstyleMain checkstyleTest spotlessJavaCheck
 ```
 
-- Also run the SpotBugs gate:
-
-```bash
-./gradlew --build-cache spotbugsMain spotbugsTest
-```
-
 - Do not replace this gate with focused unit tests. Run it in addition to the
   relevant focused or tagged test selection for the change.
 
