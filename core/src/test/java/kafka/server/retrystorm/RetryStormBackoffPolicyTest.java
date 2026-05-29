@@ -120,21 +120,22 @@ public class RetryStormBackoffPolicyTest {
         assertTrue((decision.reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
     }
 
-    /** Given mixed transient and non-transient errors, the whole response uses protective counting only. */
+    /**
+     * Given mixed transient and non-transient errors, each resource uses its own error class and
+     * response delay aggregates the strictest resource decision.
+     */
     @Test
-    public void testMixedTransientAndNonTransientBatchUsesProtectiveThresholdOnly() {
+    public void testMixedTransientAndNonTransientBatchAggregatesPerResourceDecisions() {
         RetryStormBackoffPolicy policy = newPolicy();
         List<ResourceErrorExtractor.ResourceError> errors = List.of(
             error(Errors.NOT_LEADER_OR_FOLLOWER, "topic-0"),
             error(Errors.UNKNOWN_TOPIC_OR_PARTITION, "topic-1")
         );
 
-        for (int i = 0; i < 5; i++) {
-            assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L + i).action());
-        }
-        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1005L);
+        assertEquals(BackoffAction.IMMEDIATE, evaluate(policy, ApiKeys.PRODUCE, errors, 1000L).action());
+        BackoffDecision decision = evaluate(policy, ApiKeys.PRODUCE, errors, 1001L);
         assertEquals(BackoffAction.DELAYED, decision.action());
-        assertEquals(RetryStormBackoffStateStore.REASON_PROTECTIVE_ERROR, decision.reasonMask());
+        assertEquals(RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT, decision.reasonMask());
     }
 
     /** Given separate protective-only resources reach threshold, response-level delay uses the delayed resource. */

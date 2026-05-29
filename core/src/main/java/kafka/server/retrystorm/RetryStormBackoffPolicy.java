@@ -96,19 +96,10 @@ public class RetryStormBackoffPolicy {
         long decisionDelayMs = delayCapMs.isPresent()
             ? Math.min(config.maxDelayMs(), Math.max(delayCapMs.getAsLong(), 0L))
             : config.maxDelayMs();
-        boolean[] delayableTransientByResource = new boolean[errors.size()];
-        boolean allErrorsDelayableTransient = true;
-        for (int i = 0; i < errors.size(); i++) {
-            boolean delayableTransient = isDelayableTransient(apiKey, Errors.forCode(errors.get(i).errorCode()));
-            delayableTransientByResource[i] = delayableTransient;
-            allErrorsDelayableTransient &= delayableTransient;
-        }
-
         long maxDelayMs = 0L;
         int reasonMask = 0;
-        for (int i = 0; i < errors.size(); i++) {
-            ResourceErrorExtractor.ResourceError error = errors.get(i);
-            boolean delayableTransient = allErrorsDelayableTransient && delayableTransientByResource[i];
+        for (ResourceErrorExtractor.ResourceError error : errors) {
+            boolean delayableTransient = isDelayableTransient(apiKey, Errors.forCode(error.errorCode()));
             RetryStormBackoffStateStore.StateDecision decision = stateStore.recordAndDecide(
                 backoffKey(apiKey, error, context),
                 new RetryStormBackoffStateStore.ErrorClassSet(delayableTransient, true),
