@@ -22,6 +22,8 @@ import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.timeline.TimelineHashMap;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -66,6 +68,14 @@ public final class KVDelta {
         }
     }
 
+    public void finishSnapshot() {
+        image.forEach((key, value) -> {
+            if (!changedKV.containsKey(key)) {
+                removedKeys.add(key);
+            }
+        });
+    }
+
     public KVImage apply() {
         RegistryRef registry = image.registryRef();
         // get original objects first
@@ -93,7 +103,13 @@ public final class KVDelta {
         return changedKV.get(kvKey);
     }
 
+    @VisibleForTesting
     Map<KVKey, ByteBuffer> changedKV() {
         return changedKV;
+    }
+
+    @VisibleForTesting
+    Set<KVKey> removedKeys() {
+        return removedKeys;
     }
 }

@@ -89,6 +89,8 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         this.nodeId = nodeId;
         this.ranges = ranges;
         this.dataTimeInMs = dataTimeInMs;
+        // A snapshot can rematerialize the same object id with different ranges.
+        invalidateCache(objectId);
     }
 
     public List<StreamOffsetRange> offsetRangeList() {
@@ -198,6 +200,8 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
         streamOffsetRanges = new ArrayList<>(streamOffsetRanges);
         streamOffsetRanges.sort(Comparator.comparingLong(StreamOffsetRange::streamId));
         RANGES_CACHE.put(objectId, streamOffsetRanges);
+        // Keep find(streamId)'s map cache consistent with the updated range list.
+        RANGE_MAP_CACHE.invalidate(objectId);
         return encode(streamOffsetRanges);
     }
 
@@ -259,5 +263,10 @@ public class S3StreamSetObject implements Comparable<S3StreamSetObject> {
     public static void cleanCache() {
         RANGES_CACHE.invalidateAll();
         RANGE_MAP_CACHE.invalidateAll();
+    }
+
+    private static void invalidateCache(long objectId) {
+        RANGES_CACHE.invalidate(objectId);
+        RANGE_MAP_CACHE.invalidate(objectId);
     }
 }
