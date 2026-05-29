@@ -195,7 +195,7 @@ public class AutoMQConfig {
 
     public static final String RETRY_STORM_BACKOFF_ENABLED_CONFIG = "automq.retry.storm.backoff.enabled";
     public static final String RETRY_STORM_BACKOFF_ENABLED_DOC = "Whether retry storm delayed response backoff is enabled";
-    public static final boolean RETRY_STORM_BACKOFF_ENABLED_DEFAULT = true;
+    public static final boolean RETRY_STORM_BACKOFF_ENABLED_DEFAULT = false;
 
     public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG = "automq.retry.storm.backoff.max.delay.ms";
     public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC = "The maximum retry storm delayed response time in milliseconds, from 0 to 10000";

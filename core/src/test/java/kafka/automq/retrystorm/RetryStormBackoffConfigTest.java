@@ -40,7 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class RetryStormBackoffConfigTest {
 
     /**
-     * Given AutoMQ broker config definitions, default retry storm settings are enabled with 1000ms max delay.
+     * Given AutoMQ broker config definitions, retry storm is disabled by default with 1000ms max delay.
      */
     @Test
     public void testConfigDefDefaults() {
@@ -48,7 +48,7 @@ public class RetryStormBackoffConfigTest {
         AutoMQConfig.define(configDef);
 
         Map<String, Object> defaults = configDef.defaultValues();
-        assertEquals(true, defaults.get(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG));
+        assertEquals(false, defaults.get(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG));
         assertEquals(1000L, defaults.get(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG));
     }
 
