@@ -41,6 +41,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -137,6 +138,28 @@ public class S3ObjectsImageTest {
     @Test
     public void testApplyDelta1() {
         assertEquals(IMAGE2, DELTA1.apply());
+    }
+
+    @Test
+    public void testFinishSnapshotRemovesMissingObjects() {
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<Long, S3Object> map = new TimelineHashMap<>(registry, 10);
+        map.put(0L, new S3Object(0L, -1, -1, S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
+        map.put(1L, new S3Object(1L, -1, -1, S3ObjectState.PREPARED, ObjectAttributes.DEFAULT.attributes()));
+        registry.getOrCreateSnapshot(0);
+        S3ObjectsDelta delta = new S3ObjectsDelta(new S3ObjectsImage(1L, map, new RegistryRef(registry, 0, new ArrayList<>())));
+        delta.replay(new S3ObjectRecord()
+            .setObjectId(0L)
+            .setObjectState((byte) S3ObjectState.COMMITTED.ordinal())
+            .setAttributes(ObjectAttributes.DEFAULT.attributes()));
+        delta.finishSnapshot();
+
+        assertEquals(Set.of(0L), delta.changedObjects().keySet());
+        assertEquals(Set.of(1L), delta.removedObjects());
+
+        S3ObjectsImage image = delta.apply();
+        assertEquals(1, image.objectsCount());
+        assertTrue(image.objectIds().contains(0L));
     }
 
     @Test

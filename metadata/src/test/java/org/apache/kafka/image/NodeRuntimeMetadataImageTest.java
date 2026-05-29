@@ -34,7 +34,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -116,6 +118,74 @@ public class NodeRuntimeMetadataImageTest {
                     new StreamOffsetRange(STREAM1, 0L, 200L)), 0L)));
         assertEquals(image3, delta2.apply());
         testToImageAndBack(image3);
+    }
+
+    @Test
+    public void testFinishSnapshotHandlesStreamSetObjectUpdatesAddsAndRemoves() {
+        NodeS3StreamSetObjectMetadataImage image = new NodeS3StreamSetObjectMetadataImage(BROKER0, 1,
+            DeltaList.of(
+                new S3StreamSetObject(0L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 0L, 100L)), 0L),
+                new S3StreamSetObject(1L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM1, 0L, 100L)), 1L)));
+        NodeS3WALMetadataDelta delta = new NodeS3WALMetadataDelta(image);
+        delta.replay(new S3StreamSetObjectRecord()
+            .setObjectId(0L)
+            .setNodeId(BROKER0)
+            .setOrderId(2L)
+            .setRanges(S3StreamSetObject.encode(List.of(
+                new StreamOffsetRange(STREAM0, 100L, 200L)))));
+        delta.replay(new S3StreamSetObjectRecord()
+            .setObjectId(2L)
+            .setNodeId(BROKER0)
+            .setOrderId(3L)
+            .setRanges(S3StreamSetObject.encode(List.of(
+                new StreamOffsetRange(STREAM1, 100L, 200L)))));
+        delta.finishSnapshot();
+
+        assertEquals(Set.of(0L, 2L), delta.addedS3StreamSetObjects().keySet());
+        assertEquals(Set.of(1L), delta.removedS3StreamSetObjects());
+
+        List<S3StreamSetObject> objects = delta.apply().getObjects().toList();
+        objects.sort(Comparator.comparingLong(S3StreamSetObject::objectId));
+        assertEquals(2, objects.size());
+        assertEquals(0L, objects.get(0).objectId());
+        assertEquals(2L, objects.get(0).orderId());
+        assertEquals(List.of(new StreamOffsetRange(STREAM0, 100L, 200L)), objects.get(0).offsetRangeList());
+        assertEquals(2L, objects.get(1).objectId());
+        assertEquals(3L, objects.get(1).orderId());
+        assertEquals(List.of(new StreamOffsetRange(STREAM1, 100L, 200L)), objects.get(1).offsetRangeList());
+
+        List<S3StreamSetObject> orderedObjects = delta.apply().orderList();
+        assertEquals(2, orderedObjects.size());
+        assertEquals(0L, orderedObjects.get(0).objectId());
+        assertEquals(2L, orderedObjects.get(0).orderId());
+        assertEquals(List.of(new StreamOffsetRange(STREAM0, 100L, 200L)), orderedObjects.get(0).offsetRangeList());
+        assertEquals(2L, orderedObjects.get(1).objectId());
+        assertEquals(3L, orderedObjects.get(1).orderId());
+        assertEquals(List.of(new StreamOffsetRange(STREAM1, 100L, 200L)), orderedObjects.get(1).offsetRangeList());
+    }
+
+    @Test
+    public void testFinishSnapshotRemovesMissingStreamSetObjects() {
+        NodeS3StreamSetObjectMetadataImage image = new NodeS3StreamSetObjectMetadataImage(BROKER0, 1,
+            DeltaList.of(
+                new S3StreamSetObject(0L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 0L, 100L)), 0L),
+                new S3StreamSetObject(1L, BROKER0, List.of(
+                    new StreamOffsetRange(STREAM0, 100L, 200L)), 1L)));
+        NodeS3WALMetadataDelta delta = new NodeS3WALMetadataDelta(image);
+        delta.replay(new S3StreamSetObjectRecord()
+            .setObjectId(0L)
+            .setNodeId(BROKER0)
+            .setOrderId(0L)
+            .setRanges(S3StreamSetObject.encode(List.of(
+                new StreamOffsetRange(STREAM0, 0L, 100L)))));
+        delta.finishSnapshot();
+
+        List<S3StreamSetObject> objects = delta.apply().getObjects().toList();
+        assertEquals(List.of(new S3StreamSetObject(0L, BROKER0, List.of(
+            new StreamOffsetRange(STREAM0, 0L, 100L)), 0L)), objects);
     }
 
     private void testToImageAndBack(NodeS3StreamSetObjectMetadataImage image) {
