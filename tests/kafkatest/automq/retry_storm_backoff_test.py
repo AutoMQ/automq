@@ -7,7 +7,7 @@ import re
 from ducktape.mark.resource import cluster
 from ducktape.tests.test import Test
 
-from kafkatest.automq.automq_e2e_util import FILE_WAL
+from kafkatest.automq.automq_e2e_util import S3_WAL
 from kafkatest.services.kafka import KafkaService
 
 
@@ -32,7 +32,7 @@ class RetryStormBackoffTest(Test):
             ["s3.wal.capacity", str(log_size)],
             ["s3.wal.upload.threshold", str(log_size // 4)],
             ["s3.block.cache.size", str(log_size)],
-            ["s3.wal.path", FILE_WAL],
+            ["s3.wal.path", S3_WAL],
         ]
         self.kafka = KafkaService(
             self.test_context,
