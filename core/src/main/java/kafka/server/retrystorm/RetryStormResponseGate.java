@@ -21,6 +21,9 @@ package kafka.server.retrystorm;
 
 import kafka.server.ResourceErrorExtractor;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.OptionalLong;
 
 /**
@@ -31,19 +34,18 @@ import java.util.OptionalLong;
  * or delegates the final send callback to the scheduler.</p>
  */
 public class RetryStormResponseGate {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RetryStormResponseGate.class);
+
     private final RetryStormBackoffPolicy policy;
     private final RetryStormDelayedResponseScheduler scheduler;
-    private final RetryStormBackoffLogger logger;
 
     /**
-     * Creates a response gate over policy, scheduler, and logger.
+     * Creates a response gate over policy and scheduler.
      */
     public RetryStormResponseGate(RetryStormBackoffPolicy policy,
-                                  RetryStormDelayedResponseScheduler scheduler,
-                                  RetryStormBackoffLogger logger) {
+                                  RetryStormDelayedResponseScheduler scheduler) {
         this.policy = policy;
         this.scheduler = scheduler;
-        this.logger = logger;
     }
 
     /**
@@ -52,25 +54,30 @@ public class RetryStormResponseGate {
     public void sendOrDelay(RetryStormRequestContext context,
                             ResourceErrorExtractor.ResourceErrorView errorView,
                             OptionalLong delayCapMs,
-                            Object request,
-                            Object response,
                             Runnable sendNow) {
         if (!errorView.allErrorCandidate() || !policy.supports(context.apiKey())) {
             sendNow.run();
             return;
         }
 
-        BackoffDecision decision = policy.evaluate(
-            context.apiKey(),
-            errorView.errors(),
-            new BackoffContext(context.clientScope(), context.nowMs()),
-            delayCapMs
-        );
+        BackoffDecision decision;
+        try {
+            decision = policy.evaluate(
+                context.apiKey(),
+                errorView.errors(),
+                new BackoffContext(context.clientScope(), context.nowMs()),
+                delayCapMs
+            );
+        } catch (RuntimeException e) {
+            LOGGER.warn("Retry storm response gate failed for apiKey={}, clientScope={}, send response immediately",
+                context.apiKey(), context.clientScope(), e);
+            decision = BackoffDecision.immediate();
+        }
+
         if (decision.action() == BackoffAction.IMMEDIATE) {
             sendNow.run();
         } else {
-            logger.logDelayed(context, errorView.errors(), decision);
-            scheduler.schedule(request, response, decision.delayMs(), sendNow);
+            scheduler.schedule(decision.delayMs(), sendNow);
         }
     }
 }

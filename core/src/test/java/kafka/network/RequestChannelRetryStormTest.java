@@ -21,7 +21,6 @@ package kafka.network;
 
 import kafka.automq.retrystorm.RetryStormBackoffConfig;
 import kafka.automq.retrystorm.RetryStormBackoffStateStore;
-import kafka.server.retrystorm.RetryStormBackoffLogger;
 import kafka.server.retrystorm.RetryStormBackoffPolicy;
 import kafka.server.retrystorm.RetryStormDelayedResponseScheduler;
 import kafka.server.retrystorm.RetryStormResponseGate;
@@ -69,8 +68,7 @@ public class RequestChannelRetryStormTest {
                 new RetryStormBackoffConfig(true, 1000L),
                 new RetryStormBackoffStateStore()
             ),
-            scheduler,
-            RetryStormBackoffLogger.NOOP
+            scheduler
         );
         RequestChannel channel = new RequestChannel(
             10,
@@ -137,7 +135,7 @@ public class RequestChannelRetryStormTest {
         }
 
         @Override
-        public void schedule(Object request, Object response, long delayMs, Runnable sendNow) {
+        public void schedule(long delayMs, Runnable sendNow) {
             scheduled.incrementAndGet();
         }
     }

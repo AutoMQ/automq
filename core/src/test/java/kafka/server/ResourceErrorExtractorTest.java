@@ -28,7 +28,11 @@ import org.apache.kafka.common.message.DescribeTopicPartitionsResponseData;
 import org.apache.kafka.common.message.FetchResponseData;
 import org.apache.kafka.common.message.FindCoordinatorRequestData;
 import org.apache.kafka.common.message.FindCoordinatorResponseData;
+import org.apache.kafka.common.message.ListOffsetsRequestData;
+import org.apache.kafka.common.message.ListOffsetsResponseData;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.message.OffsetForLeaderEpochRequestData;
+import org.apache.kafka.common.message.OffsetForLeaderEpochResponseData;
 import org.apache.kafka.common.message.OffsetFetchResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
@@ -43,8 +47,12 @@ import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.FetchResponse;
 import org.apache.kafka.common.requests.FindCoordinatorRequest;
 import org.apache.kafka.common.requests.FindCoordinatorResponse;
+import org.apache.kafka.common.requests.ListOffsetsRequest;
+import org.apache.kafka.common.requests.ListOffsetsResponse;
 import org.apache.kafka.common.requests.MetadataRequest;
 import org.apache.kafka.common.requests.MetadataResponse;
+import org.apache.kafka.common.requests.OffsetsForLeaderEpochRequest;
+import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse;
 import org.apache.kafka.common.requests.OffsetFetchRequest;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
 import org.apache.kafka.common.requests.ProduceRequest;
@@ -144,6 +152,67 @@ public class ResourceErrorExtractorTest {
 
         assertFalse(view.allErrorCandidate());
         assertEquals(List.of(new ResourceErrorExtractor.ResourceError(Errors.FENCED_LEADER_EPOCH.code(), "topic-1")), view.errors());
+    }
+
+    /**
+     * Given ListOffsets has a valid offset and another partition error, it is not all-error.
+     */
+    @Test
+    public void testListOffsetsValidOffsetCountsAsValidResult() throws Exception {
+        ListOffsetsRequest request = ListOffsetsRequest.Builder
+            .forConsumer(true, org.apache.kafka.common.IsolationLevel.READ_UNCOMMITTED)
+            .setTargetTimes(List.of(new ListOffsetsRequestData.ListOffsetsTopic()
+                .setName("topic")
+                .setPartitions(List.of(
+                    new ListOffsetsRequestData.ListOffsetsPartition().setPartitionIndex(0).setTimestamp(1000L),
+                    new ListOffsetsRequestData.ListOffsetsPartition().setPartitionIndex(1).setTimestamp(1000L)
+                ))))
+            .build((short) 1);
+        ListOffsetsResponseData responseData = new ListOffsetsResponseData();
+        responseData.topics().add(new ListOffsetsResponseData.ListOffsetsTopicResponse().setName("topic").setPartitions(List.of(
+            new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                .setPartitionIndex(0)
+                .setErrorCode(Errors.NONE.code())
+                .setOffset(12L),
+            new ListOffsetsResponseData.ListOffsetsPartitionResponse()
+                .setPartitionIndex(1)
+                .setErrorCode(Errors.NOT_LEADER_OR_FOLLOWER.code())
+                .setOffset(ListOffsetsResponse.UNKNOWN_OFFSET)
+        )));
+
+        ResourceErrorExtractor.ResourceErrorView view =
+            ResourceErrorExtractor.extractView(request(request), new ListOffsetsResponse(responseData));
+
+        assertFalse(view.allErrorCandidate());
+        assertEquals(List.of(new ResourceErrorExtractor.ResourceError(Errors.NOT_LEADER_OR_FOLLOWER.code(), "topic-1")), view.errors());
+    }
+
+    /**
+     * Given OffsetForLeaderEpoch has only partition errors, the view is an all-error candidate.
+     */
+    @Test
+    public void testOffsetForLeaderEpochAllErrorsReturnsAllErrorCandidate() throws Exception {
+        OffsetForLeaderEpochRequestData.OffsetForLeaderTopicCollection topics =
+            new OffsetForLeaderEpochRequestData.OffsetForLeaderTopicCollection();
+        topics.add(new OffsetForLeaderEpochRequestData.OffsetForLeaderTopic()
+            .setTopic("topic")
+            .setPartitions(List.of(new OffsetForLeaderEpochRequestData.OffsetForLeaderPartition()
+                .setPartition(0)
+                .setLeaderEpoch(1))));
+        OffsetsForLeaderEpochRequest request = OffsetsForLeaderEpochRequest.Builder.forConsumer(topics).build((short) 3);
+        OffsetForLeaderEpochResponseData responseData = new OffsetForLeaderEpochResponseData();
+        responseData.topics().add(new OffsetForLeaderEpochResponseData.OffsetForLeaderTopicResult()
+            .setTopic("topic")
+            .setPartitions(List.of(new OffsetForLeaderEpochResponseData.EpochEndOffset()
+                .setPartition(0)
+                .setErrorCode(Errors.FENCED_LEADER_EPOCH.code())
+                .setEndOffset(OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET))));
+
+        ResourceErrorExtractor.ResourceErrorView view =
+            ResourceErrorExtractor.extractView(request(request), new OffsetsForLeaderEpochResponse(responseData));
+
+        assertTrue(view.allErrorCandidate());
+        assertEquals(List.of(new ResourceErrorExtractor.ResourceError(Errors.FENCED_LEADER_EPOCH.code(), "topic-0")), view.errors());
     }
 
     /**

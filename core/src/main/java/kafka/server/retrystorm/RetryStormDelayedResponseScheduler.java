@@ -59,7 +59,7 @@ public class RetryStormDelayedResponseScheduler {
     /**
      * Schedules the final response send; zero delay or closed scheduler executes the send immediately.
      */
-    public void schedule(Object request, Object response, long delayMs, Runnable sendNow) {
+    public void schedule(long delayMs, Runnable sendNow) {
         if (delayMs <= 0) {
             sendNow.run();
             return;

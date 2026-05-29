@@ -52,7 +52,6 @@ import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**

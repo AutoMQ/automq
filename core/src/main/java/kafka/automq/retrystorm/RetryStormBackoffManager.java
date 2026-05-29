@@ -19,15 +19,24 @@
 
 package kafka.automq.retrystorm;
 
+import com.automq.stream.utils.ThreadUtils;
+import com.automq.stream.utils.Threads;
+
 import org.apache.kafka.common.Reconfigurable;
 import org.apache.kafka.common.config.ConfigException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import kafka.server.retrystorm.RetryStormBackoffPolicy;
+import kafka.server.retrystorm.RetryStormBackoffLogger;
 import kafka.server.retrystorm.RetryStormDelayedResponseScheduler;
 import kafka.server.retrystorm.RetryStormResponseGate;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Owns retry storm backoff runtime components for a broker.
@@ -37,17 +46,25 @@ import java.util.Set;
  * during broker shutdown. It does not evaluate responses itself.</p>
  */
 public class RetryStormBackoffManager implements Reconfigurable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RetryStormBackoffManager.class);
+    private static final long LOG_INTERVAL_MS = TimeUnit.MINUTES.toMillis(1);
+    private static final long MIN_DELAYING_AGE_TO_LOG_MS = TimeUnit.SECONDS.toMillis(10);
+    private static final int MAX_LOGGED_STATES_PER_INTERVAL = 10;
 
     private final RetryStormBackoffConfig config;
     private final RetryStormBackoffPolicy policy;
     private final RetryStormResponseGate responseGate;
     private final RetryStormDelayedResponseScheduler scheduler;
+    private final RetryStormBackoffStateStore stateStore;
+    private final RetryStormBackoffLogger logger;
+    private final ScheduledExecutorService logScheduler;
+    private final AtomicBoolean started = new AtomicBoolean(false);
 
     /**
      * Creates a manager with only config ownership, primarily for dynamic config tests.
      */
     public RetryStormBackoffManager(RetryStormBackoffConfig config) {
-        this(config, null, null, null);
+        this(config, null, null, null, null, RetryStormBackoffLogger.NOOP);
     }
 
     /**
@@ -56,11 +73,23 @@ public class RetryStormBackoffManager implements Reconfigurable {
     public RetryStormBackoffManager(RetryStormBackoffConfig config,
                                     RetryStormBackoffPolicy policy,
                                     RetryStormResponseGate responseGate,
-                                    RetryStormDelayedResponseScheduler scheduler) {
+                                    RetryStormDelayedResponseScheduler scheduler,
+                                    RetryStormBackoffStateStore stateStore,
+                                    RetryStormBackoffLogger logger) {
         this.config = config;
         this.policy = policy;
         this.responseGate = responseGate;
         this.scheduler = scheduler;
+        this.stateStore = stateStore;
+        this.logger = logger;
+        this.logScheduler = stateStore == null
+            ? null
+            : Threads.newSingleThreadScheduledExecutor(
+                ThreadUtils.createThreadFactory("retry-storm-backoff-logger-%d", true),
+                LOGGER,
+                true,
+                false
+            );
     }
 
     /**
@@ -95,9 +124,36 @@ public class RetryStormBackoffManager implements Reconfigurable {
     }
 
     /**
+     * Starts periodic delayed-state logging for the broker runtime manager.
+     */
+    public void startup() {
+        if (logScheduler != null && started.compareAndSet(false, true)) {
+            logScheduler.scheduleAtFixedRate(this::logDelayedStatesOnce,
+                LOG_INTERVAL_MS, LOG_INTERVAL_MS, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Runs one delayed-state logging scan without updating state cache access time.
+     */
+    public void logDelayedStatesOnce() {
+        if (stateStore == null) {
+            return;
+        }
+        logger.logDelayedStates(stateStore.delayedSnapshots(
+            System.currentTimeMillis(),
+            MIN_DELAYING_AGE_TO_LOG_MS,
+            MAX_LOGGED_STATES_PER_INTERVAL
+        ));
+    }
+
+    /**
      * Closes delayed response scheduling and best-effort sends pending delayed responses.
      */
     public void shutdown() {
+        if (logScheduler != null) {
+            logScheduler.shutdownNow();
+        }
         if (scheduler != null) {
             scheduler.shutdown();
         }

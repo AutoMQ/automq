@@ -23,6 +23,8 @@ import org.apache.kafka.common.protocol.ApiKeys;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -174,6 +176,51 @@ public class RetryStormBackoffStateStoreTest {
         store.evictIfNeeded();
 
         assertTrue(store.trackedDimensions() <= maxTrackedDimensions);
+    }
+
+    /**
+     * Given dimensions in candidate and delaying mode, only old-enough delaying states are returned for periodic logs.
+     */
+    @Test
+    public void testDelayedSnapshotsReturnOnlyStatesDelayingLongerThanMinimumAge() {
+        RetryStormBackoffStateStore store = newStore();
+        RetryStormBackoffStateStore.BackoffKey oldDelaying =
+            new RetryStormBackoffStateStore.BackoffKey(ApiKeys.PRODUCE.id, "topic-old", "connection-1");
+        RetryStormBackoffStateStore.BackoffKey youngDelaying =
+            new RetryStormBackoffStateStore.BackoffKey(ApiKeys.PRODUCE.id, "topic-young", "connection-1");
+        RetryStormBackoffStateStore.BackoffKey candidate =
+            new RetryStormBackoffStateStore.BackoffKey(ApiKeys.PRODUCE.id, "topic-candidate", "connection-1");
+
+        store.recordAndDecide(oldDelaying, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 1000L);
+        store.recordAndDecide(oldDelaying, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1L, 1000L);
+        store.recordAndDecide(youngDelaying, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 9000L, 1000L);
+        store.recordAndDecide(youngDelaying, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 9001L, 1000L);
+        store.recordAndDecide(candidate, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 1000L);
+
+        List<RetryStormBackoffStateStore.DelayedStateSnapshot> snapshots =
+            store.delayedSnapshots(11002L, 10000L, 10);
+
+        assertEquals(1, snapshots.size());
+        assertEquals(oldDelaying, snapshots.get(0).key());
+        assertEquals(1L, snapshots.get(0).delayingSinceMs());
+        assertTrue((snapshots.get(0).reasonMask() & RetryStormBackoffStateStore.REASON_DELAYABLE_TRANSIENT) != 0);
+    }
+
+    /**
+     * Given an idle delaying state near cache expiration, snapshot scanning does not refresh cache access time.
+     */
+    @Test
+    public void testDelayedSnapshotDoesNotTouchCacheAccessTime() throws Exception {
+        RetryStormBackoffStateStore store = new RetryStormBackoffStateStore(10L, 0L, 30L, 100000, 200L);
+
+        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 0L, 30L);
+        store.recordAndDecide(KEY, RetryStormBackoffStateStore.ErrorClassSet.delayableTransientError(), 1L, 30L);
+        Thread.sleep(50L);
+        assertEquals(1, store.delayedSnapshots(11002L, 10000L, 10).size());
+        Thread.sleep(250L);
+        store.evictIfNeeded();
+
+        assertEquals(0, store.trackedDimensions());
     }
 
     private static RetryStormBackoffStateStore newStore() {

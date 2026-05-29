@@ -19,21 +19,19 @@
 
 package kafka.server.retrystorm;
 
-import kafka.server.ResourceErrorExtractor;
+import kafka.automq.retrystorm.RetryStormBackoffStateStore;
 
 import java.util.List;
 
 /**
- * Emits sampled retry storm delayed-response decisions.
+ * Emits periodic snapshots for retry storm dimensions that remain in delaying mode.
  */
 public interface RetryStormBackoffLogger {
-    RetryStormBackoffLogger NOOP = (context, errors, decision) -> {
+    RetryStormBackoffLogger NOOP = snapshots -> {
     };
 
     /**
-     * Logs a delayed response decision with the resource errors that contributed to the decision.
+     * Logs periodic snapshots of retry storm dimensions that remain in delaying mode.
      */
-    void logDelayed(RetryStormRequestContext context,
-                    List<ResourceErrorExtractor.ResourceError> errors,
-                    BackoffDecision decision);
+    void logDelayedStates(List<RetryStormBackoffStateStore.DelayedStateSnapshot> snapshots);
 }

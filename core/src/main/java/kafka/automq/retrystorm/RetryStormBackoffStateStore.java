@@ -26,7 +26,9 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -134,6 +136,32 @@ public class RetryStormBackoffStateStore {
     }
 
     /**
+     * Returns delaying state snapshots for periodic logging without updating cache access time.
+     *
+     * <p>The scan reads {@link LoadingCache#asMap()} instead of {@code get} or {@code getUnchecked},
+     * so expire-after-access metadata is not refreshed by observability scans.</p>
+     */
+    public List<DelayedStateSnapshot> delayedSnapshots(long nowMs, long minDelayingAgeMs, int limit) {
+        if (limit <= 0) {
+            return List.of();
+        }
+        ArrayList<DelayedStateSnapshot> snapshots = new ArrayList<>(Math.min(limit, 10));
+        for (var entry : states.asMap().entrySet()) {
+            BackoffState state = entry.getValue();
+            synchronized (state) {
+                DelayedStateSnapshot snapshot = state.snapshotIfDelayed(entry.getKey(), nowMs, minDelayingAgeMs);
+                if (snapshot != null) {
+                    snapshots.add(snapshot);
+                    if (snapshots.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+        }
+        return snapshots;
+    }
+
+    /**
      * Converts internal retry storm reason flags into the stable log-facing reason string.
      */
     public static String reasonString(int reasonMask) {
@@ -164,6 +192,7 @@ public class RetryStormBackoffStateStore {
         private final ArrayDeque<Long> delayableTransientWindow = new ArrayDeque<>(DEFAULT_DELAYABLE_TRANSIENT_THRESHOLD);
         private final ArrayDeque<Long> protectiveWindow = new ArrayDeque<>(DEFAULT_PROTECTIVE_THRESHOLD);
         private long lastFailureMs;
+        private long delayingSinceMs;
         private int delayReasonMask;
 
         private StateDecision recordAndDecide(ErrorClassSet errorClasses,
@@ -215,6 +244,7 @@ public class RetryStormBackoffStateStore {
                                    boolean delayableReached,
                                    boolean protectiveReached) {
             mode = Mode.DELAYING;
+            delayingSinceMs = nowMs;
             lastFailureMs = expectedSendTimeMs(nowMs, decisionDelayMs);
             delayReasonMask = buildReasonMask(delayableReached, protectiveReached);
         }
@@ -241,11 +271,19 @@ public class RetryStormBackoffStateStore {
             mode = Mode.CANDIDATE;
             delayableTransientWindow.clear();
             protectiveWindow.clear();
+            delayingSinceMs = 0L;
             delayReasonMask = 0;
         }
 
         private long expectedSendTimeMs(long nowMs, long decisionDelayMs) {
             return nowMs + decisionDelayMs;
+        }
+
+        private DelayedStateSnapshot snapshotIfDelayed(BackoffKey key, long nowMs, long minDelayingAgeMs) {
+            if (mode != Mode.DELAYING || nowMs - delayingSinceMs < minDelayingAgeMs) {
+                return null;
+            }
+            return new DelayedStateSnapshot(key, delayingSinceMs, lastFailureMs, delayReasonMask);
         }
 
         private static void cleanExpired(ArrayDeque<Long> window, long nowMs, long slidingWindowMs) {
@@ -317,6 +355,12 @@ public class RetryStormBackoffStateStore {
             return delayMs > 0 ? new StateDecision(true, delayMs, reasonMask) : IMMEDIATE;
         }
 
+    }
+
+    /**
+     * Read-only delaying-state snapshot used by periodic retry storm logging.
+     */
+    public record DelayedStateSnapshot(BackoffKey key, long delayingSinceMs, long lastFailureMs, int reasonMask) {
     }
 
     private static int buildReasonMask(boolean delayable, boolean protective) {

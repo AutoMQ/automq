@@ -20,53 +20,29 @@
 package kafka.server.retrystorm;
 
 import kafka.automq.retrystorm.RetryStormBackoffStateStore;
-import kafka.server.ResourceErrorExtractor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 /**
- * Sampled logger that reports the first delayed decision and then every configured interval.
+ * Logs periodic snapshots of retry storm dimensions that remain in delaying mode.
  */
 public class SampledRetryStormBackoffLogger implements RetryStormBackoffLogger {
     private static final Logger LOGGER = LoggerFactory.getLogger(SampledRetryStormBackoffLogger.class);
 
-    private final long sampleEvery;
-    private final AtomicLong delayedDecisions = new AtomicLong(0L);
-
     /**
-     * Creates a sampled logger that logs the first decision and then every 1000 decisions.
-     */
-    public SampledRetryStormBackoffLogger() {
-        this(1000L);
-    }
-
-    /**
-     * Creates a sampled logger with a caller-defined sampling interval.
-     */
-    public SampledRetryStormBackoffLogger(long sampleEvery) {
-        this.sampleEvery = sampleEvery;
-    }
-
-    /**
-     * Logs selected delayed response decisions with API key, delay, reason, and affected resources.
+     * Logs at most one line per delayed state snapshot.
      */
     @Override
-    public void logDelayed(RetryStormRequestContext context,
-                           List<ResourceErrorExtractor.ResourceError> errors,
-                           BackoffDecision decision) {
-        long count = delayedDecisions.incrementAndGet();
-        if (sampleEvery <= 1 || count == 1 || count % sampleEvery == 0) {
-            String resources = errors.stream()
-                .map(ResourceErrorExtractor.ResourceError::resource)
-                .collect(Collectors.joining(","));
-            LOGGER.info("Retry storm delayed response apiKey={} delayMs={} reason={} resources={}",
-                context.apiKey(), decision.delayMs(),
-                RetryStormBackoffStateStore.reasonString(decision.reasonMask()), resources);
+    public void logDelayedStates(List<RetryStormBackoffStateStore.DelayedStateSnapshot> snapshots) {
+        for (RetryStormBackoffStateStore.DelayedStateSnapshot snapshot : snapshots) {
+            RetryStormBackoffStateStore.BackoffKey key = snapshot.key();
+            LOGGER.info("Retry storm delaying state apiKey={} resource={} clientScope={} reason={} delayingSinceMs={} lastFailureMs={}",
+                key.apiKey(), key.resourceKey(), key.clientScope(),
+                RetryStormBackoffStateStore.reasonString(snapshot.reasonMask()),
+                snapshot.delayingSinceMs(), snapshot.lastFailureMs());
         }
     }
 }

@@ -36,7 +36,7 @@ public class RetryStormDelayedResponseSchedulerTest {
         RetryStormDelayedResponseScheduler scheduler = new RetryStormDelayedResponseScheduler(10L);
         AtomicInteger sends = new AtomicInteger(0);
         try {
-            scheduler.schedule(null, null, 0L, sends::incrementAndGet);
+            scheduler.schedule(0L, sends::incrementAndGet);
             assertEquals(1, sends.get());
         } finally {
             scheduler.shutdown();
@@ -49,7 +49,7 @@ public class RetryStormDelayedResponseSchedulerTest {
         RetryStormDelayedResponseScheduler scheduler = new RetryStormDelayedResponseScheduler(10L);
         AtomicInteger sends = new AtomicInteger(0);
         try {
-            scheduler.schedule(null, null, 30L, sends::incrementAndGet);
+            scheduler.schedule(30L, sends::incrementAndGet);
             assertEquals(0, sends.get());
             eventually(1000L, () -> assertEquals(1, sends.get()));
         } finally {
@@ -62,7 +62,7 @@ public class RetryStormDelayedResponseSchedulerTest {
     public void testShutdownSendsPendingResponsesOnce() throws Exception {
         RetryStormDelayedResponseScheduler scheduler = new RetryStormDelayedResponseScheduler(1000L);
         AtomicInteger sends = new AtomicInteger(0);
-        scheduler.schedule(null, null, 10000L, sends::incrementAndGet);
+        scheduler.schedule(10000L, sends::incrementAndGet);
 
         scheduler.shutdown();
         assertEquals(1, sends.get());
@@ -78,7 +78,7 @@ public class RetryStormDelayedResponseSchedulerTest {
         AtomicInteger sends = new AtomicInteger(0);
 
         scheduler.shutdown();
-        scheduler.schedule(null, null, 10000L, sends::incrementAndGet);
+        scheduler.schedule(10000L, sends::incrementAndGet);
 
         assertEquals(1, sends.get());
     }

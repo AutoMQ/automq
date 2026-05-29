@@ -387,10 +387,12 @@ class ElasticKafkaApis(
           requestHelper.sendNoOpResponseExemptThrottle(request)
         }
       } else {
+        // AutoMQ inject start
         requestHelper.sendResponseThroughRetryStormGate(
           request,
           new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs, nodeEndpoints.values.toList.asJava)
         )
+        // AutoMQ inject end
       }
 
       PRODUCE_ACK_TIME_HIST.update(timerCallback.elapsedAs(TimeUnit.MICROSECONDS))
@@ -810,7 +812,9 @@ class ElasticKafkaApis(
         }
 
         // Send the response immediately.
+        // AutoMQ inject start
         requestHelper.sendResponseThroughRetryStormGate(request, createResponse(maxThrottleTimeMs), Some(updateConversionStats))
+        // AutoMQ inject end
       }
     }
 

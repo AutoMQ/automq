@@ -490,7 +490,7 @@ class RequestChannel(val queueSize: Int,
     }
     if (gate != null && !request.isForwarded) {
       val context = new RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
-      gate.sendOrDelay(context, errorView, retryStormDelayCapMs(request, response), request, response, sendNow)
+      gate.sendOrDelay(context, errorView, retryStormDelayCapMs(request, response), sendNow)
     } else {
       sendNow.run()
     }

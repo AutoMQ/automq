@@ -450,21 +450,25 @@ class BrokerServer(
 
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
 
+      // AutoMQ inject start
       val retryStormBackoffConfig = RetryStormBackoffConfig.from(config)
+      val retryStormBackoffStateStore = new RetryStormBackoffStateStore()
       val retryStormBackoffScheduler = new RetryStormDelayedResponseScheduler()
-      val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, new RetryStormBackoffStateStore())
-      val retryStormResponseGate = new RetryStormResponseGate(
-        retryStormBackoffPolicy,
-        retryStormBackoffScheduler,
-        new SampledRetryStormBackoffLogger()
-      )
+      val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, retryStormBackoffStateStore)
+      val retryStormBackoffLogger = new SampledRetryStormBackoffLogger()
+      val retryStormResponseGate = new RetryStormResponseGate(retryStormBackoffPolicy, retryStormBackoffScheduler)
       retryStormBackoffManager = new RetryStormBackoffManager(
         retryStormBackoffConfig,
         retryStormBackoffPolicy,
         retryStormResponseGate,
-        retryStormBackoffScheduler
+        retryStormBackoffScheduler,
+        retryStormBackoffStateStore,
+        retryStormBackoffLogger
       )
+      retryStormBackoffManager.startup()
       socketServer.dataPlaneRequestChannel.setRetryStormResponseGate(retryStormResponseGate)
+      // AutoMQ inject end
+
 
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
@@ -762,13 +766,14 @@ class BrokerServer(
       if (lifecycleManager != null)
         lifecycleManager.beginShutdown()
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       if (backPressureManager != null) {
         CoreUtils.swallow(backPressureManager.shutdown(), this)
       }
       if (retryStormBackoffManager != null) {
         CoreUtils.swallow(retryStormBackoffManager.shutdown(), this)
       }
+      // AutoMQ inject end
 
       // https://github.com/AutoMQ/automq-for-kafka/issues/540
       // await partition shutdown:
