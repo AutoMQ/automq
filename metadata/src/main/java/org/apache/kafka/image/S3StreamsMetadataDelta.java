@@ -142,6 +142,32 @@ public final class S3StreamsMetadataDelta {
         return set;
     }
 
+    public void finishSnapshot() {
+        for (S3StreamMetadataImage stream : image.streamMetadataList()) {
+            long streamId = stream.getStreamId();
+            S3StreamMetadataDelta delta = changedStreams.get(streamId);
+            if (delta == null) {
+                deletedStreams.add(streamId);
+            } else {
+                delta.finishSnapshot();
+            }
+        }
+        for (NodeS3StreamSetObjectMetadataImage node : image.nodeMetadataList()) {
+            NodeS3WALMetadataDelta delta = changedNodes.get(node.getNodeId());
+            if (delta == null) {
+                deletedNodes.add(node.getNodeId());
+            } else {
+                delta.finishSnapshot();
+            }
+        }
+        for (Long streamId : image.streamEndOffsets().keySet()) {
+            if (!changedStreamEndOffsets.containsKey(streamId)) {
+                // Null marks an end-offset deletion during snapshot finalization.
+                changedStreamEndOffsets.put(streamId, null);
+            }
+        }
+    }
+
     private void updateStreamEndOffset(long streamId, long newEndOffset) {
         changedStreamEndOffsets.compute(streamId, (id, offset) -> {
             if (offset == null) {
@@ -203,6 +229,10 @@ public final class S3StreamsMetadataDelta {
 
             changedStreamEndOffsets.forEach((streamId, newEndOffset) -> newStreamEndOffsets.compute(streamId, (key, oldEndOffset) -> {
                 if (!newStreamMetadataMap.containsKey(streamId)) {
+                    return null;
+                }
+                if (newEndOffset == null) {
+                    // Returning null from compute removes the entry marked by finishSnapshot().
                     return null;
                 }
                 if (oldEndOffset == null) {

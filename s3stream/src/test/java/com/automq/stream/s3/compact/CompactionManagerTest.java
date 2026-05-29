@@ -178,6 +178,23 @@ public class CompactionManagerTest extends CompactionTestBase {
     }
 
     @Test
+    public void testDeduplicateObjectsByIdKeepsLatestMetadata() {
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+
+        S3ObjectMetadata oldObject = s3ObjectMetadata.get(0);
+        S3ObjectMetadata latestObject = new S3ObjectMetadata(oldObject.objectId(), S3ObjectType.STREAM_SET,
+            List.of(new StreamOffsetRange(STREAM_0, 0L, 15L)), oldObject.dataTimeInMs(),
+            oldObject.committedTimestamp(), oldObject.objectSize(), oldObject.getOrderId(), oldObject.attributes());
+        S3ObjectMetadata secondObject = s3ObjectMetadata.get(1);
+
+        List<S3ObjectMetadata> deduplicated = compactionManager.deduplicateObjectsById(
+            List.of(oldObject, latestObject, secondObject), "test");
+
+        assertEquals(List.of(latestObject, secondObject), deduplicated);
+    }
+
+    @Test
     public void testForceSplitWithOutDatedObject() {
         when(streamManager.getStreams(Collections.emptyList())).thenReturn(CompletableFuture.completedFuture(
             List.of(new StreamMetadata(STREAM_0, 0, 999, 9999, StreamState.OPENED),

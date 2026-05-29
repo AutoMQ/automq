@@ -42,6 +42,7 @@ import org.junit.jupiter.api.Timeout;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -182,6 +183,54 @@ public class StreamRuntimeMetadataImageTest {
             new S3StreamObject(1L, 999, STREAM0, 100L)));
         assertEquals(image2, delta1.apply());
         testToImageAndBack(image2);
+    }
+
+    @Test
+    public void testFinishSnapshotHandlesStreamObjectUpdatesAddsAndRemoves() {
+        S3StreamMetadataImage image = new S3StreamMetadataImage(
+            STREAM0, 0L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 0L, Collections.emptyList(),
+            DeltaList.of(
+                new S3StreamObject(0L, STREAM0, 0L, 100L),
+                new S3StreamObject(1L, STREAM0, 100L, 200L)));
+        S3StreamMetadataDelta delta = new S3StreamMetadataDelta(image);
+        delta.replay(new S3StreamObjectRecord()
+            .setObjectId(0L)
+            .setStreamId(STREAM0)
+            .setStartOffset(100L)
+            .setEndOffset(200L));
+        delta.replay(new S3StreamObjectRecord()
+            .setObjectId(2L)
+            .setStreamId(STREAM0)
+            .setStartOffset(200L)
+            .setEndOffset(300L));
+        delta.finishSnapshot();
+
+        assertEquals(Set.of(0L, 2L), delta.changedS3StreamObjects().keySet());
+        assertEquals(Set.of(1L), delta.removedS3StreamObjectIds());
+
+        List<S3StreamObject> objects = delta.apply().getStreamObjects();
+        assertEquals(List.of(
+            new S3StreamObject(0L, STREAM0, 100L, 200L),
+            new S3StreamObject(2L, STREAM0, 200L, 300L)
+        ), objects);
+    }
+
+    @Test
+    public void testFinishSnapshotRemovesMissingStreamObjects() {
+        S3StreamMetadataImage image = new S3StreamMetadataImage(
+            STREAM0, 0L, StreamState.OPENED, new S3StreamRecord.TagCollection(), 0L, Collections.emptyList(),
+            DeltaList.of(
+                new S3StreamObject(0L, STREAM0, 0L, 100L),
+                new S3StreamObject(1L, STREAM0, 100L, 200L)));
+        S3StreamMetadataDelta delta = new S3StreamMetadataDelta(image);
+        delta.replay(new S3StreamObjectRecord()
+            .setObjectId(0L)
+            .setStreamId(STREAM0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+        delta.finishSnapshot();
+
+        assertEquals(List.of(new S3StreamObject(0L, STREAM0, 0L, 100L)), delta.apply().getStreamObjects());
     }
 
     @Test

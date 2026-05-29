@@ -561,6 +561,9 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().finishSnapshot();
         getOrCreateScramDelta().finishSnapshot();
         getOrCreateDelegationTokenDelta().finishSnapshot();
+        getOrCreateStreamsMetadataDelta().finishSnapshot();
+        getOrCreateObjectsMetadataDelta().finishSnapshot();
+        getOrCreateKVDelta().finishSnapshot();
     }
 
     public MetadataImage apply(MetadataProvenance provenance) {

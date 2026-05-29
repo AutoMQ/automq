@@ -57,6 +57,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -275,7 +276,12 @@ public class CompactionManager {
     }
 
     void updateStreamDataBlockMap(List<S3ObjectMetadata> objectMetadataList) {
+        objectMetadataList = deduplicateObjectsById(objectMetadataList, "stream set compaction");
         this.streamDataBlockMap = CompactionUtils.blockWaitObjectIndices(objectMetadataList, objectStorage, logger);
+    }
+
+    Map<Long, List<StreamDataBlock>> streamDataBlockMap() {
+        return streamDataBlockMap;
     }
 
     void filterInvalidStreamDataBlocks(List<StreamMetadata> streamMetadataList) {
@@ -292,6 +298,7 @@ public class CompactionManager {
             logger.info("Compaction manager is shutdown, skip compaction");
             return;
         }
+        objectMetadataList = deduplicateObjectsById(objectMetadataList, "stream set compaction");
         Map<Boolean, List<S3ObjectMetadata>> objectMetadataFilterMap = convertS3Objects(objectMetadataList);
         List<S3ObjectMetadata> objectsToForceSplit = objectMetadataFilterMap.get(true);
         List<S3ObjectMetadata> objectsToCompact = objectMetadataFilterMap.get(false);
@@ -321,6 +328,7 @@ public class CompactionManager {
     }
 
     void forceSplitObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToForceSplit) {
+        objectsToForceSplit = deduplicateObjectsById(objectsToForceSplit, "force split");
         logger.info("Force split {} stream set objects", objectsToForceSplit.size());
         TimerUtil timerUtil = new TimerUtil();
         for (int i = 0; i < objectsToForceSplit.size(); i++) {
@@ -367,6 +375,7 @@ public class CompactionManager {
         if (objectsToCompact.isEmpty()) {
             return;
         }
+        objectsToCompact = deduplicateObjectsById(objectsToCompact, "stream set compaction");
         // sort by S3 object data time in descending order
         objectsToCompact.sort((o1, o2) -> Long.compare(o2.dataTimeInMs(), o1.dataTimeInMs()));
         int totalSize = objectsToCompact.size();
@@ -596,6 +605,7 @@ public class CompactionManager {
     CommitStreamSetObjectRequest buildCompactRequest(List<StreamMetadata> streamMetadataList,
         List<S3ObjectMetadata> objectsToCompact)
         throws CompletionException {
+        objectsToCompact = deduplicateObjectsById(objectsToCompact, "stream set compaction");
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
         request.setObjectId(-1L);
 
@@ -826,5 +836,25 @@ public class CompactionManager {
         request.setOrderId(s3ObjectMetadata.get(0).objectId());
         request.setObjectSize(uploader.complete());
         request.setAttributes(ObjectAttributes.builder().bucket(uploader.bucketId()).build().attributes());
+    }
+
+    List<S3ObjectMetadata> deduplicateObjectsById(List<S3ObjectMetadata> objects, String inputName) {
+        if (objects.size() < 2) {
+            return objects;
+        }
+        Map<Long, S3ObjectMetadata> deduplicated = new LinkedHashMap<>();
+        int duplicates = 0;
+        for (S3ObjectMetadata object : objects) {
+            S3ObjectMetadata previous = deduplicated.put(object.objectId(), object);
+            if (previous != null) {
+                duplicates++;
+            }
+        }
+        if (duplicates > 0) {
+            logger.warn("Detected {} duplicate object ids in {} input, deduplicated {} objects to {} objects",
+                duplicates, inputName, objects.size(), deduplicated.size());
+            return new ArrayList<>(deduplicated.values());
+        }
+        return objects;
     }
 }

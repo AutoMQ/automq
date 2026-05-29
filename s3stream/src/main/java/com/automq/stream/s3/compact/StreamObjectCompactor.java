@@ -50,8 +50,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -165,7 +167,9 @@ public class StreamObjectCompactor {
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
 
-        List<S3ObjectMetadata> objects = objectManager.getStreamObjects(stream.streamId(), 0L, stream.confirmOffset(), Integer.MAX_VALUE).get();
+        List<S3ObjectMetadata> objects = deduplicateObjectsById(
+            objectManager.getStreamObjects(stream.streamId(), 0L, stream.confirmOffset(), Integer.MAX_VALUE).get(),
+            "stream object compaction");
         List<S3ObjectMetadata> expiredObjects = new ArrayList<>(objects.size());
         List<S3ObjectMetadata> livingObjects = new ArrayList<>(objects.size());
         for (S3ObjectMetadata object : objects) {
@@ -268,6 +272,26 @@ public class StreamObjectCompactor {
             }
             i = end;
         }
+    }
+
+    static List<S3ObjectMetadata> deduplicateObjectsById(List<S3ObjectMetadata> objects, String inputName) {
+        if (objects.size() < 2) {
+            return objects;
+        }
+        Map<Long, S3ObjectMetadata> deduplicated = new LinkedHashMap<>();
+        int duplicates = 0;
+        for (S3ObjectMetadata object : objects) {
+            S3ObjectMetadata previous = deduplicated.put(object.objectId(), object);
+            if (previous != null) {
+                duplicates++;
+            }
+        }
+        if (duplicates > 0) {
+            LOGGER.warn("Detected {} duplicate object ids in {} input, deduplicated {} objects to {} objects",
+                duplicates, inputName, objects.size(), deduplicated.size());
+            return new ArrayList<>(deduplicated.values());
+        }
+        return objects;
     }
 
     static class CompactByPhysicalMerge {
@@ -487,6 +511,7 @@ public class StreamObjectCompactor {
     static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects,
                                                long maxStreamObjectSize,
                                                Predicate<S3ObjectMetadata> objectFilter) {
+        objects = deduplicateObjectsById(objects, "stream object compaction");
         // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
         long groupSize = 0;
