@@ -41,6 +41,7 @@ class QuotaTest(Test):
         block_size = 256 * 1024 * 1024
         server_prop_overrides = [
             ['broker.quota.enabled', 'true'],
+            ['automq.backpressure.enabled', 'false'],
             ['broker.quota.produce.bytes', str(broker_quota_in)],
             ['broker.quota.fetch.bytes', str(broker_quota_out)],
             ['s3.wal.cache.size', str(log_size)],

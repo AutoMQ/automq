@@ -30,6 +30,7 @@ import org.apache.kafka.server.record.TableTopicSchemaType;
 import org.apache.kafka.server.record.TableTopicTransformType;
 
 import java.util.List;
+import java.util.Map;
 
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 
@@ -38,6 +39,10 @@ public class RecordProcessorFactory {
 
     public RecordProcessorFactory(String registryUrl) {
         this.converterFactory = new ConverterFactory(registryUrl);
+    }
+
+    public RecordProcessorFactory(String registryUrl, Map<String, ?> schemaRegistryClientConfigs) {
+        this.converterFactory = new ConverterFactory(registryUrl, schemaRegistryClientConfigs);
     }
 
     public RecordProcessorFactory(String registryUrl, SchemaRegistryClient client) {

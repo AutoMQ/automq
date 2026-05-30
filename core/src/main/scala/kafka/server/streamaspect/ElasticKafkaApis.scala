@@ -12,6 +12,7 @@ import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server._
+import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
 import kafka.server.metadata.ConfigRepository
 import kafka.server.streamaspect.ElasticKafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.utils.Implicits.MapExtensionMethods
@@ -28,7 +29,7 @@ import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
@@ -44,7 +45,7 @@ import org.slf4j.LoggerFactory
 import java.util
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{CompletableFuture, ExecutorService, TimeUnit}
-import java.util.function.Supplier
+import java.util.function.{BiConsumer, Supplier}
 import java.util.stream.IntStream
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -91,6 +92,16 @@ class ElasticKafkaApis(
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  @volatile private var enterpriseFacadeRef: AnyRef = null
+  private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
+  private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
+    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
+
+  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
+    BrokerExtensionHandleDispatcher.load(context)
+
+  protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+  @volatile private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -182,6 +193,12 @@ class ElasticKafkaApis(
         case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
         case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
+        case apiKey if isExtensionApi(apiKey) =>
+          brokerExtensionHandleDispatcher.handle(request, requestLocal) match {
+            case BrokerExtensionHandleDispatcher.Handled =>
+            case BrokerExtensionHandleDispatcher.NotHandled =>
+              throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
+          }
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -215,6 +232,7 @@ class ElasticKafkaApis(
            | ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
            | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
+      case apiKey if isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
@@ -623,6 +641,11 @@ class ElasticKafkaApis(
       }
     }
 
+    val requestSessionId = fetchRequest.metadata.sessionId
+    val requestFetchOffsets = interesting.map { case (tp, partitionData) =>
+      tp -> partitionData.fetchOffset
+    }.toMap
+
     // the callback for process a fetch response, invoked before throttling
     def processResponseCallback(responsePartitionData: Seq[(TopicIdPartition, FetchPartitionData)]): Unit = {
       val partitions = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]
@@ -630,6 +653,12 @@ class ElasticKafkaApis(
       val nodeEndpoints = new mutable.HashMap[Int, Node]
       val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
       responsePartitionData.foreach { case (tp, data) =>
+        notifyFetchListener(
+          tp,
+          if (requestSessionId == JFetchMetadata.INVALID_SESSION_ID) FetchListener.NONE_SESSION_ID else requestSessionId,
+          requestFetchOffsets.getOrElse(tp, -1L),
+          data.records
+        )
         val abortedTransactions = data.abortedTransactions.orElse(null)
         val lastStableOffset: Long = data.lastStableOffset.orElse(FetchResponse.INVALID_LAST_STABLE_OFFSET)
         if (data.isReassignmentFetch) reassigningPartitions.add(tp)
@@ -840,11 +869,17 @@ class ElasticKafkaApis(
 
   override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
     val cf = snapshotAwaitReadySupplier.get()
-    offsetForLeaderEpochExecutor.execute(() => {
-      // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
-      cf.join()
-      super.handleOffsetForLeaderEpochRequest(request)
-    })
+    def handleOffsetForLeaderEpoch(): Unit = super.handleOffsetForLeaderEpochRequest(request)
+    // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
+    cf.whenCompleteAsync(new BiConsumer[Void, Throwable] {
+      override def accept(nil: Void, ex: Throwable): Unit = {
+        if (ex != null) {
+          handleError(request, ex)
+        } else {
+          handleOffsetForLeaderEpoch()
+        }
+      }
+    }, offsetForLeaderEpochExecutor)
   }
 
   override protected def metadataTopicsInterceptor(clientId: ClientIdMetadata, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
@@ -867,6 +902,76 @@ class ElasticKafkaApis(
 
   def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
     this.snapshotAwaitReadySupplier = supplier
+  }
+
+  def setFetchListener(fetchListener: FetchListener): Unit = {
+    this.fetchListener = if (fetchListener == null) FetchListener.NOOP else fetchListener
+  }
+
+  def setEnterpriseFacade(enterpriseFacade: AnyRef): Unit = {
+    this.enterpriseFacadeRef = enterpriseFacade
+  }
+
+  private[streamaspect] def enterpriseFacade(): AnyRef = {
+    enterpriseFacadeRef
+  }
+
+  private def notifyFetchListener(topicIdPartition: TopicIdPartition,
+                                  sessionId: Int,
+                                  fetchOffset: Long,
+                                  records: Records): Unit = {
+    if (fetchListener eq FetchListener.NOOP) return
+    val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
+    fetchListener.onFetch(topicIdPartition, sessionId, reportedOffset, timestamp)
+  }
+
+  private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {
+    if (records == null) {
+      (defaultOffset, RecordBatch.NO_TIMESTAMP)
+    } else {
+      val batches = records.batches().iterator()
+      if (!batches.hasNext) {
+        (defaultOffset, RecordBatch.NO_TIMESTAMP)
+      } else {
+        var lastBatch = batches.next()
+        while (batches.hasNext) {
+          lastBatch = batches.next()
+        }
+        (lastBatch.lastOffset(), lastBatch.maxTimestamp())
+      }
+    }
+  }
+
+  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
+    override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.forwardToControllerOrFail(request)
+
+    override def maybeForward(request: RequestChannel.Request,
+      handler: RequestChannel.Request => Unit,
+      responseCallback: Option[AbstractResponse] => Unit): Unit =
+      metadataSupport.maybeForward(request, handler, responseCallback)
+
+    override def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit =
+      requestHelper.sendForwardedResponse(request, response)
+
+    override def sendResponseMaybeThrottle(request: RequestChannel.Request,
+      responseBuilder: Int => AbstractResponse): Unit =
+      requestHelper.sendResponseMaybeThrottle(request, responseBuilder)
+
+    override def handleError(request: RequestChannel.Request, t: Throwable): Unit =
+      requestHelper.handleError(request, t)
+
+    override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
+
+    override def getTopicName(topicId: Uuid): Optional[String] =
+      OptionConverters.toJava(metadataCache.getTopicName(topicId))
+
+    override def getPartition(topicPartition: TopicPartition): HostedPartition =
+      replicaManager.getPartition(topicPartition)
+
+    override def enterpriseFacade(): AnyRef =
+      ElasticKafkaApis.this.enterpriseFacade()
   }
 
 }

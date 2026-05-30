@@ -38,6 +38,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 import io.confluent.kafka.schemaregistry.avro.AvroSchemaProvider;
@@ -64,13 +65,17 @@ public class ConverterFactory {
         .build();
 
     public ConverterFactory(String registryUrl) {
+        this(registryUrl, Map.of());
+    }
+
+    public ConverterFactory(String registryUrl, Map<String, ?> schemaRegistryClientConfigs) {
         this.schemaRegistryUrl = registryUrl;
         if (registryUrl != null && !registryUrl.trim().isEmpty()) {
             this.client = new CachedSchemaRegistryClient(
                 registryUrl,
                 AbstractKafkaSchemaSerDeConfig.MAX_SCHEMAS_PER_SUBJECT_DEFAULT,
                 List.of(new AvroSchemaProvider(), new ProtobufSchemaProvider()),
-                null
+                Objects.requireNonNullElse(schemaRegistryClientConfigs, Map.of())
             );
         } else {
             this.client = null;

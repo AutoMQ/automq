@@ -83,17 +83,25 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
     static final int STATE_CLOSED = 9;
     static final int MAX_RECORDS_BUFFER_SIZE = 32 * 1024; // 32KiB
     private final ConfirmWAL confirmWAL;
+    private final Runnable onAppendCallback;
 
     private final ConfirmWAL.ListenerHandle listenerHandle;
     final BlockingQueue<RecordExt> records = new LinkedBlockingQueue<>();
     final AtomicInteger size = new AtomicInteger(0);
 
     private RecordOffset lastConfirmOffset = null;
+    private RecordOffset latestAppendOffset = null;
 
     int state = STATE_NOT_SYNC;
 
     public ConfirmWalDataDelta(ConfirmWAL confirmWAL) {
+        this(confirmWAL, () -> {
+        });
+    }
+
+    public ConfirmWalDataDelta(ConfirmWAL confirmWAL, Runnable onAppendCallback) {
         this.confirmWAL = confirmWAL;
+        this.onAppendCallback = onAppendCallback;
         this.listenerHandle = confirmWAL.addAppendListener(this);
     }
 
@@ -120,6 +128,8 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
                         state = STATE_SYNCING;
                     }
                     drainedRecords.forEach(r -> r.record.release());
+                } else if (hasNewEndOffset()) {
+                    newConfirmOffset = latestAppendOffset;
                 }
             } else if (state == STATE_SYNCING) {
                 delta = new ArrayList<>(records.size());
@@ -155,12 +165,17 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
         }
     }
 
+    public synchronized boolean hasNewEndOffset() {
+        return latestAppendOffset != null && (lastConfirmOffset == null || latestAppendOffset.compareTo(lastConfirmOffset) > 0);
+    }
+
     @Override
     public synchronized void onAppend(StreamRecordBatch record, RecordOffset recordOffset,
         RecordOffset nextOffset) {
         if (state == STATE_CLOSED) {
             return;
         }
+        latestAppendOffset = nextOffset;
         record.retain();
         records.add(new RecordExt(record, recordOffset, nextOffset));
         if (size.addAndGet(record.encoded().readableBytes()) > MAX_RECORDS_BUFFER_SIZE) {
@@ -171,6 +186,7 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
             records.clear();
             size.set(0);
         }
+        onAppendCallback.run();
     }
 
     record RecordExt(StreamRecordBatch record, RecordOffset recordOffset, RecordOffset nextOffset) {

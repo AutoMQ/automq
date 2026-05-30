@@ -214,6 +214,27 @@ class StreamObjectCompactorTest {
     }
 
     @Test
+    public void testGroup0DeduplicatesObjectsByObjectIdAndKeepsLatestMetadata() {
+        S3ObjectMetadata first = new S3ObjectMetadata(
+            1, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, 0, 10)),
+            System.currentTimeMillis(), System.currentTimeMillis(), 100, 1);
+        S3ObjectMetadata duplicate = new S3ObjectMetadata(
+            1, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, 10, 20)),
+            System.currentTimeMillis(), System.currentTimeMillis(), 100, 2);
+        S3ObjectMetadata second = new S3ObjectMetadata(
+            2, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, 10, 20)),
+            System.currentTimeMillis(), System.currentTimeMillis(), 100, 3);
+
+        List<List<S3ObjectMetadata>> groups = group0(List.of(first, duplicate, second), Long.MAX_VALUE, obj -> true);
+
+        List<S3ObjectMetadata> deduplicated = groups.stream().flatMap(List::stream).collect(Collectors.toList());
+        assertEquals(List.of(duplicate, second), deduplicated);
+    }
+
+    @Test
     public void testCompact() throws ExecutionException, InterruptedException {
         List<S3ObjectMetadata> objects = prepareData();
         when(objectManager.getStreamObjects(eq(streamId), eq(0L), eq(32L), eq(Integer.MAX_VALUE)))

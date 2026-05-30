@@ -59,6 +59,7 @@ class ElasticControllerApis(
         case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
         case ApiKeys.DESCRIBE_STREAMS => handleDescribeStreams(request)
+        case apiKey if ApiKeys.isExtensionApi(apiKey) => handleExtensionRequest(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -86,7 +87,6 @@ class ElasticControllerApis(
         request.apiLocalCompleteTimeNanos = time.nanoseconds
       }
     }
-
   }
 
   override def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
@@ -111,6 +111,7 @@ class ElasticControllerApis(
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.DESCRIBE_STREAMS
       => handleExtensionRequest(request, requestLocal)
+      case apiKey if ApiKeys.isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }

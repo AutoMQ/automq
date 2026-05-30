@@ -167,6 +167,23 @@ public class LogCacheTest {
     }
 
     @Test
+    public void testMergeBlockDoesNotAliasSourceStreamCaches() {
+        LogCacheBlock left = new LogCacheBlock(1024L * 1024);
+        left.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20)));
+
+        LogCacheBlock right = new LogCacheBlock(1024L * 1024);
+        right.put(StreamRecordBatch.of(233L, 0L, 11L, 1, TestUtils.random(20)));
+
+        LogCacheBlock merged = new LogCacheBlock(1024L * 1024);
+        LogCache.mergeBlock(merged, left);
+        LogCache.mergeBlock(merged, right);
+
+        assertEquals(1, left.map.get(233L).records.size());
+        assertEquals(11L, right.map.get(233L).records.get(0).getBaseOffset());
+        assertEquals(2, merged.map.get(233L).records.size());
+    }
+
+    @Test
     public void testTryMergeLogic() throws ExecutionException, InterruptedException {
         LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
         final long streamId = 233L;
