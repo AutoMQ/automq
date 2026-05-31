@@ -99,6 +99,10 @@ jobs:
     if: ${{ always() && github.repository_owner == 'AutoMQ' }}
     needs: [ main_e2e_1, main_e2e_2, main_e2e_3, main_e2e_4, main_e2e_5, benchmarks_e2e, connect_e2e_1, connect_e2e_2, connect_e2e_3, streams_e2e, automq_e2e ]
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: pip3 install requests
       - name: Report results
         run: python3 tests/report_e2e_results.py
         env:
