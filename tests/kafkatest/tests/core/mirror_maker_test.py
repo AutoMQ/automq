@@ -23,7 +23,7 @@ from kafkatest.services.console_consumer import ConsoleConsumer
 from kafkatest.services.verifiable_producer import VerifiableProducer
 from kafkatest.services.mirror_maker import MirrorMaker
 from kafkatest.services.security.minikdc import MiniKdc
-from kafkatest.tests.monitor_util import get_monitor_with_offset
+from kafkatest.monitor_util import get_monitor_with_offset
 from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int
 
