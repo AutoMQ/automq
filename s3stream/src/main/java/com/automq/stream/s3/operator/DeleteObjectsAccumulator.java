@@ -22,6 +22,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.stats.S3OperationStats;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Threads;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
@@ -29,8 +30,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Semaphore;
@@ -43,6 +47,8 @@ public class DeleteObjectsAccumulator {
     static final Logger LOGGER = LoggerFactory.getLogger(DeleteObjectsAccumulator.class);
     public static final int DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE = 1000;
     public static final int DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER = 100;
+    private static final long DELETE_OBJECTS_RETRY_BASE_DELAY_MS = 1000;
+    private static final long DELETE_OBJECTS_RETRY_MAX_DELAY_MS = 30 * 1000;
     private static final long DELETE_OPERATION_LOG_INTERVAL = 60 * 1000;
     private final Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction;
     private final ConcurrentLinkedDeque<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedDeque<>();
@@ -68,10 +74,17 @@ public class DeleteObjectsAccumulator {
     static class PendingDeleteRequest {
         List<ObjectStorage.ObjectPath> deleteObjectPath;
         CompletableFuture<Void> future;
+        int retryAttempt;
 
         public PendingDeleteRequest(List<ObjectStorage.ObjectPath> deleteObjectPath, CompletableFuture<Void> future) {
+            this(deleteObjectPath, future, 0);
+        }
+
+        public PendingDeleteRequest(List<ObjectStorage.ObjectPath> deleteObjectPath, CompletableFuture<Void> future,
+            int retryAttempt) {
             this.deleteObjectPath = deleteObjectPath;
             this.future = future;
+            this.retryAttempt = retryAttempt;
         }
     }
 
@@ -112,7 +125,7 @@ public class DeleteObjectsAccumulator {
                 if (!deleteRequestQueue.isEmpty()) {
                     deleteRequestQueue.add(new PendingDeleteRequest(subBatchList, subBatchCf));
                     // try to submit pending requests
-                } else if (!submitDeleteObjectsRequest(subBatchList, List.of(subBatchCf))) {
+                } else if (!submitDeleteObjectsRequest(List.of(new PendingDeleteRequest(subBatchList, subBatchCf)))) {
                     // if not submitted, add to queue
                     deleteRequestQueue.add(new PendingDeleteRequest(subBatchList, subBatchCf));
                 }
@@ -128,32 +141,114 @@ public class DeleteObjectsAccumulator {
             }).exceptionally(cf::completeExceptionally);
     }
 
-    private boolean submitDeleteObjectsRequest(List<ObjectStorage.ObjectPath> objectPaths, List<CompletableFuture<Void>> subBatchCf) {
+    private boolean submitDeleteObjectsRequest(List<PendingDeleteRequest> requests) {
         if (!concurrentRequestLimiter.tryAcquire()) {
             return false;
         }
+        List<ObjectStorage.ObjectPath> objectPaths = requests.stream()
+            .flatMap(request -> request.deleteObjectPath.stream())
+            .collect(Collectors.toList());
         List<String> objectKeys = objectPaths.stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
         TimerUtil timerUtil = new TimerUtil();
         deleteObjectsFunction.apply(objectKeys).whenComplete((res, e) -> concurrentRequestLimiter.release())
             .thenAccept(nil -> {
                 deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), true, Collections.emptyList());
                 S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                FutureUtil.complete(subBatchCf.iterator(), null);
+                completeRequests(requests);
                 handleDeleteRequestQueue();
             }).exceptionally(ex -> {
                 Throwable cause = ex.getCause();
-                if (cause instanceof AbstractObjectStorage.DeleteObjectsException) {
-                    AbstractObjectStorage.DeleteObjectsException deleteObjectsException = (AbstractObjectStorage.DeleteObjectsException) cause;
+                if (cause instanceof DeleteObjectsException) {
+                    DeleteObjectsException deleteObjectsException = (DeleteObjectsException) cause;
                     deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, deleteObjectsException.getFailedKeys());
+                    handleDeleteObjectsException(requests, deleteObjectsException);
                 } else {
                     S3OperationStats.getInstance().deleteObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, Collections.emptyList());
+                    completeRequestsExceptionally(requests, ex);
                 }
-                FutureUtil.completeExceptionally(subBatchCf.iterator(), ex);
                 handleDeleteRequestQueue();
                 return null;
             });
         return true;
+    }
+
+    private void completeRequests(List<PendingDeleteRequest> requests) {
+        FutureUtil.complete(requests.stream().map(request -> request.future).iterator(), null);
+    }
+
+    private void completeRequestsExceptionally(List<PendingDeleteRequest> requests, Throwable ex) {
+        FutureUtil.completeExceptionally(requests.stream().map(request -> request.future).iterator(), ex);
+    }
+
+    private void handleDeleteObjectsException(List<PendingDeleteRequest> requests,
+        DeleteObjectsException ex) {
+        Set<String> retriableKeys = ex.getRetriableKeys().keySet();
+        Set<String> failedKeys = ex.getFailedKeyErrors().keySet();
+        for (PendingDeleteRequest request : requests) {
+            List<ObjectStorage.ObjectPath> requestRetriablePaths = request.deleteObjectPath.stream()
+                .filter(path -> retriableKeys.contains(path.key()))
+                .collect(Collectors.toList());
+            Map<String, DeleteObjectError> requestFailedKeys = request.deleteObjectPath.stream()
+                .filter(path -> failedKeys.contains(path.key()))
+                .collect(Collectors.toMap(ObjectStorage.ObjectPath::key, path -> ex.getFailedKeyErrors().get(path.key())));
+
+            if (requestRetriablePaths.isEmpty()) {
+                if (!requestFailedKeys.isEmpty()) {
+                    completeRequestWithFailedKeys(request.future, requestFailedKeys);
+                } else {
+                    request.future.complete(null);
+                }
+            } else if (requestFailedKeys.isEmpty()) {
+                scheduleRetry(new PendingDeleteRequest(requestRetriablePaths, request.future, request.retryAttempt + 1));
+            } else {
+                CompletableFuture<Void> retryFuture = new CompletableFuture<>();
+                retryFuture.whenComplete((nil, retryEx) -> {
+                    Map<String, DeleteObjectError> failedKeyErrors = new HashMap<>(requestFailedKeys);
+                    DeleteObjectsException retryDeleteException = deleteObjectsException(retryEx);
+                    if (retryDeleteException != null) {
+                        failedKeyErrors.putAll(retryDeleteException.getFailedKeyErrors());
+                    }
+                    completeRequestWithFailedKeys(request.future, failedKeyErrors);
+                });
+                scheduleRetry(new PendingDeleteRequest(requestRetriablePaths, retryFuture, request.retryAttempt + 1));
+            }
+        }
+    }
+
+    private void scheduleRetry(PendingDeleteRequest request) {
+        Threads.COMMON_SCHEDULER.schedule(() -> submitOrQueue(request), retryDelayMs(request.retryAttempt), TimeUnit.MILLISECONDS);
+    }
+
+    private long retryDelayMs(int retryAttempt) {
+        int shift = Math.max(0, Math.min(retryAttempt - 1, 5));
+        return Math.min(DELETE_OBJECTS_RETRY_BASE_DELAY_MS << shift, DELETE_OBJECTS_RETRY_MAX_DELAY_MS);
+    }
+
+    private DeleteObjectsException deleteObjectsException(Throwable ex) {
+        if (ex instanceof DeleteObjectsException deleteObjectsException) {
+            return deleteObjectsException;
+        }
+        if (ex != null && ex.getCause() instanceof DeleteObjectsException deleteObjectsException) {
+            return deleteObjectsException;
+        }
+        return null;
+    }
+
+    private void completeRequestWithFailedKeys(CompletableFuture<Void> future, Map<String, DeleteObjectError> failedKeys) {
+        future.completeExceptionally(new DeleteObjectsException(
+            "Failed to delete objects", Collections.emptySet(), Collections.emptyMap(), failedKeys));
+    }
+
+    private void submitOrQueue(PendingDeleteRequest request) {
+        queueLock.lock();
+        try {
+            if (!deleteRequestQueue.isEmpty() || !submitDeleteObjectsRequest(List.of(request))) {
+                deleteRequestQueue.add(request);
+            }
+        } finally {
+            queueLock.unlock();
+        }
     }
 
     private void handleDeleteRequestQueue() {
@@ -187,16 +282,8 @@ public class DeleteObjectsAccumulator {
 
     private void submitPendingRequests(List<PendingDeleteRequest> pendingRequests) {
         // merge all delete requests
-        List<ObjectStorage.ObjectPath> combinedPaths = new ArrayList<>();
-        List<CompletableFuture<Void>> combinedFutures = new ArrayList<>();
-
-        for (PendingDeleteRequest request : pendingRequests) {
-            combinedPaths.addAll(request.deleteObjectPath);
-            combinedFutures.add(request.future);
-        }
-
         // submit delete requests
-        boolean isSubmit = submitDeleteObjectsRequest(combinedPaths, combinedFutures);
+        boolean isSubmit = submitDeleteObjectsRequest(pendingRequests);
 
         // if not submitted, add back to queue
         if (!isSubmit) {

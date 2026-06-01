@@ -1150,25 +1150,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
     }
 
-    static class DeleteObjectsException extends Exception {
-        private final List<String> failedKeys;
-        private final List<String> errorsMessages;
-
-        public DeleteObjectsException(String message, List<String> failedKeys, List<String> errorsMessage) {
-            super(message);
-            this.failedKeys = failedKeys;
-            this.errorsMessages = errorsMessage;
-        }
-
-        public List<String> getFailedKeys() {
-            return failedKeys;
-        }
-
-        public List<String> getErrorsMessages() {
-            return errorsMessages;
-        }
-    }
-
     public static class ObjectStorageCompletedPart {
         private final int partNumber;
         private final String partId;
