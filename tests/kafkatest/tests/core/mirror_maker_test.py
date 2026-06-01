@@ -39,7 +39,8 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
         self.source_zk = ZookeeperService(test_context, num_nodes=1)
         self.target_zk = ZookeeperService(test_context, num_nodes=1)
 
-        # AutoMQ inject: source and target are independent KRaft clusters in AutoMQ's
+        # // AutoMQ inject start
+        # Source and target are independent KRaft clusters in AutoMQ's
         # default quorum mode, so they must not share the object-storage WAL reservation namespace.
         self.source_kafka = KafkaService(test_context, num_nodes=1, zk=self.source_zk,
                                   cluster_id=KafkaService._random_cluster_id(),
@@ -47,6 +48,7 @@ class TestMirrorMakerService(ProduceConsumeValidateTest):
         self.target_kafka = KafkaService(test_context, num_nodes=1, zk=self.target_zk,
                                   cluster_id=KafkaService._random_cluster_id(),
                                   topics={self.topic: {"partitions": 1, "replication-factor": 1}})
+        # // AutoMQ inject end
         # This will produce to source kafka cluster
         self.producer = VerifiableProducer(test_context, num_nodes=1, kafka=self.source_kafka, topic=self.topic,
                                            throughput=1000)

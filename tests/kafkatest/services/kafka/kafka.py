@@ -13,7 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
 import json
 import math
 import os.path
@@ -21,7 +20,10 @@ import re
 import signal
 import time
 import subprocess
+# // AutoMQ inject start
+import base64
 import uuid
+# // AutoMQ inject end
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -195,10 +197,11 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             "collect_default": True}
     }
 
+    # // AutoMQ inject start
     @staticmethod
     def _random_cluster_id():
-        # AutoMQ inject: generate Kafka-compatible ids for tests that run multiple independent KRaft clusters.
         return base64.urlsafe_b64encode(uuid.uuid4().bytes).decode('ascii').rstrip('=')
+    # // AutoMQ inject end
 
     def __init__(self, context, num_nodes, zk, security_protocol=SecurityConfig.PLAINTEXT,
                  interbroker_security_protocol=SecurityConfig.PLAINTEXT,
@@ -963,7 +966,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         if self.quorum_info.using_kraft:
             # format log directories if necessary
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
+            # // AutoMQ inject start
             cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, self._cluster_id)
+            # // AutoMQ inject end
             if self.dynamicRaftQuorum:
                 if self.node_quorum_info.has_controller_role:
                     if self.standalone_controller_bootstrapped:
@@ -1749,8 +1754,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def cluster_id(self):
         """ Get the current cluster id
         """
+        # // AutoMQ inject start
         if self.quorum_info.using_kraft:
             return self._cluster_id
+        # // AutoMQ inject end
 
         self.logger.debug("Querying ZooKeeper to retrieve cluster id")
         cluster = self.zk.query("/cluster/id", chroot=self.zk_chroot)
