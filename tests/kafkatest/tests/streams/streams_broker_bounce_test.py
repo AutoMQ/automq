@@ -72,6 +72,12 @@ def hard_bounce(test, topic, broker_type):
                    timeout_sec=test.kafka.zk_session_timeout + 5,
                    err_msg="Failed to see timely deregistration of hard-killed broker %s" % str(prev_broker_node.account))
 
+        # // AutoMQ inject start
+        if quorum.for_test(test.test_context) != quorum.zk:
+            brokerSessionTimeoutSecs = 18
+            time.sleep(brokerSessionTimeoutSecs + 5)
+        # // AutoMQ inject end
+
         test.kafka.start_node(prev_broker_node)
     
 

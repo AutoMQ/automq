@@ -394,7 +394,12 @@ class ConnectDistributedTest(Test):
 
         wait_until(lambda: self.is_running(self.sink), timeout_sec=30,
                    err_msg="Failed to see connector transition to the RUNNING state")
-        
+
+        # // AutoMQ inject start
+        wait_until(lambda: len(self.sink.received_messages()) > 0, timeout_sec=30,
+                   err_msg="Timeout expired waiting for sink task to consume a message")
+        # // AutoMQ inject end
+
         self.cc.pause_connector(self.sink.name)
 
         # wait until all nodes report the paused transition
