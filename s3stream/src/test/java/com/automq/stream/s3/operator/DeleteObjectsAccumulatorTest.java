@@ -47,6 +47,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -314,7 +315,9 @@ public class DeleteObjectsAccumulatorTest {
         ), cf);
 
         assertFalse(cf.isDone());
+        await().atMost(2, TimeUnit.SECONDS).until(() -> deleteAttempts.get("retry-key").get() == 2);
         retryFuture.complete(null);
+        await().atMost(1, TimeUnit.SECONDS).until(cf::isCompletedExceptionally);
         assertTrue(cf.isCompletedExceptionally());
         assertEquals(2, deleteAttempts.get("retry-key").get());
         assertEquals(1, deleteAttempts.get("failed-key").get());
