@@ -396,6 +396,7 @@ class ConnectDistributedTest(Test):
                    err_msg="Failed to see connector transition to the RUNNING state")
 
         # // AutoMQ inject start
+        # RUNNING means the sink task has started, but the consumer may still be reconciling assignment.
         wait_until(lambda: len(self.sink.received_messages()) > 0, timeout_sec=30,
                    err_msg="Timeout expired waiting for sink task to consume a message")
         # // AutoMQ inject end
@@ -892,7 +893,8 @@ class ConnectDistributedTest(Test):
         self.cc.stop()
 
         # // AutoMQ inject start
-        consumer_timeout_ms = 15000
+        # Keep the validation consumer short, but avoid timing out before the first read_committed fetch returns.
+        consumer_timeout_ms = 5000
         # // AutoMQ inject end
         consumer = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, message_validator=json.loads, consumer_timeout_ms=consumer_timeout_ms, isolation_level="read_committed")
         consumer.run()
