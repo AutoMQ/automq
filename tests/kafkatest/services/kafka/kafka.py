@@ -197,6 +197,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     @staticmethod
     def _random_cluster_id():
+        # AutoMQ inject: generate Kafka-compatible ids for tests that run multiple independent KRaft clusters.
         return base64.urlsafe_b64encode(uuid.uuid4().bytes).decode('ascii').rstrip('=')
 
     def __init__(self, context, num_nodes, zk, security_protocol=SecurityConfig.PLAINTEXT,
@@ -292,8 +293,6 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             self._cluster_id = isolated_kafka._cluster_id
         elif cluster_id is not None:
             self._cluster_id = cluster_id
-        elif self.quorum_info.using_kraft:
-            self._cluster_id = self._random_cluster_id()
         else:
             self._cluster_id = config_property.CLUSTER_ID
         self.controller_quorum = None # will define below if necessary
