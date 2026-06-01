@@ -197,6 +197,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
 
     @staticmethod
     def _random_cluster_id():
+        # AutoMQ inject: generate Kafka-compatible ids for tests that run multiple independent KRaft clusters.
         return base64.urlsafe_b64encode(uuid.uuid4().bytes).decode('ascii').rstrip('=')
 
     def __init__(self, context, num_nodes, zk, security_protocol=SecurityConfig.PLAINTEXT,
