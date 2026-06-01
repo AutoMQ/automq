@@ -85,7 +85,6 @@ class OffsetValidationTest(VerifiableConsumerTest):
         group_protocol=consumer_group.all_group_protocols
     )
     def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
-    def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verify correct consumer behavior when the brokers are consecutively restarted.
 
@@ -145,8 +144,6 @@ class OffsetValidationTest(VerifiableConsumerTest):
         clean_shutdown=[True],
         bounce_mode=["all", "rolling"],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -409,10 +406,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
     )
-    def test_consumer_failure(self, clean_shutdown, enable_autocommit, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
     def test_consumer_failure(self, clean_shutdown, enable_autocommit, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         partition = TopicPartition(self.TOPIC, 0)
 
@@ -522,10 +516,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
     )
-    def test_group_consumption(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
     def test_group_consumption(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verifies correct group rebalance behavior as consumers are started and stopped.
