@@ -894,9 +894,8 @@ class ConnectDistributedTest(Test):
 
         # // AutoMQ inject start
         # Keep the validation consumer short, but avoid timing out before the first read_committed fetch returns.
-        consumer_timeout_ms = 5000
+        consumer = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, message_validator=json.loads, consumer_timeout_ms=5000, isolation_level="read_committed")
         # // AutoMQ inject end
-        consumer = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, message_validator=json.loads, consumer_timeout_ms=consumer_timeout_ms, isolation_level="read_committed")
         consumer.run()
         src_messages = consumer.messages_consumed[1]
 
@@ -930,7 +929,9 @@ class ConnectDistributedTest(Test):
         if not success:
             self.mark_for_collect(self.cc)
             # Also collect the data in the topic to aid in debugging
-            consumer_validator = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, consumer_timeout_ms=consumer_timeout_ms, print_key=True)
+            # // AutoMQ inject start
+            consumer_validator = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, consumer_timeout_ms=5000, print_key=True)
+            # // AutoMQ inject end
             consumer_validator.run()
             self.mark_for_collect(consumer_validator, "consumer_stdout")
 
