@@ -26,6 +26,9 @@ from kafkatest.services.verifiable_producer import VerifiableProducer
 from kafkatest.tests.produce_consume_validate import ProduceConsumeValidateTest
 from kafkatest.utils import is_int
 import random
+# AutoMQ inject start
+import re
+# AutoMQ inject end
 import time
 
 class TestSnapshots(ProduceConsumeValidateTest):
@@ -126,6 +129,39 @@ class TestSnapshots(ProduceConsumeValidateTest):
         else:
             self.logger.debug("File %s was found" % file_path)
             return True
+
+    # AutoMQ inject start
+    def wait_for_cleaned_controller_node(self, node):
+        if self.kafka.isolated_controller_quorum:
+            time.sleep(10)
+            return
+
+        node_id = self.kafka.idx(node)
+        describe_node = next(n for n in self.kafka.nodes if n != node)
+        automq_cli_script = self.kafka.path.script("automq-cli.sh", describe_node)
+        bootstrap_servers = self.kafka.bootstrap_servers(offline_nodes=[node])
+        node_pattern = re.compile(r"NodeMetadata\{nodeId=%d\b[^}]*hasOpeningStreams=(true|false)" % node_id)
+
+        def has_no_opening_streams():
+            cmd = "%s cluster describe --bootstrap-server %s" % (automq_cli_script, bootstrap_servers)
+            try:
+                output = self.kafka.run_cli_tool(describe_node, cmd)
+            except Exception:
+                self.logger.debug("Failed to describe AutoMQ nodes while waiting for node %d failover", node_id,
+                                  exc_info=True)
+                return False
+
+            match = node_pattern.search(output)
+            if match is None:
+                self.logger.debug("AutoMQ node %d is not visible yet in cluster describe output: %s", node_id, output)
+                return False
+            return match.group(1) == "false"
+
+        wait_until(has_no_opening_streams,
+                   timeout_sec=120,
+                   backoff_sec=2,
+                   err_msg="Timed out waiting for AutoMQ failover to close opening streams on node %d" % node_id)
+    # AutoMQ inject end
 
     def validate_success(self, topic = None, group_protocol=None):
         if topic is None:
@@ -252,7 +288,9 @@ class TestSnapshots(ProduceConsumeValidateTest):
         for node in self.controller_nodes:
             self.logger.debug("Restarting node: %s", self.kafka.controller_quorum.who_am_i(node))
             self.kafka.controller_quorum.clean_node(node)
-            time.sleep(10) # AutoMQ inject, try fix the test in azure runner
+            # AutoMQ inject start
+            self.wait_for_cleaned_controller_node(node)
+            # AutoMQ inject end
             self.kafka.controller_quorum.start_node(node)
 
         # Scenario -- Re-init controllers with a clean kafka dir and
@@ -263,7 +301,9 @@ class TestSnapshots(ProduceConsumeValidateTest):
         for node in self.controller_nodes:
             self.logger.debug("Restarting node: %s", self.kafka.controller_quorum.who_am_i(node))
             self.kafka.controller_quorum.clean_node(node)
-            time.sleep(10) # AutoMQ inject
+            # AutoMQ inject start
+            self.wait_for_cleaned_controller_node(node)
+            # AutoMQ inject end
             # Now modify the cluster to create more metadata changes
             self.topics_created += self.create_n_topics(topic_count=5)
             self.kafka.controller_quorum.start_node(node)
