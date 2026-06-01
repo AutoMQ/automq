@@ -24,7 +24,7 @@ from kafkatest.services.kafka import TopicPartition
 from kafkatest.services.verifiable_client import VerifiableClientMixin
 from kafkatest.utils import is_int, is_int_with_prefix
 from kafkatest.version import DEV_BRANCH
-from kafkatest.services.kafka.util import fix_opts_for_new_jvm
+from kafkatest.services.kafka.util import fix_opts_for_new_jvm, fix_snappy_for_aarch64
 
 
 class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin, BackgroundThreadService):
@@ -242,6 +242,11 @@ class VerifiableProducer(KafkaPathResolverMixin, VerifiableClientMixin, Backgrou
             cmd += " --repeating-keys %s " % str(self.repeating_keys)
 
         cmd += " --producer.config %s" % VerifiableProducer.CONFIG_FILE
+
+        # // AutoMQ inject start
+        if self.compression_types is not None and self.compression_types[idx - 1] == "snappy":
+            cmd = fix_snappy_for_aarch64(self.path, node) + cmd
+        # // AutoMQ inject end
 
         cmd += " 2>> %s | tee -a %s &" % (VerifiableProducer.STDOUT_CAPTURE, VerifiableProducer.STDOUT_CAPTURE)
         return cmd

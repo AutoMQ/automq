@@ -96,9 +96,13 @@ class ClientCompatibilityTestNewBroker(ProduceConsumeValidateTest):
                                            compression_types=compression_types,
                                            version=KafkaVersion(producer_version))
 
+        # // AutoMQ inject start
+        fix_snappy_classpath = "snappy" in compression_types
+        # // AutoMQ inject end
         self.consumer = ConsoleConsumer(self.test_context, self.num_consumers, self.kafka,
                                         self.topic, consumer_timeout_ms=30000, new_consumer=new_consumer,
-                                        message_validator=is_int, version=KafkaVersion(consumer_version))
+                                        message_validator=is_int, version=KafkaVersion(consumer_version),
+                                        fix_snappy_classpath=fix_snappy_classpath)
 
         self.run_produce_consume_validate(lambda: wait_until(
             lambda: self.producer.each_produced_at_least(self.messages_per_producer) == True,

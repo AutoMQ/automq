@@ -14,9 +14,11 @@
 # limitations under the License.
 
 from collections import namedtuple
+import os
 
 from kafkatest.utils.remote_account import java_version
-from kafkatest.version import LATEST_0_8_2, LATEST_0_9, LATEST_0_10_0, LATEST_0_10_1, LATEST_0_10_2, LATEST_0_11_0, LATEST_1_0
+
+from kafkatest.version import DEV_BRANCH, LATEST_0_8_2, LATEST_0_9, LATEST_0_10_0, LATEST_0_10_1, LATEST_0_10_2, LATEST_0_11_0, LATEST_1_0, LATEST_2_0
 
 TopicPartition = namedtuple('TopicPartition', ['topic', 'partition'])
 
@@ -40,3 +42,12 @@ def fix_opts_for_new_jvm(node):
     return cmd
 
 
+# // AutoMQ inject start
+def fix_snappy_for_aarch64(path, node):
+    if not hasattr(node, 'version') or node.version > LATEST_2_0:
+        return ""
+
+    snappy_jars = os.path.join(path.home(DEV_BRANCH), "tools/build/dependant-libs*/snappy-java-*.jar")
+    return "if [ \"$(uname -m)\" = \"aarch64\" ]; then " \
+           "for file in %s; do CLASSPATH=$file:$CLASSPATH; done; export CLASSPATH; fi; " % snappy_jars
+# // AutoMQ inject end
