@@ -22,7 +22,7 @@ from ducktape.utils.util import wait_until
 from kafkatest.directory_layout.kafka_path import KafkaPathResolverMixin
 from kafkatest.services.monitor.jmx import JmxMixin, JmxTool
 from kafkatest.version import DEV_BRANCH, LATEST_0_8_2, LATEST_0_9, LATEST_0_10_0, V_0_10_0_0, V_0_11_0_0, V_2_0_0, LATEST_3_7
-from kafkatest.services.kafka.util import fix_opts_for_new_jvm, fix_snappy_for_aarch64
+from kafkatest.services.kafka.util import fix_opts_for_new_jvm
 
 """
 The console consumer is a tool that reads data from Kafka and outputs it to standard output.
@@ -65,7 +65,7 @@ class ConsoleConsumer(KafkaPathResolverMixin, JmxMixin, BackgroundThreadService)
                  enable_systest_events=False, stop_timeout_sec=35, print_timestamp=False, print_partition=False,
                  isolation_level="read_uncommitted", jaas_override_variables=None,
                  kafka_opts_override="", client_prop_file_override="", consumer_properties={},
-                 wait_until_partitions_assigned=False, log_level="DEBUG", fix_snappy_classpath=False):
+                 wait_until_partitions_assigned=False, log_level="DEBUG"):
         """
         Args:
             context:                    standard context
@@ -128,9 +128,6 @@ class ConsoleConsumer(KafkaPathResolverMixin, JmxMixin, BackgroundThreadService)
         self.client_prop_file_override = client_prop_file_override
         self.consumer_properties = consumer_properties
         self.wait_until_partitions_assigned = wait_until_partitions_assigned
-        # // AutoMQ inject start
-        self.fix_snappy_classpath = fix_snappy_classpath
-        # // AutoMQ inject end
 
 
     def prop_file(self, node):
@@ -172,10 +169,6 @@ class ConsoleConsumer(KafkaPathResolverMixin, JmxMixin, BackgroundThreadService)
             args['kafka_opts'] = self.security_config.kafka_opts
 
         cmd = fix_opts_for_new_jvm(node)
-        # // AutoMQ inject start
-        if self.fix_snappy_classpath:
-            cmd += fix_snappy_for_aarch64(self.path, node)
-        # // AutoMQ inject end
         cmd += "export JMX_PORT=%(jmx_port)s; " \
               "export LOG_DIR=%(log_dir)s; " \
               "export KAFKA_LOG4J_OPTS=\"-Dlog4j.configuration=file:%(log4j_config)s\"; " \
@@ -347,3 +340,4 @@ class ConsoleConsumer(KafkaPathResolverMixin, JmxMixin, BackgroundThreadService)
             wait_until(lambda: self.has_log_message(node, message),
                        timeout_sec=60,
                        err_msg="Offset not reset for partition %s-%d" % (topic, partition))
+
