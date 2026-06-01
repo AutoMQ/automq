@@ -48,6 +48,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static com.automq.stream.s3.operator.DeleteObjectsAccumulator.LOGGER;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -226,6 +227,101 @@ public class DeleteObjectsAccumulatorTest {
         });
 
         assertEquals(ioSize * ioNumber, totalDeleteObjectNumber.get());
+    }
+
+    @Test
+    void testRetriableKeysAreRetriedWithoutResendingSuccessfulKeys() {
+        Map<String, AtomicInteger> deleteAttempts = new ConcurrentHashMap<>();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            path.forEach(key -> deleteAttempts.computeIfAbsent(key, ignored -> new AtomicInteger()).incrementAndGet());
+            if (path.contains("retry-once") && deleteAttempts.get("retry-once").get() == 1) {
+                return CompletableFuture.failedFuture(new DeleteObjectsException(
+                    "retry one key",
+                    Set.of("ok"),
+                    Map.of("retry-once", new DeleteObjectError("SlowDown", 503, "slow down")),
+                    Map.of()));
+            }
+            return CompletableFuture.completedFuture(null);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 10, deleteFunction);
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(
+            new ObjectStorage.ObjectPath((short) 0, "ok"),
+            new ObjectStorage.ObjectPath((short) 0, "retry-once")
+        ), cf);
+
+        cf.join();
+        assertEquals(1, deleteAttempts.get("ok").get());
+        assertEquals(2, deleteAttempts.get("retry-once").get());
+    }
+
+    @Test
+    void testFailedKeysOnlyFailOwningFutureInMergedBatch() {
+        CompletableFuture<Void> firstCall = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            if (callCount.incrementAndGet() == 1) {
+                return firstCall;
+            }
+            return CompletableFuture.failedFuture(new DeleteObjectsException(
+                "one key failed",
+                Set.of("success-key"),
+                Map.of(),
+                Map.of("failed-key", new DeleteObjectError("AccessDenied", 403, "denied"))));
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 1, deleteFunction);
+        CompletableFuture<Void> blockedCf = new CompletableFuture<>();
+        CompletableFuture<Void> failedCf = new CompletableFuture<>();
+        CompletableFuture<Void> successCf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "blocked-key")), blockedCf);
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "failed-key")), failedCf);
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "success-key")), successCf);
+
+        firstCall.complete(null);
+
+        blockedCf.join();
+        successCf.join();
+        assertTrue(failedCf.isCompletedExceptionally());
+    }
+
+    @Test
+    void testRetriableKeysAreStillRetriedWhenOwningFutureHasFailedKeys() {
+        Map<String, AtomicInteger> deleteAttempts = new ConcurrentHashMap<>();
+        CompletableFuture<Void> retryFuture = new CompletableFuture<>();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            path.forEach(key -> deleteAttempts.computeIfAbsent(key, ignored -> new AtomicInteger()).incrementAndGet());
+            if (path.contains("retry-key") && deleteAttempts.get("retry-key").get() == 1) {
+                return CompletableFuture.failedFuture(new DeleteObjectsException(
+                    "mixed failure",
+                    Set.of(),
+                    Map.of("retry-key", new DeleteObjectError("SlowDown", 503, "slow down")),
+                    Map.of("failed-key", new DeleteObjectError("AccessDenied", 403, "denied"))));
+            }
+            if (path.contains("retry-key")) {
+                return retryFuture;
+            }
+            return CompletableFuture.completedFuture(null);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 10, deleteFunction);
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(
+            new ObjectStorage.ObjectPath((short) 0, "retry-key"),
+            new ObjectStorage.ObjectPath((short) 0, "failed-key")
+        ), cf);
+
+        assertFalse(cf.isDone());
+        await().atMost(2, TimeUnit.SECONDS).until(() -> deleteAttempts.get("retry-key").get() == 2);
+        retryFuture.complete(null);
+        await().atMost(1, TimeUnit.SECONDS).until(cf::isCompletedExceptionally);
+        assertTrue(cf.isCompletedExceptionally());
+        assertEquals(2, deleteAttempts.get("retry-key").get());
+        assertEquals(1, deleteAttempts.get("failed-key").get());
     }
 
     @Test
