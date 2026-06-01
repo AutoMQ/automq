@@ -46,7 +46,6 @@ public class DeleteObjectsAccumulator {
     static final Logger LOGGER = LoggerFactory.getLogger(DeleteObjectsAccumulator.class);
     public static final int DEFAULT_DELETE_OBJECTS_MAX_BATCH_SIZE = 1000;
     public static final int DEFAULT_DELETE_OBJECTS_MAX_CONCURRENT_REQUEST_NUMBER = 100;
-    private static final int DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT = 3;
     private static final long DELETE_OPERATION_LOG_INTERVAL = 60 * 1000;
     private final Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction;
     private final ConcurrentLinkedDeque<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedDeque<>();
@@ -72,16 +71,10 @@ public class DeleteObjectsAccumulator {
     static class PendingDeleteRequest {
         List<ObjectStorage.ObjectPath> deleteObjectPath;
         CompletableFuture<Void> future;
-        int retryCount;
 
         public PendingDeleteRequest(List<ObjectStorage.ObjectPath> deleteObjectPath, CompletableFuture<Void> future) {
-            this(deleteObjectPath, future, 0);
-        }
-
-        public PendingDeleteRequest(List<ObjectStorage.ObjectPath> deleteObjectPath, CompletableFuture<Void> future, int retryCount) {
             this.deleteObjectPath = deleteObjectPath;
             this.future = future;
-            this.retryCount = retryCount;
         }
     }
 
@@ -196,13 +189,8 @@ public class DeleteObjectsAccumulator {
                 } else {
                     request.future.complete(null);
                 }
-            } else if (request.retryCount >= DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT) {
-                Map<String, DeleteObjectError> retryErrors = requestRetriablePaths.stream()
-                    .collect(Collectors.toMap(ObjectStorage.ObjectPath::key, path -> ex.getRetriableKeys().get(path.key())));
-                retryErrors.putAll(requestFailedKeys);
-                completeRequestWithFailedKeys(request.future, retryErrors);
             } else if (requestFailedKeys.isEmpty()) {
-                submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, request.future, request.retryCount + 1));
+                submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, request.future));
             } else {
                 CompletableFuture<Void> retryFuture = new CompletableFuture<>();
                 retryFuture.whenComplete((nil, retryEx) -> {
@@ -213,7 +201,7 @@ public class DeleteObjectsAccumulator {
                     }
                     completeRequestWithFailedKeys(request.future, failedKeyErrors);
                 });
-                submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, retryFuture, request.retryCount + 1));
+                submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, retryFuture));
             }
         }
     }
