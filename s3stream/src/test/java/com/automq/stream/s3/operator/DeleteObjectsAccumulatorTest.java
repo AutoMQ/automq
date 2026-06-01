@@ -287,6 +287,34 @@ public class DeleteObjectsAccumulatorTest {
     }
 
     @Test
+    void testRetriableKeysAreStillRetriedWhenOwningFutureHasFailedKeys() {
+        Map<String, AtomicInteger> deleteAttempts = new ConcurrentHashMap<>();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            path.forEach(key -> deleteAttempts.computeIfAbsent(key, ignored -> new AtomicInteger()).incrementAndGet());
+            if (path.contains("retry-key") && deleteAttempts.get("retry-key").get() == 1) {
+                return CompletableFuture.failedFuture(new DeleteObjectsException(
+                    "mixed failure",
+                    Set.of(),
+                    Map.of("retry-key", new DeleteObjectError("SlowDown", 503, "slow down")),
+                    Map.of("failed-key", new DeleteObjectError("AccessDenied", 403, "denied"))));
+            }
+            return CompletableFuture.completedFuture(null);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 10, deleteFunction);
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(
+            new ObjectStorage.ObjectPath((short) 0, "retry-key"),
+            new ObjectStorage.ObjectPath((short) 0, "failed-key")
+        ), cf);
+
+        assertTrue(cf.isCompletedExceptionally());
+        assertEquals(2, deleteAttempts.get("retry-key").get());
+        assertEquals(1, deleteAttempts.get("failed-key").get());
+    }
+
+    @Test
     void testHighTrafficBatchDelete() {
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
         int delayMs = ThreadLocalRandom.current().nextInt(100);

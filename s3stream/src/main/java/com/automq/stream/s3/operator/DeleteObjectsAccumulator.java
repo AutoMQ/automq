@@ -193,6 +193,9 @@ public class DeleteObjectsAccumulator {
             if (!requestFailedKeys.isEmpty()) {
                 request.future.completeExceptionally(new DeleteObjectsException(
                     "Failed to delete objects", Collections.emptySet(), Collections.emptyMap(), requestFailedKeys));
+                if (!requestRetriablePaths.isEmpty() && request.retryCount < DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT) {
+                    submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, request.future, request.retryCount + 1));
+                }
             } else if (requestRetriablePaths.isEmpty()) {
                 request.future.complete(null);
             } else if (request.retryCount >= DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT) {

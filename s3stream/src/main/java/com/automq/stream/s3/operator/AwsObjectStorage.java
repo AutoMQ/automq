@@ -347,11 +347,45 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     }
                 })
                 .exceptionally(ex -> {
-                    cf.completeExceptionally(ex);
+                    cf.completeExceptionally(toDeleteObjectsException(objectKeys, cause(ex)));
                     return null;
                 });
             return cf;
         }, S3Operation.DELETE_OBJECTS, 0);
+    }
+
+    private DeleteObjectsException toDeleteObjectsException(List<String> objectKeys, Throwable ex) {
+        DeleteObjectError error = deleteObjectError(ex);
+        Map<String, DeleteObjectError> retriableKeys = new HashMap<>();
+        Map<String, DeleteObjectError> failedKeys = new HashMap<>();
+        Map<String, DeleteObjectError> target = isRetriableDeleteError(error) ? retriableKeys : failedKeys;
+        objectKeys.forEach(key -> target.put(key, error));
+        logDeleteObjectErrors(retriableKeys, failedKeys);
+        return new DeleteObjectsException("Failed to delete objects", Set.of(), retriableKeys, failedKeys);
+    }
+
+    private boolean isRetriableDeleteError(DeleteObjectError error) {
+        return isRetriableDeleteStatus(error.statusCode())
+            || RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code());
+    }
+
+    private boolean isRetriableDeleteStatus(int statusCode) {
+        return statusCode == HttpStatusCode.THROTTLING
+            || statusCode == HttpStatusCode.INTERNAL_SERVER_ERROR
+            || statusCode == HttpStatusCode.BAD_GATEWAY
+            || statusCode == HttpStatusCode.SERVICE_UNAVAILABLE
+            || statusCode == HttpStatusCode.GATEWAY_TIMEOUT;
+    }
+
+    private DeleteObjectError deleteObjectError(Throwable ex) {
+        if (ex instanceof S3Exception s3Ex) {
+            String code = s3Ex.awsErrorDetails() == null ? "Unknown" : s3Ex.awsErrorDetails().errorCode();
+            return new DeleteObjectError(code, s3Ex.statusCode(), s3Ex.getMessage());
+        }
+        if (ex instanceof ApiCallAttemptTimeoutException || ex instanceof TimeoutException || ex instanceof SdkClientException) {
+            return new DeleteObjectError(ex.getClass().getSimpleName(), HttpStatusCode.SERVICE_UNAVAILABLE, ex.getMessage());
+        }
+        return new DeleteObjectError(ex.getClass().getSimpleName(), -1, ex.getMessage());
     }
 
     @Override
