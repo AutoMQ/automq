@@ -20,6 +20,10 @@ import re
 import signal
 import time
 import subprocess
+# // AutoMQ inject start
+import base64
+import uuid
+# // AutoMQ inject end
 
 from ducktape.services.service import Service
 from ducktape.utils.util import wait_until
@@ -193,6 +197,12 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             "collect_default": True}
     }
 
+    # // AutoMQ inject start
+    @staticmethod
+    def _random_cluster_id():
+        return base64.urlsafe_b64encode(uuid.uuid4().bytes).decode('ascii').rstrip('=')
+    # // AutoMQ inject end
+
     def __init__(self, context, num_nodes, zk, security_protocol=SecurityConfig.PLAINTEXT,
                  interbroker_security_protocol=SecurityConfig.PLAINTEXT,
                  client_sasl_mechanism=SecurityConfig.SASL_MECHANISM_GSSAPI, interbroker_sasl_mechanism=SecurityConfig.SASL_MECHANISM_GSSAPI,
@@ -209,6 +219,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  quorum_info_provider=None,
                  use_new_coordinator=None,
                  project_name=None,# AutoMQ inject
+                 # // AutoMQ inject start
+                 cluster_id=None,
+                 # // AutoMQ inject end
                  ):
         """
         :param context: test context
@@ -281,6 +294,14 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             self.quorum_info = quorum.ServiceQuorumInfo.from_test_context(self, context)
         else:
             self.quorum_info = quorum_info_provider(self)
+        # // AutoMQ inject start
+        if isolated_kafka is not None:
+            self._cluster_id = isolated_kafka._cluster_id
+        elif cluster_id is not None:
+            self._cluster_id = cluster_id
+        else:
+            self._cluster_id = config_property.CLUSTER_ID
+        # // AutoMQ inject end
         self.controller_quorum = None # will define below if necessary
         self.isolated_controller_quorum = None # will define below if necessary
         self.configured_for_zk_migration = False
@@ -343,6 +364,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     listener_security_config=listener_security_config,
                     extra_kafka_opts=extra_kafka_opts, tls_version=tls_version,
                     isolated_kafka=self, allow_zk_with_kraft=self.allow_zk_with_kraft,
+                    # // AutoMQ inject start
+                    cluster_id=self._cluster_id,
+                    # // AutoMQ inject end
                     server_prop_overrides=server_prop_overrides
                 )
                 self.controller_quorum = self.isolated_controller_quorum
@@ -914,7 +938,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         if self.quorum_info.using_kraft:
             # format log directories if necessary
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
-            cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, config_property.CLUSTER_ID)
+            # // AutoMQ inject start
+            cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, self._cluster_id)
+            # // AutoMQ inject end
             self.logger.info("Running log directory format command...\n%s" % cmd)
             node.account.ssh(cmd)
 
@@ -1675,8 +1701,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
     def cluster_id(self):
         """ Get the current cluster id
         """
+        # // AutoMQ inject start
         if self.quorum_info.using_kraft:
-            return config_property.CLUSTER_ID
+            return self._cluster_id
+        # // AutoMQ inject end
 
         self.logger.debug("Querying ZooKeeper to retrieve cluster id")
         cluster = self.zk.query("/cluster/id", chroot=self.zk_chroot)
