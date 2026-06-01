@@ -190,25 +190,47 @@ public class DeleteObjectsAccumulator {
                 .filter(path -> failedKeys.contains(path.key()))
                 .collect(Collectors.toMap(ObjectStorage.ObjectPath::key, path -> ex.getFailedKeyErrors().get(path.key())));
 
-            if (!requestFailedKeys.isEmpty()) {
-                request.future.completeExceptionally(new DeleteObjectsException(
-                    "Failed to delete objects", Collections.emptySet(), Collections.emptyMap(), requestFailedKeys));
-                if (!requestRetriablePaths.isEmpty() && request.retryCount < DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT) {
-                    submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, request.future, request.retryCount + 1));
+            if (requestRetriablePaths.isEmpty()) {
+                if (!requestFailedKeys.isEmpty()) {
+                    completeRequestWithFailedKeys(request.future, requestFailedKeys);
+                } else {
+                    request.future.complete(null);
                 }
-            } else if (requestRetriablePaths.isEmpty()) {
-                request.future.complete(null);
             } else if (request.retryCount >= DEFAULT_DELETE_OBJECTS_MAX_RETRY_COUNT) {
-                Map<String, DeleteObjectError> retryErrors = new HashMap<>();
-                for (ObjectStorage.ObjectPath retriablePath : requestRetriablePaths) {
-                    retryErrors.put(retriablePath.key(), ex.getRetriableKeys().get(retriablePath.key()));
-                }
-                request.future.completeExceptionally(new DeleteObjectsException(
-                    "Failed to delete objects after retries", Collections.emptySet(), Collections.emptyMap(), retryErrors));
-            } else {
+                Map<String, DeleteObjectError> retryErrors = requestRetriablePaths.stream()
+                    .collect(Collectors.toMap(ObjectStorage.ObjectPath::key, path -> ex.getRetriableKeys().get(path.key())));
+                retryErrors.putAll(requestFailedKeys);
+                completeRequestWithFailedKeys(request.future, retryErrors);
+            } else if (requestFailedKeys.isEmpty()) {
                 submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, request.future, request.retryCount + 1));
+            } else {
+                CompletableFuture<Void> retryFuture = new CompletableFuture<>();
+                retryFuture.whenComplete((nil, retryEx) -> {
+                    Map<String, DeleteObjectError> failedKeyErrors = new HashMap<>(requestFailedKeys);
+                    DeleteObjectsException retryDeleteException = deleteObjectsException(retryEx);
+                    if (retryDeleteException != null) {
+                        failedKeyErrors.putAll(retryDeleteException.getFailedKeyErrors());
+                    }
+                    completeRequestWithFailedKeys(request.future, failedKeyErrors);
+                });
+                submitOrQueue(new PendingDeleteRequest(requestRetriablePaths, retryFuture, request.retryCount + 1));
             }
         }
+    }
+
+    private DeleteObjectsException deleteObjectsException(Throwable ex) {
+        if (ex instanceof DeleteObjectsException deleteObjectsException) {
+            return deleteObjectsException;
+        }
+        if (ex != null && ex.getCause() instanceof DeleteObjectsException deleteObjectsException) {
+            return deleteObjectsException;
+        }
+        return null;
+    }
+
+    private void completeRequestWithFailedKeys(CompletableFuture<Void> future, Map<String, DeleteObjectError> failedKeys) {
+        future.completeExceptionally(new DeleteObjectsException(
+            "Failed to delete objects", Collections.emptySet(), Collections.emptyMap(), failedKeys));
     }
 
     private void submitOrQueue(PendingDeleteRequest request) {

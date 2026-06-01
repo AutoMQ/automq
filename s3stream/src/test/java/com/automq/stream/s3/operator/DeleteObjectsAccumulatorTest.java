@@ -289,6 +289,7 @@ public class DeleteObjectsAccumulatorTest {
     @Test
     void testRetriableKeysAreStillRetriedWhenOwningFutureHasFailedKeys() {
         Map<String, AtomicInteger> deleteAttempts = new ConcurrentHashMap<>();
+        CompletableFuture<Void> retryFuture = new CompletableFuture<>();
         Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
             path.forEach(key -> deleteAttempts.computeIfAbsent(key, ignored -> new AtomicInteger()).incrementAndGet());
             if (path.contains("retry-key") && deleteAttempts.get("retry-key").get() == 1) {
@@ -297,6 +298,9 @@ public class DeleteObjectsAccumulatorTest {
                     Set.of(),
                     Map.of("retry-key", new DeleteObjectError("SlowDown", 503, "slow down")),
                     Map.of("failed-key", new DeleteObjectError("AccessDenied", 403, "denied"))));
+            }
+            if (path.contains("retry-key")) {
+                return retryFuture;
             }
             return CompletableFuture.completedFuture(null);
         };
@@ -309,6 +313,8 @@ public class DeleteObjectsAccumulatorTest {
             new ObjectStorage.ObjectPath((short) 0, "failed-key")
         ), cf);
 
+        assertFalse(cf.isDone());
+        retryFuture.complete(null);
         assertTrue(cf.isCompletedExceptionally());
         assertEquals(2, deleteAttempts.get("retry-key").get());
         assertEquals(1, deleteAttempts.get("failed-key").get());

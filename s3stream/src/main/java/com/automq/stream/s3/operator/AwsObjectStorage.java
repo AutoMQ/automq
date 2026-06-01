@@ -371,6 +371,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     private boolean isRetriableDeleteStatus(int statusCode) {
         return statusCode == HttpStatusCode.THROTTLING
+            || statusCode == HttpStatusCode.REQUEST_TIMEOUT
             || statusCode == HttpStatusCode.INTERNAL_SERVER_ERROR
             || statusCode == HttpStatusCode.BAD_GATEWAY
             || statusCode == HttpStatusCode.SERVICE_UNAVAILABLE
