@@ -101,6 +101,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
     private static final Set<String> RETRIABLE_DELETE_OBJECT_ERROR_CODES = Set.of(
         "InternalError", "ServiceUnavailable", "SlowDown", "RequestTimeout", "OperationAborted");
+    private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
@@ -181,21 +182,30 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     private void logDeleteObjectErrors(Map<String, DeleteObjectError> retriableKeys,
         Map<String, DeleteObjectError> failedKeys) {
-        if (!retriableKeys.isEmpty()) {
+        if (!retriableKeys.isEmpty() && logger.isWarnEnabled()) {
             logger.warn("Delete objects retriable failures, count={}, samples={}",
                 retriableKeys.size(), formatDeleteObjectErrors(retriableKeys));
         }
-        if (!failedKeys.isEmpty()) {
+        if (!failedKeys.isEmpty() && logger.isErrorEnabled()) {
             logger.error("Delete objects failed, count={}, samples={}",
                 failedKeys.size(), formatDeleteObjectErrors(failedKeys));
         }
     }
 
     private String formatDeleteObjectErrors(Map<String, DeleteObjectError> errors) {
-        return errors.entrySet().stream()
-            .limit(100)
-            .map(entry -> "(" + entry.getKey() + ", " + entry.getValue() + ")")
-            .collect(Collectors.joining(", "));
+        StringBuilder builder = new StringBuilder();
+        int count = 0;
+        for (Map.Entry<String, DeleteObjectError> entry : errors.entrySet()) {
+            if (count >= DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT) {
+                break;
+            }
+            if (count > 0) {
+                builder.append(", ");
+            }
+            builder.append('(').append(entry.getKey()).append(", ").append(entry.getValue()).append(')');
+            count++;
+        }
+        return builder.toString();
     }
 
     @Override
