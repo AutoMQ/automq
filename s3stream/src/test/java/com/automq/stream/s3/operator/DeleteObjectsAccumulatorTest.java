@@ -228,6 +228,65 @@ public class DeleteObjectsAccumulatorTest {
     }
 
     @Test
+    void testRetriableKeysAreRetriedWithoutResendingSuccessfulKeys() {
+        Map<String, AtomicInteger> deleteAttempts = new ConcurrentHashMap<>();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            path.forEach(key -> deleteAttempts.computeIfAbsent(key, ignored -> new AtomicInteger()).incrementAndGet());
+            if (path.contains("retry-once") && deleteAttempts.get("retry-once").get() == 1) {
+                return CompletableFuture.failedFuture(new DeleteObjectsException(
+                    "retry one key",
+                    Set.of("ok"),
+                    Map.of("retry-once", new DeleteObjectError("SlowDown", 503, "slow down")),
+                    Map.of()));
+            }
+            return CompletableFuture.completedFuture(null);
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 10, deleteFunction);
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(
+            new ObjectStorage.ObjectPath((short) 0, "ok"),
+            new ObjectStorage.ObjectPath((short) 0, "retry-once")
+        ), cf);
+
+        cf.join();
+        assertEquals(1, deleteAttempts.get("ok").get());
+        assertEquals(2, deleteAttempts.get("retry-once").get());
+    }
+
+    @Test
+    void testFailedKeysOnlyFailOwningFutureInMergedBatch() {
+        CompletableFuture<Void> firstCall = new CompletableFuture<>();
+        AtomicInteger callCount = new AtomicInteger();
+        Function<List<String>, CompletableFuture<Void>> deleteFunction = path -> {
+            if (callCount.incrementAndGet() == 1) {
+                return firstCall;
+            }
+            return CompletableFuture.failedFuture(new DeleteObjectsException(
+                "one key failed",
+                Set.of("success-key"),
+                Map.of(),
+                Map.of("failed-key", new DeleteObjectError("AccessDenied", 403, "denied"))));
+        };
+
+        DeleteObjectsAccumulator accumulator = new DeleteObjectsAccumulator(10, 1, deleteFunction);
+        CompletableFuture<Void> blockedCf = new CompletableFuture<>();
+        CompletableFuture<Void> failedCf = new CompletableFuture<>();
+        CompletableFuture<Void> successCf = new CompletableFuture<>();
+
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "blocked-key")), blockedCf);
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "failed-key")), failedCf);
+        accumulator.batchDeleteObjects(List.of(new ObjectStorage.ObjectPath((short) 0, "success-key")), successCf);
+
+        firstCall.complete(null);
+
+        blockedCf.join();
+        successCf.join();
+        assertTrue(failedCf.isCompletedExceptionally());
+    }
+
+    @Test
     void testHighTrafficBatchDelete() {
         AtomicInteger totalDeleteObjectNumber = new AtomicInteger();
         int delayMs = ThreadLocalRandom.current().nextInt(100);

@@ -35,9 +35,12 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
@@ -96,6 +99,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     // use the root logger to log the error to both log file and stdout
     private static final Logger READINESS_CHECK_LOGGER = LoggerFactory.getLogger("ObjectStorageReadinessCheck");
     public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
+    private static final Set<String> RETRIABLE_DELETE_OBJECT_ERROR_CODES = Set.of(
+        "InternalError", "ServiceUnavailable", "SlowDown", "RequestTimeout", "OperationAborted");
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
@@ -151,26 +156,46 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return new Builder();
     }
 
-    void checkDeleteObjectsResponse(DeleteObjectsResponse response) throws Exception {
-        int errDeleteCount = 0;
-        ArrayList<String> failedKeys = new ArrayList<>();
-        ArrayList<String> errorsMessages = new ArrayList<>();
+    void checkDeleteObjectsResponse(DeleteObjectsResponse response, List<String> objectKeys) throws Exception {
+        Set<String> successKeys = new HashSet<>(objectKeys);
+        Map<String, DeleteObjectError> retriableKeys = new HashMap<>();
+        Map<String, DeleteObjectError> failedKeys = new HashMap<>();
         for (S3Error error : response.errors()) {
             if (S3_API_NO_SUCH_KEY.equals(error.code())) {
                 // ignore for delete objects.
                 continue;
             }
-            if (errDeleteCount < 5) {
-                logger.error("Delete objects for key [{}] error code [{}] message [{}]",
-                    error.key(), error.code(), error.message());
+            successKeys.remove(error.key());
+            DeleteObjectError deleteObjectError = new DeleteObjectError(error.code(), -1, error.message());
+            if (RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code())) {
+                retriableKeys.put(error.key(), deleteObjectError);
+            } else {
+                failedKeys.put(error.key(), deleteObjectError);
             }
-            failedKeys.add(error.key());
-            errorsMessages.add(error.message());
-            errDeleteCount++;
         }
-        if (errDeleteCount > 0) {
-            throw new DeleteObjectsException("Failed to delete objects", failedKeys, errorsMessages);
+        logDeleteObjectErrors(retriableKeys, failedKeys);
+        if (!retriableKeys.isEmpty() || !failedKeys.isEmpty()) {
+            throw new DeleteObjectsException("Failed to delete objects", successKeys, retriableKeys, failedKeys);
         }
+    }
+
+    private void logDeleteObjectErrors(Map<String, DeleteObjectError> retriableKeys,
+        Map<String, DeleteObjectError> failedKeys) {
+        if (!retriableKeys.isEmpty()) {
+            logger.warn("Delete objects retriable failures, count={}, samples={}",
+                retriableKeys.size(), formatDeleteObjectErrors(retriableKeys));
+        }
+        if (!failedKeys.isEmpty()) {
+            logger.error("Delete objects failed, count={}, samples={}",
+                failedKeys.size(), formatDeleteObjectErrors(failedKeys));
+        }
+    }
+
+    private String formatDeleteObjectErrors(Map<String, DeleteObjectError> errors) {
+        return errors.entrySet().stream()
+            .limit(100)
+            .map(entry -> "(" + entry.getKey() + ", " + entry.getValue() + ")")
+            .collect(Collectors.joining(", "));
     }
 
     @Override
@@ -315,7 +340,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             writeS3Client.deleteObjects(request)
                 .thenAccept(resp -> {
                     try {
-                        checkDeleteObjectsResponse(resp);
+                        checkDeleteObjectsResponse(resp, objectKeys);
                         cf.complete(null);
                     } catch (Throwable ex) {
                         cf.completeExceptionally(ex);
