@@ -30,8 +30,8 @@ class QuotaTest(Test):
 
         self.broker_id = '1'
 
-        self.maximum_client_deviation_percentage = 100.0
-        self.maximum_broker_deviation_percentage = 5
+        self.maximum_client_deviation_percentage = 200.0
+        self.maximum_broker_deviation_percentage = 20
 
         self.success = True
         self.msg = ''

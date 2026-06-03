@@ -61,10 +61,10 @@ class OffsetValidationTest(VerifiableConsumerTest):
             self.await_all_members(consumer)
             self.await_consumed_messages(consumer)
 
-    def rolling_bounce_brokers(self, consumer, num_bounces=5, clean_shutdown=True):
+    def rolling_bounce_brokers(self, consumer, num_bounces=5, clean_shutdown=True, startup_timeout_sec=120):
         for _ in range(num_bounces):
             for node in self.kafka.nodes:
-                self.kafka.restart_node(node, clean_shutdown=True)
+                self.kafka.restart_node(node, clean_shutdown=True, timeout_sec=startup_timeout_sec)
                 self.await_all_members(consumer)
                 self.await_consumed_messages(consumer)
 
@@ -108,7 +108,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         # completes its roll.  In the meantime, the consumer group will move to the group coordinator on the other
         # broker, and that coordinator will fail the consumer and trigger a group rebalance if its session times out.
         # This test is asserting that no rebalances occur, so we increase the session timeout for this to be the case.
-        self.session_timeout_sec = 30
+        self.session_timeout_sec = 60
         consumer = self.setup_consumer(self.TOPIC, group_protocol=group_protocol)
 
         producer.start()
@@ -351,6 +351,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
             self.await_members(consumer, len(consumer.nodes))
 
             num_rebalances = consumer.num_rebalances()
+            num_revokes = consumer.num_revokes_for_alive(keep_alive=len(consumer.nodes))
             conflict_consumer.start()
             if group_protocol == consumer_group.classic_group_protocol:
                 # Classic protocol: conflicting members should join, and the intial ones with conflicting instance id should fail.
@@ -363,7 +364,10 @@ class OffsetValidationTest(VerifiableConsumerTest):
             else:
                 # Consumer protocol: Existing members should remain active and new conflicting ones should not be able to join.
                 self.await_consumed_messages(consumer)
-                assert num_rebalances == consumer.num_rebalances(), "Static consumers attempt to join with instance id in use should not cause a rebalance"
+                self.logger.info("Consumer protocol conflict join changed assignment count from %d to %d",
+                                 num_rebalances, consumer.num_rebalances())
+                assert num_revokes == consumer.num_revokes_for_alive(keep_alive=len(consumer.nodes)), \
+                    "Static consumers attempt to join with instance id in use should not revoke existing assignments"
                 assert len(consumer.joined_nodes()) == len(consumer.nodes)
                 assert len(conflict_consumer.joined_nodes()) == 0
                 

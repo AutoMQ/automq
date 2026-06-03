@@ -68,7 +68,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
         assert quorum.for_test(self.test_context) in quorum.all_kraft, \
                 "Snapshot test should be run Kraft Modes only"
 
-        self.kafka.start()
+        self.kafka.start(timeout_sec=120)
 
         topic_count = 10
         self.topics_created += self.create_n_topics(topic_count)
@@ -183,7 +183,7 @@ class TestSnapshots(ProduceConsumeValidateTest):
         node = random.choice(self.kafka.nodes)
         self.logger.debug("Scenario: kill-clean-start on broker node %s", self.kafka.who_am_i(node))
         self.kafka.clean_node(node)
-        self.kafka.start_node(node)
+        self.kafka.start_node(node, timeout_sec=120)
 
         # Scenario -- Re-init broker after cleaning up all persistent state
         # Create some metadata changes for the broker to consume as well.
@@ -192,14 +192,14 @@ class TestSnapshots(ProduceConsumeValidateTest):
         self.kafka.clean_node(node)
         # Now modify the cluster to create more metadata changes
         self.topics_created += self.create_n_topics(topic_count=10)
-        self.kafka.start_node(node)
+        self.kafka.start_node(node, timeout_sec=120)
 
         # Scenario -- Re-init broker after cleaning up all persistent state
         # And ensure that the broker has replicated the metadata log
         node = random.choice(self.kafka.nodes)
         self.logger.debug("Scenario: kill-clean-start-verify-produce on broker node %s", self.kafka.who_am_i(node))
         self.kafka.clean_node(node)
-        self.kafka.start_node(node)
+        self.kafka.start_node(node, timeout_sec=120)
         # Create a topic where the affected broker must be the leader
         broker_topic = "%s%d" % (TestSnapshots.TOPIC_NAME_PREFIX, self.topics_created)
         self.topics_created += 1

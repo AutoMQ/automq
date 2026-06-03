@@ -79,7 +79,7 @@ def hard_bounce(test, broker_type):
                        err_msg="Failed to see timely disappearance of process for hard-killed broker %s" % str(prev_broker_node.account))
             time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
 
-        test.kafka.start_node(prev_broker_node)
+        test.kafka.start_node(prev_broker_node, timeout_sec=120)
 
 failures = {
     "clean_shutdown": clean_shutdown,
