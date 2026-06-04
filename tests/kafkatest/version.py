@@ -122,7 +122,9 @@ def get_version(node=None):
         return DEV_BRANCH
 
 DEV_BRANCH = KafkaVersion("dev")
-DEV_VERSION = KafkaVersion("3.9.1-SNAPSHOT")
+# // AutoMQ inject start
+DEV_VERSION = KafkaVersion("3.9.1")
+# // AutoMQ inject end
 
 # This should match the LATEST_PRODUCTION version defined in MetadataVersion.java
 LATEST_STABLE_METADATA_VERSION = "3.9-IV0"
