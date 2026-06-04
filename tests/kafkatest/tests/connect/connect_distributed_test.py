@@ -365,12 +365,19 @@ class ConnectDistributedTest(Test):
                    err_msg="Failed to produce messages after resuming source connector")
 
     @cluster(num_nodes=5)
+    # // AutoMQ inject start
     @matrix(
         connect_protocol=['sessioned', 'compatible', 'eager'],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True, False],
+        use_new_coordinator=[False]
+    )
+    @matrix(
+        connect_protocol=['sessioned', 'compatible', 'eager'],
+        metadata_quorum=[quorum.isolated_kraft],
+        use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
+    # // AutoMQ inject end
     def test_pause_and_resume_sink(self, connect_protocol, metadata_quorum, use_new_coordinator=False, group_protocol=None):
         """
         Verify that sink connectors stop consuming records when paused and begin again after
