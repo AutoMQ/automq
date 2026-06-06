@@ -115,10 +115,15 @@ public class RecordWrapper implements Record {
 
     public static String extract0(Object parent, String[] fieldChain, int idx) {
         Object value = null;
+        String fieldName = fieldChain[idx];
+        String sanitizedFieldName = kafka.automq.table.utils.TableIdentifierUtil.sanitize(fieldName);
         if (parent instanceof Record) {
-            value = ((Record) parent).getField(fieldChain[idx]);
+            value = ((Record) parent).getField(sanitizedFieldName);
         } else if (parent instanceof Map) {
-            value = ((Map<?, ?>) parent).get(fieldChain[idx]);
+            value = ((Map<?, ?>) parent).get(sanitizedFieldName);
+            if (value == null && !sanitizedFieldName.equals(fieldName)) {
+                value = ((Map<?, ?>) parent).get(fieldName);
+            }
         }
         if (value == null) {
             return null;

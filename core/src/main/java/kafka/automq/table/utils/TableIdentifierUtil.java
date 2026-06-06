@@ -25,11 +25,20 @@ import org.apache.iceberg.catalog.TableIdentifier;
 public class TableIdentifierUtil {
 
     public static TableIdentifier of(String namespace, String name) {
+        String sanitizedName = sanitize(name);
         if (StringUtils.isBlank(namespace)) {
-            return TableIdentifier.of(name);
+            return TableIdentifier.of(sanitizedName);
         } else {
-            return TableIdentifier.of(namespace, name);
+            return TableIdentifier.of(namespace, sanitizedName);
         }
+    }
+
+    public static String sanitize(String name) {
+        if (StringUtils.isBlank(name)) {
+            return name;
+        }
+        // Replace hyphens and dots with underscores to follow SQL naming conventions
+        return name.replace("-", "_").replace(".", "_");
     }
 
 }
