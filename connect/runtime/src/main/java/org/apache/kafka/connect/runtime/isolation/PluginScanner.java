@@ -90,6 +90,7 @@ public abstract class PluginScanner {
      */
     protected abstract PluginScanResult scanPlugins(PluginSource source);
 
+    @SuppressWarnings("removal")
     private void loadJdbcDrivers(final ClassLoader loader) {
         // Apply here what java.sql.DriverManager does to discover and register classes
         // implementing the java.sql.Driver interface.
