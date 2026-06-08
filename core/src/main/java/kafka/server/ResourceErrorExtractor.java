@@ -46,30 +46,68 @@ import org.apache.kafka.common.requests.MetadataResponse;
 import org.apache.kafka.common.requests.OffsetCommitRequest;
 import org.apache.kafka.common.requests.OffsetCommitResponse;
 import org.apache.kafka.common.requests.OffsetFetchResponse;
+import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.SyncGroupRequest;
 import org.apache.kafka.common.requests.TxnOffsetCommitResponse;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 /**
- * Extracts (errorCode, resource) pairs from request/response for recording in RequestErrorAccumulator.
+ * Extracts resource-scoped response errors for request error accounting and retry storm backoff.
+ *
+ * <p>The extractor owns schema-specific parsing and valid-result detection. It returns response
+ * facts only and does not decide whether an error is retry storm delayable, protective, or eligible
+ * for any policy action.</p>
  */
 public class ResourceErrorExtractor {
 
+    /**
+     * Resource-scoped non-NONE response error.
+     *
+     * @param errorCode Kafka protocol error code from the final response
+     * @param resource partition, topic, coordinator, transaction, or cluster resource key
+     */
     public record ResourceError(short errorCode, String resource) { }
+
+    /**
+     * Shared resource error view for request error accumulation and retry storm backoff.
+     *
+     * <p>The view contains response facts only. It does not classify errors as retry storm
+     * delayable-transient or protective; policy code owns those decisions.</p>
+     */
+    public record ResourceErrorView(boolean allErrorCandidate, List<ResourceError> errors) {
+        private static final ResourceErrorView EMPTY = new ResourceErrorView(false, List.of());
+
+        /**
+         * Returns an empty view for responses without resource-level errors.
+         */
+        public static ResourceErrorView empty() {
+            return EMPTY;
+        }
+    }
 
     /**
      * Extract recordable errors with their associated resource from a response.
      */
     public static List<ResourceError> extract(RequestChannel.Request request, AbstractResponse response) {
+        return extractView(request, response).errors();
+    }
+
+    /**
+     * Extract resource-level errors and whether the response has no valid result.
+     */
+    public static ResourceErrorView extractView(RequestChannel.Request request, AbstractResponse response) {
         try {
-            return doExtract(request, response);
+            if (!hasNonNoneError(response)) {
+                return ResourceErrorView.empty();
+            }
+            return doExtractView(request, response);
         } catch (Exception e) {
             // Never let extraction failures break request processing
-            return Collections.emptyList();
+            return ResourceErrorView.empty();
         }
     }
 
@@ -84,7 +122,7 @@ public class ResourceErrorExtractor {
         }
     }
 
-    private static List<ResourceError> doExtract(RequestChannel.Request request, AbstractResponse response) {
+    private static ResourceErrorView doExtractView(RequestChannel.Request request, AbstractResponse response) {
         ApiKeys apiKey = request.header().apiKey();
         switch (apiKey) {
             case PRODUCE:
@@ -93,8 +131,12 @@ public class ResourceErrorExtractor {
                 return extractFetch((FetchResponse) response);
             case LIST_OFFSETS:
                 return extractListOffsets((ListOffsetsResponse) response);
+            case OFFSET_FOR_LEADER_EPOCH:
+                return extractOffsetForLeaderEpoch((OffsetsForLeaderEpochResponse) response);
             case METADATA:
-                return extractMetadata((MetadataResponse) response);
+                return extractMetadata(request, (MetadataResponse) response);
+            case DESCRIBE_TOPIC_PARTITIONS:
+                return extractDescribeTopicPartitions((org.apache.kafka.common.requests.DescribeTopicPartitionsResponse) response);
             case OFFSET_COMMIT:
                 return extractOffsetCommit(request, (OffsetCommitResponse) response);
             case OFFSET_FETCH:
@@ -112,16 +154,17 @@ public class ResourceErrorExtractor {
         }
     }
 
-    private static List<ResourceError> doExtractOther(RequestChannel.Request request, AbstractResponse response, ApiKeys apiKey) {
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
+    private static ResourceErrorView doExtractOther(RequestChannel.Request request, AbstractResponse response, ApiKeys apiKey) {
         switch (apiKey) {
             case JOIN_GROUP:
-                return extractSingleErrorFromRequest(response, () -> request.body(JoinGroupRequest.class).data().groupId());
+                return extractSingleErrorFromRequest(response, () -> groupKey(request.body(JoinGroupRequest.class).data().groupId()));
             case SYNC_GROUP:
-                return extractSingleErrorFromRequest(response, () -> request.body(SyncGroupRequest.class).data().groupId());
+                return extractSingleErrorFromRequest(response, () -> groupKey(request.body(SyncGroupRequest.class).data().groupId()));
             case HEARTBEAT:
                 return extractSingleErrorFromRequest(response, () -> request.body(HeartbeatRequest.class).data().groupId());
             case LEAVE_GROUP:
-                return extractSingleErrorFromRequest(response, () -> request.body(LeaveGroupRequest.class).data().groupId());
+                return extractSingleErrorFromRequest(response, () -> groupKey(request.body(LeaveGroupRequest.class).data().groupId()));
             case DESCRIBE_GROUPS:
                 return extractDescribeGroups((DescribeGroupsResponse) response);
             case DELETE_GROUPS:
@@ -131,22 +174,29 @@ public class ResourceErrorExtractor {
             case INIT_PRODUCER_ID:
                 return extractSingleErrorFromRequest(response, () -> {
                     String txnId = request.body(InitProducerIdRequest.class).data().transactionalId();
-                    return txnId != null ? txnId : "";
+                    return txnId != null && !txnId.isEmpty()
+                        ? transactionKey(txnId)
+                        : "producer-" + request.body(InitProducerIdRequest.class).data().producerId();
                 });
             case ADD_PARTITIONS_TO_TXN:
                 return extractAddPartitionsToTxn((AddPartitionsToTxnResponse) response);
             case ADD_OFFSETS_TO_TXN:
-                return extractSingleErrorFromRequest(response, () -> request.body(AddOffsetsToTxnRequest.class).data().transactionalId());
+                return extractSingleErrorFromRequest(response, () -> transactionKey(request.body(AddOffsetsToTxnRequest.class).data().transactionalId()));
             case END_TXN:
-                return extractSingleErrorFromRequest(response, () -> request.body(EndTxnRequest.class).data().transactionalId());
+                return extractSingleErrorFromRequest(response, () -> {
+                    String txnId = request.body(EndTxnRequest.class).data().transactionalId();
+                    return txnId != null && !txnId.isEmpty()
+                        ? transactionKey(txnId)
+                        : "producer-" + request.body(EndTxnRequest.class).data().producerId();
+                });
             case TXN_OFFSET_COMMIT:
-                return extractTxnOffsetCommit((TxnOffsetCommitResponse) response);
+                return extractTxnOffsetCommit(request, (TxnOffsetCommitResponse) response);
             default:
                 return doExtractAdmin(request, response, apiKey);
         }
     }
 
-    private static List<ResourceError> doExtractAdmin(RequestChannel.Request request, AbstractResponse response, ApiKeys apiKey) {
+    private static ResourceErrorView doExtractAdmin(RequestChannel.Request request, AbstractResponse response, ApiKeys apiKey) {
         switch (apiKey) {
             case ALTER_CONFIGS:
                 return extractAlterConfigs((AlterConfigsResponse) response);
@@ -179,169 +229,306 @@ public class ResourceErrorExtractor {
 
     // ---- Per-topic response extractors ----
 
-    private static List<ResourceError> extractProduce(ProduceResponse response) {
+    private static ResourceErrorView extractProduce(ProduceResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         response.data().responses().forEach(topic ->
-            topic.partitionResponses().forEach(p ->
-                maybeAdd(result, p.errorCode(), topic.name())));
-        return result;
+            topic.partitionResponses().forEach(p -> {
+                if (p.errorCode() == Errors.NONE.code()) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, p.errorCode(), topic.name() + "-" + p.index());
+            }));
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractFetch(FetchResponse response) {
+    private static ResourceErrorView extractFetch(FetchResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         // top-level error
         maybeAdd(result, response.error().code(), "");
         response.data().responses().forEach(topic ->
-            topic.partitions().forEach(p ->
-                maybeAdd(result, p.errorCode(), topic.topic())));
-        return result;
+            topic.partitions().forEach(p -> {
+                if (p.errorCode() == Errors.NONE.code()) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, p.errorCode(), topic.topic() + "-" + p.partitionIndex());
+            }));
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractListOffsets(ListOffsetsResponse response) {
+    private static ResourceErrorView extractListOffsets(ListOffsetsResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         response.data().topics().forEach(topic ->
-            topic.partitions().forEach(p ->
-                maybeAdd(result, p.errorCode(), topic.name())));
-        return result;
+            topic.partitions().forEach(p -> {
+                if (p.errorCode() == Errors.NONE.code()
+                    && (p.offset() != ListOffsetsResponse.UNKNOWN_OFFSET || !p.oldStyleOffsets().isEmpty())) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, p.errorCode(), topic.name() + "-" + p.partitionIndex());
+            }));
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractMetadata(MetadataResponse response) {
+    private static ResourceErrorView extractOffsetForLeaderEpoch(OffsetsForLeaderEpochResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         response.data().topics().forEach(topic ->
-            maybeAdd(result, topic.errorCode(), topic.name() != null ? topic.name() : ""));
-        return result;
+            topic.partitions().forEach(partition -> {
+                if (partition.errorCode() == Errors.NONE.code()
+                    && partition.endOffset() != OffsetsForLeaderEpochResponse.UNDEFINED_EPOCH_OFFSET) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, partition.errorCode(), topic.topic() + "-" + partition.partition());
+            }));
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractOffsetCommit(RequestChannel.Request request, OffsetCommitResponse response) {
+    private static ResourceErrorView extractMetadata(RequestChannel.Request request, MetadataResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        String groupId = request.body(OffsetCommitRequest.class).data().groupId();
+        boolean[] hasValid = {includeClusterValidity(request)
+            && (!response.data().brokers().isEmpty() || response.data().controllerId() >= 0)};
+        response.data().topics().forEach(topic -> {
+            String topicName = topic.name() != null ? topic.name() : topic.topicId().toString();
+            boolean[] topicHasValidPartition = {false};
+            topic.partitions().forEach(partition -> {
+                if (partition.errorCode() == Errors.NONE.code() && partition.leaderId() >= 0) {
+                    topicHasValidPartition[0] = true;
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, partition.errorCode(), topicName + "-" + partition.partitionIndex());
+            });
+            if (topic.errorCode() == Errors.NONE.code() && topicHasValidPartition[0]) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topicName);
+        });
+        return view(result, hasValid[0]);
+    }
+
+    private static ResourceErrorView extractDescribeTopicPartitions(org.apache.kafka.common.requests.DescribeTopicPartitionsResponse response) {
+        List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
+        response.data().topics().forEach(topic -> {
+            String topicName = topic.name() != null ? topic.name() : "";
+            boolean[] topicHasValidPartition = {false};
+            topic.partitions().forEach(partition -> {
+                if (partition.errorCode() == Errors.NONE.code() && partition.leaderId() >= 0) {
+                    topicHasValidPartition[0] = true;
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, partition.errorCode(), topicName + "-" + partition.partitionIndex());
+            });
+            if (topic.errorCode() == Errors.NONE.code() && topicHasValidPartition[0]) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topicName);
+        });
+        return view(result, hasValid[0]);
+    }
+
+    private static ResourceErrorView extractOffsetCommit(RequestChannel.Request request, OffsetCommitResponse response) {
+        List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
+        String resource = groupKey(request.body(OffsetCommitRequest.class).data().groupId());
         response.data().topics().forEach(topic ->
             topic.partitions().forEach(p -> {
                 short code = p.errorCode();
-                if (code == Errors.GROUP_AUTHORIZATION_FAILED.code()) {
-                    maybeAdd(result, code, groupId);
-                } else {
-                    maybeAdd(result, code, topic.name());
+                if (code == Errors.NONE.code()) {
+                    hasValid[0] = true;
                 }
+                maybeAdd(result, code, resource);
             }));
-        return result;
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractOffsetFetch(OffsetFetchResponse response) {
+    private static ResourceErrorView extractOffsetFetch(OffsetFetchResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         // v8+ batched groups
-        response.data().groups().forEach(group ->
-            maybeAdd(result, group.errorCode(), group.groupId()));
+        response.data().groups().forEach(group -> {
+            if (group.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, group.errorCode(), groupKey(group.groupId()));
+        });
         // older single-group
         if (response.data().groups().isEmpty()) {
+            if (response.data().errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
             maybeAdd(result, response.data().errorCode(), "");
         }
-        return result;
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractFindCoordinator(RequestChannel.Request request, FindCoordinatorResponse response) {
+    private static ResourceErrorView extractFindCoordinator(RequestChannel.Request request, FindCoordinatorResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         if (!response.data().coordinators().isEmpty()) {
-            response.data().coordinators().forEach(c ->
-                maybeAdd(result, c.errorCode(), c.key()));
+            response.data().coordinators().forEach(c -> {
+                if (c.errorCode() == Errors.NONE.code() && c.nodeId() >= 0) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, c.errorCode(), coordinatorType(request) + "-" + c.key());
+            });
         } else {
             String key = request.body(FindCoordinatorRequest.class).data().key();
-            maybeAdd(result, response.data().errorCode(), key != null ? key : "");
+            if (response.data().errorCode() == Errors.NONE.code() && response.data().nodeId() >= 0) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, response.data().errorCode(), coordinatorType(request) + "-" + (key != null ? key : ""));
         }
-        return result;
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractCreateTopics(CreateTopicsResponse response) {
+    private static ResourceErrorView extractCreateTopics(CreateTopicsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().topics().forEach(topic ->
-            maybeAdd(result, topic.errorCode(), topic.name()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().topics().forEach(topic -> {
+            if (topic.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topic.name());
+        });
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractDeleteTopics(DeleteTopicsResponse response) {
+    private static ResourceErrorView extractDeleteTopics(DeleteTopicsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().responses().forEach(topic ->
-            maybeAdd(result, topic.errorCode(), topic.name() != null ? topic.name() : ""));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().responses().forEach(topic -> {
+            if (topic.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, topic.errorCode(), topic.name() != null ? topic.name() : "");
+        });
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractCreatePartitions(CreatePartitionsResponse response) {
+    private static ResourceErrorView extractCreatePartitions(CreatePartitionsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().results().forEach(r ->
-            maybeAdd(result, r.errorCode(), r.name()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.name());
+        });
+        return view(result, hasValid[0]);
     }
 
     // ---- Per-group response extractors ----
 
-    private static List<ResourceError> extractDescribeGroups(DescribeGroupsResponse response) {
+    private static ResourceErrorView extractDescribeGroups(DescribeGroupsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().groups().forEach(g ->
-            maybeAdd(result, g.errorCode(), g.groupId()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().groups().forEach(g -> {
+            if (g.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, g.errorCode(), g.groupId());
+        });
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractDeleteGroups(DeleteGroupsResponse response) {
+    private static ResourceErrorView extractDeleteGroups(DeleteGroupsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().results().forEach(r ->
-            maybeAdd(result, r.errorCode(), r.groupId()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.groupId());
+        });
+        return view(result, hasValid[0]);
     }
 
     // ---- Transaction extractors ----
 
-    private static List<ResourceError> extractAddPartitionsToTxn(AddPartitionsToTxnResponse response) {
+    private static ResourceErrorView extractAddPartitionsToTxn(AddPartitionsToTxnResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
         // v3 and below: per-topic results
         response.data().resultsByTopicV3AndBelow().forEach(topic ->
-            topic.resultsByPartition().forEach(p ->
-                maybeAdd(result, p.partitionErrorCode(), topic.name())));
+            topic.resultsByPartition().forEach(p -> {
+                if (p.partitionErrorCode() == Errors.NONE.code()) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, p.partitionErrorCode(), topic.name() + "-" + p.partitionIndex());
+            }));
         // v4+: per-transaction, per-topic results
         response.data().resultsByTransaction().forEach(txn ->
             txn.topicResults().forEach(topic ->
-                topic.resultsByPartition().forEach(p ->
-                    maybeAdd(result, p.partitionErrorCode(), topic.name()))));
-        return result;
+                topic.resultsByPartition().forEach(p -> {
+                    if (p.partitionErrorCode() == Errors.NONE.code()) {
+                        hasValid[0] = true;
+                    }
+                    maybeAdd(result, p.partitionErrorCode(), topic.name() + "-" + p.partitionIndex());
+                })));
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractTxnOffsetCommit(TxnOffsetCommitResponse response) {
+    private static ResourceErrorView extractTxnOffsetCommit(RequestChannel.Request request, TxnOffsetCommitResponse response) {
         List<ResourceError> result = new ArrayList<>();
+        boolean[] hasValid = {false};
+        String resource = transactionKey(request.body(org.apache.kafka.common.requests.TxnOffsetCommitRequest.class).data().transactionalId());
         response.data().topics().forEach(topic ->
-            topic.partitions().forEach(p ->
-                maybeAdd(result, p.errorCode(), topic.name())));
-        return result;
+            topic.partitions().forEach(p -> {
+                if (p.errorCode() == Errors.NONE.code()) {
+                    hasValid[0] = true;
+                }
+                maybeAdd(result, p.errorCode(), resource);
+            }));
+        return view(result, hasValid[0]);
     }
 
     // ---- Config extractors ----
 
-    private static List<ResourceError> extractAlterConfigs(AlterConfigsResponse response) {
+    private static ResourceErrorView extractAlterConfigs(AlterConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().responses().forEach(r ->
-            maybeAdd(result, r.errorCode(), r.resourceName()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().responses().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractDescribeConfigs(DescribeConfigsResponse response) {
+    private static ResourceErrorView extractDescribeConfigs(DescribeConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().results().forEach(r ->
-            maybeAdd(result, r.errorCode(), r.resourceName()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().results().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
+        return view(result, hasValid[0]);
     }
 
-    private static List<ResourceError> extractIncrementalAlterConfigs(IncrementalAlterConfigsResponse response) {
+    private static ResourceErrorView extractIncrementalAlterConfigs(IncrementalAlterConfigsResponse response) {
         List<ResourceError> result = new ArrayList<>();
-        response.data().responses().forEach(r ->
-            maybeAdd(result, r.errorCode(), r.resourceName()));
-        return result;
+        boolean[] hasValid = {false};
+        response.data().responses().forEach(r -> {
+            if (r.errorCode() == Errors.NONE.code()) {
+                hasValid[0] = true;
+            }
+            maybeAdd(result, r.errorCode(), r.resourceName());
+        });
+        return view(result, hasValid[0]);
     }
 
     // ---- Helpers ----
 
-    private static List<ResourceError> extractSingleError(AbstractResponse response, String resource) {
+    private static ResourceErrorView extractSingleError(AbstractResponse response, String resource) {
         List<ResourceError> result = new ArrayList<>();
         response.errorCounts().forEach((error, count) ->
             maybeAdd(result, error.code(), resource));
-        return result;
+        return view(result, hasNoneError(response));
     }
 
     @FunctionalInterface
@@ -349,26 +536,57 @@ public class ResourceErrorExtractor {
         String get();
     }
 
-    private static List<ResourceError> extractSingleErrorFromRequest(
+    private static ResourceErrorView extractSingleErrorFromRequest(
             AbstractResponse response, ResourceSupplier resourceSupplier) {
         List<ResourceError> result = new ArrayList<>();
         String resource = resourceSupplier.get();
         response.errorCounts().forEach((error, count) ->
             maybeAdd(result, error.code(), resource));
-        return result;
+        return view(result, hasNoneError(response));
     }
 
-    private static List<ResourceError> extractDefaultErrors(AbstractResponse response) {
+    private static ResourceErrorView extractDefaultErrors(AbstractResponse response) {
         List<ResourceError> result = new ArrayList<>();
         response.errorCounts().forEach((error, count) ->
             maybeAdd(result, error.code(), ""));
-        return result;
+        return view(result, hasNoneError(response));
     }
 
     private static void maybeAdd(List<ResourceError> result, short errorCode, String resource) {
         if (errorCode != 0) {
             result.add(new ResourceError(errorCode, resource));
         }
+    }
+
+    private static ResourceErrorView view(List<ResourceError> errors, boolean hasValidResult) {
+        return new ResourceErrorView(!errors.isEmpty() && !hasValidResult, List.copyOf(errors));
+    }
+
+    private static boolean hasNonNoneError(AbstractResponse response) {
+        return response.errorCounts().keySet().stream().anyMatch(error -> error != Errors.NONE);
+    }
+
+    private static boolean hasNoneError(AbstractResponse response) {
+        return response.errorCounts().containsKey(Errors.NONE);
+    }
+
+    private static boolean includeClusterValidity(RequestChannel.Request request) {
+        org.apache.kafka.common.requests.MetadataRequest metadataRequest =
+            request.body(org.apache.kafka.common.requests.MetadataRequest.class);
+        return metadataRequest.isAllTopics() || metadataRequest.data().topics().isEmpty();
+    }
+
+    private static String coordinatorType(RequestChannel.Request request) {
+        FindCoordinatorRequest body = request.body(FindCoordinatorRequest.class);
+        return FindCoordinatorRequest.CoordinatorType.forId(body.data().keyType()).name().toLowerCase(Locale.ROOT);
+    }
+
+    private static String groupKey(String groupId) {
+        return "group-" + (groupId == null ? "" : groupId);
+    }
+
+    private static String transactionKey(String transactionalId) {
+        return "transaction-" + (transactionalId == null ? "" : transactionalId);
     }
 
     private static String doExtractResourceFromRequest(RequestChannel.Request request) {

@@ -795,10 +795,12 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3RefillPeriodMsProp = getInt(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG)
   val s3MetricsLevel = getString(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG)
   val s3ExporterReportIntervalMs = getInt(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG)
-  val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
   val s3BackPressureEnabled = getBoolean(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
+  val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG)
+  val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
+  val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/
