@@ -1875,6 +1875,7 @@ project(':clients') {
   compileJava.dependsOn 'processMessages'
   // AutoMQ inject start: ensure proto sources are generated before compilation
   compileJava.dependsOn 'generateProto'
+  srcJar.dependsOn 'generateProto'
   // AutoMQ inject end
   srcJar.dependsOn 'processMessages'
 
