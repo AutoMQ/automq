@@ -41,12 +41,12 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -91,6 +91,9 @@ public class DefaultUploadWriteAheadLogTaskTest {
             .streamSplitSize(1000);
         deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
+        assertEquals(2, deltaWALUploadTask.objectCount());
+        assertEquals(1, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(1, deltaWALUploadTask.getStreamSetObjectMap().size());
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -100,6 +103,7 @@ public class DefaultUploadWriteAheadLogTaskTest {
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
         ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).prepareObject(2, TimeUnit.MINUTES.toMillis(60));
         verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
         // expect
         // - stream233 split
@@ -171,6 +175,9 @@ public class DefaultUploadWriteAheadLogTaskTest {
             .streamSplitSize(16 * 1024 * 1024);
         deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
+        assertEquals(1, deltaWALUploadTask.objectCount());
+        assertEquals(1, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(0, deltaWALUploadTask.getStreamSetObjectMap().size());
 
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
@@ -180,6 +187,7 @@ public class DefaultUploadWriteAheadLogTaskTest {
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
 
         ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).prepareObject(1, TimeUnit.MINUTES.toMillis(60));
         verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
         CommitStreamSetObjectRequest request = reqArg.getValue();
         assertEquals(0, request.getObjectSize());
@@ -207,6 +215,8 @@ public class DefaultUploadWriteAheadLogTaskTest {
             .streamSplitSize(64);
         deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
             .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
-        assertTrue(deltaWALUploadTask.forceSplit);
+        assertEquals(2, deltaWALUploadTask.objectCount());
+        assertEquals(2, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(0, deltaWALUploadTask.getStreamSetObjectMap().size());
     }
 }
