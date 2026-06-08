@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
 import static org.apache.kafka.common.config.ConfigDef.Importance.MEDIUM;
+import static org.apache.kafka.common.config.ConfigDef.Range.between;
 import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
@@ -192,6 +193,15 @@ public class AutoMQConfig {
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
+    public static final String RETRY_STORM_BACKOFF_ENABLED_CONFIG = "automq.retry.storm.backoff.enabled";
+    public static final String RETRY_STORM_BACKOFF_ENABLED_DOC = "Whether retry storm delayed response backoff is enabled";
+    public static final boolean RETRY_STORM_BACKOFF_ENABLED_DEFAULT = false;
+
+    public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG = "automq.retry.storm.backoff.max.delay.ms";
+    public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC = "The maximum retry storm delayed response time in milliseconds, from 0 to 10000";
+    public static final long RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT = 1000L;
+    public static final long RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX = TimeUnit.SECONDS.toMillis(10);
+
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
     private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX = "automq.table.topic.schema.registry.config.";
@@ -293,6 +303,8 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
+            .define(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DOC)
+            .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, between(0, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
