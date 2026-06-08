@@ -34,10 +34,10 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -46,12 +46,11 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultUploadWriteAheadLogTask.class);
-    final boolean forceSplit;
     private final Logger s3ObjectLogger;
-    private final Map<Long, List<StreamRecordBatch>> streamRecordsMap;
+    private final Map<Long, List<StreamRecordBatch>> streamObjectMap;
+    private final Map<Long, List<StreamRecordBatch>> streamSetObjectMap;
     private final int objectBlockSize;
     private final int objectPartSize;
-    private final int streamSplitSizeThreshold;
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final CompletableFuture<Long> prepareCf = new CompletableFuture<>();
@@ -65,17 +64,17 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     private volatile CommitStreamSetObjectRequest commitStreamSetObjectRequest;
     private volatile boolean burst = false;
 
-    public DefaultUploadWriteAheadLogTask(Config config, Map<Long, List<StreamRecordBatch>> streamRecordsMap,
-                              ObjectManager objectManager, ObjectStorage objectStorage,
-                              ExecutorService executor, boolean forceSplit, double rate) {
+    public DefaultUploadWriteAheadLogTask(Config config, Map<Long, List<StreamRecordBatch>> streamSetObjectMap,
+                                          Map<Long, List<StreamRecordBatch>> streamObjectMap,
+                                          ObjectManager objectManager, ObjectStorage objectStorage,
+                                          ExecutorService executor, double rate) {
         this.s3ObjectLogger = S3ObjectLogger.logger(String.format("[DeltaWALUploadTask id=%d] ", config.nodeId()));
-        this.streamRecordsMap = streamRecordsMap;
+        this.streamSetObjectMap = streamSetObjectMap;
+        this.streamObjectMap = streamObjectMap;
         this.objectBlockSize = config.objectBlockSize();
         this.objectPartSize = config.objectPartSize();
-        this.streamSplitSizeThreshold = config.streamSplitSize();
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
-        this.forceSplit = forceSplit;
         this.executor = executor;
         this.rate = rate;
         this.limiter = new AsyncRateLimiter(rate);
@@ -85,20 +84,30 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         return new Builder();
     }
 
+    // test only
+    Map<Long, List<StreamRecordBatch>> getStreamObjectMap() {
+        return streamObjectMap;
+    }
+
+    // test only
+    Map<Long, List<StreamRecordBatch>> getStreamSetObjectMap() {
+        return streamSetObjectMap;
+    }
+
+    int objectCount() {
+        return streamObjectMap.size() + (streamSetObjectMap.isEmpty() ? 0 : 1);
+    }
+
     @Override
     public CompletableFuture<Long> prepare() {
         startTimestamp = System.currentTimeMillis();
-        if (forceSplit) {
-            prepareCf.complete(NOOP_OBJECT_ID);
-        } else {
-            objectManager
-                .prepareObject(1, TimeUnit.MINUTES.toMillis(60))
-                .thenAcceptAsync(prepareCf::complete, executor)
-                .exceptionally(ex -> {
-                    prepareCf.completeExceptionally(ex);
-                    return null;
-                });
-        }
+        objectManager
+            .prepareObject(objectCount(), TimeUnit.MINUTES.toMillis(60))
+            .thenAcceptAsync(prepareCf::complete, executor)
+            .exceptionally(ex -> {
+                prepareCf.completeExceptionally(ex);
+                return null;
+            });
         return prepareCf;
     }
 
@@ -131,43 +140,48 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
 
     void upload0(long objectId) {
         uploadTimestamp = System.currentTimeMillis();
-        List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
-        Collections.sort(streamIds);
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
 
-        ObjectWriter streamSetObject;
-        if (forceSplit) {
-            // when only has one stream, we only need to write the stream data.
-            streamSetObject = ObjectWriter.noop(objectId);
+        ObjectWriter ssoWriter;
+        long streamSetObjectId = NOOP_OBJECT_ID;
+        if (streamSetObjectMap.isEmpty()) {
+            ssoWriter = ObjectWriter.noop(objectId);
         } else {
-            streamSetObject = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
+            streamSetObjectId = objectId++;
+            ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize);
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
-
-        List<CompletableFuture<Void>> streamSetWriteCfList = new LinkedList<>();
-        for (Long streamId : streamIds) {
-            List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
-            int streamSize = streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
-            if (forceSplit || streamSize >= streamSplitSizeThreshold) {
-                streamObjectCfList.add(writeStreamObject(streamRecords, streamSize).thenAccept(so -> {
-                    synchronized (request) {
-                        request.addStreamObject(so);
-                    }
-                }));
-            } else {
-                streamSetWriteCfList.add(acquireLimiter(streamSize).thenAccept(nil -> streamSetObject.write(streamId, streamRecords)));
-                long startOffset = streamRecords.get(0).getBaseOffset();
-                long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
-                request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
-            }
+        List<Long> streamObjectIds = new ArrayList<>(streamObjectMap.keySet());
+        Collections.sort(streamObjectIds);
+        for (Long streamId : streamObjectIds) {
+            List<StreamRecordBatch> streamRecords = streamObjectMap.get(streamId);
+            streamObjectCfList.add(writeStreamObject(objectId++, streamRecords).thenAccept(so -> {
+                synchronized (request) {
+                    request.addStreamObject(so);
+                }
+            }));
         }
-        request.setObjectId(objectId);
-        request.setOrderId(objectId);
-        CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetWriteCfList.toArray(new CompletableFuture[0]))
-            .thenCompose(nil -> streamSetObject.close().thenAccept(nil2 -> {
-                request.setObjectSize(streamSetObject.size());
-                request.setAttributes(ObjectAttributes.builder().bucket(streamSetObject.bucketId()).build().attributes());
+
+        List<CompletableFuture<Void>> streamSetObjectCfList = new LinkedList<>();
+        List<Long> streamSetIds = new ArrayList<>(streamSetObjectMap.keySet());
+        Collections.sort(streamSetIds);
+        for (Long streamId : streamSetIds) {
+            List<StreamRecordBatch> streamRecords = streamSetObjectMap.get(streamId);
+            int streamSize = streamSize(streamRecords);
+            long startOffset = streamRecords.get(0).getBaseOffset();
+            long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
+            streamSetObjectCfList.add(acquireLimiter(streamSize).thenAccept(nil -> ssoWriter.write(streamId, streamRecords)));
+            request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
+        }
+
+        request.setObjectId(streamSetObjectId);
+        request.setOrderId(streamSetObjectId);
+
+        CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetObjectCfList.toArray(new CompletableFuture[0]))
+            .thenCompose(nil -> ssoWriter.close().thenAccept(nil2 -> {
+                request.setObjectSize(ssoWriter.size());
+                request.setAttributes(ObjectAttributes.builder().bucket(ssoWriter.bucketId()).build().attributes());
             }));
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
@@ -207,10 +221,9 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         });
     }
 
-    private CompletableFuture<StreamObject> writeStreamObject(List<StreamRecordBatch> streamRecords, int streamSize) {
-        CompletableFuture<Long> cf = objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60));
-        cf = cf.thenCompose(objectId -> acquireLimiter(streamSize).thenApply(nil -> objectId));
-        return cf.thenComposeAsync(objectId -> {
+    private CompletableFuture<StreamObject> writeStreamObject(long objectId, List<StreamRecordBatch> streamRecords) {
+        int streamSize = streamSize(streamRecords);
+        return acquireLimiter(streamSize).thenComposeAsync(nil -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
@@ -221,12 +234,16 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             streamObject.setStreamId(streamId);
             streamObject.setStartOffset(startOffset);
             streamObject.setEndOffset(endOffset);
-            return streamObjectWriter.close().thenApply(nil -> {
+            return streamObjectWriter.close().thenApply(ignored -> {
                 streamObject.setObjectSize(streamObjectWriter.size());
                 streamObject.setAttributes(ObjectAttributes.builder().bucket(streamObjectWriter.bucketId()).build().attributes());
                 return streamObject;
             });
         }, executor);
+    }
+
+    static int streamSize(List<StreamRecordBatch> streamRecords) {
+        return streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
     }
 
     public static class Builder {
@@ -235,7 +252,6 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         private ObjectManager objectManager;
         private ObjectStorage objectStorage;
         private ExecutorService executor;
-        private Boolean forceSplit;
         private double rate = Long.MAX_VALUE;
 
         public Builder config(Config config) {
@@ -263,32 +279,32 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             return this;
         }
 
-        public Builder forceSplit(boolean forceSplit) {
-            this.forceSplit = forceSplit;
-            return this;
-        }
-
         public Builder rate(double rate) {
             this.rate = rate;
             return this;
         }
 
         public DefaultUploadWriteAheadLogTask build() {
-            if (forceSplit == null) {
-                boolean forceSplit = streamRecordsMap.size() == 1;
-                if (!forceSplit) {
-                    Optional<Boolean> hasStreamSetData = streamRecordsMap.values()
-                        .stream()
-                        .map(records -> records.stream().mapToLong(StreamRecordBatch::size).sum() >= config.streamSplitSize())
-                        .filter(split -> !split)
-                        .findAny();
-                    if (hasStreamSetData.isEmpty()) {
-                        forceSplit = true;
-                    }
-                }
-                this.forceSplit = forceSplit;
+            Map<Long, List<StreamRecordBatch>> streamSetObjectMap = new HashMap<>();
+            Map<Long, List<StreamRecordBatch>> streamObjectMap = new HashMap<>();
+            // when only has one stream, we only need to write the stream data.
+            if (streamRecordsMap.size() == 1) {
+                streamObjectMap.putAll(streamRecordsMap);
+                return new DefaultUploadWriteAheadLogTask(config, streamSetObjectMap, streamObjectMap,
+                    objectManager, objectStorage, executor, rate);
             }
-            return new DefaultUploadWriteAheadLogTask(config, streamRecordsMap, objectManager, objectStorage, executor, forceSplit, rate);
+
+            List<Long> streamIds = new ArrayList<>(streamRecordsMap.keySet());
+            for (Long streamId : streamIds) {
+                List<StreamRecordBatch> streamRecords = streamRecordsMap.get(streamId);
+                if (streamSize(streamRecords) >= config.streamSplitSize()) {
+                    streamObjectMap.put(streamId, streamRecords);
+                } else {
+                    streamSetObjectMap.put(streamId, streamRecords);
+                }
+            }
+            return new DefaultUploadWriteAheadLogTask(config, streamSetObjectMap, streamObjectMap,
+                objectManager, objectStorage, executor, rate);
         }
     }
 
