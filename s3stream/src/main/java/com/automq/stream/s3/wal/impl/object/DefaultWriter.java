@@ -447,7 +447,7 @@ public class DefaultWriter implements Writer {
     @Override
     public Iterator<RecoverResult> recover() {
         try {
-            return new RecoverIterator(objectList(), objectStorage, config.readAheadObjectCount());
+            return new RecoverIterator(objectList(), objectStorage, config.readaheadDataSize());
         } catch (WALFencedException e) {
             LOGGER.error("Recover S3 WAL failed, due to unrecoverable exception.", e);
             return new Iterator<>() {

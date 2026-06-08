@@ -32,7 +32,7 @@ public class ObjectWALConfig {
     private final long maxBytesInBatch;
     private final long maxUnflushedBytes;
     private final int maxInflightUploadCount;
-    private final int readAheadObjectCount;
+    private final int readaheadDataSize;
     private final String clusterId;
     private final int nodeId;
     private final long epoch;
@@ -46,7 +46,7 @@ public class ObjectWALConfig {
 
     public ObjectWALConfig(String uri, ReservationService reservationService, long batchInterval, long maxBytesInBatch,
         long maxUnflushedBytes, int maxInflightUploadCount,
-        int readAheadObjectCount, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
+        int readaheadDataSize, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
         String type) {
         this.uri = uri;
         this.reservationService = reservationService;
@@ -54,7 +54,7 @@ public class ObjectWALConfig {
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
         this.maxInflightUploadCount = maxInflightUploadCount;
-        this.readAheadObjectCount = readAheadObjectCount;
+        this.readaheadDataSize = readaheadDataSize;
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.epoch = epoch;
@@ -87,8 +87,8 @@ public class ObjectWALConfig {
         return maxInflightUploadCount;
     }
 
-    public int readAheadObjectCount() {
-        return readAheadObjectCount;
+    public int readaheadDataSize() {
+        return readaheadDataSize;
     }
 
     public String clusterId() {
@@ -122,7 +122,7 @@ public class ObjectWALConfig {
             ", maxBytesInBatch=" + maxBytesInBatch +
             ", maxUnflushedBytes=" + maxUnflushedBytes +
             ", maxInflightUploadCount=" + maxInflightUploadCount +
-            ", readAheadObjectCount=" + readAheadObjectCount +
+            ", readaheadDataSize=" + readaheadDataSize +
             ", clusterId='" + clusterId + '\'' +
             ", nodeId=" + nodeId +
             ", epoch=" + epoch +
@@ -139,7 +139,7 @@ public class ObjectWALConfig {
         private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
         private int maxInflightUploadCount = 50;
-        private int readAheadObjectCount = 4;
+        private int readaheadDataSize = 100 * 1024 * 1024; // 100MiB
         private String clusterId;
         private int nodeId;
         private long epoch;
@@ -170,9 +170,9 @@ public class ObjectWALConfig {
             if (StringUtils.isNumeric(maxInflightUploadCount)) {
                 withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
             }
-            String readAheadObjectCount = uri.extensionString("readAheadObjectCount");
-            if (StringUtils.isNumeric(readAheadObjectCount)) {
-                withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
+            String readaheadDataSize = uri.extensionString("readaheadDataSize");
+            if (StringUtils.isNumeric(readaheadDataSize)) {
+                withReadaheadDataSize(Integer.parseInt(readaheadDataSize));
             }
             return this;
         }
@@ -210,12 +210,12 @@ public class ObjectWALConfig {
             return this;
         }
 
-        public Builder withReadAheadObjectCount(int readAheadObjectCount) {
-            if (readAheadObjectCount < 1) {
-                readAheadObjectCount = 1;
+        public Builder withReadaheadDataSize(int readaheadDataSize) {
+            if (readaheadDataSize < 1) {
+                readaheadDataSize = 1;
             }
 
-            this.readAheadObjectCount = readAheadObjectCount;
+            this.readaheadDataSize = readaheadDataSize;
             return this;
         }
 
@@ -250,7 +250,7 @@ public class ObjectWALConfig {
         }
 
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(uri, reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId, type);
+            return new ObjectWALConfig(uri, reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readaheadDataSize, clusterId, nodeId, epoch, openMode, bucketId, type);
         }
     }
 }
