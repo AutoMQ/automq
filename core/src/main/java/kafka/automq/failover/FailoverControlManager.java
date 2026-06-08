@@ -79,7 +79,7 @@ public class FailoverControlManager implements AutoCloseable {
         this.clusterControlManager = clusterControlManager;
         this.nodeControlManager = nodeControlManager;
         this.streamControlManager = streamControlManager;
-        this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 10, 10, TimeUnit.SECONDS);
+        this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
     }
 
     void runFailoverTask() {
