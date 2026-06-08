@@ -161,14 +161,14 @@ public class ResourceErrorExtractorTest {
     @Test
     public void testListOffsetsValidOffsetCountsAsValidResult() throws Exception {
         ListOffsetsRequest request = ListOffsetsRequest.Builder
-            .forConsumer(true, org.apache.kafka.common.IsolationLevel.READ_UNCOMMITTED)
+            .forConsumer(true, org.apache.kafka.common.IsolationLevel.READ_UNCOMMITTED, false)
             .setTargetTimes(List.of(new ListOffsetsRequestData.ListOffsetsTopic()
                 .setName("topic")
                 .setPartitions(List.of(
                     new ListOffsetsRequestData.ListOffsetsPartition().setPartitionIndex(0).setTimestamp(1000L),
                     new ListOffsetsRequestData.ListOffsetsPartition().setPartitionIndex(1).setTimestamp(1000L)
                 ))))
-            .build((short) 1);
+            .build();
         ListOffsetsResponseData responseData = new ListOffsetsResponseData();
         responseData.topics().add(new ListOffsetsResponseData.ListOffsetsTopicResponse().setName("topic").setPartitions(List.of(
             new ListOffsetsResponseData.ListOffsetsPartitionResponse()
