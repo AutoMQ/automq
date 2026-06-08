@@ -22,6 +22,7 @@ import com.typesafe.scalalogging.Logger
 import com.yammer.metrics.core.{Histogram, Meter}
 import kafka.network
 import kafka.server.{KafkaConfig, RequestErrorAccumulator, RequestLocal, ResourceErrorExtractor}
+import kafka.server.retrystorm.{RetryStormRequestContext, RetryStormResponseGate}
 import kafka.utils.Implicits._
 import kafka.utils.{Logging, Pool}
 import org.apache.kafka.common.config.ConfigResource
@@ -390,6 +391,7 @@ class RequestChannel(val queueSize: Int,
 
   // AutoMQ inject start - request error accumulator
   @volatile var requestErrorAccumulator: RequestErrorAccumulator = _
+  @volatile private var retryStormResponseGate: RetryStormResponseGate = _
   // AutoMQ inject end
 
   metricsGroup.newGauge(requestQueueSizeMetricName, () => {
@@ -467,9 +469,33 @@ class RequestChannel(val queueSize: Int,
     response: AbstractResponse,
     onComplete: Option[Send => Unit]
   ): Unit = {
+    // AutoMQ inject start
+    val gate = retryStormResponseGate
+    val shouldExtract = requestErrorAccumulator != null || (gate != null && !request.isForwarded)
+    val errorView =
+      if (shouldExtract) ResourceErrorExtractor.extractView(request, response)
+      else ResourceErrorExtractor.ResourceErrorView.empty()
+    val sendNow = new Runnable {
+      override def run(): Unit = sendResponseAfterRetryStormGate(request, response, onComplete, errorView)
+    }
+    if (gate != null && !request.isForwarded) {
+      val context = new RetryStormRequestContext(request.header.apiKey, request.context.connectionId, time.milliseconds())
+      gate.sendOrDelay(context, errorView, retryStormDelayCapMs(request, response), sendNow)
+    } else {
+      sendNow.run()
+    }
+  }
+
+  private def sendResponseAfterRetryStormGate(
+    request: RequestChannel.Request,
+    response: AbstractResponse,
+    onComplete: Option[Send => Unit],
+    errorView: ResourceErrorExtractor.ResourceErrorView
+  ): Unit = {
+    // AutoMQ inject end
     updateErrorMetrics(request.header.apiKey, response.errorCounts.asScala)
     // AutoMQ inject start
-    maybeRecordRequestErrors(request, response)
+    maybeRecordRequestErrors(request, errorView)
     // AutoMQ inject end
     sendResponse(new RequestChannel.SendResponse(
       request,
@@ -575,13 +601,32 @@ class RequestChannel(val queueSize: Int,
     requestQueue.take()
 
   // AutoMQ inject start
-  private def maybeRecordRequestErrors(
+  /** Injects the retry storm gate used by the data-plane normal response send path. */
+  def setRetryStormResponseGate(gate: RetryStormResponseGate): Unit = {
+    retryStormResponseGate = gate
+  }
+
+  private def retryStormDelayCapMs(
     request: RequestChannel.Request,
     response: AbstractResponse
+  ): java.util.OptionalLong = {
+    if (!request.header.apiKey.equals(ApiKeys.FETCH) || !response.isInstanceOf[FetchResponse]) {
+      return java.util.OptionalLong.empty()
+    }
+    val fetchRequest = request.body[FetchRequest]
+    val elapsedMs =
+      if (request.requestDequeueTimeNanos < 0) 0L
+      else TimeUnit.NANOSECONDS.toMillis(time.nanoseconds() - request.requestDequeueTimeNanos)
+    java.util.OptionalLong.of(Math.max(fetchRequest.maxWait - elapsedMs, 0L))
+  }
+
+  private def maybeRecordRequestErrors(
+    request: RequestChannel.Request,
+    errorView: ResourceErrorExtractor.ResourceErrorView
   ): Unit = {
     val acc = requestErrorAccumulator
     if (acc == null) return
-    val errors = ResourceErrorExtractor.extract(request, response)
+    val errors = errorView.errors()
     if (errors.isEmpty) return
     val clientIp = request.context.clientAddress.getHostAddress
     val clientId = request.header.clientId

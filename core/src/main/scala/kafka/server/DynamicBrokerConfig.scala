@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.backpressure.BackPressureConfig
+import kafka.automq.retrystorm.RetryStormBackoffConfig
 
 import java.util
 import java.util.{Collections, Properties}
@@ -103,7 +104,8 @@ object DynamicBrokerConfig {
     DynamicRemoteLogConfig.ReconfigurableConfigs ++
     AutoBalancerControllerConfig.RECONFIGURABLE_CONFIGS.asScala ++
     AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS.asScala ++
-    BackPressureConfig.RECONFIGURABLE_CONFIGS.asScala
+    BackPressureConfig.RECONFIGURABLE_CONFIGS.asScala ++
+    RetryStormBackoffConfig.RECONFIGURABLE_CONFIGS.asScala
 
   private val ClusterLevelListenerConfigs = Set(SocketServerConfigs.MAX_CONNECTIONS_CONFIG, SocketServerConfigs.MAX_CONNECTION_CREATION_RATE_CONFIG, SocketServerConfigs.NUM_NETWORK_THREADS_CONFIG)
   private val PerBrokerConfigs = (DynamicSecurityConfigs ++ DynamicListenerConfig.ReconfigurableConfigs).diff(
@@ -275,6 +277,7 @@ class DynamicBrokerConfig(private val kafkaConfig: KafkaConfig) extends Logging 
     kafkaServer match {
       case brokerServer: BrokerServer =>
         addReconfigurable(brokerServer.backPressureManager)
+        addReconfigurable(brokerServer.retryStormBackoffManager)
       case _ =>
     }
     // AutoMQ inject end

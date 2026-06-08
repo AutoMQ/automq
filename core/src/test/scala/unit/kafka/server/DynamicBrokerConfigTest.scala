@@ -22,6 +22,7 @@ import java.util.{Properties, Map => JMap}
 import java.util.concurrent.CompletionStage
 import java.util.concurrent.atomic.AtomicReference
 import kafka.controller.KafkaController
+import kafka.automq.AutoMQConfig
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -45,6 +46,7 @@ import org.apache.kafka.server.util.KafkaScheduler
 import org.apache.kafka.storage.internals.log.{CleanerConfig, LogConfig, ProducerStateManagerConfig}
 import org.apache.kafka.test.MockMetricsReporter
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.{ArgumentCaptor, ArgumentMatchers, Mockito}
@@ -55,6 +57,14 @@ import scala.jdk.CollectionConverters._
 import scala.collection.Set
 
 class DynamicBrokerConfigTest {
+
+  /** Given retry storm configs are dynamic broker configs, registry exposes both keys for AdminClient updates. */
+  @Test
+  @Tag("S3Unit")
+  def testRetryStormBackoffConfigsAreDynamic(): Unit = {
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG))
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG))
+  }
 
   @Test
   def testConfigUpdate(): Unit = {
