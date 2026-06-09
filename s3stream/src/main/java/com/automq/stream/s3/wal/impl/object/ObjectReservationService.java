@@ -107,14 +107,19 @@ public class ObjectReservationService implements ReservationService {
 
     private CompletableFuture<Void> acquire0(ObjectStorage.WriteOptions options, long nodeId, long epoch,
         boolean failover, int conflictReevaluationCount) {
+        return withConditionConflictReread(acquireOnce(options, nodeId, epoch, failover),
+            options, nodeId, epoch, failover, conflictReevaluationCount);
+    }
+
+    private CompletableFuture<Void> acquireOnce(ObjectStorage.WriteOptions options, long nodeId, long epoch,
+        boolean failover) {
         String path = path(nodeId);
         return objectStorage.readWithMetadata(new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId), path)
-            .handle((result, ex) -> {
+            .<CompletableFuture<Void>>handle((result, ex) -> {
                 if (ex != null) {
                     Throwable cause = FutureUtil.cause(ex);
                     if (cause instanceof ObjectNotExistException) {
-                        return withConditionConflictReread(handleMissingReservation(options, path, nodeId, epoch, failover),
-                            options, nodeId, epoch, failover, conflictReevaluationCount);
+                        return createMissingReservation(options, path, nodeId, epoch, failover);
                     }
                     return FutureUtil.<Void>failedFuture(cause);
                 }
@@ -132,8 +137,10 @@ public class ObjectReservationService implements ReservationService {
                 } catch (Throwable decisionEx) {
                     return FutureUtil.<Void>failedFuture(decisionEx);
                 }
-                return withConditionConflictReread(executeDecision(options, path, decision, nodeId, epoch, failover),
-                    options, nodeId, epoch, failover, conflictReevaluationCount);
+                if (decision.noop) {
+                    return CompletableFuture.completedFuture(null);
+                }
+                return writeReservationWithObservedEtag(options, path, nodeId, epoch, failover, decision.etag);
             }).thenCompose(cf -> cf);
     }
 
@@ -151,7 +158,7 @@ public class ObjectReservationService implements ReservationService {
         });
     }
 
-    private CompletableFuture<Void> handleMissingReservation(ObjectStorage.WriteOptions options, String path,
+    private CompletableFuture<Void> createMissingReservation(ObjectStorage.WriteOptions options, String path,
         long nodeId, long epoch, boolean failover) {
         if (failover) {
             return FutureUtil.failedFuture(new IllegalStateException(
@@ -189,15 +196,7 @@ public class ObjectReservationService implements ReservationService {
                 nodeId, current.epoch, epoch, current.failover));
     }
 
-    private CompletableFuture<Void> executeDecision(ObjectStorage.WriteOptions options, String path,
-        AcquireDecision decision, long nodeId, long epoch, boolean failover) {
-        if (decision.noop) {
-            return CompletableFuture.completedFuture(null);
-        }
-        return writeReservation(options, path, nodeId, epoch, failover, decision.etag);
-    }
-
-    private CompletableFuture<Void> writeReservation(ObjectStorage.WriteOptions options, String path,
+    private CompletableFuture<Void> writeReservationWithObservedEtag(ObjectStorage.WriteOptions options, String path,
         long nodeId, long epoch, boolean failover, ObjectStorage.Etag etag) {
         ByteBuf body = reservationBody(nodeId, epoch, failover);
         if (etag.value() != null) {
