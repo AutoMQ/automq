@@ -9,16 +9,18 @@ import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, Fetch
 import kafka.utils.TestUtils
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
-import org.apache.kafka.common.message.{FetchRequestData, UpdateLicenseRequestData}
+import org.apache.kafka.common.message.{AutomqGetPartitionSnapshotRequestData, AutomqUpdateGroupRequestData, AutomqZoneRouterRequestData, FetchRequestData, UpdateLicenseRequestData}
 import org.apache.kafka.common.network.{ClientInformation, ListenerName}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, MessageUtil}
-import org.apache.kafka.common.requests.s3.UpdateLicenseRequest
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest, AutomqZoneRouterResponse, UpdateLicenseRequest}
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, FetchRequest, FetchResponse, RequestContext, RequestHeader}
+import org.apache.kafka.common.resource.Resource
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
-import org.apache.kafka.server.common.{FinalizedFeatures, MetadataVersion}
+import org.apache.kafka.server.authorizer.{Action, AuthorizationResult}
+import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
 import org.apache.kafka.server.config.KRaftConfigs
 import org.junit.jupiter.api.Assertions.{assertEquals, assertNotNull, assertSame, assertTrue}
 import org.junit.jupiter.api.{Tag, Test, Timeout}
@@ -26,9 +28,10 @@ import org.mockito.{ArgumentCaptor, ArgumentMatchers}
 import org.mockito.Mockito.{doReturn, mock, never, spy, verify, when}
 
 import java.net.InetAddress
+import java.util
 import java.util.{Collections, Optional}
 import scala.collection.Map
-import scala.jdk.CollectionConverters.SetHasAsScala
+import scala.jdk.CollectionConverters.{CollectionHasAsScala, SeqHasAsJava, SetHasAsScala}
 
 @Timeout(60)
 @Tag("S3Unit")
@@ -140,6 +143,69 @@ class ElasticKafkaApisTest extends KafkaApisTest {
     }
 
     assertSame(facade, capturedContext.enterpriseFacade())
+  }
+
+  @Test
+  def shouldRejectUpdateGroupWhenGroupReadIsDenied(): Unit = {
+    // Given a group update API, when Read on the target group is denied, then the coordinator is not invoked.
+    val groupId = "group-denied"
+    val requestData = new AutomqUpdateGroupRequestData()
+      .setLinkId("link")
+      .setGroupId(groupId)
+      .setPromoted(true)
+    val request = buildRequest(new AutomqUpdateGroupRequest.Builder(requestData).build(ApiKeys.AUTOMQ_UPDATE_GROUP.latestVersion))
+    val authorizer = denyAllAuthorizer()
+    metadataCache = MetadataCache.kRaftMetadataCache(brokerId, () => KRaftVersion.KRAFT_VERSION_0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer), raftSupport = true)
+
+    kafkaApis.handle(request, RequestLocal.NoCaching)
+
+    val response = captureResponse[AutomqUpdateGroupResponse](request)
+    assertEquals(groupId, response.data.groupId)
+    assertEquals(Errors.GROUP_AUTHORIZATION_FAILED.code, response.data.errorCode)
+    verify(groupCoordinator, never()).updateGroup(
+      ArgumentMatchers.any(),
+      ArgumentMatchers.any(classOf[AutomqUpdateGroupRequestData]),
+      ArgumentMatchers.any())
+    assertSingleAuthorization(authorizer, org.apache.kafka.common.acl.AclOperation.READ,
+      org.apache.kafka.common.resource.ResourceType.GROUP, groupId)
+  }
+
+  @Test
+  def shouldRejectZoneRouterWhenClusterActionIsDenied(): Unit = {
+    // Given a zone router API, when ClusterAction is denied, then a valid authorization error is returned.
+    val request = buildRequest(new AutomqZoneRouterRequest.Builder(new AutomqZoneRouterRequestData()
+      .setMetadata(Array.emptyByteArray)).build(ApiKeys.AUTOMQ_ZONE_ROUTER.latestVersion))
+    val authorizer = denyAllAuthorizer()
+    metadataCache = MetadataCache.kRaftMetadataCache(brokerId, () => KRaftVersion.KRAFT_VERSION_0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer), raftSupport = true)
+
+    kafkaApis.handle(request, RequestLocal.NoCaching)
+
+    val response = captureResponse[AutomqZoneRouterResponse](request)
+    assertEquals(Errors.CLUSTER_AUTHORIZATION_FAILED.code, response.data.errorCode)
+    assertSingleAuthorization(authorizer, org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION,
+      org.apache.kafka.common.resource.ResourceType.CLUSTER, Resource.CLUSTER_NAME)
+  }
+
+  @Test
+  def shouldRejectGetPartitionSnapshotWhenClusterActionIsDenied(): Unit = {
+    // Given a partition snapshot API, when ClusterAction is denied, then the replica manager is not invoked.
+    val request = buildRequest(new AutomqGetPartitionSnapshotRequest.Builder(new AutomqGetPartitionSnapshotRequestData()
+      .setSessionId(1)
+      .setSessionEpoch(2)).build(ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT.latestVersion))
+    val authorizer = denyAllAuthorizer()
+    metadataCache = MetadataCache.kRaftMetadataCache(brokerId, () => KRaftVersion.KRAFT_VERSION_0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer), raftSupport = true)
+
+    kafkaApis.handle(request, RequestLocal.NoCaching)
+
+    val response = captureResponse[AutomqGetPartitionSnapshotResponse](request)
+    assertEquals(Errors.CLUSTER_AUTHORIZATION_FAILED.code, response.data.errorCode)
+    verify(replicaManager, never()).handleGetPartitionSnapshotRequest(
+      ArgumentMatchers.any(classOf[AutomqGetPartitionSnapshotRequest]))
+    assertSingleAuthorization(authorizer, org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION,
+      org.apache.kafka.common.resource.ResourceType.CLUSTER, Resource.CLUSTER_NAME)
   }
 
   override def createKafkaApis(interBrokerProtocolVersion: MetadataVersion = MetadataVersion.latestTesting,
@@ -292,5 +358,31 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       buffer,
       request.context.header.apiVersion,
     ).asInstanceOf[T]
+  }
+
+  private def denyAllAuthorizer(): Authorizer = {
+    val authorizer = mock(classOf[Authorizer])
+    when(authorizer.authorize(
+      ArgumentMatchers.any(),
+      ArgumentMatchers.any(classOf[util.List[Action]])))
+      .thenAnswer(invocation => invocation.getArgument[util.List[Action]](1).asScala.toSeq.map(_ => AuthorizationResult.DENIED).asJava)
+    authorizer
+  }
+
+  private def assertSingleAuthorization(
+    authorizer: Authorizer,
+    operation: org.apache.kafka.common.acl.AclOperation,
+    resourceType: org.apache.kafka.common.resource.ResourceType,
+    resourceName: String
+  ): Unit = {
+    val capturedActions: ArgumentCaptor[util.List[Action]] = ArgumentCaptor.forClass(classOf[util.List[Action]])
+    verify(authorizer).authorize(
+      ArgumentMatchers.any(),
+      capturedActions.capture())
+    val actions = capturedActions.getValue.asScala
+    assertEquals(1, actions.size)
+    assertEquals(operation, actions.head.operation)
+    assertEquals(resourceType, actions.head.resourcePattern.resourceType)
+    assertEquals(resourceName, actions.head.resourcePattern.name)
   }
 }

@@ -61,7 +61,7 @@ public class DescribeLicenseRequest extends AbstractRequest {
         ApiError apiError = ApiError.fromThrowable(e);
         DescribeLicenseResponseData response = new DescribeLicenseResponseData()
             .setErrorCode(apiError.error().code())
-            .setErrorMessage(apiError.message())
+            .setErrorMessage(apiError.message() == null ? apiError.error().message() : apiError.message())
             .setThrottleTimeMs(throttleTimeMs);
         return new DescribeLicenseResponse(response);
     }

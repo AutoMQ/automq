@@ -29,9 +29,9 @@ import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
-import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
+import org.apache.kafka.common.resource.ResourceType.{CLUSTER, GROUP, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.GroupCoordinator
@@ -452,6 +452,13 @@ class ElasticKafkaApis(
 
   def handleUpdateGroupRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val updateGroupsRequest = request.body[AutomqUpdateGroupRequest]
+    // AutoMQ inject start
+    if (!authHelper.authorize(request.context, READ, GROUP, updateGroupsRequest.data().groupId())) {
+      requestHelper.sendMaybeThrottle(request, updateGroupsRequest.getErrorResponse(Errors.GROUP_AUTHORIZATION_FAILED.exception))
+      return
+    }
+    // AutoMQ inject end
+
     groupCoordinator.updateGroup(request.context, updateGroupsRequest.data(), requestLocal.bufferSupplier)
         .whenComplete((response, ex) => {
           if (ex != null) {
@@ -464,6 +471,12 @@ class ElasticKafkaApis(
 
   def handleZoneRouterRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val zoneRouterRequest = request.body[AutomqZoneRouterRequest]
+    // AutoMQ inject start
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    // AutoMQ inject end
+
     trafficInterceptor.handleZoneRouterRequest(zoneRouterRequest.data()).thenAccept(response => {
       requestChannel.sendResponse(request, response, None)
     }).exceptionally(ex => {
@@ -471,6 +484,19 @@ class ElasticKafkaApis(
       null
     })
   }
+
+  // AutoMQ inject start
+  private def authorizeClusterActionForAutoMQRequest(request: RequestChannel.Request): Boolean = {
+    if (!authHelper.authorize(request.context, CLUSTER_ACTION, CLUSTER, CLUSTER_NAME)) {
+      requestHelper.sendMaybeThrottle(request, request.body[AbstractRequest].getErrorResponse(
+        0,
+        Errors.CLUSTER_AUTHORIZATION_FAILED.exception))
+      false
+    } else {
+      true
+    }
+  }
+  // AutoMQ inject end
 
   def handleProduceAppendJavaCompatible(
     args: ProduceRequestArgs,
@@ -888,6 +914,12 @@ class ElasticKafkaApis(
 
   def handleGetPartitionSnapshotRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val req = request.body[AutomqGetPartitionSnapshotRequest]
+    // AutoMQ inject start
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    // AutoMQ inject end
+
     replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
       .thenAccept(resp => requestHelper.sendMaybeThrottle(request, resp))
       .exceptionally(ex => {

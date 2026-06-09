@@ -61,7 +61,7 @@ public class UpdateLicenseRequest extends AbstractRequest {
         ApiError apiError = ApiError.fromThrowable(e);
         UpdateLicenseResponseData response = new UpdateLicenseResponseData()
             .setErrorCode(apiError.error().code())
-            .setErrorMessage(apiError.message())
+            .setErrorMessage(apiError.message() == null ? apiError.error().message() : apiError.message())
             .setThrottleTimeMs(throttleTimeMs);
         return new UpdateLicenseResponse(response);
     }
