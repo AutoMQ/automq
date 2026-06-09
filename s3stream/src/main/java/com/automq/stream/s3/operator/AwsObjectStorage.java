@@ -20,6 +20,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.exceptions.ObjectStorageConditionNotMetException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
@@ -42,6 +43,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -102,6 +104,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private static final Set<String> RETRIABLE_DELETE_OBJECT_ERROR_CODES = Set.of(
         "InternalError", "ServiceUnavailable", "SlowDown", "RequestTimeout", "OperationAborted");
     private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
+    private static final int HTTP_STATUS_PRECONDITION_FAILED = 412;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
 
@@ -209,14 +212,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
+    CompletableFuture<ReadResult> doRangeRead(ReadOptions options, String path, long start, long end) {
         GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
 
         if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
             builder.checksumMode(ChecksumMode.ENABLED);
         }
 
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        CompletableFuture<ReadResult> cf = new CompletableFuture<>();
         readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
                 // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
@@ -229,7 +232,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                         buf.release();
                         cf.completeExceptionally(ex);
                     } else {
-                        cf.complete(buf);
+                        cf.complete(ReadResult.of(buf, ObjectMetadata.of(new Etag(responsePublisher.response().eTag()))));
                     }
                 });
             })
@@ -241,7 +244,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
+    CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data, WriteCondition condition) {
         PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
             builder.tagging(tagging);
@@ -250,10 +253,27 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
             builder.checksumAlgorithm(checksumAlgorithm);
         }
+        if (condition instanceof WriteCondition.IfMatch ifMatch) {
+            builder.ifMatch(ifMatch.etag().value());
+        } else if (condition instanceof WriteCondition.IfAbsent) {
+            builder.ifNoneMatch("*");
+        } else if (condition != null) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("unsupported write condition: " + condition.getClass().getName()));
+        }
 
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
-        return writeS3Client.putObject(request, body).thenApply(rst -> null);
+        return writeS3Client.putObject(request, body).handle((rst, ex) -> {
+            Throwable cause = cause(ex);
+            if (condition != null && cause instanceof S3Exception s3Ex
+                && s3Ex.statusCode() == HTTP_STATUS_PRECONDITION_FAILED) {
+                throw new CompletionException(new ObjectStorageConditionNotMetException(cause));
+            }
+            if (ex != null) {
+                throw new CompletionException(ex);
+            }
+            return null;
+        });
     }
 
     @Override
@@ -403,7 +423,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = cause(ex);
         RetryStrategy strategy = RetryStrategy.RETRY;
-        if (cause instanceof S3Exception) {
+        if (cause instanceof ObjectStorageConditionNotMetException) {
+            strategy = RetryStrategy.ABORT;
+        } else if (cause instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) cause;
             switch (s3Ex.statusCode()) {
                 case HttpStatusCode.NOT_FOUND:
@@ -555,7 +577,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
             try {
                 byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
-                doWrite(new WriteOptions(), normalPath, Unpooled.wrappedBuffer(content)).get();
+                doWrite(new WriteOptions(), normalPath, Unpooled.wrappedBuffer(content), null).get();
             } catch (Throwable e) {
                 Throwable cause = FutureUtil.cause(e);
                 if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
@@ -581,7 +603,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 ObjectStorageCompletedPart part = doUploadPart(options, multiPartPath, uploadId, 1, Unpooled.wrappedBuffer(content)).get();
                 doCompleteMultipartUpload(options, multiPartPath, uploadId, List.of(part)).get();
 
-                ByteBuf buf = doRangeRead(new ReadOptions(), multiPartPath, 0, -1L).get();
+                ReadResult result = doRangeRead(new ReadOptions(), multiPartPath, 0, -1L).get();
+                ByteBuf buf = result.data();
                 byte[] readContent = new byte[buf.readableBytes()];
                 buf.readBytes(readContent);
                 buf.release();

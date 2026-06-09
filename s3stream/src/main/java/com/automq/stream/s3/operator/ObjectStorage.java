@@ -22,8 +22,10 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.FutureUtil;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -53,6 +55,15 @@ public interface ObjectStorage {
     }
 
     /**
+     * Read whole object data with object metadata.
+     * The {@link ReadResult#data()} buffer ownership is the same as {@link #read(ReadOptions, String)}.
+     */
+    default CompletableFuture<ReadResult> readWithMetadata(ReadOptions options, String objectPath) {
+        return rangeRead(options, objectPath, 0, RANGE_READ_TO_END)
+            .thenApply(ReadResult::of);
+    }
+
+    /**
      * Range read object from the object storage.
      * It will failFuture with {@link ObjectNotExistException} if the object not found.
      * @param options {@link ReadOptions}
@@ -68,6 +79,20 @@ public interface ObjectStorage {
         Writer writer = writer(options, objectPath);
         writer.write(buf);
         return writer.close().thenApply(nil -> new WriteResult(bucketId()));
+    }
+
+    /**
+     * Write an object only when the given condition is satisfied.
+     * Implementations must execute the condition or fail; this method must not fall back to ordinary write.
+     */
+    default CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath, ByteBuf buf,
+        WriteCondition condition) {
+        if (condition == null) {
+            buf.release();
+            return FutureUtil.failedFuture(new IllegalArgumentException("condition cannot be null"));
+        }
+        buf.release();
+        return FutureUtil.failedFuture(new UnsupportedOperationException("conditional write is not supported"));
     }
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
@@ -125,6 +150,85 @@ public interface ObjectStorage {
 
         public long size() {
             return size;
+        }
+    }
+
+    class ReadResult {
+        private final ByteBuf data;
+        private final ObjectMetadata metadata;
+
+        public ReadResult(ByteBuf data, ObjectMetadata metadata) {
+            this.data = Objects.requireNonNull(data, "data");
+            this.metadata = Objects.requireNonNull(metadata, "metadata");
+        }
+
+        public static ReadResult of(ByteBuf data) {
+            return of(data, ObjectMetadata.empty());
+        }
+
+        public static ReadResult of(ByteBuf data, ObjectMetadata metadata) {
+            return new ReadResult(data, metadata);
+        }
+
+        public ByteBuf data() {
+            return data;
+        }
+
+        public ObjectMetadata metadata() {
+            return metadata;
+        }
+    }
+
+    class ObjectMetadata {
+        private static final ObjectMetadata EMPTY = new ObjectMetadata(new Etag(null));
+        private final Etag etag;
+
+        public ObjectMetadata(Etag etag) {
+            this.etag = Objects.requireNonNull(etag, "etag");
+        }
+
+        public static ObjectMetadata empty() {
+            return EMPTY;
+        }
+
+        public static ObjectMetadata of(Etag etag) {
+            return new ObjectMetadata(etag);
+        }
+
+        public Etag etag() {
+            return etag;
+        }
+    }
+
+    class Etag {
+        private final String value;
+
+        public Etag(String value) {
+            this.value = value;
+        }
+
+        public String value() {
+            return value;
+        }
+    }
+
+    abstract class WriteCondition {
+        private WriteCondition() {
+        }
+
+        public static final class IfMatch extends WriteCondition {
+            private final Etag etag;
+
+            public IfMatch(Etag etag) {
+                this.etag = Objects.requireNonNull(etag, "etag");
+            }
+
+            public Etag etag() {
+                return etag;
+            }
+        }
+
+        public static final class IfAbsent extends WriteCondition {
         }
     }
 

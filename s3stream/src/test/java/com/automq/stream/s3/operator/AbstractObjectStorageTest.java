@@ -151,14 +151,14 @@ class AbstractObjectStorageTest {
     @Test
     void testHandleReadCompleted() throws Throwable {
         ByteBuf data = TestUtils.random(4096);
-        CompletableFuture<ByteBuf> readToEndCf = new CompletableFuture<>();
-        CompletableFuture<ByteBuf> readRangeCf = new CompletableFuture<>();
+        CompletableFuture<ObjectStorage.ReadResult> readToEndCf = new CompletableFuture<>();
+        CompletableFuture<ObjectStorage.ReadResult> readRangeCf = new CompletableFuture<>();
         AbstractObjectStorage.MergedReadTask.handleReadCompleted(List.of(
             new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 3000, -1, readToEndCf),
             new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 2000, 4096, readRangeCf)
-        ), 2000, data.slice(2000, 4096 - 2000), null);
-        assertEquals(data.slice(3000, 4096 - 3000), readToEndCf.get());
-        assertEquals(data.slice(2000, 4096 - 2000), readRangeCf.get());
+        ), 2000, ObjectStorage.ReadResult.of(data.slice(2000, 4096 - 2000)), null);
+        assertEquals(data.slice(3000, 4096 - 3000), readToEndCf.get().data());
+        assertEquals(data.slice(2000, 4096 - 2000), readRangeCf.get().data());
     }
 
     @Test
@@ -196,7 +196,7 @@ class AbstractObjectStorageTest {
         // Track doWrite() calls: first call hangs, second completes immediately
         AtomicInteger callCount = new AtomicInteger();
         CompletableFuture<Void> firstFuture = new CompletableFuture<>();
-        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+        when(objectStorage.doWrite(any(), anyString(), any(), any())).thenAnswer(inv -> {
             int count = callCount.getAndIncrement();
             return (count == 0) ? firstFuture : CompletableFuture.completedFuture(null);
         });
@@ -228,7 +228,7 @@ class AbstractObjectStorageTest {
 
         // Mock hanging write operation
         AtomicInteger callCount = new AtomicInteger();
-        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+        when(objectStorage.doWrite(any(), anyString(), any(), any())).thenAnswer(inv -> {
             int count = callCount.getAndIncrement();
             if (count < 12) {
                 CompletableFuture<Void> future = new CompletableFuture<>();
@@ -269,7 +269,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<Void> barrierFuture = new CompletableFuture<>();
         AtomicInteger callCount = new AtomicInteger();
 
-        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+        when(objectStorage.doWrite(any(), anyString(), any(), any())).thenAnswer(inv -> {
             int count = callCount.getAndIncrement();
             return (count < maxConcurrency)
                 ? barrierFuture // Block first 5 calls
@@ -321,7 +321,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<Void> blockingFuture = new CompletableFuture<>();
         AtomicInteger callCount = new AtomicInteger();
 
-        when(objectStorage.doWrite(any(), anyString(), any())).thenAnswer(inv -> {
+        when(objectStorage.doWrite(any(), anyString(), any(), any())).thenAnswer(inv -> {
             callCount.incrementAndGet();
             return blockingFuture; // Always return blocking future for first call
         });

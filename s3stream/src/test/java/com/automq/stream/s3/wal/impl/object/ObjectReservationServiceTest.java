@@ -19,16 +19,24 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.exceptions.ObjectStorageConditionNotMetException;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.utils.FutureUtil;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ObjectReservationServiceTest {
@@ -42,7 +50,7 @@ class ObjectReservationServiceTest {
     }
 
     @Test
-    void verify() {
+    void verifyKeepsBodyCompareSemantics() {
         reservationService.acquire(1, 2, false).join();
         assertTrue(reservationService.verify(1, 2, false).join());
         assertFalse(reservationService.verify(1, 2, true).join());
@@ -50,48 +58,184 @@ class ObjectReservationServiceTest {
         assertFalse(reservationService.verify(1, 1, false).join());
         assertFalse(reservationService.verify(1, 3, false).join());
         assertFalse(reservationService.verify(2, 2, false).join());
+    }
+
+    @Test
+    void staleFailoverCannotFenceNewerOwner() {
+        reservationService.acquire(1, 3, false).join();
+
+        assertThrows(CompletionException.class, () -> reservationService.acquire(1, 2, true).join());
+
+        assertTrue(reservationService.verify(1, 3, false).join());
+        assertFalse(reservationService.verify(1, 2, true).join());
+    }
+
+    @Test
+    void validFailoverFencesSameEpochNormalOwnerOnce() {
+        reservationService.acquire(1, 2, false).join();
 
         reservationService.acquire(1, 2, true).join();
+        reservationService.acquire(1, 2, true).join();
+
+        assertTrue(reservationService.verify(1, 2, true).join());
         assertFalse(reservationService.verify(1, 2, false).join());
+    }
+
+    @Test
+    void normalOwnerMovesEpochForwardButNeverBackward() {
+        reservationService.acquire(1, 2, false).join();
+        reservationService.acquire(1, 2, true).join();
+
+        reservationService.acquire(1, 3, false).join();
+        assertTrue(reservationService.verify(1, 3, false).join());
+
+        assertThrows(CompletionException.class, () -> reservationService.acquire(1, 2, false).join());
+        assertTrue(reservationService.verify(1, 3, false).join());
+    }
+
+    @Test
+    void sameEpochNormalAcquireIsIdempotentAndDoesNotClearFailover() {
+        reservationService.acquire(1, 2, false).join();
+        reservationService.acquire(1, 2, false).join();
+        assertTrue(reservationService.verify(1, 2, false).join());
+
+        reservationService.acquire(1, 2, true).join();
+        assertThrows(CompletionException.class, () -> reservationService.acquire(1, 2, false).join());
         assertTrue(reservationService.verify(1, 2, true).join());
     }
 
     @Test
-    void acquire() {
-        ByteBuf target = Unpooled.buffer(Long.BYTES * 10);
-        target.writeLong(Long.MAX_VALUE);
-        target.writeInt(ObjectReservationService.S3_RESERVATION_OBJECT_MAGIC_CODE);
-        target.writeLong(1);
-        target.writeLong(2);
-        target.writeBoolean(false);
-        target.writeLong(Long.MAX_VALUE);
-        target.readerIndex(Long.BYTES);
-        target.writerIndex(Long.BYTES + ObjectReservationService.S3_RESERVATION_OBJECT_LENGTH);
+    void missingReservationOnlyNormalAcquireCanCreate() {
+        assertThrows(CompletionException.class, () -> reservationService.acquire(1, 2, true).join());
+
         reservationService.acquire(1, 2, false).join();
-        assertTrue(reservationService.verify(1, target).join());
+        assertTrue(reservationService.verify(1, 2, false).join());
+    }
 
-        target = Unpooled.buffer(Long.BYTES * 10);
-        target.writeInt(ObjectReservationService.S3_RESERVATION_OBJECT_MAGIC_CODE);
-        target.writeLong(1);
-        target.writeLong(2);
-        target.writeBoolean(false);
-        reservationService.acquire(1, 2, true).join();
-        assertFalse(reservationService.verify(1, target).join());
+    @Test
+    void missingReservationIfAbsentConflictTriggersBoundedReread() {
+        AtomicBoolean conflictInjected = new AtomicBoolean();
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
+                ByteBuf buf, WriteCondition condition) {
+                if (condition instanceof WriteCondition.IfAbsent && conflictInjected.compareAndSet(false, true)) {
+                    buf.release();
+                    write(options, objectPath, reservationBody(1, 2, false)).join();
+                    return FutureUtil.failedFuture(new ObjectStorageConditionNotMetException("injected if-absent conflict"));
+                }
+                return super.conditionalWrite(options, objectPath, buf, condition);
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
 
-        target = Unpooled.buffer(Long.BYTES * 10);
-        target.writeInt(ObjectReservationService.S3_RESERVATION_OBJECT_MAGIC_CODE);
-        target.writeLong(1);
-        target.writeLong(2);
-        target.writeBoolean(true);
-        reservationService.acquire(1, 2, true).join();
-        assertTrue(reservationService.verify(1, target).join());
+        service.acquire(1, 2, false).join();
 
-        target = Unpooled.buffer(Long.BYTES * 10);
+        assertTrue(service.verify(1, 2, false).join());
+    }
+
+    @Test
+    void malformedNodeIdFailsClosed() {
+        objectStorage.write(new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.BYPASS),
+            path(1), reservationBody(2, 2, false)).join();
+
+        assertThrows(CompletionException.class, () -> reservationService.acquire(1, 3, false).join());
+        assertTrue(verifyBody(1, 2, 2, false).join());
+    }
+
+    @Test
+    void conditionalWriteConflictTriggersBoundedReread() {
+        AtomicBoolean conflictInjected = new AtomicBoolean();
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
+                ByteBuf buf, WriteCondition condition) {
+                if (condition instanceof WriteCondition.IfMatch && conflictInjected.compareAndSet(false, true)) {
+                    buf.release();
+                    write(options, objectPath, reservationBody(1, 2, true)).join();
+                    return FutureUtil.failedFuture(new ObjectStorageConditionNotMetException("injected condition conflict"));
+                }
+                return super.conditionalWrite(options, objectPath, buf, condition);
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
+
+        service.acquire(1, 2, false).join();
+        service.acquire(1, 2, true).join();
+
+        assertTrue(service.verify(1, 2, true).join());
+    }
+
+    @Test
+    void missingReservationIfAbsentUnsupportedFailsClosed() {
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
+                ByteBuf buf, WriteCondition condition) {
+                buf.release();
+                return FutureUtil.failedFuture(new UnsupportedOperationException("conditional write is not supported"));
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
+
+        assertThrows(CompletionException.class, () -> service.acquire(1, 2, false).join());
+        assertFalse(service.verify(1, 2, false).join());
+    }
+
+    @Test
+    void readWithMetadataUnexpectedFailureFailsAcquire() {
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public CompletableFuture<ReadResult> readWithMetadata(ReadOptions options, String objectPath) {
+                return FutureUtil.failedFuture(new IllegalStateException("metadata read failed"));
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
+
+        assertThrows(CompletionException.class, () -> service.acquire(1, 2, false).join());
+    }
+
+    @Test
+    void etagEmptyDowngradesExistingReservationModification() {
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public CompletableFuture<ReadResult> readWithMetadata(ReadOptions options, String objectPath) {
+                return rangeRead(options, objectPath, 0, RANGE_READ_TO_END)
+                    .thenApply(ReadResult::of);
+            }
+
+            @Override
+            public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
+                ByteBuf buf, WriteCondition condition) {
+                if (condition instanceof WriteCondition.IfMatch) {
+                    buf.release();
+                    return FutureUtil.failedFuture(new AssertionError("IfMatch should not be used without etag"));
+                }
+                return super.conditionalWrite(options, objectPath, buf, condition);
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
+
+        service.acquire(1, 2, false).join();
+        service.acquire(1, 2, true).join();
+
+        assertTrue(service.verify(1, 2, true).join());
+    }
+
+    private CompletableFuture<Boolean> verifyBody(long pathNodeId, long bodyNodeId, long epoch, boolean failover) {
+        return reservationService.verify(pathNodeId, reservationBody(bodyNodeId, epoch, failover));
+    }
+
+    private static ByteBuf reservationBody(long nodeId, long epoch, boolean failover) {
+        ByteBuf target = ByteBufAlloc.byteBuffer(ObjectReservationService.S3_RESERVATION_OBJECT_LENGTH);
         target.writeInt(ObjectReservationService.S3_RESERVATION_OBJECT_MAGIC_CODE);
-        target.writeLong(1);
-        target.writeLong(2);
-        target.writeBoolean(true);
-        reservationService.acquire(1, 2, false).join();
-        assertFalse(reservationService.verify(1, target).join());
+        target.writeLong(nodeId);
+        target.writeLong(epoch);
+        target.writeBoolean(failover);
+        return target;
+    }
+
+    private static String path(long nodeId) {
+        return "reservation/_kafka_cluster/" + nodeId;
     }
 }

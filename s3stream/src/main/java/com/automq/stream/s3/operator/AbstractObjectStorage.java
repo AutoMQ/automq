@@ -61,13 +61,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.HashedWheelTimer;
-import io.netty.util.ReferenceCounted;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -210,7 +208,16 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        return rangeReadResult(options, objectPath, start, end).thenApply(ReadResult::data);
+    }
+
+    @Override
+    public CompletableFuture<ReadResult> readWithMetadata(ReadOptions options, String objectPath) {
+        return rangeReadResult(options, objectPath, 0, RANGE_READ_TO_END);
+    }
+
+    private CompletableFuture<ReadResult> rangeReadResult(ReadOptions options, String objectPath, long start, long end) {
+        CompletableFuture<ReadResult> cf = new CompletableFuture<>();
         if (!bucketCheck(options.bucket(), cf)) {
             return cf;
         }
@@ -220,12 +227,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             cf.completeExceptionally(ex);
             return cf;
         } else if (start == end) {
-            cf.complete(Unpooled.EMPTY_BUFFER);
+            cf.complete(ReadResult.of(Unpooled.EMPTY_BUFFER));
             return cf;
         }
-
-        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
-            networkInboundBandwidthLimiter::consume;
 
         long acquiredSize = end - start;
 
@@ -234,14 +238,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             acquiredSize = 1;
 
             // when read complete use bypass to forceConsume limiter token.
-            cf.whenComplete((data, ex) -> {
-                if (ex == null && data.readableBytes() - 1 > 0) {
-                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
+            cf.whenComplete((result, ex) -> {
+                if (ex == null && result.data().readableBytes() - 1 > 0) {
+                    networkInboundBandwidthLimiter.consume(ThrottleStrategy.BYPASS, (long) (result.data().readableBytes() - 1));
                 }
             });
         }
 
-        networkInboundBandwidthLimiterFunction.apply(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
+        networkInboundBandwidthLimiter.consume(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
             if (ex != null) {
                 cf.completeExceptionally(ex);
             } else {
@@ -255,12 +259,27 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             logger.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
             // The return CompletableFuture will be completed with TimeoutException,
             // so we need to release the ByteBuf if the read complete later.
-            cf.thenAccept(ReferenceCounted::release);
+            cf.thenAccept(result -> result.data().release());
         });
     }
 
     @Override
     public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
+        return write(options, objectPath, data, null);
+    }
+
+    @Override
+    public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath, ByteBuf data,
+        WriteCondition condition) {
+        if (condition == null) {
+            data.release();
+            return FutureUtil.failedFuture(new IllegalArgumentException("condition cannot be null"));
+        }
+        return write(options, objectPath, data, condition);
+    }
+
+    private CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data,
+        WriteCondition condition) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         if (retCf.isDone()) {
@@ -279,7 +298,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     data.release();
                     return;
                 }
-                queuedWrite0(options, objectPath, data, cf);
+                queuedWrite0(options, objectPath, data, condition, cf);
             }, writeLimiterCallbackExecutor);
         return retCf;
     }
@@ -303,7 +322,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
      * @param attemptCf the CompletableFuture to complete when a single attempt is done
      * @param finalCf   the CompletableFuture to complete when the write operation is done
      */
-    private void write0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> attemptCf,
+    private void write0(WriteOptions options, String path, ByteBuf data, WriteCondition condition, CompletableFuture<Void> attemptCf,
         CompletableFuture<Void> finalCf) {
         TimerUtil timerUtil = new TimerUtil();
         long objectSize = data.readableBytes();
@@ -314,7 +333,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return;
         }
 
-        CompletableFuture<Void> writeCf = doWrite(options, path, data);
+        CompletableFuture<Void> writeCf = doWrite(options, path, data, condition);
         FutureUtil.propagate(writeCf, attemptCf);
         AtomicBoolean completedFlag = new AtomicBoolean(false);
         WriteOptions retryOptions = options.copy().retry(true);
@@ -328,7 +347,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 if (writeCf != null && !writeCf.isDone() && fastRetryPermit.tryAcquire()) {
                     TimerUtil retryTimerUtil = new TimerUtil();
 
-                    doWrite(retryOptions, path, data).thenAccept(nil -> {
+                    doWrite(retryOptions, path, data, condition).thenAccept(nil -> {
                         recordWriteStats(path, objectSize, retryTimerUtil);
 
                         data.release();
@@ -394,28 +413,28 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (isThrottled(cause, retryCount)) {
                 failedWriteMonitor.record(objectSize);
                 logger.warn("PutObject for object {} fail, retry count {}, queued and retry later", path, retryCount, cause);
-                queuedWrite0(retryOptions, path, data, finalCf);
+                queuedWrite0(retryOptions, path, data, condition, finalCf);
             } else {
                 int delay = retryDelay(S3Operation.PUT_OBJECT, retryCount);
                 logger.warn("PutObject for object {} fail, retry count {}, retry in {}ms", path, retryCount, delay, cause);
-                delayedWrite0(retryOptions, path, data, finalCf, delay);
+                delayedWrite0(retryOptions, path, data, condition, finalCf, delay);
             }
             return null;
         });
     }
 
-    private void delayedWrite0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf,
+    private void delayedWrite0(WriteOptions options, String path, ByteBuf data, WriteCondition condition, CompletableFuture<Void> cf,
         int delayMs) {
         CompletableFuture<Void> ignored = new CompletableFuture<>();
-        scheduler.schedule(() -> write0(options, path, data, ignored, cf), delayMs, TimeUnit.MILLISECONDS);
+        scheduler.schedule(() -> write0(options, path, data, condition, ignored, cf), delayMs, TimeUnit.MILLISECONDS);
     }
 
-    private void queuedWrite0(WriteOptions options, String path, ByteBuf data, CompletableFuture<Void> cf) {
+    private void queuedWrite0(WriteOptions options, String path, ByteBuf data, WriteCondition condition, CompletableFuture<Void> cf) {
         CompletableFuture<Void> attemptCf = new CompletableFuture<>();
         AsyncTask task = new AsyncTask(
             options.requestTime(),
             options.throttleStrategy(),
-            () -> write0(options, path, data, attemptCf, cf),
+            () -> write0(options, path, data, condition, attemptCf, cf),
             attemptCf,
             () -> (long) data.readableBytes()
         );
@@ -685,9 +704,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         doClose();
     }
 
-    abstract CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end);
+    abstract CompletableFuture<ReadResult> doRangeRead(ReadOptions options, String path, long start, long end);
 
-    abstract CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data);
+    abstract CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data, WriteCondition condition);
 
     abstract CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path);
 
@@ -773,7 +792,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
                 mergedRangeRead(mergedReadTask.readTasks.get(0).options, path, mergedReadTask.start, mergedReadTask.end)
-                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), logger));
+                    .whenComplete((result, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(result, ex), logger));
             }
         );
     }
@@ -782,9 +801,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return inflightReadLimiter.availablePermits();
     }
 
-    CompletableFuture<ByteBuf> mergedRangeRead(ReadOptions options, String path, long start, long end) {
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
+    CompletableFuture<ReadResult> mergedRangeRead(ReadOptions options, String path, long start, long end) {
+        CompletableFuture<ReadResult> cf = new CompletableFuture<>();
+        CompletableFuture<ReadResult> retCf = acquireReadPermit(cf);
         if (retCf.isDone()) {
             return retCf;
         }
@@ -793,10 +812,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private void mergedRangeRead0(ReadOptions options, String path, long start, long end,
-        CompletableFuture<ByteBuf> cf) {
+        CompletableFuture<ReadResult> cf) {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
-        doRangeRead(options, path, start, end).thenAccept(buf -> {
+        doRangeRead(options, path, start, end).thenAccept(result -> {
+            ByteBuf buf = result.data();
             // the end may be RANGE_READ_TO_END (-1) for read all object
             long dataSize = buf.readableBytes();
             if (logger.isDebugEnabled()) {
@@ -805,7 +825,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
             S3OperationStats.getInstance().downloadSizeTotalStats.add(MetricsLevel.INFO, dataSize);
             S3OperationStats.getInstance().getObjectStats(dataSize, true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(buf);
+            cf.complete(result);
         }).exceptionally(ex -> {
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.GET_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
@@ -1061,26 +1081,27 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 end != RANGE_READ_TO_END;
         }
 
-        void handleReadCompleted(ByteBuf rst, Throwable ex) {
-            handleReadCompleted(this.readTasks, this.start, rst, ex);
+        void handleReadCompleted(ReadResult result, Throwable ex) {
+            handleReadCompleted(this.readTasks, this.start, result, ex);
         }
 
-        static void handleReadCompleted(List<ReadTask> readTasks, long mergeReadStart, ByteBuf rst, Throwable ex) {
+        static void handleReadCompleted(List<ReadTask> readTasks, long mergeReadStart, ReadResult result, Throwable ex) {
             if (ex != null) {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
-                ArrayList<ByteBuf> sliceByteBufList = new ArrayList<>();
+                ByteBuf rst = result.data();
+                ArrayList<ReadResult> sliceReadResultList = new ArrayList<>();
                 for (AbstractObjectStorage.ReadTask readTask : readTasks) {
                     int sliceStart = (int) (readTask.start - mergeReadStart);
                     if (readTask.end == RANGE_READ_TO_END) {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes() - sliceStart));
+                        sliceReadResultList.add(ReadResult.of(rst.retainedSlice(sliceStart, rst.readableBytes() - sliceStart), result.metadata()));
                     } else {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
+                        sliceReadResultList.add(ReadResult.of(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)), result.metadata()));
                     }
                 }
                 rst.release();
                 for (int i = 0; i < readTasks.size(); i++) {
-                    readTasks.get(i).cf.complete(sliceByteBufList.get(i));
+                    readTasks.get(i).cf.complete(sliceReadResultList.get(i));
                 }
 
             }
@@ -1092,9 +1113,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private final String objectPath;
         private final long start;
         private final long end;
-        private final CompletableFuture<ByteBuf> cf;
+        private final CompletableFuture<ReadResult> cf;
 
-        ReadTask(ReadOptions options, String objectPath, long start, long end, CompletableFuture<ByteBuf> cf) {
+        ReadTask(ReadOptions options, String objectPath, long start, long end, CompletableFuture<ReadResult> cf) {
             this.options = options;
             this.objectPath = objectPath;
             this.start = start;
@@ -1118,7 +1139,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return end;
         }
 
-        public CompletableFuture<ByteBuf> cf() {
+        public CompletableFuture<ReadResult> cf() {
             return cf;
         }
 
