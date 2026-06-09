@@ -20,10 +20,12 @@
 package org.apache.kafka.common.requests.s3;
 
 import org.apache.kafka.common.message.DescribeStreamsRequestData;
+import org.apache.kafka.common.message.DescribeStreamsResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
 import org.apache.kafka.common.requests.AbstractRequest;
 import org.apache.kafka.common.requests.AbstractResponse;
+import org.apache.kafka.common.requests.ApiError;
 
 import java.nio.ByteBuffer;
 
@@ -58,7 +60,11 @@ public class DescribeStreamsRequest extends AbstractRequest {
 
     @Override
     public AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e) {
-        return null;
+        ApiError apiError = ApiError.fromThrowable(e);
+        DescribeStreamsResponseData response = new DescribeStreamsResponseData()
+            .setErrorCode(apiError.error().code())
+            .setThrottleTimeMs(throttleTimeMs);
+        return new DescribeStreamsResponse(response);
     }
 
     @Override
