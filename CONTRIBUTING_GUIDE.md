@@ -176,3 +176,138 @@ users or report bugs in GitHub.
 ## Attribution
 
 This contributing document is adapted from that of [Airbyte](https://github.com/airbytehq/airbyte).
+
+---
+
+## Local Environment Setup
+
+Before contributing code, set up a local AutoMQ cluster to test your changes.
+
+### Prerequisites
+
+| Requirement | How to Verify |
+|---|---|
+| Java 17+ | `java -version` |
+| Docker 20.x+ | `docker --version` |
+| Docker Compose v2 | `docker compose version` |
+| 4 GB RAM allocated to Docker | Docker Desktop → Settings → Resources |
+| Port 9092 free | macOS/Linux: `lsof -i :9092` · Windows: `netstat -ano \| findstr :9092` |
+| Port 9000 free | macOS/Linux: `lsof -i :9000` · Windows: `netstat -ano \| findstr :9000` |
+
+> **Note (port verification):** The `lsof` command is available on macOS and Linux. On Windows, use `netstat -ano | findstr :<port>` instead. Both commands should return no output if the port is free.
+
+### Start the cluster
+
+Download the Docker Compose file:
+
+```bash
+curl -O https://raw.githubusercontent.com/AutoMQ/automq/refs/tags/1.5.5/docker/docker-compose.yaml
+```
+
+Start:
+
+```bash
+docker compose -f docker-compose.yaml up -d
+```
+
+Wait ~30 seconds, then verify all services are running:
+
+```bash
+docker compose -f docker-compose.yaml ps
+```
+
+Confirm the Docker network was created:
+
+```bash
+docker network ls | grep automq
+```
+
+You should see a network named `automq_net`. If not listed, wait a few more seconds and recheck.
+
+### Verify with a producer test
+
+```bash
+docker run --network automq_net automqinc/automq:latest /bin/bash -c \
+  "/opt/automq/kafka/bin/kafka-producer-perf-test.sh \
+  --topic test-topic --num-records=1024000 --throughput 5120 --record-size 1024 \
+  --producer-props bootstrap.servers=server1:9092 linger.ms=100 batch.size=524288 buffer.memory=134217728"
+```
+
+You should see throughput metrics in stdout. Connection errors usually mean port 9092 is still in use.
+
+### Tear down
+
+```bash
+docker compose -f docker-compose.yaml down
+```
+
+> **Tip:** For multi-node cluster testing, use `docker/docker-compose-cluster.yaml` instead — three AutoMQ nodes for testing partition rebalancing and failover.
+
+---
+
+## Building AutoMQ
+
+AutoMQ uses the Gradle wrapper. Never install Gradle manually — always use `./gradlew`.
+
+### Full build (skip tests on first run)
+
+```bash
+./gradlew build -x test
+```
+
+Initial build takes 5–15 minutes depending on your machine.
+
+### Run all tests
+
+```bash
+./gradlew test
+```
+
+### Run tests for a specific module
+
+```bash
+./gradlew :s3stream:test
+```
+
+---
+
+## Key Modules
+
+| Module | Description |
+|---|---|
+| `s3stream/` | Core S3 storage engine — WAL, object storage, caching. The heart of AutoMQ. |
+| `core/` | Kafka broker core, forked from Apache Kafka. |
+| `automq-metrics/` | Prometheus and OpenTelemetry metrics export. |
+| `automq-shell/` | CLI tooling for cluster management. |
+| `docker/` | Docker Compose setups for local dev and multi-node testing. |
+| `examples/` | Usage examples and integration demos. Good for a first contribution. |
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Fix |
+|---|---|---|
+| Connection refused on port 9092 | Port already in use | macOS/Linux: `lsof -i :9092` · Windows: `netstat -ano \| findstr :9092` — kill the process |
+| Docker containers exit immediately | Not enough RAM | Allocate at least 4 GB in Docker Desktop → Settings → Resources |
+| `./gradlew` permission denied | Missing execute permission | Run `chmod +x gradlew` |
+| Build fails with Checkstyle errors | Code style violation | Fix the reported lines — style is enforced automatically on every build |
+| PR blocked on CLA | CLA not signed | Click the link in the bot comment and sign — takes less than 1 minute |
+| `automq_net` network not found | Compose not fully started | Wait a few seconds and rerun `docker compose -f docker-compose.yaml ps` |
+
+---
+
+## Commands Cheat Sheet
+
+| Action | Command |
+|---|---|
+| Start local cluster | `docker compose -f docker-compose.yaml up -d` |
+| Stop local cluster | `docker compose -f docker-compose.yaml down` |
+| Check cluster status | `docker compose -f docker-compose.yaml ps` |
+| Confirm Docker network | `docker network ls \| grep automq` |
+| Full build (no tests) | `./gradlew build -x test` |
+| Run all tests | `./gradlew test` |
+| Run module tests | `./gradlew :s3stream:test` |
+| Sync with upstream | `git fetch upstream && git rebase upstream/main` |
+| Claim an issue | Comment `/assign` on the GitHub issue thread |
+| Create feature branch | `git checkout -b feat/your-feature-name upstream/main` |
