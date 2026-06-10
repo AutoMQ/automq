@@ -43,7 +43,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -104,6 +103,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private static final Set<String> RETRIABLE_DELETE_OBJECT_ERROR_CODES = Set.of(
         "InternalError", "ServiceUnavailable", "SlowDown", "RequestTimeout", "OperationAborted");
     private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
+    // S3 conditional writes return HTTP 412 Precondition Failed when If-Match/If-None-Match is not satisfied.
+    // See https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html
     private static final int HTTP_STATUS_PRECONDITION_FAILED = 412;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
@@ -263,17 +264,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
-        return writeS3Client.putObject(request, body).handle((rst, ex) -> {
-            Throwable cause = cause(ex);
-            if (condition != null && cause instanceof S3Exception s3Ex
-                && s3Ex.statusCode() == HTTP_STATUS_PRECONDITION_FAILED) {
-                throw new CompletionException(new ObjectStorageConditionNotMetException(cause));
-            }
-            if (ex != null) {
-                throw new CompletionException(ex);
-            }
-            return null;
-        });
+        return writeS3Client.putObject(request, body).thenApply(rst -> null);
     }
 
     @Override
@@ -430,6 +421,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             switch (s3Ex.statusCode()) {
                 case HttpStatusCode.NOT_FOUND:
                     strategy = RetryStrategy.ABORT;
+                    break;
+                case HTTP_STATUS_PRECONDITION_FAILED:
+                    if (operation == S3Operation.PUT_OBJECT) {
+                        strategy = RetryStrategy.ABORT;
+                        cause = new ObjectStorageConditionNotMetException(cause);
+                    }
                     break;
                 default:
                     strategy = RetryStrategy.RETRY;

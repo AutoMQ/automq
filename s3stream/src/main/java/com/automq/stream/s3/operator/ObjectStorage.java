@@ -153,13 +153,10 @@ public interface ObjectStorage {
         }
     }
 
-    class ReadResult {
-        private final ByteBuf data;
-        private final ObjectMetadata metadata;
-
-        public ReadResult(ByteBuf data, ObjectMetadata metadata) {
-            this.data = Objects.requireNonNull(data, "data");
-            this.metadata = Objects.requireNonNull(metadata, "metadata");
+    record ReadResult(ByteBuf data, ObjectMetadata metadata) {
+        public ReadResult {
+            Objects.requireNonNull(data, "data");
+            Objects.requireNonNull(metadata, "metadata");
         }
 
         public static ReadResult of(ByteBuf data) {
@@ -169,22 +166,13 @@ public interface ObjectStorage {
         public static ReadResult of(ByteBuf data, ObjectMetadata metadata) {
             return new ReadResult(data, metadata);
         }
-
-        public ByteBuf data() {
-            return data;
-        }
-
-        public ObjectMetadata metadata() {
-            return metadata;
-        }
     }
 
-    class ObjectMetadata {
+    record ObjectMetadata(Etag etag) {
         private static final ObjectMetadata EMPTY = new ObjectMetadata(new Etag(null));
-        private final Etag etag;
 
-        public ObjectMetadata(Etag etag) {
-            this.etag = Objects.requireNonNull(etag, "etag");
+        public ObjectMetadata {
+            Objects.requireNonNull(etag, "etag");
         }
 
         public static ObjectMetadata empty() {
@@ -193,10 +181,6 @@ public interface ObjectStorage {
 
         public static ObjectMetadata of(Etag etag) {
             return new ObjectMetadata(etag);
-        }
-
-        public Etag etag() {
-            return etag;
         }
     }
 
