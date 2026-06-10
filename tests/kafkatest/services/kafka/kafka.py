@@ -1762,7 +1762,11 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                 return False
         return True
 
-    def list_consumer_groups(self, node=None, command_config=None):
+    def list_consumer_groups(self, node=None, command_config=None,
+                             # // AutoMQ inject start
+                             state=None, type=None,
+                             # // AutoMQ inject end
+                             ):
         """ Get list of consumer groups.
         """
         if node is None:
@@ -1779,6 +1783,12 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
               (consumer_group_script,
                self.bootstrap_servers(self.security_protocol),
                command_config)
+        # // AutoMQ inject start
+        if state is not None:
+            cmd += " --state %s" % state
+        if type is not None:
+            cmd += " --type %s" % type
+        # // AutoMQ inject end
         return self.run_cli_tool(node, cmd)
 
     def describe_consumer_group(self, group, node=None, command_config=None):
