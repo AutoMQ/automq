@@ -38,6 +38,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
@@ -81,16 +82,20 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<ReadResult> doRangeRead(ReadOptions options, String path, long start, long end) {
-        StoredObject object = storage.get(path);
-        if (object == null) {
+        AtomicReference<ReadResult> readResult = new AtomicReference<>();
+        storage.computeIfPresent(path, (key, object) -> {
+            ByteBuf value = object.data;
+            int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
+            ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
+            CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
+            buf.addComponent(true, rst);
+            readResult.set(ReadResult.of(buf, ObjectMetadata.of(new Etag(Long.toString(object.etag)))));
+            return object;
+        });
+        ReadResult result = readResult.get();
+        if (result == null) {
             return FutureUtil.failedFuture(new ObjectNotExistException("object not exist"));
         }
-        ByteBuf value = object.data;
-        int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
-        ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
-        CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
-        buf.addComponent(true, rst);
-        ReadResult result = ReadResult.of(buf, ObjectMetadata.of(new Etag(Long.toString(object.etag))));
         if (delay == 0) {
             return CompletableFuture.completedFuture(result);
         } else {
@@ -141,10 +146,12 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     @Override
     public Writer writer(WriteOptions writeOptions, String path) {
         ByteBuf buf = Unpooled.buffer();
-        StoredObject old = storage.put(path, new StoredObject(buf, etag.incrementAndGet()));
-        if (old != null) {
-            old.data.release();
-        }
+        storage.compute(path, (key, old) -> {
+            if (old != null) {
+                old.data.release();
+            }
+            return new StoredObject(buf, etag.incrementAndGet());
+        });
         return new Writer() {
             @Override
             public CompletableFuture<Void> write(ByteBuf part) {
@@ -166,12 +173,16 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
             @Override
             public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-                StoredObject sourceObject = storage.get(s3ObjectMetadata.key());
-                if (sourceObject == null) {
+                AtomicBoolean copied = new AtomicBoolean();
+                storage.computeIfPresent(s3ObjectMetadata.key(), (key, sourceObject) -> {
+                    ByteBuf source = sourceObject.data;
+                    buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
+                    copied.set(true);
+                    return sourceObject;
+                });
+                if (!copied.get()) {
                     throw new IllegalArgumentException("object not exist");
                 }
-                ByteBuf source = sourceObject.data;
-                buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
             }
 
             @Override
@@ -217,11 +228,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         for (String objectKey : objectKeys) {
-            StoredObject object = storage.remove(objectKey);
-            if (object != null) {
+            storage.computeIfPresent(objectKey, (key, object) -> {
                 object.data.release();
                 deleteObjectKeys.add(objectKey);
-            }
+                return null;
+            });
         }
 
         return CompletableFuture.completedFuture(null);
@@ -242,8 +253,10 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
 
     @Override
     void doClose() {
-        storage.values().forEach(object -> object.data.release());
-        storage.clear();
+        storage.keySet().forEach(key -> storage.computeIfPresent(key, (ignored, object) -> {
+            object.data.release();
+            return null;
+        }));
     }
 
     @Override
