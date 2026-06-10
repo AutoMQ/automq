@@ -21,9 +21,11 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Constants;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.ReservationService;
+import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -97,12 +99,132 @@ public class ObjectReservationService implements ReservationService {
     @Override
     public CompletableFuture<Void> acquire(long nodeId, long epoch, boolean failover) {
         LOGGER.info("Acquire permission for node: {}, epoch: {}, failover: {}", nodeId, epoch, failover);
+        String path = path(nodeId);
+        ObjectStorage.ReadOptions readOptions = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId);
+        ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.BYPASS);
+        CompletableFuture<Void> acquireCf = new CompletableFuture<>();
+        objectStorage.rangeRead(readOptions, path, 0, S3_RESERVATION_OBJECT_LENGTH)
+            .whenComplete((bytes, ex) -> {
+                try {
+                    CompletableFuture<Void> next = ex == null
+                        ? acquireFromExistingReservation(bytes, writeOptions, path, nodeId, epoch, failover)
+                        : acquireFromReadFailure(ex, writeOptions, path, nodeId, epoch, failover);
+                    FutureUtil.propagate(next, acquireCf);
+                } catch (Throwable t) {
+                    acquireCf.completeExceptionally(t);
+                }
+            });
+        return acquireCf;
+    }
+
+    private CompletableFuture<Void> acquireFromReadFailure(Throwable ex, ObjectStorage.WriteOptions options, String path,
+        long nodeId, long epoch, boolean failover) {
+        Throwable cause = FutureUtil.cause(ex);
+        if (cause instanceof ObjectNotExistException) {
+            return acquireFromMissingReservation(options, path, nodeId, epoch, failover);
+        }
+        return FutureUtil.failedFuture(cause);
+    }
+
+    private CompletableFuture<Void> acquireFromExistingReservation(ByteBuf bytes, ObjectStorage.WriteOptions options,
+        String path, long nodeId, long epoch, boolean failover) {
+        AcquireDecision decision = AcquireDecision.allow();
+        try {
+            decision = evaluateAcquireAction(parseReservation(nodeId, bytes), nodeId, epoch, failover);
+        } catch (IllegalStateException ex) {
+            LOGGER.warn("Overwrite invalid reservation object, nodeId={}, epoch={}, failover={}", nodeId, epoch, failover, ex);
+        } finally {
+            bytes.release();
+        }
+        if (!decision.allowed()) {
+            return FutureUtil.failedFuture(new IllegalStateException(decision.rejectReason()));
+        }
+        return writeReservation(options, path, nodeId, epoch, failover);
+    }
+
+    private CompletableFuture<Void> acquireFromMissingReservation(ObjectStorage.WriteOptions options, String path,
+        long nodeId, long epoch, boolean failover) {
+        if (failover) {
+            return FutureUtil.failedFuture(new IllegalStateException(
+                String.format("Failover acquire cannot create missing reservation, nodeId=%s, epoch=%s", nodeId, epoch)));
+        }
+        return writeReservation(options, path, nodeId, epoch, false);
+    }
+
+    private AcquireDecision evaluateAcquireAction(ReservationRecord current, long nodeId, long epoch, boolean failover) {
+        if (current.nodeId() != nodeId) {
+            LOGGER.warn("Overwrite reservation object with mismatched node id, expect={}, actual={}", nodeId, current.nodeId());
+            return AcquireDecision.allow();
+        }
+
+        // Existing reservation transition table:
+        // - failover acquire: same/newer epoch -> WRITE, otherwise REJECT.
+        // - normal acquire: same-epoch failover -> REJECT, same/newer epoch -> WRITE, otherwise REJECT.
+        if (failover) {
+            if (current.epoch() <= epoch) {
+                return AcquireDecision.allow();
+            }
+            return AcquireDecision.reject(String.format(
+                "Failover acquire rejected, nodeId=%s, currentEpoch=%s, requestEpoch=%s, currentFailover=%s",
+                nodeId, current.epoch(), epoch, current.failover()));
+        }
+
+        if (current.epoch() == epoch) {
+            if (current.failover()) {
+                return AcquireDecision.reject(String.format(
+                    "Normal acquire rejected, nodeId=%s, currentEpoch=%s, requestEpoch=%s, currentFailover=%s",
+                    nodeId, current.epoch(), epoch, current.failover()));
+            }
+            return AcquireDecision.allow();
+        }
+        if (current.epoch() < epoch) {
+            return AcquireDecision.allow();
+        }
+        return AcquireDecision.reject(String.format(
+            "Normal acquire rejected, nodeId=%s, currentEpoch=%s, requestEpoch=%s, currentFailover=%s",
+            nodeId, current.epoch(), epoch, current.failover()));
+    }
+
+    private CompletableFuture<Void> writeReservation(ObjectStorage.WriteOptions options, String path,
+        long nodeId, long epoch, boolean failover) {
+        // Use plain write for object-storage compatibility. This is not storage-level CAS;
+        // ownership still depends on the caller verifying the final reservation content.
+        return objectStorage.write(options.copy(), path, reservationBody(nodeId, epoch, failover)).thenApply(rst -> null);
+    }
+
+    private ReservationRecord parseReservation(long nodeId, ByteBuf bytes) {
+        if (bytes.readableBytes() != S3_RESERVATION_OBJECT_LENGTH) {
+            throw new IllegalStateException(String.format("Invalid reservation length, nodeId=%s, length=%s",
+                nodeId, bytes.readableBytes()));
+        }
+        ByteBuf slice = bytes.slice();
+        int magic = slice.readInt();
+        if (magic != S3_RESERVATION_OBJECT_MAGIC_CODE) {
+            throw new IllegalStateException(String.format("Invalid reservation magic code, nodeId=%s, magic=%s",
+                nodeId, magic));
+        }
+        return new ReservationRecord(slice.readLong(), slice.readLong(), slice.readBoolean());
+    }
+
+    private ByteBuf reservationBody(long nodeId, long epoch, boolean failover) {
         ByteBuf target = ByteBufAlloc.byteBuffer(S3_RESERVATION_OBJECT_LENGTH);
         target.writeInt(S3_RESERVATION_OBJECT_MAGIC_CODE);
         target.writeLong(nodeId);
         target.writeLong(epoch);
         target.writeBoolean(failover);
-        ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.BYPASS);
-        return objectStorage.write(options, path(nodeId), target).thenApply(rst -> null);
+        return target;
+    }
+
+    private record ReservationRecord(long nodeId, long epoch, boolean failover) {
+    }
+
+    private record AcquireDecision(boolean allowed, String rejectReason) {
+        private static AcquireDecision allow() {
+            return new AcquireDecision(true, null);
+        }
+
+        private static AcquireDecision reject(String rejectReason) {
+            return new AcquireDecision(false, rejectReason);
+        }
     }
 }
