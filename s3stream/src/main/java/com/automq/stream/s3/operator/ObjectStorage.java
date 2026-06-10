@@ -184,16 +184,7 @@ public interface ObjectStorage {
         }
     }
 
-    class Etag {
-        private final String value;
-
-        public Etag(String value) {
-            this.value = value;
-        }
-
-        public String value() {
-            return value;
-        }
+    record Etag(String value) {
     }
 
     abstract class WriteCondition {

@@ -84,12 +84,12 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     CompletableFuture<ReadResult> doRangeRead(ReadOptions options, String path, long start, long end) {
         AtomicReference<ReadResult> readResult = new AtomicReference<>();
         storage.computeIfPresent(path, (key, object) -> {
-            ByteBuf value = object.data;
+            ByteBuf value = object.data();
             int length = end != -1L ? (int) (end - start) : (int) (value.readableBytes() - start);
             ByteBuf rst = value.retainedSlice(value.readerIndex() + (int) start, length);
             CompositeByteBuf buf = ByteBufAlloc.compositeByteBuffer();
             buf.addComponent(true, rst);
-            readResult.set(ReadResult.of(buf, ObjectMetadata.of(new Etag(Long.toString(object.etag)))));
+            readResult.set(ReadResult.of(buf, ObjectMetadata.of(new Etag(Long.toString(object.etag())))));
             return object;
         });
         ReadResult result = readResult.get();
@@ -115,7 +115,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         AtomicReference<ObjectStorageConditionNotMetException> conditionFailure = new AtomicReference<>();
         storage.compute(path, (key, current) -> {
             if (condition instanceof WriteCondition.IfMatch ifMatch) {
-                if (current == null || !Long.toString(current.etag).equals(ifMatch.etag().value())) {
+                if (current == null || !Long.toString(current.etag()).equals(ifMatch.etag().value())) {
                     conditionFailure.set(new ObjectStorageConditionNotMetException("object etag does not match"));
                     return current;
                 }
@@ -126,7 +126,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
                 }
             }
             if (current != null) {
-                current.data.release();
+                current.data().release();
             }
             return new StoredObject(buf, etag.incrementAndGet());
         });
@@ -148,7 +148,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         ByteBuf buf = Unpooled.buffer();
         storage.compute(path, (key, old) -> {
             if (old != null) {
-                old.data.release();
+                old.data().release();
             }
             return new StoredObject(buf, etag.incrementAndGet());
         });
@@ -175,7 +175,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
                 AtomicBoolean copied = new AtomicBoolean();
                 storage.computeIfPresent(s3ObjectMetadata.key(), (key, sourceObject) -> {
-                    ByteBuf source = sourceObject.data;
+                    ByteBuf source = sourceObject.data();
                     buf.writeBytes(source.slice(source.readerIndex() + (int) start, (int) (end - start)));
                     copied.set(true);
                     return sourceObject;
@@ -229,7 +229,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
         for (String objectKey : objectKeys) {
             storage.computeIfPresent(objectKey, (key, object) -> {
-                object.data.release();
+                object.data().release();
                 deleteObjectKeys.add(objectKey);
                 return null;
             });
@@ -254,7 +254,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     @Override
     void doClose() {
         storage.keySet().forEach(key -> storage.computeIfPresent(key, (ignored, object) -> {
-            object.data.release();
+            object.data().release();
             return null;
         }));
     }
@@ -264,7 +264,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         return CompletableFuture.completedFuture(storage.entrySet()
             .stream()
             .filter(entry -> entry.getKey().startsWith(prefix))
-            .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().data.readableBytes()))
+            .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().data().readableBytes()))
             .collect(Collectors.toList()));
     }
 
@@ -277,7 +277,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         if (storage.size() != 1) {
             throw new IllegalStateException("expect only one object in storage");
         }
-        return storage.values().iterator().next().data;
+        return storage.values().iterator().next().data();
     }
 
     public boolean contains(String path) {
@@ -296,13 +296,6 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
         return this.networkOutboundBandwidthLimiter;
     }
 
-    private static class StoredObject {
-        private final ByteBuf data;
-        private final long etag;
-
-        private StoredObject(ByteBuf data, long etag) {
-            this.data = data;
-            this.etag = etag;
-        }
+    private record StoredObject(ByteBuf data, long etag) {
     }
 }
