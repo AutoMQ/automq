@@ -86,7 +86,9 @@ public class S3Url {
         boolean s3PathStyle = false;
 
         for (String param : params) {
-            String[] keyValue = param.split("=");
+            // Only split on the first '=' so that values containing '=' (e.g. base64-encoded
+            // access/secret keys, which may include '=' padding) are preserved.
+            String[] keyValue = param.split("=", 2);
             if (keyValue.length != 2) {
                 throw new IllegalArgumentException("Invalid parameter format: " + param);
             }
