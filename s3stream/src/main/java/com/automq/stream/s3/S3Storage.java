@@ -240,9 +240,11 @@ public class S3Storage implements Storage {
      */
     void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws InterruptedException, ExecutionException {
-        List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
-        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
+        CompletableFuture<List<StreamMetadata>> streamsCf = streamManager.getOpeningStreams();
         Iterator<RecoverResult> iterator = deltaWAL.recover();
+
+        List<StreamMetadata> streams = streamsCf.get();
+        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
 
         WALRecovery.recover(iterator, streamEndOffsets, 1 << 29, logger, cacheBlock -> {
             try {
@@ -252,8 +254,9 @@ public class S3Storage implements Storage {
             }
         });
 
-        deltaWAL.reset().get();
+        CompletableFuture<Void> resetCf = deltaWAL.reset();
         closeStreams(streamManager, streams, streamEndOffsets, logger);
+        resetCf.get();
     }
 
     private void uploadRecoveredRecords(ObjectManager objectManager, LogCache.LogCacheBlock cacheBlock, Logger logger)
