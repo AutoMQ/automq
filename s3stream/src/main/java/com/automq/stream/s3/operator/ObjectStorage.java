@@ -95,6 +95,10 @@ public interface ObjectStorage {
         return FutureUtil.failedFuture(new UnsupportedOperationException("conditional write is not supported"));
     }
 
+    default boolean supportsConditionalWrite() {
+        return false;
+    }
+
     CompletableFuture<List<ObjectInfo>> list(String prefix);
 
     /**

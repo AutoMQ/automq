@@ -108,6 +108,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private static final int HTTP_STATUS_PRECONDITION_FAILED = 412;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
+    public static final String CONDITIONAL_WRITE_KEY = "conditionalWrite";
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // The maximum number of keys that can be deleted in a single request is 1000.
@@ -119,6 +120,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient writeS3Client;
 
     private final ChecksumAlgorithm checksumAlgorithm;
+    private final boolean conditionalWrite;
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
@@ -126,6 +128,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, threadPrefix);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
+        this.conditionalWrite = bucketURI.extensionBool(CONDITIONAL_WRITE_KEY, false);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
 
         String checksumAlgorithmStr = bucketURI.extensionString(CHECKSUM_ALGORITHM_KEY);
@@ -155,6 +158,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.readS3Client = s3Client;
         this.tagging = null;
         this.checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+        this.conditionalWrite = false;
     }
 
     public static Builder builder() {
@@ -265,6 +269,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         PutObjectRequest request = builder.build();
         AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
         return writeS3Client.putObject(request, body).thenApply(rst -> null);
+    }
+
+    @Override
+    public boolean supportsConditionalWrite() {
+        return conditionalWrite;
     }
 
     @Override

@@ -164,6 +164,11 @@ public class ObjectReservationService implements ReservationService {
             return FutureUtil.failedFuture(new IllegalStateException(
                 String.format("Failover acquire cannot create missing reservation, nodeId=%s, epoch=%s", nodeId, epoch)));
         }
+        if (!objectStorage.supportsConditionalWrite()) {
+            LOGGER.warn("Create reservation without object conditional write protection, nodeId={}, epoch={}",
+                nodeId, epoch);
+            return objectStorage.write(options.copy(), path, reservationBody(nodeId, epoch, false)).thenApply(rst -> null);
+        }
         return objectStorage.conditionalWrite(options.copy(), path, reservationBody(nodeId, epoch, false),
             new ObjectStorage.WriteCondition.IfAbsent()).thenApply(rst -> null);
     }
@@ -199,12 +204,12 @@ public class ObjectReservationService implements ReservationService {
     private CompletableFuture<Void> writeReservationWithObservedEtag(ObjectStorage.WriteOptions options, String path,
         long nodeId, long epoch, boolean failover, ObjectStorage.Etag etag) {
         ByteBuf body = reservationBody(nodeId, epoch, failover);
-        if (etag.value() != null) {
+        if (objectStorage.supportsConditionalWrite() && etag.value() != null) {
             return objectStorage.conditionalWrite(options.copy(), path, body,
                 new ObjectStorage.WriteCondition.IfMatch(etag)).thenApply(rst -> null);
         }
-        LOGGER.warn("Acquire reservation without object etag CAS protection, nodeId={}, epoch={}, failover={}",
-            nodeId, epoch, failover);
+        LOGGER.warn("Acquire reservation without object conditional write protection, nodeId={}, epoch={}, failover={}, etagPresent={}",
+            nodeId, epoch, failover, etag.value() != null);
         return objectStorage.write(options.copy(), path, body).thenApply(rst -> null);
     }
 

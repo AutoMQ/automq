@@ -139,6 +139,11 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    public boolean supportsConditionalWrite() {
+        return true;
+    }
+
+    @Override
     public boolean readinessCheck() {
         return true;
     }

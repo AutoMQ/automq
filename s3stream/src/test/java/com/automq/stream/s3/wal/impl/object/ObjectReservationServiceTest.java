@@ -167,19 +167,25 @@ class ObjectReservationServiceTest {
     }
 
     @Test
-    void missingReservationIfAbsentUnsupportedFailsClosed() {
+    void missingReservationDowngradesWhenConditionalWriteUnsupported() {
         ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public boolean supportsConditionalWrite() {
+                return false;
+            }
+
             @Override
             public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
                 ByteBuf buf, WriteCondition condition) {
                 buf.release();
-                return FutureUtil.failedFuture(new UnsupportedOperationException("conditional write is not supported"));
+                return FutureUtil.failedFuture(new AssertionError("conditionalWrite should not be used when unsupported"));
             }
         };
         ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
 
-        assertThrows(CompletionException.class, () -> service.acquire(1, 2, false).join());
-        assertFalse(service.verify(1, 2, false).join());
+        service.acquire(1, 2, false).join();
+
+        assertTrue(service.verify(1, 2, false).join());
     }
 
     @Test
@@ -212,6 +218,29 @@ class ObjectReservationServiceTest {
                     return FutureUtil.failedFuture(new AssertionError("IfMatch should not be used without etag"));
                 }
                 return super.conditionalWrite(options, objectPath, buf, condition);
+            }
+        };
+        ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);
+
+        service.acquire(1, 2, false).join();
+        service.acquire(1, 2, true).join();
+
+        assertTrue(service.verify(1, 2, true).join());
+    }
+
+    @Test
+    void existingReservationDowngradesWhenConditionalWriteUnsupported() {
+        ObjectStorage storage = new MemoryObjectStorage() {
+            @Override
+            public boolean supportsConditionalWrite() {
+                return false;
+            }
+
+            @Override
+            public CompletableFuture<WriteResult> conditionalWrite(WriteOptions options, String objectPath,
+                ByteBuf buf, WriteCondition condition) {
+                buf.release();
+                return FutureUtil.failedFuture(new AssertionError("conditionalWrite should not be used when unsupported"));
             }
         };
         ObjectReservationService service = new ObjectReservationService("cluster", storage, (short) 0);

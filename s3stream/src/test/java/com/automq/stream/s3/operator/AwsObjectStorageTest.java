@@ -64,4 +64,11 @@ public class AwsObjectStorageTest {
         Assertions.assertTrue(ex.getRetriableKeys().containsKey("retry"));
         Assertions.assertTrue(ex.getFailedKeyErrors().containsKey("fail"));
     }
+
+    @Test
+    void testConditionalWriteDisabledByDefault() {
+        AwsObjectStorage storage = new AwsObjectStorage(null, "bucket");
+
+        Assertions.assertFalse(storage.supportsConditionalWrite());
+    }
 }
