@@ -5,7 +5,6 @@ import com.automq.stream.s3.TestUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -60,8 +59,7 @@ public class AwsObjectStorageTest {
     @Test
     void testDoWriteSetsPrecomputedChecksumWhenChecksumAlgorithmIsConfigured() throws Exception {
         S3AsyncClient s3 = mock(S3AsyncClient.class);
-        AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
-        setChecksumAlgorithm(storage, ChecksumAlgorithm.CRC32_C);
+        AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket", ChecksumAlgorithm.CRC32_C);
         ByteBuf data = Unpooled.wrappedBuffer("hello checksum".getBytes(StandardCharsets.UTF_8));
         List<PutObjectRequest> requests = new java.util.ArrayList<>();
 
@@ -146,9 +144,4 @@ public class AwsObjectStorageTest {
         return Base64.getEncoder().encodeToString(value.array());
     }
 
-    private static void setChecksumAlgorithm(AwsObjectStorage storage, ChecksumAlgorithm algorithm) throws Exception {
-        Field field = AwsObjectStorage.class.getDeclaredField("checksumAlgorithm");
-        field.setAccessible(true);
-        field.set(storage, algorithm);
-    }
 }

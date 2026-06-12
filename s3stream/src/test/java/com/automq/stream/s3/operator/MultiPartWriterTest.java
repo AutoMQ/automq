@@ -28,13 +28,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Base64;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -134,7 +133,7 @@ class MultiPartWriterTest {
 
     @Test
     void testWriteWithChecksumAlgorithm() throws Exception {
-        setChecksumAlgorithm(operator, ChecksumAlgorithm.SHA256);
+        operator = new AwsObjectStorage(s3, "unit-test-bucket", ChecksumAlgorithm.SHA256);
         writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path-checksum", 100, 100);
 
         List<UploadPartRequest> requests = new ArrayList<>();
@@ -297,12 +296,6 @@ class MultiPartWriterTest {
             sha256.update(buffer.duplicate());
         }
         return Base64.getEncoder().encodeToString(sha256.digest());
-    }
-
-    private static void setChecksumAlgorithm(AwsObjectStorage storage, ChecksumAlgorithm algorithm) throws Exception {
-        Field field = AwsObjectStorage.class.getDeclaredField("checksumAlgorithm");
-        field.setAccessible(true);
-        field.set(storage, algorithm);
     }
 
 }

@@ -54,13 +54,13 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
-import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
-import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
+import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
@@ -153,12 +153,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
+        this(s3Client, bucket, ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, String bucket, ChecksumAlgorithm checksumAlgorithm) {
         super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.tagging = null;
-        this.checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+        this.checksumAlgorithm = checksumAlgorithm;
     }
 
     public static Builder builder() {
@@ -287,7 +292,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         // Same dirty-retry protection as doWrite.
         UploadPartRequest.Builder builder = UploadPartRequest.builder()
             .bucket(bucket)
@@ -301,6 +305,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.contentMD5(contentMd5(part));
         }
 
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         return writeS3Client.uploadPart(builder.build(), body)
             .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
     }
