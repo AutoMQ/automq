@@ -21,6 +21,8 @@ import com.automq.stream.s3.Constants
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.autobalancer.AutoBalancerManager
 import kafka.autobalancer.services.AutoBalancerService
+import kafka.automq.availability.ControllerAvailabilityRuntimeFactory
+import kafka.automq.availability.controller.ControllerAvailabilityService
 import kafka.automq.controller.DefaultQuorumControllerExtension
 import kafka.controller.streamaspect.client.{Context, StreamClientFactoryProxy}
 import kafka.migration.MigrationPropagator
@@ -133,6 +135,9 @@ class ControllerServer(
   @volatile var incarnationId: Uuid = _
   @volatile var registrationManager: ControllerRegistrationManager = _
   @volatile var registrationChannelManager: NodeToControllerChannelManager = _
+  // AutoMQ inject start
+  @volatile var availabilityService: ControllerAvailabilityService = _
+  // AutoMQ inject end
 
   var autoBalancerManager: AutoBalancerService = _
 
@@ -455,6 +460,20 @@ class ControllerServer(
         "the controller metadata publishers to be installed",
         sharedServer.loader.installPublishers(metadataPublishers), startupDeadline, time)
 
+      // AutoMQ inject start
+      availabilityService = ControllerAvailabilityRuntimeFactory.controllerService(
+        config,
+        time,
+        controller,
+        new ControllerAvailabilityRuntimeFactory.MetadataImageReader {
+          override def read[T](reader: java.util.function.Function[org.apache.kafka.image.MetadataImage, T]): T = {
+            metadataCache.safeRun((image: org.apache.kafka.image.MetadataImage) => reader.apply(image))
+          }
+        })
+      config.addReconfigurable(availabilityService)
+      availabilityService.start()
+      // AutoMQ inject end
+
       val authorizerFutures: Map[Endpoint, CompletableFuture[Void]] = endpointReadyFutures.futures().asScala.toMap
 
       /**
@@ -540,6 +559,13 @@ class ControllerServer(
       if (socketServer != null)
         CoreUtils.swallow(socketServer.stopProcessingRequests(), this)
       migrationSupport.foreach(_.shutdown(this))
+      // AutoMQ inject start
+      if (availabilityService != null) {
+        CoreUtils.swallow(config.removeReconfigurable(availabilityService), this)
+        CoreUtils.swallow(availabilityService.shutdown(), this)
+        availabilityService = null
+      }
+      // AutoMQ inject end
       if (controller != null) {
         controller.beginShutdown()
       }

@@ -18,6 +18,9 @@
 package kafka.server
 
 import com.automq.stream.s3.S3Storage
+import kafka.automq.availability.AvailabilityRuntimeFactory
+import kafka.automq.availability.action.SegmentRollActionAdapter
+import kafka.automq.availability.broker.BrokerAvailabilityService
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -48,6 +51,7 @@ import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{ClusterResource, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.metrics.{GroupCoordinatorMetrics, GroupCoordinatorRuntimeMetrics}
 import org.apache.kafka.coordinator.group.{CoordinatorRecord, CoordinatorRecordSerde, GroupCoordinator, GroupCoordinatorService}
+import org.apache.kafka.controller.availability.{AvailabilityTarget, RecoveryAction}
 import org.apache.kafka.image.publisher.{BrokerRegistrationTracker, MetadataPublisher}
 import org.apache.kafka.image.loader.MetadataLoader
 import org.apache.kafka.metadata.{BrokerState, ListenerInfo}
@@ -130,6 +134,10 @@ class BrokerServer(
   var transactionCoordinator: TransactionCoordinator = _
 
   var clientToControllerChannelManager: NodeToControllerChannelManager = _
+  // AutoMQ inject start
+  var availabilityChannelManager: NodeToControllerChannelManager = _
+  var availabilityService: BrokerAvailabilityService = _
+  // AutoMQ inject end
 
   var forwardingManager: ForwardingManager = _
 
@@ -222,17 +230,17 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       // ElasticLogManager should be marked before LogManager is created.
       ElasticLogManager.enable(config.elasticStreamEnabled)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
@@ -626,6 +634,7 @@ class BrokerServer(
       })
 
       newFailoverListener(ElasticLogManager.INSTANCE.get.client)
+      startAvailabilityRuntime()
       // AutoMQ inject end
 
       // We're now ready to unfence the broker. This also allows this broker to transition
@@ -711,6 +720,61 @@ class BrokerServer(
     groupCoordinator
   }
 
+  // AutoMQ inject start
+  private def startAvailabilityRuntime(): Unit = {
+    availabilityChannelManager = newNodeToControllerChannelManager("availability", 60000)
+    availabilityChannelManager.start()
+    availabilityService = AvailabilityRuntimeFactory.brokerService(
+      config,
+      time,
+      lifecycleManager,
+      new AvailabilityRuntimeFactory.MetadataImageReader {
+        override def read[T](reader: java.util.function.Function[org.apache.kafka.image.MetadataImage, T]): T = {
+          metadataCache.safeRun((image: org.apache.kafka.image.MetadataImage) => reader.apply(image))
+        }
+      },
+      availabilityChannelManager,
+      new SegmentRollActionAdapter.SegmentRoller {
+        override def forceRoll(action: RecoveryAction): Unit = {
+          val topicPartition = topicPartitionTarget(action)
+          elasticHostedPartition(topicPartition) match {
+            case HostedPartition.Online(partition) =>
+              partition.forceRollLocalLog()
+            case _ =>
+              throw new IllegalStateException(s"Partition $topicPartition is not online on this broker")
+          }
+        }
+      },
+      (topicPartition: TopicPartition, offset: Long) => {
+        elasticHostedPartition(topicPartition) match {
+          case HostedPartition.Online(partition) =>
+            partition.segmentEndOffsetContaining(offset)
+          case _ =>
+            throw new IllegalStateException(s"Partition $topicPartition is not online on this broker")
+        }
+      })
+    availabilityService.start()
+  }
+
+  private def elasticHostedPartition(topicPartition: TopicPartition): HostedPartition = {
+    replicaManager match {
+      case elasticReplicaManager: ElasticReplicaManager =>
+        elasticReplicaManager.getPartitionWithoutSnapshotRead(topicPartition)
+      case _ =>
+        replicaManager.getPartition(topicPartition)
+    }
+  }
+
+  private def topicPartitionTarget(action: RecoveryAction): TopicPartition = {
+    val target = action.getTarget
+    if (target.getKind != AvailabilityTarget.Kind.TOPIC_PARTITION ||
+      target.getTopic == null || target.getPartition < 0) {
+      throw new IllegalArgumentException("SEGMENT_ROLL requires topic-partition target")
+    }
+    new TopicPartition(target.getTopic, target.getPartition)
+  }
+  // AutoMQ inject end
+
   protected def createRemoteLogManager(): Option[RemoteLogManager] = {
     if (config.remoteLogManagerConfig.isRemoteStorageSystemEnabled()) {
       Some(new RemoteLogManager(config.remoteLogManagerConfig, config.brokerId, config.logDirs.head, clusterId, time,
@@ -753,6 +817,12 @@ class BrokerServer(
         lifecycleManager.beginShutdown()
 
       // AutoMQ inject start
+      if (availabilityService != null) {
+        CoreUtils.swallow(availabilityService.shutdown(), this)
+      }
+      if (availabilityChannelManager != null) {
+        CoreUtils.swallow(availabilityChannelManager.shutdown(), this)
+      }
       if (backPressureManager != null) {
         CoreUtils.swallow(backPressureManager.shutdown(), this)
       }

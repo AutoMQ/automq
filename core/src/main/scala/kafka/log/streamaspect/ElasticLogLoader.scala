@@ -19,6 +19,7 @@
 
 package kafka.log.streamaspect
 
+import kafka.automq.availability.AvailabilityRuntimeHooks
 import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.InvalidOffsetException
@@ -74,7 +75,14 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
         // make sure the producer state manager endOffset is less than or equal to the recoveryPointCheckpoint
         producerStateManager.truncateAndReload(logStartOffsetCheckpoint, recoveryPointCheckpoint, time.milliseconds())
         val (newRecoveryPoint: Long, nextOffset: Long) = {
-            recoverLog()
+            try {
+                recoverLog()
+            } catch {
+                case e: Throwable =>
+                    AvailabilityRuntimeHooks.recordPartitionRecoverFailed(topicPartition, "recoverLog", 1,
+                        s"hadCleanShutdown=$hadCleanShutdown,recoveryPoint=$recoveryPointCheckpoint")
+                    throw e
+            }
         }
 
         val newLogStartOffset = math.max(logStartOffsetCheckpoint, segments.firstSegment.get.baseOffset)
@@ -154,7 +162,14 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
                 val truncatedBytes =
                     try {
-                        recoverSegment(segment)
+                        try {
+                            recoverSegment(segment)
+                        } catch {
+                            case e: Throwable =>
+                                AvailabilityRuntimeHooks.recordPartitionRecoverFailed(topicPartition, "recoverSegment",
+                                    numFlushed + 1, s"segmentBaseOffset=${segment.baseOffset}")
+                                throw e
+                        }
                     } catch {
                         case e: InvalidOffsetException =>
                             val startOffset = segment.baseOffset

@@ -20,7 +20,7 @@ package kafka.server
 import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
-import kafka.automq.AutoMQConfig
+import kafka.automq.{AutoFallbackConfig, AutoMQConfig}
 import kafka.automq.zerozone.DefaultClientRackProvider
 
 import java.util
@@ -800,6 +800,26 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
   val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
   val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
+  val automqAutoFallbackEnabled = getBoolean(AutoFallbackConfig.ENABLED_CONFIG)
+  val automqAutoFallbackActionAllowlist = getList(AutoFallbackConfig.ACTION_ALLOWLIST_CONFIG)
+  val automqAutoFallbackAppendStuckThresholdMs = getLong(AutoFallbackConfig.APPEND_STUCK_THRESHOLD_MS_CONFIG)
+  val automqAutoFallbackColdReadStuckThresholdMs = getLong(AutoFallbackConfig.COLD_READ_STUCK_THRESHOLD_MS_CONFIG)
+  val automqAutoFallbackPartitionCloseStuckThresholdMs = getLong(AutoFallbackConfig.PARTITION_CLOSE_STUCK_THRESHOLD_MS_CONFIG)
+  val automqAutoFallbackLogReadFailThreshold = getInt(AutoFallbackConfig.LOG_READ_FAIL_THRESHOLD_CONFIG)
+  val automqAutoFallbackGlobalSharedStorageAffectedRatio = getDouble(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_AFFECTED_RATIO_CONFIG)
+  val automqAutoFallbackGlobalSharedStorageSmallClusterBrokers = getInt(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_SMALL_CLUSTER_BROKERS_CONFIG)
+  val automqAutoFallbackAttributionConsecutiveThreshold = getInt(AutoFallbackConfig.ATTRIBUTION_CONSECUTIVE_THRESHOLD_CONFIG)
+  val automqAutoFallbackActionDeadlineMs = getLong(AutoFallbackConfig.ACTION_DEADLINE_MS_CONFIG)
+  val automqAutoFallbackNodeCooldownMs = getLong(AutoFallbackConfig.NODE_COOLDOWN_MS_CONFIG)
+  val automqAutoFallbackPartitionLogCooldownMs = getLong(AutoFallbackConfig.PARTITION_LOG_COOLDOWN_MS_CONFIG)
+  val automqAutoFallbackClusterActionConcurrency = getInt(AutoFallbackConfig.CLUSTER_ACTION_CONCURRENCY_CONFIG)
+  val automqAutoFallbackBrokerActionConcurrency = getInt(AutoFallbackConfig.BROKER_ACTION_CONCURRENCY_CONFIG)
+  val automqAutoFallbackControllerReconcileIntervalMs = getLong(AutoFallbackConfig.CONTROLLER_RECONCILE_INTERVAL_MS_CONFIG)
+  val automqAutoFallbackSignalWriteIntervalMs = getLong(AutoFallbackConfig.SIGNAL_WRITE_INTERVAL_MS_CONFIG)
+  val automqAutoFallbackSignalStaleMs = getLong(AutoFallbackConfig.SIGNAL_STALE_MS_CONFIG)
+  val automqAutoFallbackResponseRetentionMs = getLong(AutoFallbackConfig.RESPONSE_RETENTION_MS_CONFIG)
+  val automqAutoFallbackActionCleanupGraceMs = getLong(AutoFallbackConfig.ACTION_CLEANUP_GRACE_MS_CONFIG)
+  val automqAutoFallbackCleanupIntervalMs = getLong(AutoFallbackConfig.CLEANUP_INTERVAL_MS_CONFIG)
   val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG);
   // AutoMQ inject end

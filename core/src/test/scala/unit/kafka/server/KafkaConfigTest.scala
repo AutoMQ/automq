@@ -20,6 +20,7 @@ package kafka.server
 import java.net.InetSocketAddress
 import java.util
 import java.util.{Arrays, Collections, Properties}
+import kafka.automq.AutoFallbackConfig
 import kafka.cluster.EndPoint
 import kafka.security.authorizer.AclAuthorizer
 import kafka.utils.TestUtils.assertBadConfigContainingMessage
@@ -52,6 +53,122 @@ import scala.annotation.nowarn
 import scala.jdk.CollectionConverters._
 
 class KafkaConfigTest {
+
+  @Test
+  def testAutoFallbackConfigDefaults(): Unit = {
+    val props = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 8181)
+    val cfg = KafkaConfig.fromProps(props)
+
+    assertFalse(cfg.automqAutoFallbackEnabled)
+    assertEquals(util.Arrays.asList(
+      AutoFallbackConfig.ACTION_NODE_EXIT,
+      AutoFallbackConfig.ACTION_PARTITION_REASSIGNMENT
+    ), cfg.automqAutoFallbackActionAllowlist)
+    assertEquals(30000L, cfg.automqAutoFallbackAppendStuckThresholdMs)
+    assertEquals(30000L, cfg.automqAutoFallbackColdReadStuckThresholdMs)
+    assertEquals(30000L, cfg.automqAutoFallbackPartitionCloseStuckThresholdMs)
+    assertEquals(3, cfg.automqAutoFallbackLogReadFailThreshold)
+    assertEquals(0.4, cfg.automqAutoFallbackGlobalSharedStorageAffectedRatio)
+    assertEquals(2, cfg.automqAutoFallbackGlobalSharedStorageSmallClusterBrokers)
+    assertEquals(2, cfg.automqAutoFallbackAttributionConsecutiveThreshold)
+    assertEquals(120000L, cfg.automqAutoFallbackActionDeadlineMs)
+    assertEquals(600000L, cfg.automqAutoFallbackNodeCooldownMs)
+    assertEquals(300000L, cfg.automqAutoFallbackPartitionLogCooldownMs)
+    assertEquals(1, cfg.automqAutoFallbackClusterActionConcurrency)
+    assertEquals(1, cfg.automqAutoFallbackBrokerActionConcurrency)
+    assertEquals(45000L, cfg.automqAutoFallbackControllerReconcileIntervalMs)
+    assertEquals(30000L, cfg.automqAutoFallbackSignalWriteIntervalMs)
+    assertEquals(90000L, cfg.automqAutoFallbackSignalStaleMs)
+    assertEquals(600000L, cfg.automqAutoFallbackResponseRetentionMs)
+    assertEquals(600000L, cfg.automqAutoFallbackActionCleanupGraceMs)
+    assertEquals(60000L, cfg.automqAutoFallbackCleanupIntervalMs)
+  }
+
+  @Test
+  def testAutoFallbackConfigOverrides(): Unit = {
+    val props = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 8181)
+    props.setProperty(AutoFallbackConfig.ENABLED_CONFIG, "true")
+    props.setProperty(AutoFallbackConfig.ACTION_ALLOWLIST_CONFIG, "NODE_EXIT,SEGMENT_ROLL,SKIP_READ_RANGE")
+    props.setProperty(AutoFallbackConfig.APPEND_STUCK_THRESHOLD_MS_CONFIG, "1")
+    props.setProperty(AutoFallbackConfig.COLD_READ_STUCK_THRESHOLD_MS_CONFIG, "2")
+    props.setProperty(AutoFallbackConfig.PARTITION_CLOSE_STUCK_THRESHOLD_MS_CONFIG, "3")
+    props.setProperty(AutoFallbackConfig.LOG_READ_FAIL_THRESHOLD_CONFIG, "4")
+    props.setProperty(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_AFFECTED_RATIO_CONFIG, "1.0")
+    props.setProperty(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_SMALL_CLUSTER_BROKERS_CONFIG, "5")
+    props.setProperty(AutoFallbackConfig.ATTRIBUTION_CONSECUTIVE_THRESHOLD_CONFIG, "6")
+    props.setProperty(AutoFallbackConfig.ACTION_DEADLINE_MS_CONFIG, "7")
+    props.setProperty(AutoFallbackConfig.NODE_COOLDOWN_MS_CONFIG, "8")
+    props.setProperty(AutoFallbackConfig.PARTITION_LOG_COOLDOWN_MS_CONFIG, "9")
+    props.setProperty(AutoFallbackConfig.CLUSTER_ACTION_CONCURRENCY_CONFIG, "10")
+    props.setProperty(AutoFallbackConfig.BROKER_ACTION_CONCURRENCY_CONFIG, "11")
+    props.setProperty(AutoFallbackConfig.CONTROLLER_RECONCILE_INTERVAL_MS_CONFIG, "12")
+    props.setProperty(AutoFallbackConfig.SIGNAL_WRITE_INTERVAL_MS_CONFIG, "13")
+    props.setProperty(AutoFallbackConfig.SIGNAL_STALE_MS_CONFIG, "14")
+    props.setProperty(AutoFallbackConfig.RESPONSE_RETENTION_MS_CONFIG, "15")
+    props.setProperty(AutoFallbackConfig.ACTION_CLEANUP_GRACE_MS_CONFIG, "16")
+    props.setProperty(AutoFallbackConfig.CLEANUP_INTERVAL_MS_CONFIG, "17")
+
+    val cfg = KafkaConfig.fromProps(props)
+
+    assertTrue(cfg.automqAutoFallbackEnabled)
+    assertEquals(util.Arrays.asList("NODE_EXIT", "SEGMENT_ROLL", "SKIP_READ_RANGE"), cfg.automqAutoFallbackActionAllowlist)
+    assertEquals(1L, cfg.automqAutoFallbackAppendStuckThresholdMs)
+    assertEquals(2L, cfg.automqAutoFallbackColdReadStuckThresholdMs)
+    assertEquals(3L, cfg.automqAutoFallbackPartitionCloseStuckThresholdMs)
+    assertEquals(4, cfg.automqAutoFallbackLogReadFailThreshold)
+    assertEquals(1.0, cfg.automqAutoFallbackGlobalSharedStorageAffectedRatio)
+    assertEquals(5, cfg.automqAutoFallbackGlobalSharedStorageSmallClusterBrokers)
+    assertEquals(6, cfg.automqAutoFallbackAttributionConsecutiveThreshold)
+    assertEquals(7L, cfg.automqAutoFallbackActionDeadlineMs)
+    assertEquals(8L, cfg.automqAutoFallbackNodeCooldownMs)
+    assertEquals(9L, cfg.automqAutoFallbackPartitionLogCooldownMs)
+    assertEquals(10, cfg.automqAutoFallbackClusterActionConcurrency)
+    assertEquals(11, cfg.automqAutoFallbackBrokerActionConcurrency)
+    assertEquals(12L, cfg.automqAutoFallbackControllerReconcileIntervalMs)
+    assertEquals(13L, cfg.automqAutoFallbackSignalWriteIntervalMs)
+    assertEquals(14L, cfg.automqAutoFallbackSignalStaleMs)
+    assertEquals(15L, cfg.automqAutoFallbackResponseRetentionMs)
+    assertEquals(16L, cfg.automqAutoFallbackActionCleanupGraceMs)
+    assertEquals(17L, cfg.automqAutoFallbackCleanupIntervalMs)
+  }
+
+  @Test
+  def testAutoFallbackDynamicConfigs(): Unit = {
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoFallbackConfig.ENABLED_CONFIG))
+    assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoFallbackConfig.ACTION_ALLOWLIST_CONFIG))
+    assertFalse(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoFallbackConfig.ACTION_DEADLINE_MS_CONFIG))
+  }
+
+  @Test
+  def testAutoFallbackConfigValidation(): Unit = {
+    assertAutoFallbackBadConfig(AutoFallbackConfig.ACTION_ALLOWLIST_CONFIG, "NODE_EXIT,UNKNOWN_ACTION")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.APPEND_STUCK_THRESHOLD_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.COLD_READ_STUCK_THRESHOLD_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.PARTITION_CLOSE_STUCK_THRESHOLD_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.LOG_READ_FAIL_THRESHOLD_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_AFFECTED_RATIO_CONFIG, "-0.1")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_AFFECTED_RATIO_CONFIG, "1.1")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.GLOBAL_SHARED_STORAGE_SMALL_CLUSTER_BROKERS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.ATTRIBUTION_CONSECUTIVE_THRESHOLD_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.ACTION_DEADLINE_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.NODE_COOLDOWN_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.PARTITION_LOG_COOLDOWN_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.CLUSTER_ACTION_CONCURRENCY_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.BROKER_ACTION_CONCURRENCY_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.CONTROLLER_RECONCILE_INTERVAL_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.SIGNAL_WRITE_INTERVAL_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.SIGNAL_STALE_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.RESPONSE_RETENTION_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.ACTION_CLEANUP_GRACE_MS_CONFIG, "0")
+    assertAutoFallbackBadConfig(AutoFallbackConfig.CLEANUP_INTERVAL_MS_CONFIG, "0")
+  }
+
+  private def assertAutoFallbackBadConfig(name: String, value: String): Unit = {
+    val props = TestUtils.createBrokerConfig(0, TestUtils.MockZkConnect, port = 8181)
+    props.setProperty(name, value)
+    val exception = assertThrows(classOf[ConfigException], () => KafkaConfig.fromProps(props))
+    assertTrue(exception.getMessage.contains(name), s"Expected $name in ${exception.getMessage}")
+  }
 
   @Test
   def testLogRetentionTimeHoursProvided(): Unit = {

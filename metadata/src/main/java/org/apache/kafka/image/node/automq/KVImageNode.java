@@ -26,9 +26,7 @@ import org.apache.kafka.image.node.MetadataNode;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 
 public class KVImageNode implements MetadataNode {
     public static final String NAME = "kv";
@@ -43,22 +41,14 @@ public class KVImageNode implements MetadataNode {
 
     @Override
     public Collection<String> childNames() {
-        // Return the set of namespace node names
-        Map<String, Object> namespaces = new HashMap<>();
-        kvImage.forEach((k, v) -> namespaces.put(nodeName(k.namespace()), null));
-        return namespaces.keySet();
+        return kvImage.namespaces().stream().map(KVImageNode::nodeName).toList();
     }
 
     @Override
     public MetadataNode child(String name) {
         // name is a namespace node name; return a sub-node for that namespace
         String namespace = name.equals(DEFAULT_NAMESPACE) ? null : name;
-        Map<String, ByteBuffer> entries = new HashMap<>();
-        kvImage.forEach((k, v) -> {
-            if (Objects.equals(k.namespace(), namespace)) {
-                entries.put(k.key(), v);
-            }
-        });
+        Map<String, ByteBuffer> entries = kvImage.namespaceKVs(namespace);
         if (entries.isEmpty()) {
             return null;
         }

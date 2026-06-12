@@ -17,4 +17,5 @@
 automq_test_suite:
   included:
     - ../kafkatest/automq/automq_zerozone_test.py
+    - ../kafkatest/automq/availability_fallback_test.py::AvailabilityFallbackTest.test_append_stuck_publishes_signal_and_dry_run_decision
     - ../kafkatest/automq/retry_storm_backoff_test.py

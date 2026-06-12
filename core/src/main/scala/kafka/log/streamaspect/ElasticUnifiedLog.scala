@@ -21,6 +21,7 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import com.automq.stream.utils.FutureUtil
+import kafka.automq.availability.AvailabilityRuntimeHooks
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
@@ -30,6 +31,7 @@ import org.apache.kafka.common.errors.OffsetOutOfRangeException
 import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
 import org.apache.kafka.common.utils.{ThreadUtils, Time, Utils}
+import org.apache.kafka.controller.availability.AvailabilityActionType
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
@@ -342,17 +344,33 @@ object ElasticUnifiedLog extends Logging {
         LocalLog.maybeHandleIOException(partitionLogDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()
             var localLog: ElasticLog = null
+            var forceCleanShutdownRecovery = false
             while(localLog == null) {
                 try {
                     localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
                         partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
-                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead)
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead,
+                        forceCleanShutdownRecovery)
                 } catch {
                     case e: Throwable =>
                         val cause = FutureUtil.cause(e)
                         cause match {
                             case e1: StreamFencedException => throw e1
                             case e1: Throwable =>
+                                if (!forceCleanShutdownRecovery) {
+                                    forceCleanShutdownRecovery = AvailabilityRuntimeHooks.consumeOpenRecoverAction(
+                                        AvailabilityActionType.CLEAN_SHUTDOWN_RECOVERY,
+                                        topicPartition,
+                                        _ => {}
+                                    )
+                                }
+                                if (forceCleanShutdownRecovery && topicId.isDefined) {
+                                    AvailabilityRuntimeHooks.consumeOpenRecoverAction(
+                                        AvailabilityActionType.PARTITION_RECREATE,
+                                        topicPartition,
+                                        _ => ElasticLog.destroy(client, namespace, topicPartition, topicId.get, leaderEpoch)
+                                    )
+                                }
                                 error(s"open $topicPartition failed, retry open after 1s", e)
                                 Thread.sleep(1000)
                         }

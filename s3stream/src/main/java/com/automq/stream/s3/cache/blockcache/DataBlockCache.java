@@ -21,6 +21,7 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
+import com.automq.stream.s3.PendingRequestTracker;
 import com.automq.stream.s3.cache.LRUCache;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsManager;
@@ -58,6 +59,7 @@ public class DataBlockCache {
     final AsyncSemaphore sizeLimiter;
     private final long maxSize;
     private final Time time;
+    private final PendingRequestTracker pendingColdReads = new PendingRequestTracker();
 
     public DataBlockCache(long maxSize, EventLoop[] eventLoops) {
         this(maxSize, eventLoops, Time.SYSTEM);
@@ -96,6 +98,17 @@ public class DataBlockCache {
 
     public long available() {
         return sizeLimiter.permits();
+    }
+
+    public long maxPendingColdReadLatencyNanos() {
+        return pendingColdReads.maxPendingLatencyNanos();
+    }
+
+    /**
+     * Exposes local BlockCache cold read stuck state for Broker availability signal collection.
+     */
+    public boolean hasPendingColdReadOlderThan(long threshold, TimeUnit timeUnit) {
+        return pendingColdReads.hasPendingOlderThan(timeUnit.toNanos(threshold));
     }
 
     @Override
@@ -195,7 +208,14 @@ public class DataBlockCache {
             ThrottleStrategy throttleStrategy = getOptions.readahead ? ThrottleStrategy.CATCH_UP : ThrottleStrategy.BYPASS;
             reader.retain();
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
-                reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
+                long startTimeNanos = System.nanoTime();
+                CompletableFuture<ObjectReader.DataBlockGroup> readCf =
+                    reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex());
+                pendingColdReads.track(readCf, startTimeNanos);
+                ColdReadInflightRegistry.track(readCf, startTimeNanos);
+                readCf.whenCompleteAsync((rst, ex) -> {
+                    pendingColdReads.untrack(readCf);
+                    ColdReadInflightRegistry.untrack(readCf);
                     StorageOperationStats.getInstance().blockCacheReadS3Throughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                     reader.release();
                     DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());

@@ -86,7 +86,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
     private final ReentrantLock appendLock = new ReentrantLock();
     private final Set<CompletableFuture<?>> pendingAppends = ConcurrentHashMap.newKeySet();
-    private final Deque<Long> pendingAppendTimestamps = new ConcurrentLinkedDeque<>();
+    private final PendingRequestTracker pendingAppendTracker = new PendingRequestTracker();
     private volatile CompletableFuture<AppendResult> lastAppendFuture;
     private final Set<CompletableFuture<?>> pendingFetches = ConcurrentHashMap.newKeySet();
     private final Deque<Long> pendingFetchTimestamps = new ConcurrentLinkedDeque<>();
@@ -126,7 +126,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
         if (snapshotRead()) {
             listenerHandle = streamManager.addMetadataListener(streamId, this);
         }
-        S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(streamId, () -> getHeadLatency(this.pendingAppendTimestamps));
+        S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(streamId, this::maxPendingAppendLatencyNanos);
         S3StreamMetricsManager.registerPendingStreamFetchLatencySupplier(streamId, () -> getHeadLatency(this.pendingFetchTimestamps));
         NetworkStats.getInstance().createStreamReadBytesStats(streamId);
     }
@@ -198,15 +198,26 @@ public class S3Stream implements Stream, StreamMetadataListener {
                 }
             }, LOGGER, "append");
             pendingAppends.add(cf);
-            pendingAppendTimestamps.push(startTimeNanos);
+            pendingAppendTracker.track(cf, startTimeNanos);
             return cf.whenComplete((nil, ex) -> {
                 StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
-                pendingAppendTimestamps.pop();
+                pendingAppendTracker.untrack(cf);
             });
         } finally {
             readLock.unlock();
         }
+    }
+
+    public long maxPendingAppendLatencyNanos() {
+        return pendingAppendTracker.maxPendingLatencyNanos();
+    }
+
+    /**
+     * Exposes local append stuck state for Broker availability signal collection.
+     */
+    public boolean hasPendingAppendOlderThan(long threshold, TimeUnit timeUnit) {
+        return pendingAppendTracker.hasPendingOlderThan(timeUnit.toNanos(threshold));
     }
 
     @WithSpan

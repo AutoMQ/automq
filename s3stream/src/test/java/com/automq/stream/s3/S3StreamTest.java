@@ -19,10 +19,13 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
+import com.automq.stream.s3.context.AppendContext;
+import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
 
@@ -77,6 +80,64 @@ public class S3StreamTest {
             }
         }
         Assertions.assertTrue(isException);
+    }
+
+    @Test
+    public void testPendingAppendTrackerRemovesCompletedFutureOutOfOrder() throws Exception {
+        CompletableFuture<Void> firstStorageAppend = new CompletableFuture<>();
+        CompletableFuture<Void> secondStorageAppend = new CompletableFuture<>();
+        Mockito.when(storage.append(any(AppendContext.class), any()))
+            .thenReturn(firstStorageAppend)
+            .thenReturn(secondStorageAppend);
+
+        CompletableFuture<AppendResult> firstAppend = stream.append(DefaultRecordBatch.of(1, 16));
+        CompletableFuture<AppendResult> secondAppend = stream.append(DefaultRecordBatch.of(1, 16));
+
+        secondStorageAppend.complete(null);
+        secondAppend.get(1, TimeUnit.SECONDS);
+
+        Assertions.assertFalse(firstAppend.isDone());
+        Assertions.assertTrue(stream.maxPendingAppendLatencyNanos() > 0);
+        Assertions.assertTrue(S3StreamMetricsManager.maxPendingStreamAppendLatency() > 0);
+
+        firstStorageAppend.complete(null);
+        firstAppend.get(1, TimeUnit.SECONDS);
+
+        assertEquals(0L, stream.maxPendingAppendLatencyNanos());
+    }
+
+    @Test
+    public void testPendingAppendStuckState() {
+        CompletableFuture<Void> storageAppend = new CompletableFuture<>();
+        Mockito.when(storage.append(any(AppendContext.class), any())).thenReturn(storageAppend);
+
+        CompletableFuture<AppendResult> append = stream.append(DefaultRecordBatch.of(1, 16));
+
+        Assertions.assertFalse(stream.hasPendingAppendOlderThan(1, TimeUnit.DAYS));
+        Assertions.assertTrue(stream.hasPendingAppendOlderThan(0, TimeUnit.NANOSECONDS));
+
+        storageAppend.complete(null);
+        append.join();
+        Assertions.assertFalse(stream.hasPendingAppendOlderThan(0, TimeUnit.NANOSECONDS));
+    }
+
+    @Test
+    public void testPendingRequestTrackerCalculatesOldestPendingAge() {
+        long[] now = {100L};
+        PendingRequestTracker tracker = new PendingRequestTracker(() -> now[0]);
+        CompletableFuture<Void> older = new CompletableFuture<>();
+        CompletableFuture<Void> newer = new CompletableFuture<>();
+        tracker.track(older, 10L);
+        tracker.track(newer, 80L);
+
+        assertEquals(90L, tracker.maxPendingLatencyNanos());
+        Assertions.assertTrue(tracker.hasPendingOlderThan(90L));
+        Assertions.assertFalse(tracker.hasPendingOlderThan(91L));
+
+        tracker.untrack(newer);
+        assertEquals(90L, tracker.maxPendingLatencyNanos());
+        tracker.untrack(older);
+        assertEquals(0L, tracker.maxPendingLatencyNanos());
     }
 
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
