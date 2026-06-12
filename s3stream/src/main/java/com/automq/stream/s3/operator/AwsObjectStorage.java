@@ -30,10 +30,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,6 +59,8 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
+import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
@@ -72,6 +78,7 @@ import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CopyPartResult;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.Delete;
@@ -88,6 +95,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.Tagging;
 import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
 import static com.automq.stream.s3.metrics.operations.S3Operation.COMPLETE_MULTI_PART_UPLOAD;
@@ -145,12 +153,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
+        this(s3Client, bucket, ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, String bucket, ChecksumAlgorithm checksumAlgorithm) {
         super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.tagging = null;
-        this.checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+        this.checksumAlgorithm = checksumAlgorithm;
     }
 
     public static Builder builder() {
@@ -242,13 +255,18 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
+        // Compute checksum before handing unsafe ByteBuffers to the SDK. A timed-out attempt may still be writing
+        // after a later retry completes and the caller releases/reuses the ByteBuf; the stale attempt would then read
+        // dirty bytes. A fixed request checksum makes the service reject that corrupted body instead of persisting it.
         PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
             builder.tagging(tagging);
         }
 
-        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
-            builder.checksumAlgorithm(checksumAlgorithm);
+        if (hasFlexibleChecksumAlgorithm()) {
+            putChecksum(builder, data);
+        } else {
+            builder.contentMD5(contentMd5(data));
         }
 
         PutObjectRequest request = builder.build();
@@ -263,7 +281,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.tagging(tagging);
         }
 
-        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+        if (hasFlexibleChecksumAlgorithm()) {
             builder.checksumAlgorithm(checksumAlgorithm);
         }
 
@@ -274,38 +292,22 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
+        // Same dirty-retry protection as doWrite.
         UploadPartRequest.Builder builder = UploadPartRequest.builder()
             .bucket(bucket)
             .key(path)
             .uploadId(uploadId)
             .partNumber(partNumber);
 
-        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
-            builder.checksumAlgorithm(checksumAlgorithm);
+        if (hasFlexibleChecksumAlgorithm()) {
+            putChecksum(builder, part);
+        } else {
+            builder.contentMD5(contentMd5(part));
         }
 
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
         return writeS3Client.uploadPart(builder.build(), body)
-            .thenApply(resp -> {
-                String checksum;
-                switch (checksumAlgorithm) {
-                    case CRC32_C:
-                        checksum = resp.checksumCRC32C();
-                        break;
-                    case CRC32:
-                        checksum = resp.checksumCRC32();
-                        break;
-                    case SHA1:
-                        checksum = resp.checksumSHA1();
-                        break;
-                    case SHA256:
-                        checksum = resp.checksumSHA256();
-                        break;
-                    default:
-                        checksum = null;
-                }
-                return new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksum);
-            });
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
     }
 
     @Override
@@ -319,14 +321,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
             )
             .build();
-        return writeS3Client.uploadPartCopy(request).thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), resp.copyPartResult().checksumCRC32C()));
+        return writeS3Client.uploadPartCopy(request)
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), checksumValue(resp.copyPartResult())));
     }
 
     @Override
     public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
         List<ObjectStorageCompletedPart> parts) {
         List<CompletedPart> completedParts = parts.stream()
-            .map(part -> CompletedPart.builder().partNumber(part.getPartNumber()).eTag(part.getPartId()).checksumCRC32C(part.getCheckSum()).build())
+            .map(this::completedPart)
             .collect(Collectors.toList());
         CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
         CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
@@ -501,7 +504,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .maxConcurrency(maxConcurrency)
             .build();
         builder.httpClient(httpClient);
-        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
+        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(false));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(apiCallTimeoutMs, apiCallAttemptTimeoutMs));
         return builder.build();
@@ -523,6 +526,144 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .reuseLastProviderEnabled(true)
             .credentialsProviders(providers)
             .build();
+    }
+
+    private CompletedPart completedPart(ObjectStorageCompletedPart part) {
+        CompletedPart.Builder builder = CompletedPart.builder()
+            .partNumber(part.getPartNumber())
+            .eTag(part.getPartId());
+        if (part.getCheckSum() == null) {
+            return builder.build();
+        }
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return builder.checksumCRC32C(part.getCheckSum()).build();
+            case CRC32:
+                return builder.checksumCRC32(part.getCheckSum()).build();
+            case SHA1:
+                return builder.checksumSHA1(part.getCheckSum()).build();
+            case SHA256:
+                return builder.checksumSHA256(part.getCheckSum()).build();
+            default:
+                return builder.build();
+        }
+    }
+
+    private boolean hasFlexibleChecksumAlgorithm() {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+            case CRC32:
+            case SHA1:
+            case SHA256:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void putChecksum(PutObjectRequest.Builder builder, ByteBuf buf) {
+        String checksum = checksum(buf);
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                builder.checksumCRC32C(checksum);
+                break;
+            case CRC32:
+                builder.checksumCRC32(checksum);
+                break;
+            case SHA1:
+                builder.checksumSHA1(checksum);
+                break;
+            case SHA256:
+                builder.checksumSHA256(checksum);
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private void putChecksum(UploadPartRequest.Builder builder, ByteBuf buf) {
+        String checksum = checksum(buf);
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                builder.checksumCRC32C(checksum);
+                break;
+            case CRC32:
+                builder.checksumCRC32(checksum);
+                break;
+            case SHA1:
+                builder.checksumSHA1(checksum);
+                break;
+            case SHA256:
+                builder.checksumSHA256(checksum);
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private String checksum(ByteBuf buf) {
+        SdkChecksum checksum = SdkChecksum.forAlgorithm(defaultChecksumAlgorithm());
+        for (ByteBuffer buffer : buf.nioBuffers()) {
+            checksum.update(buffer.duplicate());
+        }
+        return Base64.getEncoder().encodeToString(checksum.getChecksumBytes());
+    }
+
+    private software.amazon.awssdk.checksums.spi.ChecksumAlgorithm defaultChecksumAlgorithm() {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return DefaultChecksumAlgorithm.CRC32C;
+            case CRC32:
+                return DefaultChecksumAlgorithm.CRC32;
+            case SHA1:
+                return DefaultChecksumAlgorithm.SHA1;
+            case SHA256:
+                return DefaultChecksumAlgorithm.SHA256;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private String checksumValue(UploadPartResponse response) {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return response.checksumCRC32C();
+            case CRC32:
+                return response.checksumCRC32();
+            case SHA1:
+                return response.checksumSHA1();
+            case SHA256:
+                return response.checksumSHA256();
+            default:
+                return null;
+        }
+    }
+
+    private String checksumValue(CopyPartResult response) {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return response.checksumCRC32C();
+            case CRC32:
+                return response.checksumCRC32();
+            case SHA1:
+                return response.checksumSHA1();
+            case SHA256:
+                return response.checksumSHA256();
+            default:
+                return null;
+        }
+    }
+
+    static String contentMd5(ByteBuf buf) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            for (ByteBuffer buffer : buf.nioBuffers()) {
+                md5.update(buffer.duplicate());
+            }
+            return Base64.getEncoder().encodeToString(md5.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("MD5 algorithm is not available", e);
+        }
     }
 
     public boolean readinessCheck() {
