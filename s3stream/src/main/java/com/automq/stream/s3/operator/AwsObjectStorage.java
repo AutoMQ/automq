@@ -415,9 +415,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 default:
                     strategy = RetryStrategy.RETRY;
             }
-            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
-                if (cause instanceof NoSuchUploadException) {
+            if (cause instanceof NoSuchUploadException) {
+                if (COMPLETE_MULTI_PART_UPLOAD == operation) {
                     strategy = RetryStrategy.VISIBILITY_CHECK;
+                } else if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
+                    // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
+                    // Retrying with a dead upload ID is futile and would loop until the broker crashes.
+                    strategy = RetryStrategy.ABORT;
                 }
             }
             if (GET_OBJECT == operation) {
