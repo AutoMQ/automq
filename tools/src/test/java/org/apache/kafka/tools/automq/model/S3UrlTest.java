@@ -43,6 +43,19 @@ class S3UrlTest {
     }
 
     @Test
+    void parseWithEqualsSignInCredentials() {
+        // base64-encoded secret keys frequently contain '=' (padding) and '/' characters.
+        // The value must be preserved verbatim instead of being split on every '='.
+        String secretKey = "abc/def+ghi==";
+        String s3Url = "s3://s3.us-east-1.amazonaws.com?s3-access-key=AKIA=EXAMPLE&s3-secret-key=" + secretKey
+            + "&s3-region=us-east-1&s3-endpoint-protocol=https&s3-data-bucket=data&s3-ops-bucket=ops&cluster-id=abc";
+        S3Url s3UrlObj = S3Url.parse(s3Url);
+        assertEquals("AKIA=EXAMPLE", s3UrlObj.getS3AccessKey());
+        assertEquals(secretKey, s3UrlObj.getS3SecretKey());
+        assertEquals("us-east-1", s3UrlObj.getS3Region());
+    }
+
+    @Test
     void parseS3UrlValFromArgs() {
         String s3Url = "s3://s3.cn-northwest-1.amazonaws.com.cn?s3-access-key=xxx&s3-secret-key=yyy&s3-region=cn-northwest-1&s3-endpoint-protocol=https&s3-data-bucket=wanshao-test&s3-ops-bucket=automq-ops-bucket&cluster-id=fZGPJht6Rf-o7WgrUakLxQ";
         String[] args = Arrays.asList("--s3-url=" + s3Url, "--controller-list=\"192.168.123.234:9093\"").toArray(new String[0]);
