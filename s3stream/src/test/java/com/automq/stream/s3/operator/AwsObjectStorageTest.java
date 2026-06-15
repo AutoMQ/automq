@@ -4,7 +4,6 @@ import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 
 import org.apache.commons.lang3.tuple.Pair;
-
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
