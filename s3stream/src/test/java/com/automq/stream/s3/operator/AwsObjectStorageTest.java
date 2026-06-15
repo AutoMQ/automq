@@ -1,7 +1,9 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +26,7 @@ import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Error;
 
@@ -142,6 +145,62 @@ public class AwsObjectStorageTest {
         ByteBuffer value = ByteBuffer.allocate(Integer.BYTES);
         value.putInt((int) crc32c.getValue());
         return Base64.getEncoder().encodeToString(value.array());
+    }
+
+
+    /**
+     * Given a NoSuchUploadException during UPLOAD_PART,
+     * When toRetryStrategyAndCause is called,
+     * Then the strategy should be ABORT because retrying with a dead upload ID is futile.
+     */
+    @Test
+    void testNoSuchUploadExceptionAbortsUploadPart() {
+        AwsObjectStorage storage = new AwsObjectStorage(null, "bucket");
+        NoSuchUploadException cause = NoSuchUploadException.builder()
+            .message("The specified upload does not exist")
+            .statusCode(404)
+            .build();
+
+        Pair<RetryStrategy, Throwable> result = storage.toRetryStrategyAndCause(cause, S3Operation.UPLOAD_PART);
+        Assertions.assertEquals(RetryStrategy.ABORT, result.getLeft(),
+            "UPLOAD_PART with NoSuchUploadException should ABORT, not retry indefinitely");
+    }
+
+    /**
+     * Given a NoSuchUploadException during UPLOAD_PART_COPY,
+     * When toRetryStrategyAndCause is called,
+     * Then the strategy should be ABORT for the same reason as UPLOAD_PART.
+     */
+    @Test
+    void testNoSuchUploadExceptionAbortsUploadPartCopy() {
+        AwsObjectStorage storage = new AwsObjectStorage(null, "bucket");
+        NoSuchUploadException cause = NoSuchUploadException.builder()
+            .message("The specified upload does not exist")
+            .statusCode(404)
+            .build();
+
+        Pair<RetryStrategy, Throwable> result = storage.toRetryStrategyAndCause(cause, S3Operation.UPLOAD_PART_COPY);
+        Assertions.assertEquals(RetryStrategy.ABORT, result.getLeft(),
+            "UPLOAD_PART_COPY with NoSuchUploadException should ABORT, not retry indefinitely");
+    }
+
+    /**
+     * Given a NoSuchUploadException during COMPLETE_MULTI_PART_UPLOAD,
+     * When toRetryStrategyAndCause is called,
+     * Then the strategy should be VISIBILITY_CHECK because the upload may have already completed
+     * and the object may just not be visible yet.
+     */
+    @Test
+    void testNoSuchUploadExceptionVisibilityCheckForComplete() {
+        AwsObjectStorage storage = new AwsObjectStorage(null, "bucket");
+        NoSuchUploadException cause = NoSuchUploadException.builder()
+            .message("The specified upload does not exist")
+            .statusCode(404)
+            .build();
+
+        Pair<RetryStrategy, Throwable> result = storage.toRetryStrategyAndCause(cause, S3Operation.COMPLETE_MULTI_PART_UPLOAD);
+        Assertions.assertEquals(RetryStrategy.VISIBILITY_CHECK, result.getLeft(),
+            "COMPLETE_MULTI_PART_UPLOAD with NoSuchUploadException should VISIBILITY_CHECK");
     }
 
 }
