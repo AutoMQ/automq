@@ -253,7 +253,7 @@ public class S3StreamMetricsManager {
         getObjectsTime = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.GET_OBJECTS_TIME_METRIC_NAME,
                 "Get objects time", "nanoseconds", () -> GET_OBJECTS_TIME_METRICS);
         objectsToSearchCount = new HistogramInstrument(meter, prefix + S3StreamMetricsConstant.OBJECTS_SEARCH_COUNT_METRIC_NAME,
-                "Number of SSO object to search when get objects", "count", () -> OBJECTS_TO_SEARCH_COUNT_METRICS);
+                "Number of SSO object to search when get objects", "", () -> OBJECTS_TO_SEARCH_COUNT_METRICS);
         deltaWalStartOffset = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.WAL_START_OFFSET)
             .setDescription("Delta WAL start offset")
             .ofLongs()
