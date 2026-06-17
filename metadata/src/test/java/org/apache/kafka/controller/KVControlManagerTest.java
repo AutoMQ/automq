@@ -212,15 +212,15 @@ public class KVControlManagerTest {
         assertNull(v0Remove.namespaces());
         manager.replay(v0Remove);
         // null-namespace k1 removed, namespaced k1 still exists
-        assertTrue(manager.kv().containsKey(KVKey.of("ns", "k1")));
-        assertTrue(!manager.kv().containsKey(KVKey.of(null, "k1")));
+        assertTrue(manager.containsKey(KVKey.of("ns", "k1")));
+        assertTrue(!manager.containsKey(KVKey.of(null, "k1")));
 
         // 2) Non-null namespaces (v1 record) removes namespaced kv
         RemoveKVRecord v1Remove = new RemoveKVRecord()
             .setKeys(Collections.singletonList("k1"))
             .setNamespaces(Collections.singletonList("ns"));
         manager.replay(v1Remove);
-        assertTrue(!manager.kv().containsKey(KVKey.of("ns", "k1")));
+        assertTrue(!manager.containsKey(KVKey.of("ns", "k1")));
 
         // 3) Mismatched namespaces/keys sizes throws IllegalArgumentException
         RemoveKVRecord mismatch = new RemoveKVRecord()

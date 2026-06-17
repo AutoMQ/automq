@@ -20,6 +20,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
 import kafka.api.LeaderAndIsr
+import kafka.automq.runtime.DataPathMonitor
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
@@ -641,6 +642,20 @@ class Partition(val topicPartition: TopicPartition,
     leaderReplicaIdOpt.filter(_ == localBrokerId)
   }
 
+  // AutoMQ inject start
+  def forceRollLocalLog(): Unit = {
+    checkClosed()
+    if (!isLeader) {
+      throw new NotLeaderOrFollowerException(s"Cannot roll $topicPartition because broker $localBrokerId is not leader")
+    }
+    localLogOrException.roll()
+  }
+
+  def segmentEndOffsetContaining(offset: Long): Long = {
+    localLogOrException.segmentEndOffsetContaining(offset)
+  }
+  // AutoMQ inject end
+
   def localLogWithEpochOrThrow(
     currentLeaderEpoch: Optional[Integer],
     requireLeader: Boolean
@@ -800,7 +815,14 @@ class Partition(val topicPartition: TopicPartition,
       Partition.removeMetrics(topicPartition)
     }
     if (needCloseLog.isDefined) {
-      needCloseLog.get.close()
+      // AutoMQ inject start
+      val closeHandle = DataPathMonitor.recordPartitionCloseStarted(topicPartition)
+      try {
+        needCloseLog.get.close()
+      } finally {
+        closeHandle.close()
+      }
+      // AutoMQ inject end
     }
   }
   // AutoMQ for Kafka inject end
