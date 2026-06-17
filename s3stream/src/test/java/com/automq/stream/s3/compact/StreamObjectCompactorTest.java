@@ -66,6 +66,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.EXPIRED_OBJECTS_CLEAN_UP_STEP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.builder;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.cleanupV1Groups;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.getObjectFilter;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.group0;
 import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
@@ -511,6 +512,24 @@ class StreamObjectCompactorTest {
             .findAny().isEmpty());
     }
 
+    /**
+     * Given CLEANUP_V1 candidates with normal objects after a dirty composite,
+     * when cleanup groups are selected, then only the first dirty composite is compacted.
+     */
+    @Test
+    public void testCleanupV1OnlyCompactsFirstDirtyCompositeObject() {
+        long objectSize = 1024L * 1024 * 1024;
+        S3ObjectMetadata dirtyComposite = s3ObjectMetadata(1, 100, 200, objectSize, Composite);
+        S3ObjectMetadata followingNormal = s3ObjectMetadata(2, 200, 300, objectSize, Normal);
+        S3ObjectMetadata followingComposite = s3ObjectMetadata(3, 300, 400, objectSize, Composite);
+
+        List<List<S3ObjectMetadata>> groups = cleanupV1Groups(List.of(
+            dirtyComposite, followingNormal, followingComposite), 170);
+
+        assertEquals(1, groups.size());
+        assertEquals(List.of(dirtyComposite), groups.get(0));
+    }
+
     @Test
     public void testCleanup_byStep() throws ExecutionException, InterruptedException {
         // prepare object
@@ -617,5 +636,14 @@ class StreamObjectCompactorTest {
 
     StreamRecordBatch newRecord(long offset, int count, int payloadSize) {
         return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize));
+    }
+
+    private S3ObjectMetadata s3ObjectMetadata(long objectId, long startOffset, long endOffset, long objectSize,
+        ObjectAttributes.Type objectType) {
+        S3ObjectMetadata metadata = new S3ObjectMetadata(objectId, S3ObjectType.STREAM,
+            List.of(new StreamOffsetRange(streamId, startOffset, endOffset)),
+            System.currentTimeMillis(), System.currentTimeMillis(), objectSize, objectId);
+        metadata.setAttributes(ObjectAttributes.builder().bucket((short) 0).type(objectType).build().attributes());
+        return metadata;
     }
 }

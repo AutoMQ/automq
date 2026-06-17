@@ -142,7 +142,7 @@ public class StreamObjectCompactor {
     }
 
     protected static Predicate<S3ObjectMetadata> getObjectFilter(CompactionType compactionType, long minMajorV1CompactionSize) {
-        boolean includeCompositeObject = CLEANUP_V1.equals(compactionType) || MAJOR_V1.equals(compactionType);
+        boolean includeCompositeObject = MAJOR_V1.equals(compactionType);
 
         return object -> {
             ObjectAttributes.Type objectType = ObjectAttributes.from(object.attributes()).type();
@@ -188,9 +188,14 @@ public class StreamObjectCompactor {
         }
 
         // compact the living objects
-        List<List<S3ObjectMetadata>> objectGroups = group0(livingObjects,
-            getMaxGroupSize(compactionType),
-            getObjectFilter(compactionType, majorV1CompactionSkipSmallObject ? minorV1CompactionThreshold : 0));
+        List<List<S3ObjectMetadata>> objectGroups;
+        if (CLEANUP_V1.equals(compactionType)) {
+            objectGroups = cleanupV1Groups(livingObjects, startOffset);
+        } else {
+            objectGroups = group0(livingObjects,
+                getMaxGroupSize(compactionType),
+                getObjectFilter(compactionType, majorV1CompactionSkipSmallObject ? minorV1CompactionThreshold : 0));
+        }
 
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
             if (!checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType)) {
@@ -221,8 +226,6 @@ public class StreamObjectCompactor {
                 return MINOR_COMPACTION_SIZE_THRESHOLD;
             case MAJOR:
                 return this.maxStreamObjectSize;
-            case CLEANUP_V1:
-                return this.maxStreamObjectSize;
             case MINOR_V1:
                 return this.minorV1CompactionThreshold;
             case MAJOR_V1:
@@ -240,15 +243,21 @@ public class StreamObjectCompactor {
         if (objectGroup.stream().anyMatch(o -> o.bucket() == LocalFileObjectStorage.BUCKET_ID)) {
             return false;
         }
-        if (CLEANUP_V1.equals(compactionType)) {
-            S3ObjectMetadata metadata = objectGroup.get(0);
-            if (ObjectAttributes.from(metadata.attributes()).type() != Composite) {
-                return false;
-            }
-            double dirtySize = ((double) startOffset - metadata.startOffset()) / (metadata.endOffset() - metadata.startOffset()) * metadata.objectSize();
-            return dirtySize > MAX_DIRTY_BYTES;
-        }
         return true;
+    }
+
+    static List<List<S3ObjectMetadata>> cleanupV1Groups(List<S3ObjectMetadata> livingObjects, long startOffset) {
+        List<S3ObjectMetadata> objects = deduplicateObjectsById(livingObjects, "stream object compaction");
+        if (objects.isEmpty()) {
+            return List.of();
+        }
+        S3ObjectMetadata firstObject = objects.get(0);
+        if (ObjectAttributes.from(firstObject.attributes()).type() != Composite) {
+            return List.of();
+        }
+        double dirtySize = ((double) startOffset - firstObject.startOffset())
+            / (firstObject.endOffset() - firstObject.startOffset()) * firstObject.objectSize();
+        return dirtySize > MAX_DIRTY_BYTES ? List.of(List.of(firstObject)) : List.of();
     }
 
     private void cleanupExpiredObject(
