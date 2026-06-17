@@ -20,7 +20,7 @@ package kafka.log
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.{KafkaStorageException, OffsetOutOfRangeException}
 import org.apache.kafka.common.message.FetchResponseData
-import org.apache.kafka.common.record.MemoryRecords
+import org.apache.kafka.common.record.{MemoryRecords, PooledResource}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.server.util.Scheduler
@@ -346,7 +346,16 @@ class LocalLog(@volatile protected var _dir: File,
       minOneMessage = false,
       maxOffsetMetadata = nextOffsetMetadata,
       includeAbortedTxns = false)
-    fetchDataInfo.fetchOffsetMetadata
+    try {
+      fetchDataInfo.fetchOffsetMetadata
+    } finally {
+      // AutoMQ inject start
+      fetchDataInfo.records match {
+        case records: PooledResource => records.release()
+        case _ =>
+      }
+      // AutoMQ inject end
+    }
   }
 
   /**

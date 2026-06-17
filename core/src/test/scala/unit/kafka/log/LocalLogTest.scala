@@ -22,12 +22,13 @@ import java.nio.channels.ClosedChannelException
 import java.nio.charset.StandardCharsets
 import java.util.regex.Pattern
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
 import kafka.server.KafkaConfig
 import kafka.utils.TestUtils
 import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.{KafkaException, TopicPartition}
 import org.apache.kafka.common.errors.KafkaStorageException
-import org.apache.kafka.common.record.{MemoryRecords, Record, SimpleRecord}
+import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, Record, SimpleRecord}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.server.util.{MockTime, Scheduler}
 import org.apache.kafka.storage.internals.log.{FetchDataInfo, LogConfig, LogDirFailureChannel, LogFileUtils, LogOffsetMetadata, LogSegment, LogSegments}
@@ -681,6 +682,21 @@ class LocalLogTest {
     // simulate the directory is renamed concurrently
     doReturn(new File("__NON_EXISTENT__"), Nil: _*).when(spyLog).dir
     assertDoesNotThrow((() => spyLog.flush(newSegment.baseOffset)): Executable)
+  }
+
+  @Test
+  def testConvertToOffsetMetadataReleasesReadRecords(): Unit = {
+    val spyLog = spy(log)
+    val released = new AtomicBoolean(false)
+    val records = new PooledRecords(MemoryRecords.EMPTY, () => released.set(true))
+    val offsetMetadata = new LogOffsetMetadata(5L, 0L, 5)
+
+    doReturn(new FetchDataInfo(offsetMetadata, records), Nil: _*)
+      .when(spyLog)
+      .read(5L, 1, minOneMessage = false, log.logEndOffsetMetadata, includeAbortedTxns = false)
+
+    assertEquals(offsetMetadata, spyLog.convertToOffsetMetadataOrThrow(5L))
+    assertTrue(released.get)
   }
 
   private def createLocalLogWithActiveSegment(dir: File = logDir,
