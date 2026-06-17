@@ -37,6 +37,8 @@ import java.util.concurrent.ScheduledExecutorService;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -88,6 +90,18 @@ public class S3StreamClientTest {
         assertEquals(0, client.openingStreams.size());
         assertEquals(0, client.openedStreams.size());
         assertEquals(0, client.closingStreams.size());
+    }
+
+    /**
+     * Given the cluster object count approaches the hard major-v1 threshold,
+     * when deciding whether to run major-v1 compaction, then the soft threshold triggers early.
+     */
+    @Test
+    public void testMajorV1CompactionTriggeredAtSoftObjectThreshold() {
+        int hardThreshold = 100;
+        assertFalse(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(89, hardThreshold));
+        assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(90, hardThreshold));
+        assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(100, hardThreshold));
     }
 
 }
