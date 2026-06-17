@@ -19,15 +19,14 @@
 
 package com.automq.opentelemetry.exporter.s3;
 
-import org.apache.commons.lang3.StringUtils;
-
-import java.util.Locale;
-
 /**
  * Utility class for Prometheus metric and label naming.
  */
 public class PrometheusUtils {
     private static final String TOTAL_SUFFIX = "_total";
+    private static final String[] RESERVED_METRIC_NAME_SUFFIXES = {
+        "_total", "_created", "_bucket", "_info"
+    };
 
     /**
      * Get the Prometheus unit from the OpenTelemetry unit.
@@ -93,7 +92,7 @@ public class PrometheusUtils {
             case "Hz":
                 return "hertz";
             case "1":
-                return "";
+                return "ratio";
             case "%":
                 return "percent";
             // Rate units (per second)
@@ -143,11 +142,10 @@ public class PrometheusUtils {
      * @return The Prometheus-compatible metric name.
      */
     public static String mapMetricsName(String name, String unit, boolean isCounter, boolean isGauge) {
-        // Replace "." into "_"
-        name = name.replaceAll("\\.", "_");
+        name = sanitizeMetricName(name);
 
         String prometheusUnit = getPrometheusUnit(unit);
-        boolean shouldAppendUnit = StringUtils.isNotBlank(prometheusUnit) && !name.contains(prometheusUnit);
+        boolean shouldAppendUnit = !prometheusUnit.isBlank() && !name.endsWith(prometheusUnit);
 
         // append prometheus unit if not null or empty.
         // unit should be appended before type suffix
@@ -155,27 +153,8 @@ public class PrometheusUtils {
             name = name + "_" + prometheusUnit;
         }
 
-        // trim counter's _total suffix so the unit is placed before it.
-        if (isCounter && name.endsWith(TOTAL_SUFFIX)) {
-            name = name.substring(0, name.length() - TOTAL_SUFFIX.length());
-        }
-
-        // replace _total suffix, or add if it wasn't already present.
         if (isCounter) {
             name = name + TOTAL_SUFFIX;
-        }
-        
-        // special case - gauge with intelligent Connect metric handling
-        if ("1".equals(unit) && isGauge && !name.contains("ratio")) {
-            if (isConnectMetric(name)) {
-                // For Connect metrics, use improved logic to avoid misleading _ratio suffix
-                if (shouldAddRatioSuffixForConnect(name)) {
-                    name = name + "_ratio";
-                }
-            } else {
-                // For other metrics, maintain original behavior
-                name = name + "_ratio";
-            }
         }
         return name;
     }
@@ -187,90 +166,34 @@ public class PrometheusUtils {
      * @return The Prometheus-compatible label name.
      */
     public static String mapLabelName(String name) {
-        if (StringUtils.isBlank(name)) {
+        if (name == null || name.isBlank()) {
             return "";
         }
         return name.replaceAll("\\.", "_");
     }
 
-    /**
-     * Check if a metric name is related to Kafka Connect.
-     *
-     * @param name The metric name to check.
-     * @return true if it's a Connect metric, false otherwise.
-     */
-    private static boolean isConnectMetric(String name) {
-        String lowerName = name.toLowerCase(Locale.ROOT);
-        return lowerName.contains("kafka_connector_") || 
-               lowerName.contains("kafka_task_") || 
-               lowerName.contains("kafka_worker_") ||
-               lowerName.contains("kafka_connect_") ||
-               lowerName.contains("kafka_source_task_") ||
-               lowerName.contains("kafka_sink_task_") ||
-               lowerName.contains("connector_metrics") ||
-               lowerName.contains("task_metrics") ||
-               lowerName.contains("worker_metrics") ||
-               lowerName.contains("source_task_metrics") ||
-               lowerName.contains("sink_task_metrics");
-    }
-
-    /**
-     * Intelligently determine if a Connect metric should have a _ratio suffix.
-     * This method avoids adding misleading _ratio suffixes to count-based metrics.
-     *
-     * @param name The metric name to check.
-     * @return true if _ratio suffix should be added, false otherwise.
-     */
-    private static boolean shouldAddRatioSuffixForConnect(String name) {
-        String lowerName = name.toLowerCase(Locale.ROOT);
-        
-        if (hasRatioRelatedWords(lowerName)) {
-            return false;
+    private static String sanitizeMetricName(String name) {
+        if (name == null || name.isEmpty()) {
+            throw new IllegalArgumentException("Cannot convert an empty string to a valid metric name.");
         }
-        
-        if (isCountMetric(lowerName)) {
-            return false;
+        String sanitizedName = name.replaceAll("[^a-zA-Z0-9_.:]", "_");
+        if (!sanitizedName.substring(0, 1).matches("[a-zA-Z_.:]")) {
+            sanitizedName = "_" + sanitizedName;
         }
-        
-        return isRatioMetric(lowerName);
-    }
-    
-    private static boolean hasRatioRelatedWords(String lowerName) {
-        return lowerName.contains("ratio") || lowerName.contains("percent") || 
-               lowerName.contains("rate") || lowerName.contains("fraction");
-    }
-    
-    private static boolean isCountMetric(String lowerName) {
-        return hasBasicCountKeywords(lowerName) || hasConnectCountKeywords(lowerName) ||
-               hasStatusCountKeywords(lowerName);
-    }
-    
-    private static boolean hasBasicCountKeywords(String lowerName) {
-        return lowerName.contains("count") || lowerName.contains("num") || 
-               lowerName.contains("size") || lowerName.contains("total") ||
-               lowerName.contains("active") || lowerName.contains("current");
-    }
-    
-    private static boolean hasConnectCountKeywords(String lowerName) {
-        return lowerName.contains("partition") || lowerName.contains("task") ||
-               lowerName.contains("connector") || lowerName.contains("seq_no") ||
-               lowerName.contains("seq_num") || lowerName.contains("attempts");
-    }
-    
-    private static boolean hasStatusCountKeywords(String lowerName) {
-        return lowerName.contains("success") || lowerName.contains("failure") ||
-               lowerName.contains("errors") || lowerName.contains("retries") ||
-               lowerName.contains("skipped") || lowerName.contains("running") ||
-               lowerName.contains("paused") || lowerName.contains("failed") ||
-               lowerName.contains("destroyed");
-    }
-    
-    private static boolean isRatioMetric(String lowerName) {
-        return lowerName.contains("utilization") || 
-               lowerName.contains("usage") ||
-               lowerName.contains("load") ||
-               lowerName.contains("efficiency") ||
-               lowerName.contains("hit_rate") ||
-               lowerName.contains("miss_rate");
+        sanitizedName = sanitizedName.replaceAll("\\.", "_");
+        boolean modified = true;
+        while (modified) {
+            modified = false;
+            for (String reservedSuffix : RESERVED_METRIC_NAME_SUFFIXES) {
+                if (sanitizedName.equals(reservedSuffix)) {
+                    return reservedSuffix.substring(1);
+                }
+                if (sanitizedName.endsWith(reservedSuffix)) {
+                    sanitizedName = sanitizedName.substring(0, sanitizedName.length() - reservedSuffix.length());
+                    modified = true;
+                }
+            }
+        }
+        return sanitizedName;
     }
 }
