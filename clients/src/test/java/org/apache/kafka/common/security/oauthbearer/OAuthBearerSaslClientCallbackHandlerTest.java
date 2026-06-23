@@ -76,6 +76,7 @@ public class OAuthBearerSaslClientCallbackHandlerTest {
         assertEquals(IOException.class, e.getCause().getClass());
     }
 
+    @SuppressWarnings("removal")
     @Test()
     public void testWithPotentiallyMultipleTokens() throws Exception {
         OAuthBearerSaslClientCallbackHandler handler = createCallbackHandler();

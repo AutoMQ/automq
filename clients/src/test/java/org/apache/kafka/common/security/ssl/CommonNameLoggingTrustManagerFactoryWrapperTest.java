@@ -66,6 +66,7 @@ public class CommonNameLoggingTrustManagerFactoryWrapperTest {
         chainWithValidAndInvalidEndCertificates = generateKeyChainIncludingCA(false, true, true, false);
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     void testNeverExpiringX509Certificate() throws Exception {
         final KeyPair keyPair = TestSslUtils.generateKeyPair("RSA");

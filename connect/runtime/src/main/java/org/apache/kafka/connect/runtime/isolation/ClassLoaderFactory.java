@@ -26,12 +26,14 @@ import java.security.PrivilegedAction;
  */
 public class ClassLoaderFactory implements PluginClassLoaderFactory {
 
+    @SuppressWarnings("removal")
     public DelegatingClassLoader newDelegatingClassLoader(ClassLoader parent) {
         return AccessController.doPrivileged(
                 (PrivilegedAction<DelegatingClassLoader>) () -> new DelegatingClassLoader(parent)
         );
     }
 
+    @SuppressWarnings("removal")
     public PluginClassLoader newPluginClassLoader(URL pluginLocation, URL[] urls, ClassLoader parent) {
         return AccessController.doPrivileged(
                 (PrivilegedAction<PluginClassLoader>) () -> new PluginClassLoader(pluginLocation, urls, parent)
