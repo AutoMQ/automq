@@ -197,7 +197,10 @@ public class S3Storage implements Storage {
         S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
         S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
         if (config.walUploadIntervalMs() > 0) {
-            this.backgroundExecutor.scheduleWithFixedDelay(this::maybeForceUpload, config.walUploadIntervalMs(), config.walUploadIntervalMs(), TimeUnit.MILLISECONDS);
+            long walUploadIntervalMs = config.walUploadIntervalMs();
+            this.backgroundExecutor.scheduleWithFixedDelay(() ->
+                    lazyUpload(new LazyCommit(walUploadIntervalMs, false)),
+                walUploadIntervalMs, walUploadIntervalMs, TimeUnit.MILLISECONDS);
         }
     }
 
