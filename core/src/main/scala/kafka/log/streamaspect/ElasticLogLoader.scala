@@ -29,7 +29,7 @@ import org.apache.kafka.storage.internals.log._
 import java.io.File
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ConcurrentMap}
-import scala.jdk.CollectionConverters.IteratorHasAsScala
+import scala.jdk.CollectionConverters._
 
 /**
  * ref. LogLoader
@@ -130,14 +130,21 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
         def deleteSegmentsIfLogStartGreaterThanLogEnd(): Option[Long] = {
             if (segments.nonEmpty) {
                 val logEndOffset = segments.lastSegment.get.readNextOffset
-                if (logEndOffset >= logStartOffsetCheckpoint)
+                if (logEndOffset >= logStartOffsetCheckpoint) {
                     Some(logEndOffset)
-                else {
-                    // wont' happen
-                    throw new IllegalStateException()
+                } else {
+                    // logStartOffset has advanced past logEndOffset (e.g. after retention/compaction
+                    // with a non-clean shutdown). Remove all stale segments and let the caller
+                    // create a fresh one starting at logStartOffsetCheckpoint.
+                    warn(s"Found logEndOffset ($logEndOffset) < logStartOffsetCheckpoint " +
+                        s"($logStartOffsetCheckpoint) for $topicPartition. " +
+                        s"Removing all segments and resetting to logStartOffset.")
+                    removeAndDeleteSegmentsAsync(segments.values(0, Long.MaxValue).asScala.toVector)
+                    None
                 }
             } else None
         }
+
 
         // If we have the clean shutdown marker, skip recovery.
         if (!hadCleanShutdown) {
