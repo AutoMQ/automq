@@ -21,6 +21,9 @@ package kafka.automq.runtime;
 
 import org.apache.kafka.common.TopicPartition;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -32,6 +35,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * startup to collect or react to these signals.</p>
  */
 public final class DataPathMonitor {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataPathMonitor.class);
+    private static final OperationHandle NOOP_HANDLE = () -> { };
     private static final Monitor NOOP = new Monitor() {
     };
     private static final AtomicReference<Monitor> MONITOR = new AtomicReference<>(NOOP);
@@ -48,15 +53,39 @@ public final class DataPathMonitor {
     }
 
     public static OperationHandle recordPartitionCloseStarted(TopicPartition topicPartition) {
-        return MONITOR.get().recordPartitionCloseStarted(topicPartition);
+        try {
+            return safeHandle(MONITOR.get().recordPartitionCloseStarted(topicPartition));
+        } catch (Throwable e) {
+            LOGGER.warn("Failed to record partition close started for {}", topicPartition, e);
+            return NOOP_HANDLE;
+        }
     }
 
     public static void recordAppendPending(CompletableFuture<?> appendFuture, long startNanos) {
-        MONITOR.get().recordAppendPending(appendFuture, startNanos);
+        try {
+            MONITOR.get().recordAppendPending(appendFuture, startNanos);
+        } catch (Throwable e) {
+            LOGGER.warn("Failed to record append pending", e);
+        }
     }
 
     public static void recordLogWriteFailed(TopicPartition topicPartition) {
-        MONITOR.get().recordLogWriteFailed(topicPartition);
+        try {
+            MONITOR.get().recordLogWriteFailed(topicPartition);
+        } catch (Throwable e) {
+            LOGGER.warn("Failed to record log write failure for {}", topicPartition, e);
+        }
+    }
+
+    private static OperationHandle safeHandle(OperationHandle handle) {
+        OperationHandle safeHandle = handle == null ? NOOP_HANDLE : handle;
+        return () -> {
+            try {
+                safeHandle.close();
+            } catch (Throwable e) {
+                LOGGER.warn("Failed to close data-path monitor operation handle", e);
+            }
+        };
     }
 
     public interface Monitor {
