@@ -376,4 +376,63 @@ public class S3ObjectControlManagerTest {
         return objectId;
     }
 
+    /**
+     * Given 20 committed-then-mark-destroyed objects, when the ObjectCleaner runs,
+     * verify that S3 delete requests never exceed MAX_OBJECT_CLEAN_CONCURRENCY (8)
+     * concurrent calls.
+     */
+    @Test
+    public void testCleanConcurrencyLimit() throws Exception {
+        Mockito.when(controller.checkS3ObjectsLifecycle(any(ControllerRequestContext.class)))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.checkS3ObjectsLifecycle();
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+        Mockito.when(controller.notifyS3ObjectDeleted(any(ControllerRequestContext.class), anyList()))
+            .then(inv -> {
+                ControllerResult<Void> result = manager.notifyS3ObjectDeleted(inv.getArgument(1));
+                replay(manager, result.records());
+                return CompletableFuture.completedFuture(null);
+            });
+
+        // Track concurrent delete calls
+        java.util.concurrent.atomic.AtomicInteger concurrentDeletes = new java.util.concurrent.atomic.AtomicInteger(0);
+        java.util.concurrent.atomic.AtomicInteger maxConcurrentDeletes = new java.util.concurrent.atomic.AtomicInteger(0);
+        List<CompletableFuture<Void>> deleteFutures = java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+
+        Mockito.when(objectStorage.delete(anyList())).then(inv -> {
+            int current = concurrentDeletes.incrementAndGet();
+            maxConcurrentDeletes.updateAndGet(max -> Math.max(max, current));
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            deleteFutures.add(cf);
+            cf.whenComplete((v, ex) -> concurrentDeletes.decrementAndGet());
+            return cf;
+        });
+
+        // Create 20 mark-destroyed objects
+        int objectCount = 20;
+        for (int i = 0; i < objectCount; i++) {
+            long objectId = prepareOneObject(60 * 1000);
+            ControllerResult<Errors> commitResult = manager.commitObject(objectId, 1024, 1313L, ObjectAttributes.DEFAULT.attributes());
+            replay(manager, commitResult.records());
+            ControllerResult<Boolean> destroyResult = manager.markDestroyObjects(List.of(objectId));
+            replay(manager, destroyResult.records());
+        }
+
+        // Trigger lifecycle check to start deletion
+        time.sleep(1100L);
+        manager.checkS3ObjectsLifecycle();
+        time.sleep(1100L);
+        manager.checkS3ObjectsLifecycle();
+
+        // The max concurrent deletes should not exceed 8 (MAX_OBJECT_CLEAN_CONCURRENCY)
+        assertTrue(maxConcurrentDeletes.get() <= 8,
+            "Max concurrent deletes " + maxConcurrentDeletes.get() + " should not exceed 8");
+        assertTrue(maxConcurrentDeletes.get() > 0, "Should have had at least one delete call");
+
+        // Complete all pending deletes
+        deleteFutures.forEach(cf -> cf.complete(null));
+    }
+
 }
