@@ -311,6 +311,12 @@ public class ReplicationControlManager {
         public int numPartitions(long epoch) {
             return parts.size(epoch);
         }
+
+        // AutoMQ inject start
+        public PartitionRegistration partition(int partitionId) {
+            return parts.get(partitionId);
+        }
+        // AutoMQ inject end
     }
 
     /**
@@ -1036,6 +1042,13 @@ public class ReplicationControlManager {
         }
         return result;
     }
+
+    // AutoMQ inject start
+    public TopicControlInfo topic(String topicName) {
+        Uuid topicId = topicsByName.get(topicName);
+        return topicId == null ? null : topics.get(topicId);
+    }
+    // AutoMQ inject end
 
     Map<Uuid, ResultOrError<String>> findTopicNames(long offset, Collection<Uuid> ids) {
         Map<Uuid, ResultOrError<String>> results = new HashMap<>(ids.size());
@@ -2260,8 +2273,10 @@ public class ReplicationControlManager {
         }
     }
 
-    ControllerResult<AlterPartitionReassignmentsResponseData>
-            alterPartitionReassignments(AlterPartitionReassignmentsRequestData request) {
+    // AutoMQ inject start
+    public ControllerResult<AlterPartitionReassignmentsResponseData> alterPartitionReassignments(
+            AlterPartitionReassignmentsRequestData request) {
+        // AutoMQ inject end
         List<ApiMessageAndVersion> records = BoundedList.newArrayBacked(MAX_RECORDS_PER_USER_OP);
         AlterPartitionReassignmentsResponseData result =
                 new AlterPartitionReassignmentsResponseData().setErrorMessage(null);

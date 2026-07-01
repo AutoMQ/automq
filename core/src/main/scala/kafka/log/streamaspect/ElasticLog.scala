@@ -22,6 +22,7 @@ package kafka.log.streamaspect
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import io.netty.buffer.Unpooled
+import kafka.automq.runtime.{DataPathMonitor, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
 import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
@@ -212,6 +213,7 @@ class ElasticLog(val metaStream: MetaStream,
         } catch {
             case e: Throwable =>
                 APPEND_PERMIT_SEMAPHORE.release(permit)
+                recordLogWriteFailedIfUnexpected(e)
                 throw e
         }
 
@@ -219,8 +221,12 @@ class ElasticLog(val metaStream: MetaStream,
         val endOffset = lastOffset + 1
         updateLogEndOffset(endOffset)
         val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
-        cf.whenComplete((_, _) => {
+        DataPathMonitor.recordAppendPending(cf, startTimestamp)
+        cf.whenComplete((_, throwable) => {
             APPEND_PERMIT_SEMAPHORE.release(permit)
+            if (throwable != null) {
+                recordLogWriteFailedIfUnexpected(FutureUtil.cause(throwable))
+            }
         })
         cf.thenAccept(_ => {
             APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
@@ -307,6 +313,16 @@ class ElasticLog(val metaStream: MetaStream,
      * @return The fetch data information including fetch starting offset metadata and messages read.
      */
     def readAsync(startOffset: Long,
+        maxLength: Int,
+        minOneMessage: Boolean,
+        maxOffsetMetadata: LogOffsetMetadata,
+        includeAbortedTxns: Boolean): CompletableFuture[FetchDataInfo] = {
+        ElasticFailureHandlers.readAsync(topicPartition, startOffset, offset =>
+            readAsync0(offset, maxLength, minOneMessage, maxOffsetMetadata, includeAbortedTxns)
+        )
+    }
+
+    private def readAsync0(startOffset: Long,
         maxLength: Int,
         minOneMessage: Boolean,
         maxOffsetMetadata: LogOffsetMetadata,
@@ -552,6 +568,23 @@ class ElasticLog(val metaStream: MetaStream,
         }
     }
 
+    private def recordLogWriteFailedIfUnexpected(throwable: Throwable): Unit = {
+        if (!isClosePathExpectedException(throwable)) {
+            DataPathMonitor.recordLogWriteFailed(topicPartition)
+        }
+    }
+
+    private def isClosePathExpectedException(throwable: Throwable): Boolean = {
+        if (throwable == null) {
+            false
+        } else {
+            isMemoryMappedBufferClosed ||
+                throwable.isInstanceOf[StreamFencedException] ||
+                throwable.getClass.getName.contains("Closed") ||
+                (throwable.getMessage != null && throwable.getMessage.toLowerCase(java.util.Locale.ROOT).contains("closed"))
+        }
+    }
+
     override def roll(expectedNextOffset: Option[Long] = None): LogSegment = {
         maybeHandleIOException(s"Error while rolling log segment for $topicPartition in dir ${dir.getParent}") {
             val start = time.hiResClockMs()
@@ -706,7 +739,8 @@ object ElasticLog extends Logging {
         topicId: Option[Uuid],
         leaderEpoch: Long,
         openStreamChecker: OpenStreamChecker,
-        snapshotRead: Boolean = false
+        snapshotRead: Boolean = false,
+        forceCleanShutdownRecovery: Boolean = false
     ): ElasticLog = {
         // TODO: better error mark for elastic log
         logDirFailureChannel.clearOfflineLogDirRecord(dir.getPath)
@@ -798,7 +832,7 @@ object ElasticLog extends Logging {
                 topicPartition,
                 config,
                 time,
-                hadCleanShutdown = partitionMeta.getCleanedShutdown,
+                hadCleanShutdown = partitionMeta.getCleanedShutdown || forceCleanShutdownRecovery,
                 logStartOffsetCheckpoint = partitionMeta.getStartOffset,
                 partitionMeta.getRecoverOffset,
                 Optional.empty(),
