@@ -195,7 +195,11 @@ public class DataBlockCache {
             ThrottleStrategy throttleStrategy = getOptions.readahead ? ThrottleStrategy.CATCH_UP : ThrottleStrategy.BYPASS;
             reader.retain();
             boolean acquired = sizeLimiter.acquire(dataBlock.dataBlockIndex().size(), () -> {
-                reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex()).whenCompleteAsync((rst, ex) -> {
+                long startTimeNanos = System.nanoTime();
+                CompletableFuture<ObjectReader.DataBlockGroup> readCf =
+                    reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex());
+                ColdReadInflightRegistry.track(readCf, startTimeNanos);
+                readCf.whenCompleteAsync((rst, ex) -> {
                     StorageOperationStats.getInstance().blockCacheReadS3Throughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
                     reader.release();
                     DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());

@@ -73,9 +73,7 @@ class ElasticLogLoader(logMeta: ElasticLogMeta,
 
         // make sure the producer state manager endOffset is less than or equal to the recoveryPointCheckpoint
         producerStateManager.truncateAndReload(logStartOffsetCheckpoint, recoveryPointCheckpoint, time.milliseconds())
-        val (newRecoveryPoint: Long, nextOffset: Long) = {
-            recoverLog()
-        }
+        val (newRecoveryPoint: Long, nextOffset: Long) = recoverLog()
 
         val newLogStartOffset = math.max(logStartOffsetCheckpoint, segments.firstSegment.get.baseOffset)
 

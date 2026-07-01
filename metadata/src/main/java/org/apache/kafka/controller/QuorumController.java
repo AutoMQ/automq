@@ -756,6 +756,10 @@ public final class QuorumController implements Controller {
     }
 
     // AutoMQ for Kafka inject start
+    public ReplicationControlManager replicationControlManager() {
+        return replicationControl;
+    }
+
     public ClusterControlManager clusterControl() {
         return clusterControl;
     }
@@ -774,6 +778,10 @@ public final class QuorumController implements Controller {
 
     public FeatureControlManager featureControlManager() {
         return featureControl;
+    }
+
+    public KVControlManager kvControlManager() {
+        return kvControlManager;
     }
     // AutoMQ for Kafka inject end
 

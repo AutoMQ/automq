@@ -79,6 +79,25 @@ public class S3StreamTest {
         Assertions.assertTrue(isException);
     }
 
+    @Test
+    public void testPendingRequestTrackerCalculatesOldestPendingAge() {
+        long[] now = {100L};
+        PendingRequestTracker tracker = new PendingRequestTracker(() -> now[0]);
+        CompletableFuture<Void> older = new CompletableFuture<>();
+        CompletableFuture<Void> newer = new CompletableFuture<>();
+        tracker.track(older, 10L);
+        tracker.track(newer, 80L);
+
+        assertEquals(90L, tracker.maxPendingLatencyNanos());
+        Assertions.assertTrue(tracker.hasPendingOlderThan(90L));
+        Assertions.assertFalse(tracker.hasPendingOlderThan(91L));
+
+        newer.complete(null);
+        assertEquals(90L, tracker.maxPendingLatencyNanos());
+        older.complete(null);
+        assertEquals(0L, tracker.maxPendingLatencyNanos());
+    }
+
     ReadDataBlock newReadDataBlock(long start, long end, int size) {
         StreamRecordBatch record = StreamRecordBatch.of(0, 0, start, (int) (end - start), TestUtils.random(size));
         return new ReadDataBlock(List.of(record), CacheAccessType.DELTA_WAL_CACHE_HIT);

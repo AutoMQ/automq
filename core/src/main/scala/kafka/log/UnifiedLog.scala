@@ -1738,6 +1738,16 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     newSegment
   }
 
+  // AutoMQ inject start
+  def segmentEndOffsetContaining(offset: Long): Long = lock synchronized {
+    val segment = localLog.segments.floorSegment(offset).orElseThrow(() =>
+      new OffsetOutOfRangeException(s"No log segment contains offset $offset for partition $topicPartition"))
+    localLog.segments.higherSegment(segment.baseOffset).asScala
+      .map(_.baseOffset)
+      .getOrElse(logEndOffset)
+  }
+  // AutoMQ inject end
+
   /**
    * Flush all local log segments
    *

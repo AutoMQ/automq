@@ -223,17 +223,17 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       // ElasticLogManager should be marked before LogManager is created.
       ElasticLogManager.enable(config.elasticStreamEnabled)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
