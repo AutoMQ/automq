@@ -20,14 +20,14 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
-import com.automq.stream.utils.{FutureUtil, Threads}
+import com.automq.stream.utils.Threads
+import kafka.automq.runtime.{ElasticFailureHandler, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
 import kafka.server._
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -343,23 +343,17 @@ object ElasticUnifiedLog extends Logging {
         val partitionLogDirFailureChannel = new PartitionLogDirFailureChannel(logDirFailureChannel, dir.getPath);
         LocalLog.maybeHandleIOException(partitionLogDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()
-            var localLog: ElasticLog = null
-            while(localLog == null) {
-                try {
-                    localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
+            val openFailureContext = topicId
+                .map(id => ElasticFailureHandler.OpenFailureContext.withRecreateOperation(() =>
+                    ElasticLog.destroy(client, namespace, topicPartition, id, leaderEpoch)))
+                .getOrElse(ElasticFailureHandler.OpenFailureContext.none())
+            val localLog = ElasticFailureHandlers.openWithRetry(topicPartition, forceCleanShutdownRecovery =>
+                    ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
                         partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
-                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead)
-                } catch {
-                    case e: Throwable =>
-                        val cause = FutureUtil.cause(e)
-                        cause match {
-                            case e1: StreamFencedException => throw e1
-                            case e1: Throwable =>
-                                error(s"open $topicPartition failed, retry open after 1s", e)
-                                Thread.sleep(1000)
-                        }
-                }
-            }
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead,
+                        forceCleanShutdownRecovery),
+                openFailureContext
+            )
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint), scheduler)
             // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
             // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

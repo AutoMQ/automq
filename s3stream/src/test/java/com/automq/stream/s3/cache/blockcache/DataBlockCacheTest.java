@@ -65,6 +65,7 @@ import static org.mockito.Mockito.when;
 
     @BeforeEach
     void setup() {
+        ColdReadInflightRegistry.clear();
         eventLoops = new EventLoop[] {new EventLoop("")};
         time = new MockTime();
         cache = new DataBlockCache(1024, eventLoops, time);
@@ -214,6 +215,58 @@ import static org.mockito.Mockito.when;
         cf3.get().get(1, TimeUnit.SECONDS);
         assertEquals(1, cache.caches[0].blocks.size());
         assertEquals(100, cache.caches[0].blocks.keySet().iterator().next().dataBlockIndex.startOffset());
+    }
+
+    @Test
+    public void testPendingColdReadTrackerRemovesCompletedFutureOutOfOrder() throws Exception {
+        ObjectReader objectReader = mock(ObjectReader.class);
+        when(objectReader.metadata()).thenReturn(new S3ObjectMetadata(233L, 100000, S3ObjectType.STREAM));
+        DataBlockIndex idx1 = new DataBlockIndex(STREAM_ID, 0, 10, 1, 0, 100);
+        DataBlockIndex idx2 = new DataBlockIndex(STREAM_ID, 20, 10, 1, 200, 100);
+        CompletableFuture<ObjectReader.DataBlockGroup> readCf1 = new CompletableFuture<>();
+        CompletableFuture<ObjectReader.DataBlockGroup> readCf2 = new CompletableFuture<>();
+        when(objectReader.read(any(), eq(idx1))).thenReturn(readCf1);
+        when(objectReader.read(any(), eq(idx2))).thenReturn(readCf2);
+
+        AtomicReference<CompletableFuture<DataBlock>> blockCf1 = new AtomicReference<>();
+        AtomicReference<CompletableFuture<DataBlock>> blockCf2 = new AtomicReference<>();
+        eventLoops[0].submit(() -> {
+            blockCf1.set(cache.getBlock(objectReader, idx1));
+            blockCf2.set(cache.getBlock(objectReader, idx2));
+            verify(objectReader, times(2)).read(any(), any());
+            assertTrue(ColdReadInflightRegistry.hasPendingOlderThan(0));
+        }).get();
+
+        readCf2.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx2)));
+        blockCf2.get().get(1, TimeUnit.SECONDS);
+
+        assertFalse(blockCf1.get().isDone());
+        assertTrue(ColdReadInflightRegistry.hasPendingOlderThan(0));
+
+        readCf1.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(idx1)));
+        blockCf1.get().get(1, TimeUnit.SECONDS);
+
+        assertFalse(ColdReadInflightRegistry.hasPendingOlderThan(0));
+    }
+
+    @Test
+    public void testPendingColdReadStuckState() throws Exception {
+        ObjectReader objectReader = mock(ObjectReader.class);
+        when(objectReader.metadata()).thenReturn(new S3ObjectMetadata(233L, 100000, S3ObjectType.STREAM));
+        DataBlockIndex index = new DataBlockIndex(STREAM_ID, 0, 10, 1, 0, 100);
+        CompletableFuture<ObjectReader.DataBlockGroup> readCf = new CompletableFuture<>();
+        when(objectReader.read(any(), eq(index))).thenReturn(readCf);
+
+        AtomicReference<CompletableFuture<DataBlock>> blockCf = new AtomicReference<>();
+        eventLoops[0].submit(() -> blockCf.set(cache.getBlock(objectReader, index))).get();
+
+        assertFalse(ColdReadInflightRegistry.hasPendingOlderThan(TimeUnit.DAYS.toNanos(1)));
+        assertTrue(ColdReadInflightRegistry.hasPendingOlderThan(0));
+
+        readCf.complete(new ObjectReader.DataBlockGroup(newDataBlockGroupBuf(index)));
+        blockCf.get().get(1, TimeUnit.SECONDS);
+
+        assertFalse(ColdReadInflightRegistry.hasPendingOlderThan(0));
     }
 
     private ByteBuf newDataBlockGroupBuf(DataBlockIndex index) {
