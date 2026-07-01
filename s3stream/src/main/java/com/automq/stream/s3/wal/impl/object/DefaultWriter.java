@@ -251,7 +251,9 @@ public class DefaultWriter implements Writer {
             }
             bufferedDataBytes.addAndGet(dataSize);
             activeBulk.add(record);
-            if (activeBulk.size > config.maxBytesInBatch()) {
+            // In FAILOVER mode, the only append is the fake record from trim to persist trimOffset.
+            // Upload immediately to avoid the batch delay (~250ms) when failover recover.
+            if (activeBulk.size > config.maxBytesInBatch() || config.openMode() == OpenMode.FAILOVER) {
                 uploadActiveBulk();
             }
         } finally {

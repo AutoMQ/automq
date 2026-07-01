@@ -80,6 +80,9 @@ public interface QuorumControllerExtension {
     Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
         BrokerHeartbeatRequestData request, long registerBrokerRecordOffset);
 
+    default void onBrokerFenced(int brokerId) {
+    }
+
     /**
      * Called when this controller becomes the active leader.
      */
