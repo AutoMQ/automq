@@ -1476,6 +1476,11 @@ public class ReplicationControlManager {
                     setId(brokerId).setEpoch(brokerRegistration.epoch()),
                     (short) 0));
         }
+        // AutoMQ for Kafka inject start
+        if (quorumController != null) {
+            quorumController.onBrokerFenced(brokerId);
+        }
+        // AutoMQ for Kafka inject end
     }
 
     /**
