@@ -34,6 +34,9 @@ import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestClient;
 import org.apache.kafka.connect.runtime.rest.RestServer;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,6 +55,11 @@ import java.util.Properties;
  * @param <T> the type of {@link WorkerConfig} to be used
  */
 public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfig> {
+
+    // AutoMQ inject start
+    static final String STARTUP_FAILURE_LOG_PREFIX = "AUTOMQ_CONNECT_STARTUP_FAILURE";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    // AutoMQ inject end
 
     private static Logger getLogger() {
         return LoggerFactory.getLogger(AbstractConnectCli.class);
@@ -122,6 +130,9 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
             connect.awaitStop();
 
         } catch (Throwable t) {
+            // AutoMQ inject start
+            logStartupFailure("run", t);
+            // AutoMQ inject end
             getLogger().error("Stopping due to error", t);
             Exit.exit(2);
         }
@@ -165,6 +176,9 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
         try {
             connect.start();
         } catch (Exception e) {
+            // AutoMQ inject start
+            logStartupFailure("connect.start", e);
+            // AutoMQ inject end
             getLogger().error("Failed to start Connect", e);
             connect.stop();
             Exit.exit(3);
@@ -172,6 +186,22 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
 
         return connect;
     }
+
+    // AutoMQ inject start
+    static void logStartupFailure(String stage, Throwable failure) {
+        Map<String, String> payload = Map.of(
+            "stage", stage == null ? "" : stage,
+            "errorClass", failure == null ? "unknown" : failure.getClass().getName(),
+            "message", failure == null || failure.getMessage() == null ? "" : failure.getMessage()
+        );
+        try {
+            getLogger().error("{} {}", STARTUP_FAILURE_LOG_PREFIX, OBJECT_MAPPER.writeValueAsString(payload));
+        } catch (JsonProcessingException e) {
+            getLogger().error("{} stage={} errorClass={} message={}", STARTUP_FAILURE_LOG_PREFIX,
+                payload.get("stage"), payload.get("errorClass"), payload.get("message"));
+        }
+    }
+    // AutoMQ inject end
 
     private void initializeTelemetry(Map<String, String> workerProps) {
         List<String> exporterUris = parseTelemetryExporterUris(workerProps.get(MetricsConfigConstants.EXPORTER_URI_KEY));
