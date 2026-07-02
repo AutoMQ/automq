@@ -2937,6 +2937,11 @@ public final class QuorumController implements Controller {
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
         return extension.maybeHandleBlockedBroker(request, registerBrokerRecordOffset);
     }
+
+    @Override
+    public void onBrokerFenced(int brokerId) {
+        extension.onBrokerFenced(brokerId);
+    }
     // AutoMQ for Kafka inject end
 
     // VisibleForTesting

@@ -82,6 +82,14 @@ public class FailoverControlManager implements AutoCloseable {
         this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
     }
 
+    public void triggerFailover() {
+        try {
+            scheduler.execute(this::runFailoverTask);
+        } catch (Throwable e) {
+            LOGGER.error("Trigger failover task failed", e);
+        }
+    }
+
     void runFailoverTask() {
         if (!quorumController.isActive()) {
             return;
