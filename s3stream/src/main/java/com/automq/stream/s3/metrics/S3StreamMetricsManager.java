@@ -140,8 +140,8 @@ public class S3StreamMetricsManager {
     private static Map<String, LongSupplier> asyncCacheMaxSizeSupplier = new ConcurrentHashMap<>();
 
     private static Supplier<Integer> inflightWALUploadTasksCountSupplier = () -> 0;
-    private static Map<Long, Supplier<Long>> pendingStreamAppendLatencySupplier = new ConcurrentHashMap<>();
-    private static Map<Long, Supplier<Long>> pendingStreamFetchLatencySupplier = new ConcurrentHashMap<>();
+    private static Supplier<Long> pendingStreamAppendLatencySupplier = () -> 0L;
+    private static Supplier<Long> pendingStreamFetchLatencySupplier = () -> 0L;
     private static MetricsConfig metricsConfig = new MetricsConfig(MetricsLevel.INFO, Attributes.empty());
     private static final MultiAttributes<String> ALLOC_TYPE_ATTRIBUTES = new MultiAttributes<>(Attributes.empty(),
         S3StreamMetricsConstant.LABEL_TYPE);
@@ -364,8 +364,8 @@ public class S3StreamMetricsManager {
                 }
             });
         pendingStreamAppendLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_APPEND_LATENCY_METRIC_NAME)
-                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
-                        "latency depends on the reporting interval of this metrics.")
+                .setDescription("The maximum latency of pending stream append requests that exceed the pending latency threshold. " +
+                        "NOTE: the minimum measurable latency depends on the reporting interval of this metrics.")
                 .ofLongs()
                 .setUnit("nanoseconds")
                 .buildWithCallback(result -> {
@@ -374,8 +374,8 @@ public class S3StreamMetricsManager {
                     }
                 });
         pendingStreamFetchLatencyMetrics = meter.gaugeBuilder(prefix + S3StreamMetricsConstant.PENDING_STREAM_FETCH_LATENCY_METRIC_NAME)
-                .setDescription("The maximum latency of pending stream append requests. NOTE: the minimum measurable " +
-                        "latency depends on the reporting interval of this metrics.")
+                .setDescription("The maximum latency of pending stream fetch requests that exceed the pending latency threshold. " +
+                        "NOTE: the minimum measurable latency depends on the reporting interval of this metrics.")
                 .ofLongs()
                 .setUnit("nanoseconds")
                 .buildWithCallback(result -> {
@@ -907,28 +907,20 @@ public class S3StreamMetricsManager {
         }
     }
 
-    public static void registerPendingStreamAppendLatencySupplier(long streamId, Supplier<Long> pendingStreamAppendLatencySupplier) {
-        S3StreamMetricsManager.pendingStreamAppendLatencySupplier.put(streamId, pendingStreamAppendLatencySupplier);
+    public static void registerPendingStreamAppendLatencySupplier(Supplier<Long> pendingStreamAppendLatencySupplier) {
+        S3StreamMetricsManager.pendingStreamAppendLatencySupplier = pendingStreamAppendLatencySupplier;
     }
 
-    public static void registerPendingStreamFetchLatencySupplier(long streamId, Supplier<Long> pendingStreamFetchLatencySupplier) {
-        S3StreamMetricsManager.pendingStreamFetchLatencySupplier.put(streamId, pendingStreamFetchLatencySupplier);
-    }
-
-    public static void removePendingStreamAppendLatencySupplier(long streamId) {
-        S3StreamMetricsManager.pendingStreamAppendLatencySupplier.remove(streamId);
-    }
-
-    public static void removePendingStreamFetchLatencySupplier(long streamId) {
-        S3StreamMetricsManager.pendingStreamFetchLatencySupplier.remove(streamId);
+    public static void registerPendingStreamFetchLatencySupplier(Supplier<Long> pendingStreamFetchLatencySupplier) {
+        S3StreamMetricsManager.pendingStreamFetchLatencySupplier = pendingStreamFetchLatencySupplier;
     }
 
     public static long maxPendingStreamAppendLatency() {
-        return pendingStreamAppendLatencySupplier.values().stream().map(Supplier::get).max(Long::compareTo).orElse(0L);
+        return pendingStreamAppendLatencySupplier.get();
     }
 
     public static long maxPendingStreamFetchLatency() {
-        return pendingStreamFetchLatencySupplier.values().stream().map(Supplier::get).max(Long::compareTo).orElse(0L);
+        return pendingStreamFetchLatencySupplier.get();
     }
 
     public static void registerCompactionDelayTimeSuppler(Supplier<Long> compactionDelayTimeSupplier) {
