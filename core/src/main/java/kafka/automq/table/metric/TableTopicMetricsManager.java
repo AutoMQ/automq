@@ -37,7 +37,7 @@ public final class TableTopicMetricsManager {
     private static final Metrics.LongGaugeBundle DELAY_GAUGES = Metrics.instance()
         .longGauge("kafka_tabletopic_delay", "Table topic commit delay", "ms");
     private static final Metrics.DoubleGaugeBundle FIELDS_PER_SECOND_GAUGES = Metrics.instance()
-        .doubleGauge("kafka_tabletopic_fps", "Table topic fields per second", "fields/s");
+        .doubleGauge("kafka_tabletopic_fields", "Table topic fields per second", "1/s");
     private static final Metrics.DoubleGaugeBundle EVENT_LOOP_BUSY_GAUGES = Metrics.instance()
         .doubleGauge("kafka_tableworker_eventloop_busy_ratio", "Table worker event loop busy ratio", "%");
 

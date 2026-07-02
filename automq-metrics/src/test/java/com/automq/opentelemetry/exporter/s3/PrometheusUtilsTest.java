@@ -34,6 +34,8 @@ public class PrometheusUtilsTest {
         assertMetricName("foo_count_sum_count", "foo_count_sum", "count", false, true);
         assertMetricName("foo_ratio", "foo", "1", false, true);
         assertMetricName("foo_ratio_total", "foo", "1", true, false);
+        assertMetricName("kafka_tabletopic_fields_per_second",
+            "kafka_tabletopic_fields", "1/s", false, true);
     }
 
     private static void assertMetricName(String expected, String name, String unit, boolean isCounter, boolean isGauge) {
