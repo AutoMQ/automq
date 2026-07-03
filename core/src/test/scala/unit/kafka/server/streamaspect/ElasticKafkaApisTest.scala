@@ -287,7 +287,6 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       tokenManager = null,
       apiVersionManager = apiVersionManager,
       clientMetricsManager = clientMetricsManagerOpt,
-      MoreExecutors.newDirectExecutorService(),
       MoreExecutors.newDirectExecutorService()) {
       override protected def isExtensionApi(apiKey: ApiKeys): Boolean =
         extensionApiMatcherOverride.map(_(apiKey)).getOrElse(super.isExtensionApi(apiKey))

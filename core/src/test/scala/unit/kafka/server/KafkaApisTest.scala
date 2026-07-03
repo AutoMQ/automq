@@ -6563,7 +6563,7 @@ class KafkaApisTest extends Logging {
     request: RequestChannel.Request
   ): T = {
     val capturedResponse: ArgumentCaptor[AbstractResponse] = ArgumentCaptor.forClass(classOf[AbstractResponse])
-    verify(requestChannel).sendResponse(
+    verify(requestChannel, timeout(1000)).sendResponse(
       ArgumentMatchers.eq(request),
       capturedResponse.capture(),
       any()
