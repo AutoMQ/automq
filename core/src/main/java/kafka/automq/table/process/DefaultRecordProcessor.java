@@ -83,7 +83,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter,
                                   List<Transform> transforms, List<String> idColumns) {
         this.transformChain = transforms;
-        this.idColumns = idColumns;
+        this.idColumns = idColumns == null ? List.of() : List.copyOf(idColumns);
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;

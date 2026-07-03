@@ -155,11 +155,11 @@ public class IcebergTableManager {
      * @param changes list of schema changes
      */
     @VisibleForTesting
-    protected synchronized void applySchemaChange(Table table, List<SchemaChange> changes) {
+    protected void applySchemaChange(Table table, List<SchemaChange> changes) {
         applySchemaChange(table, changes, Set.of());
     }
 
-    protected synchronized void applySchemaChange(Table table, List<SchemaChange> changes, Set<String> expectedIdentifierFieldNames) {
+    private synchronized void applySchemaChange(Table table, List<SchemaChange> changes, Set<String> expectedIdentifierFieldNames) {
         LOGGER.info("Applying schema changes to table {}, changes {}, identifier fields {}",
             tableId, changes.stream().map(c -> c.getType() + ":" + c.getColumnFullName()).toList(), expectedIdentifierFieldNames);
         Tasks.range(1)
@@ -168,7 +168,8 @@ public class IcebergTableManager {
         table.refresh();
     }
 
-    protected synchronized void ensureIdentifierFields(Table table, Set<String> expectedIdentifierFieldNames) {
+    @VisibleForTesting
+    protected void ensureIdentifierFields(Table table, Set<String> expectedIdentifierFieldNames) {
         if (expectedIdentifierFieldNames.isEmpty()) {
             return;
         }

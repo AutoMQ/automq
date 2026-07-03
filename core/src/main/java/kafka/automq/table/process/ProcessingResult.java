@@ -62,7 +62,7 @@ public final class ProcessingResult {
         this.finalRecord = Objects.requireNonNull(finalRecord, "finalRecord cannot be null");
         this.finalSchema = Objects.requireNonNull(finalSchema, "finalSchema cannot be null");
         this.finalSchemaIdentity = Objects.requireNonNull(finalSchemaIdentity, "finalSchemaIdentity cannot be null");
-        this.identifierColumns = Objects.requireNonNull(identifierColumns, "identifierColumns cannot be null");
+        this.identifierColumns = identifierColumns == null ? List.of() : List.copyOf(identifierColumns);
         this.error = null;
     }
 
@@ -108,17 +108,18 @@ public final class ProcessingResult {
         return Objects.equals(finalRecord, that.finalRecord) &&
                Objects.equals(finalSchema, that.finalSchema) &&
                Objects.equals(finalSchemaIdentity, that.finalSchemaIdentity) &&
+               Objects.equals(identifierColumns, that.identifierColumns) &&
                Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(finalRecord, finalSchema, finalSchemaIdentity, error);
+        return Objects.hash(finalRecord, finalSchema, finalSchemaIdentity, identifierColumns, error);
     }
 
     @Override
     public String toString() {
-        if (!isSuccess()) {
+        if (isSuccess()) {
             return "ProcessingResult{success=true, schemaIdentity=" + finalSchemaIdentity + "}";
         } else {
             return "ProcessingResult{success=false, error=" + error + "}";
