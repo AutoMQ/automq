@@ -17,6 +17,7 @@
 package kafka.server
 
 import kafka.utils.TestUtils
+import org.apache.kafka.common.errors.RetriableException
 import org.apache.kafka.common.message.ListOffsetsRequestData.{ListOffsetsPartition, ListOffsetsTopic}
 import org.apache.kafka.common.message.ListOffsetsResponseData.ListOffsetsPartitionResponse
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
@@ -24,6 +25,7 @@ import org.apache.kafka.common.requests.{ListOffsetsRequest, ListOffsetsResponse
 import org.apache.kafka.common.{IsolationLevel, TopicPartition}
 import org.apache.kafka.server.config.ServerConfigs
 import org.junit.jupiter.api.Assertions._
+import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 
@@ -41,6 +43,19 @@ class ListOffsetsRequestTest extends BaseRequestTest {
     props.foreach { p =>
       p.put(ServerConfigs.UNSTABLE_API_VERSIONS_ENABLE_CONFIG, "true")
     }
+  }
+
+  @Test
+  def testAutoMQListOffsetFastTimestampClassificationAndOverloadError(): Unit = {
+    assertTrue(KafkaApis.isFastListOffsetTimestamp(ListOffsetsRequest.LATEST_TIMESTAMP))
+    assertTrue(KafkaApis.isFastListOffsetTimestamp(ListOffsetsRequest.EARLIEST_TIMESTAMP))
+    assertTrue(KafkaApis.isFastListOffsetTimestamp(ListOffsetsRequest.EARLIEST_LOCAL_TIMESTAMP))
+    assertFalse(KafkaApis.isFastListOffsetTimestamp(ListOffsetsRequest.MAX_TIMESTAMP))
+    assertFalse(KafkaApis.isFastListOffsetTimestamp(ListOffsetsRequest.LATEST_TIERED_TIMESTAMP))
+    assertFalse(KafkaApis.isFastListOffsetTimestamp(0L))
+
+    assertEquals(Errors.REQUEST_TIMED_OUT, KafkaApis.listOffsetOverloadError)
+    assertTrue(KafkaApis.listOffsetOverloadError.exception().isInstanceOf[RetriableException])
   }
 
   @ParameterizedTest

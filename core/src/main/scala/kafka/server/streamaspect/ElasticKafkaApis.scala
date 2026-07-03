@@ -82,8 +82,7 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
-  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000),
-  val listOffsetHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-list-offset-handle-executor", true, 1000)
+  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000)
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
@@ -886,11 +885,6 @@ class ElasticKafkaApis(
         responseCallback = processResponseCallback,
       )
     }
-  }
-
-  override def handleListOffsetRequest(request: RequestChannel.Request): Unit = {
-    // isolate to a separate thread pool to avoid blocking io thread (PRODUCE use io thread).
-    listOffsetHandleExecutor.execute(() => super.handleListOffsetRequest(request))
   }
 
   override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
