@@ -40,6 +40,7 @@ import org.mockito.stubbing.Answer;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -421,6 +422,40 @@ public class IcebergTableManagerTest {
     }
 
     @Test
+    public void setsIdentifierFieldsWhenTableHasNone() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "region_id", Types.StringType.get()),
+            Types.NestedField.required(2, "user_id", Types.LongType.get())));
+
+        manager.ensureIdentifierFields(table, Set.of("region_id", "user_id"));
+
+        Table updatedTable = catalog.loadTable(tableId);
+        assertEquals(Set.of(
+            updatedTable.schema().findField("region_id").fieldId(),
+            updatedTable.schema().findField("user_id").fieldId()
+        ), updatedTable.schema().identifierFieldIds());
+    }
+
+    @Test
+    public void updatesExistingIdentifierFields() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId);
+        Table table = manager.getTableOrCreate(new Schema(
+            List.of(
+                Types.NestedField.required(1, "id", Types.LongType.get()),
+                Types.NestedField.required(2, "user_id", Types.LongType.get())),
+            Set.of(1)));
+
+        manager.ensureIdentifierFields(table, Set.of("user_id"));
+
+        Table updatedTable = catalog.loadTable(tableId);
+        assertEquals(Set.of(updatedTable.schema().findField("user_id").fieldId()),
+            updatedTable.schema().identifierFieldIds());
+    }
+
+    @Test
     public void skipsDuplicateNestedAdditions() {
         TableIdentifier tableId = randomTableId();
         IcebergTableManager manager = newManager(tableId);
@@ -471,7 +506,7 @@ public class IcebergTableManagerTest {
 
         verify(mockUpdateSchema, never()).makeColumnOptional("name");
         verify(mockUpdateSchema, never()).updateColumn(eq("id"), any());
-        verify(mockUpdateSchema).commit();
+        verify(mockUpdateSchema, never()).commit();
     }
 
     private Table applyChanges(IcebergTableManager manager, Table table, Schema newSchema) {

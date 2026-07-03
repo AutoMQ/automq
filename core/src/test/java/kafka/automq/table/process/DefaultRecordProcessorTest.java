@@ -196,6 +196,41 @@ public class DefaultRecordProcessorTest {
     }
 
     @Test
+    void testIdentifierColumnsFromDebeziumKeySchema() {
+        Schema keySchema = SchemaBuilder.record("Key")
+            .namespace("kafka.automq.table.process")
+            .fields()
+            .name("region_id").type().stringType().noDefault()
+            .name("user_id").type().longType().noDefault()
+            .endRecord();
+        Converter keyConverter = (topic, buffer) -> new ConversionResult(new GenericRecordBuilder(keySchema)
+            .set("region_id", "us-east-1")
+            .set("user_id", 42L)
+            .build(), "key-schema");
+        Converter valueConverter = new StringConverter();
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of("region_id", "user_id"), result.getIdentifierColumns());
+    }
+
+    @Test
+    void testIdentifierColumnsFromDebeziumKeySchemaFallbackWhenKeySchemaMissing() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new StringConverter(), new StringConverter(),
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of(), result.getIdentifierColumns());
+    }
+
+    @Test
     void testConverterErrorHandling() {
         // Arrange
         Converter errorConverter = (topic, buffer) -> {

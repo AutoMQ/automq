@@ -22,6 +22,7 @@ package kafka.automq.table.process;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -42,6 +43,7 @@ public final class ProcessingResult {
     private final GenericRecord finalRecord;
     private final Schema finalSchema;
     private final String finalSchemaIdentity;
+    private final List<String> identifierColumns;
     private final DataError error;
 
     /**
@@ -53,9 +55,14 @@ public final class ProcessingResult {
      * @throws IllegalArgumentException if any parameter is null
      */
     public ProcessingResult(GenericRecord finalRecord, Schema finalSchema, String finalSchemaIdentity) {
+        this(finalRecord, finalSchema, finalSchemaIdentity, List.of());
+    }
+
+    public ProcessingResult(GenericRecord finalRecord, Schema finalSchema, String finalSchemaIdentity, List<String> identifierColumns) {
         this.finalRecord = Objects.requireNonNull(finalRecord, "finalRecord cannot be null");
         this.finalSchema = Objects.requireNonNull(finalSchema, "finalSchema cannot be null");
         this.finalSchemaIdentity = Objects.requireNonNull(finalSchemaIdentity, "finalSchemaIdentity cannot be null");
+        this.identifierColumns = Objects.requireNonNull(identifierColumns, "identifierColumns cannot be null");
         this.error = null;
     }
 
@@ -69,6 +76,7 @@ public final class ProcessingResult {
         this.finalRecord = null;
         this.finalSchema = null;
         this.finalSchemaIdentity = null;
+        this.identifierColumns = List.of();
         this.error = Objects.requireNonNull(error, "error cannot be null");
     }
 
@@ -83,6 +91,9 @@ public final class ProcessingResult {
     }
     public DataError getError() {
         return error;
+    }
+    public List<String> getIdentifierColumns() {
+        return identifierColumns;
     }
     public boolean isSuccess() {
         return error == null;

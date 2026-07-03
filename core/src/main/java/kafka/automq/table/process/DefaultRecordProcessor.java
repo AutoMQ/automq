@@ -36,7 +36,6 @@ import org.apache.avro.generic.GenericRecord;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +47,7 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
 import static kafka.automq.table.process.RecordAssembler.ensureOptional;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY;
 
 /**
  * Default implementation of RecordProcessor using a two-stage processing pipeline.
@@ -65,6 +65,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private final Converter keyConverter;
     private final Converter valueConverter;
     private final List<Transform> transformChain;
+    private final List<String> idColumns;
     private final RecordAssembler recordAssembler; // Reusable assembler
     private final String transformIdentity; // precomputed transform chain identity
 
@@ -72,16 +73,17 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private final Cache<String, Schema> valueWrapperSchemaCache = new LRUCache<>(VALUE_WRAPPER_SCHEMA_CACHE_MAX);
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter) {
-        this.transformChain = new ArrayList<>();
-        this.topicName = topicName;
-        this.keyConverter = keyConverter;
-        this.valueConverter = valueConverter;
-        this.recordAssembler = new RecordAssembler();
-        this.transformIdentity = ""; // no transforms
+        this(topicName, keyConverter, valueConverter, List.of(), List.of());
     }
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter, List<Transform> transforms) {
+        this(topicName, keyConverter, valueConverter, transforms, List.of());
+    }
+
+    public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter,
+                                  List<Transform> transforms, List<String> idColumns) {
         this.transformChain = transforms;
+        this.idColumns = idColumns;
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
@@ -119,7 +121,8 @@ public class DefaultRecordProcessor implements RecordProcessor {
                 .assemble();
             Schema schema = record.getSchema();
 
-            return new ProcessingResult(record, schema, schemaIdentity);
+            return new ProcessingResult(record, schema, schemaIdentity,
+                resolveIdentifierColumns(keyResult.getSchema()));
         } catch (ConverterException e) {
             return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
@@ -137,6 +140,36 @@ public class DefaultRecordProcessor implements RecordProcessor {
             }
             return getProcessingResult(kafkaRecord, "Unexpected error processing record: %s", DataError.ErrorType.UNKNOW_ERROR, e);
         }
+    }
+
+    private List<String> resolveIdentifierColumns(Schema keySchema) {
+        if (idColumns.size() != 1 || !FROM_DEBEZIUM_KEY.equals(idColumns.get(0))) {
+            return idColumns;
+        }
+        Schema unwrappedKeySchema = unwrapNullable(keySchema);
+        if (unwrappedKeySchema == null || unwrappedKeySchema.getType() != Schema.Type.RECORD) {
+            return List.of();
+        }
+        return unwrappedKeySchema.getFields().stream()
+            .map(Schema.Field::name)
+            .toList();
+    }
+
+    private Schema unwrapNullable(Schema schema) {
+        if (schema == null || schema.getType() != Schema.Type.UNION) {
+            return schema;
+        }
+        Schema nonNull = null;
+        for (Schema type : schema.getTypes()) {
+            if (type.getType() == Schema.Type.NULL) {
+                continue;
+            }
+            if (nonNull != null) {
+                return schema;
+            }
+            nonNull = type;
+        }
+        return nonNull;
     }
 
     // io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient#isSchemaOrSubjectNotFoundException

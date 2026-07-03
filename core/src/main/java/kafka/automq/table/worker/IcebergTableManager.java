@@ -45,7 +45,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 
 public class IcebergTableManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(IcebergTableManager.class);
@@ -115,13 +117,15 @@ public class IcebergTableManager {
     public boolean handleSchemaChangesWithFlush(Schema schema, FlushAction flush) throws IOException {
         Table currentTable = getTableOrCreate(schema);
         List<SchemaChange> changes = checkSchemaChanges(currentTable, schema);
-        if (changes.isEmpty()) {
+        Set<String> expectedIdentifierFieldNames = identifierFieldNames(schema);
+        boolean identifierFieldsChanged = identifierFieldsChanged(currentTable, expectedIdentifierFieldNames);
+        if (changes.isEmpty() && !identifierFieldsChanged) {
             return false;
         }
 
         flush.perform();
 
-        applySchemaChange(currentTable, changes);
+        applySchemaChange(currentTable, changes, expectedIdentifierFieldNames);
         return true;
     }
 
@@ -152,11 +156,41 @@ public class IcebergTableManager {
      */
     @VisibleForTesting
     protected synchronized void applySchemaChange(Table table, List<SchemaChange> changes) {
-        LOGGER.info("Applying schema changes to table {}, changes {}", tableId, changes.stream().map(c -> c.getType() + ":" + c.getColumnFullName()).toList());
+        applySchemaChange(table, changes, Set.of());
+    }
+
+    protected synchronized void applySchemaChange(Table table, List<SchemaChange> changes, Set<String> expectedIdentifierFieldNames) {
+        LOGGER.info("Applying schema changes to table {}, changes {}, identifier fields {}",
+            tableId, changes.stream().map(c -> c.getType() + ":" + c.getColumnFullName()).toList(), expectedIdentifierFieldNames);
         Tasks.range(1)
             .retry(2)
-            .run(notUsed -> applyChanges(table, changes));
+            .run(notUsed -> applyChanges(table, changes, expectedIdentifierFieldNames));
         table.refresh();
+    }
+
+    protected synchronized void ensureIdentifierFields(Table table, Set<String> expectedIdentifierFieldNames) {
+        if (expectedIdentifierFieldNames.isEmpty()) {
+            return;
+        }
+        table.refresh();
+        Set<String> currentIdentifierFieldNames = identifierFieldNames(table.schema());
+        if (currentIdentifierFieldNames.equals(expectedIdentifierFieldNames)) {
+            return;
+        }
+        LOGGER.info("Setting identifier fields for table {}, fields {}, previous fields {}",
+            tableId, expectedIdentifierFieldNames, currentIdentifierFieldNames);
+        applySchemaChange(table, List.of(), expectedIdentifierFieldNames);
+    }
+
+    private boolean identifierFieldsChanged(Table table, Set<String> expectedIdentifierFieldNames) {
+        return !expectedIdentifierFieldNames.isEmpty()
+            && !identifierFieldNames(table.schema()).equals(expectedIdentifierFieldNames);
+    }
+
+    private Set<String> identifierFieldNames(Schema schema) {
+        return schema.identifierFieldIds().stream()
+            .map(id -> schema.findField(id).name())
+            .collect(Collectors.toSet());
     }
 
     private static UpdateSchema applySchemaChange(UpdateSchema updateSchema, SchemaChange change) {
@@ -303,11 +337,24 @@ public class IcebergTableManager {
         return oldType.typeId() == Type.TypeID.FLOAT && newType.typeId() == Type.TypeID.DOUBLE;
     }
 
-    private void applyChanges(Table table, List<SchemaChange> changes) {
+    private void applyChanges(Table table, List<SchemaChange> changes, Set<String> expectedIdentifierFieldNames) {
         table.refresh();
         UpdateSchema updateSchema = table.updateSchema();
-        changes.stream().filter(c -> !shouldSkipChange(table.schema(), c))
-            .forEach(c -> applySchemaChange(updateSchema, c));
+        boolean changed = false;
+        for (SchemaChange change : changes) {
+            if (!shouldSkipChange(table.schema(), change)) {
+                applySchemaChange(updateSchema, change);
+                changed = true;
+            }
+        }
+        if (!expectedIdentifierFieldNames.isEmpty()
+            && !identifierFieldNames(table.schema()).equals(expectedIdentifierFieldNames)) {
+            updateSchema.setIdentifierFields(expectedIdentifierFieldNames);
+            changed = true;
+        }
+        if (!changed) {
+            return;
+        }
         updateSchema.commit();
     }
 

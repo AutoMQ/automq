@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -48,6 +49,33 @@ class AvroRecordBinderTest {
 
     static {
         CodecSetup.setup();
+    }
+
+    /**
+     * Given identifier columns, RecordBinder should carry the matching Iceberg
+     * field IDs into the generated schema.
+     */
+    @Test
+    public void testCreateWithIdentifierColumns() {
+        Schema avroSchema = Schema.createRecord("IdentifierRoot", null, TEST_NAMESPACE, false);
+        avroSchema.setFields(Arrays.asList(
+            new Schema.Field("region_id", Schema.create(Schema.Type.STRING), null, null),
+            new Schema.Field("user_id", Schema.create(Schema.Type.LONG), null, null),
+            new Schema.Field("name", Schema.create(Schema.Type.STRING), null, null)
+        ));
+
+        GenericRecord record = new GenericData.Record(avroSchema);
+        record.put("region_id", "us-east-1");
+        record.put("user_id", 42L);
+        record.put("name", "alice");
+
+        org.apache.iceberg.Schema icebergSchema = RecordBinder.create(record, List.of("region_id", "user_id"))
+            .getIcebergSchema();
+
+        assertEquals(Set.of(
+            icebergSchema.findField("region_id").fieldId(),
+            icebergSchema.findField("user_id").fieldId()
+        ), icebergSchema.identifierFieldIds());
     }
 
     /**
