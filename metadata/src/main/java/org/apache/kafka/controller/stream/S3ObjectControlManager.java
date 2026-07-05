@@ -69,6 +69,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -89,6 +90,7 @@ public class S3ObjectControlManager {
     private static final long DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS = 1000L;
     private static final long DEFAULT_INITIAL_DELAY_MS = 1000L;
     private static final int MAX_DELETE_BATCH_COUNT = 2000;
+    private static final int MAX_OBJECT_CLEAN_CONCURRENCY = 8;
 
     private final QuorumController quorumController;
     private final Logger log;
@@ -541,6 +543,8 @@ public class S3ObjectControlManager {
     }
 
     class ObjectCleaner {
+        private final Semaphore cleanConcurrencyLimiter = new Semaphore(MAX_OBJECT_CLEAN_CONCURRENCY);
+
         CompletableFuture<Void> clean(List<S3Object> objects) {
             List<S3Object> ignoredObjects = new LinkedList<>();
             List<S3Object> deepDeleteCompositeObjects = new LinkedList<>();
@@ -558,24 +562,41 @@ public class S3ObjectControlManager {
 
             List<CompletableFuture<Void>> cfList = new LinkedList<>();
             // Delete the objects
-            batchDelete(shallowDeleteObjects, this::shallowlyDelete, cfList);
+            throttledBatchDelete(shallowDeleteObjects, this::shallowlyDelete, cfList);
             // Delete the composite object and it's linked objects
-            batchDelete(deepDeleteCompositeObjects, this::deepDelete, cfList);
+            throttledBatchDelete(deepDeleteCompositeObjects, this::deepDelete, cfList);
             // Delete the local file objects
-            batchDelete(ignoredObjects, this::noopDelete, cfList);
+            throttledBatchDelete(ignoredObjects, this::noopDelete, cfList);
 
             return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
         }
 
-        private void batchDelete(List<S3Object> objects,
+        /**
+         * Split objects into batches and delete each batch through the concurrency limiter.
+         * This prevents overwhelming S3 with too many concurrent delete requests when a
+         * large number of objects are destroyed at once (e.g. topic deletion or TTL change).
+         */
+        private void throttledBatchDelete(List<S3Object> objects,
             Function<List<S3Object>, CompletableFuture<Void>> deleteFunc,
             List<CompletableFuture<Void>> cfList) {
             if (objects.isEmpty()) {
                 return;
             }
             CollectionHelper.groupListByBatchSizeAsStream(objects, AwsObjectStorage.AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER)
-                .map(deleteFunc)
+                .map(batch -> throttled(batch, deleteFunc))
                 .forEach(cfList::add);
+        }
+
+        private CompletableFuture<Void> throttled(List<S3Object> batch,
+            Function<List<S3Object>, CompletableFuture<Void>> deleteFunc) {
+            try {
+                cleanConcurrencyLimiter.acquire();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return CompletableFuture.failedFuture(new RuntimeException(e));
+            }
+            return deleteFunc.apply(batch)
+                .whenComplete((v, ex) -> cleanConcurrencyLimiter.release());
         }
 
         private CompletableFuture<Void> shallowlyDelete(List<S3Object> s3objects) {
@@ -591,14 +612,28 @@ public class S3ObjectControlManager {
                 });
         }
 
+        /**
+         * Deep-delete composite objects with bounded concurrency. Each composite
+         * delete issues multiple S3 API calls (read index, delete linked objects,
+         * delete self), so individual objects are throttled through the shared
+         * concurrency limiter to prevent S3 rate-limiting.
+         */
         private CompletableFuture<Void> deepDelete(List<S3Object> s3Objects) {
             if (s3Objects.isEmpty()) {
                 return CompletableFuture.completedFuture(null);
             }
-            List<CompletableFuture<Void>> cfList = new LinkedList<>();
+            List<CompletableFuture<Void>> cfList = new ArrayList<>(s3Objects.size());
             for (S3Object object : s3Objects) {
                 S3ObjectMetadata metadata = new S3ObjectMetadata(object.getObjectId(), object.getAttributes());
-                cfList.add(CompositeObject.delete(metadata, objectStorage));
+                try {
+                    cleanConcurrencyLimiter.acquire();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    cfList.add(CompletableFuture.failedFuture(new RuntimeException(e)));
+                    break;
+                }
+                CompletableFuture<Void> deleteCf = CompositeObject.delete(metadata, objectStorage);
+                cfList.add(deleteCf.whenComplete((v, ex) -> cleanConcurrencyLimiter.release()));
             }
             CompletableFuture<Void> allCf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
             allCf.thenAccept(rst -> {
