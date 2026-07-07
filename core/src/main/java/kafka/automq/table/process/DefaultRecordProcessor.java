@@ -66,8 +66,11 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private final Converter valueConverter;
     private final List<Transform> transformChain;
     private final List<String> idColumns;
+    private final boolean fromDebeziumKey;
     private final RecordAssembler recordAssembler; // Reusable assembler
     private final String transformIdentity; // precomputed transform chain identity
+    private String lastKeySchemaId;
+    private List<String> lastKeyIds = List.of();
 
     private static final int VALUE_WRAPPER_SCHEMA_CACHE_MAX = 32;
     private final Cache<String, Schema> valueWrapperSchemaCache = new LRUCache<>(VALUE_WRAPPER_SCHEMA_CACHE_MAX);
@@ -84,6 +87,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
                                   List<Transform> transforms, List<String> idColumns) {
         this.transformChain = transforms;
         this.idColumns = idColumns == null ? List.of() : List.copyOf(idColumns);
+        this.fromDebeziumKey = this.idColumns.size() == 1 && FROM_DEBEZIUM_KEY.equals(this.idColumns.get(0));
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
@@ -110,7 +114,8 @@ public class DefaultRecordProcessor implements RecordProcessor {
             GenericRecord baseRecord = wrapValue(valueResult);
             GenericRecord transformedRecord = applyTransformChain(baseRecord, partition, kafkaRecord);
 
-            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult);
+            List<String> identifierColumns = resolveIdentifierColumns(keyResult);
+            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult, identifierColumns);
 
             GenericRecord record = recordAssembler
                 .reset(transformedRecord)
@@ -121,8 +126,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
                 .assemble();
             Schema schema = record.getSchema();
 
-            return new ProcessingResult(record, schema, schemaIdentity,
-                resolveIdentifierColumns(keyResult.getSchema()));
+            return new ProcessingResult(record, schema, schemaIdentity, identifierColumns);
         } catch (ConverterException e) {
             return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
@@ -142,10 +146,21 @@ public class DefaultRecordProcessor implements RecordProcessor {
         }
     }
 
-    private List<String> resolveIdentifierColumns(Schema keySchema) {
-        if (idColumns.size() != 1 || !FROM_DEBEZIUM_KEY.equals(idColumns.get(0))) {
+    private List<String> resolveIdentifierColumns(ConversionResult keyResult) {
+        if (!fromDebeziumKey) {
             return idColumns;
         }
+        String keySchemaId = keyResult.getSchemaIdentity();
+        if (Objects.equals(lastKeySchemaId, keySchemaId)) {
+            return lastKeyIds;
+        }
+        List<String> ids = resolveIdentifierColumns(keyResult.getSchema());
+        lastKeySchemaId = keySchemaId;
+        lastKeyIds = ids;
+        return ids;
+    }
+
+    private List<String> resolveIdentifierColumns(Schema keySchema) {
         Schema unwrappedKeySchema = unwrapNullable(keySchema);
         if (unwrappedKeySchema == null || unwrappedKeySchema.getType() != Schema.Type.RECORD) {
             return List.of();
@@ -257,12 +272,14 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private String generateCompositeSchemaIdentity(
         ConversionResult headerResult,
         ConversionResult keyResult,
-        ConversionResult valueResult) {
+        ConversionResult valueResult,
+        List<String> identifierColumns) {
         // Extract schema identities
         String headerIdentity = headerResult.getSchemaIdentity();
         String keyIdentity = keyResult.getSchemaIdentity();
         String valueIdentity = valueResult.getSchemaIdentity();
-        return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity;
+        return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity
+            + "|id:" + identifierColumns.hashCode();
     }
 
     @Override

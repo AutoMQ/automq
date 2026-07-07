@@ -231,6 +231,23 @@ public class DefaultRecordProcessorTest {
     }
 
     @Test
+    void testSchemaIdentityIncludesIdentifierColumns() {
+        Converter rawConverter = new RawConverter();
+        Record kafkaRecord = createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]);
+        DefaultRecordProcessor idProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("id"));
+        DefaultRecordProcessor appointmentIdProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("appointment_id"));
+
+        ProcessingResult idResult = idProcessor.process(TEST_PARTITION, kafkaRecord);
+        ProcessingResult appointmentIdResult = appointmentIdProcessor.process(TEST_PARTITION, kafkaRecord);
+
+        assertTrue(idResult.isSuccess());
+        assertTrue(appointmentIdResult.isSuccess());
+        assertNotEquals(idResult.getFinalSchemaIdentity(), appointmentIdResult.getFinalSchemaIdentity());
+    }
+
+    @Test
     void testConverterErrorHandling() {
         // Arrange
         Converter errorConverter = (topic, buffer) -> {
@@ -417,7 +434,7 @@ public class DefaultRecordProcessorTest {
         ProcessingResult orderedResult = ordered.process(TEST_PARTITION, kafkaRecord);
         assertTrue(orderedResult.isSuccess());
         String orderedIdentity = orderedResult.getFinalSchemaIdentity();
-        assertTrue(orderedIdentity.endsWith("|t:A,B"));
+        assertTrue(orderedIdentity.contains("|t:A,B|id:"));
 
         DefaultRecordProcessor reversed = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
             List.of(new NamedPassthroughTransform("B"), new NamedPassthroughTransform("A")));
