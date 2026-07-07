@@ -178,7 +178,7 @@ class MultiPartWriterTest {
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path-2", 100);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 0), operator, "test-path-2", 100);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();

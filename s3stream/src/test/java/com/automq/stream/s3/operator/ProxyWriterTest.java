@@ -53,7 +53,7 @@ public class ProxyWriterTest {
     @BeforeEach
     public void setup() {
         operator = mock(AbstractObjectStorage.class);
-        writer = new ProxyWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "testpath");
+        writer = new ProxyWriter(ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 0), operator, "testpath");
     }
 
     @Test
