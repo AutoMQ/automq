@@ -22,10 +22,12 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.objects.ObjectAttributes;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -42,6 +44,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.async.ResponsePublisher;
@@ -61,7 +64,14 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -276,6 +286,52 @@ class MultiPartWriterTest {
         assertEquals(List.of("bytes=0-119"), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::copySourceRange)
             .collect(Collectors.toList()));
+    }
+
+    /**
+     * Given the source bucket differs from the target bucket, copyWrite reads source ranges through ObjectStorage
+     * instead of issuing same-bucket server-side copy requests.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void testCrossBucketCopyWriteUsesRangeReadChunks() throws Exception {
+        ObjectStorage.WriteOptions options = ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 1);
+        ObjectStorage readStorage = mock(ObjectStorage.class);
+        when(readStorage.createMultipartUpload(options, "cross-bucket-target"))
+            .thenReturn(CompletableFuture.completedFuture("upload-id"));
+        when(readStorage.rangeRead(any(), anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
+            long start = invocation.getArgument(2);
+            long end = invocation.getArgument(3);
+            return CompletableFuture.completedFuture(Unpooled.wrappedBuffer(new byte[(int) (end - start)]));
+        });
+        when(readStorage.uploadPart(eq(options), eq("cross-bucket-target"), eq("upload-id"), anyInt(), any()))
+            .thenAnswer(invocation -> CompletableFuture.completedFuture(
+                new ObjectStorage.ObjectStorageCompletedPart(invocation.getArgument(3), "etag", null)));
+        when(readStorage.completeMultipartUpload(eq(options), eq("cross-bucket-target"), eq("upload-id"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+        writer = new MultiPartWriter(options, readStorage, "cross-bucket-target", 100);
+        long chunkSize = 32L * 1024 * 1024;
+
+        S3ObjectMetadata source = new S3ObjectMetadata(1, ObjectAttributes.builder().bucket((short) 2).build().attributes());
+        writer.copyWrite(source, 0, 2 * chunkSize + 1);
+        writer.close().get();
+
+        ArgumentCaptor<ObjectStorage.ReadOptions> readOptionsCaptor = ArgumentCaptor.forClass(ObjectStorage.ReadOptions.class);
+        ArgumentCaptor<Long> startCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Long> endCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(readStorage, times(3)).rangeRead(readOptionsCaptor.capture(), eq(source.key()), startCaptor.capture(), endCaptor.capture());
+        assertEquals(List.of((short) 2, (short) 2, (short) 2), readOptionsCaptor.getAllValues().stream()
+            .map(ObjectStorage.ReadOptions::bucket)
+            .collect(Collectors.toList()));
+        assertEquals(List.of(0L, chunkSize, 2 * chunkSize), startCaptor.getAllValues());
+        assertEquals(List.of(chunkSize, 2 * chunkSize, 2 * chunkSize + 1), endCaptor.getAllValues());
+
+        ArgumentCaptor<ByteBuf> partCaptor = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(readStorage, times(3)).uploadPart(eq(options), eq("cross-bucket-target"), eq("upload-id"), anyInt(), partCaptor.capture());
+        assertEquals(List.of(chunkSize, chunkSize, 1L), partCaptor.getAllValues().stream()
+            .map(part -> (long) part.readableBytes())
+            .collect(Collectors.toList()));
+        verify(readStorage, never()).uploadPartCopy(any(), any(), any(), anyLong(), anyLong(), any(), anyInt());
     }
 
     private static String md5Base64(ByteBuf data) {
