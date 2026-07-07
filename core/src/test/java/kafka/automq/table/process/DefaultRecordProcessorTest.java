@@ -248,6 +248,22 @@ public class DefaultRecordProcessorTest {
     }
 
     @Test
+    void testProcessingResultEqualityIncludesIdentifierColumns() {
+        GenericRecord record = new GenericRecordBuilder(USER_SCHEMA_V1)
+            .set("name", "test-user")
+            .build();
+        ProcessingResult emptyIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id");
+        ProcessingResult explicitEmptyIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of());
+        ProcessingResult idIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of("id"));
+        ProcessingResult userIdIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of("user_id"));
+
+        assertEquals(emptyIdentifiers, explicitEmptyIdentifiers);
+        assertEquals(emptyIdentifiers.hashCode(), explicitEmptyIdentifiers.hashCode());
+        assertNotEquals(idIdentifiers, userIdIdentifiers);
+        assertNotEquals(idIdentifiers.hashCode(), userIdIdentifiers.hashCode());
+    }
+
+    @Test
     void testConverterErrorHandling() {
         // Arrange
         Converter errorConverter = (topic, buffer) -> {
