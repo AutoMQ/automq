@@ -20,10 +20,10 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
@@ -58,6 +58,8 @@ import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class DefaultUploadWriteAheadLogTaskTest {
+    private static final short DATA_BUCKET_ID = 3;
+
     ObjectManager objectManager;
     ObjectStorage objectStorage;
     DefaultUploadWriteAheadLogTask deltaWALUploadTask;
@@ -65,7 +67,7 @@ public class DefaultUploadWriteAheadLogTaskTest {
     @BeforeEach
     public void setup() {
         objectManager = mock(ObjectManager.class);
-        objectStorage = new MemoryObjectStorage();
+        objectStorage = new MemoryObjectStorage(DATA_BUCKET_ID);
     }
 
     @Test
@@ -110,6 +112,7 @@ public class DefaultUploadWriteAheadLogTaskTest {
         // - stream234 write to one stream range
         CommitStreamSetObjectRequest request = reqArg.getValue();
         assertEquals(10, request.getObjectId());
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(request.getAttributes()).bucket());
         assertEquals(1, request.getStreamRanges().size());
         assertEquals(234, request.getStreamRanges().get(0).getStreamId());
         assertEquals(20, request.getStreamRanges().get(0).getStartOffset());
@@ -117,13 +120,15 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         assertEquals(1, request.getStreamObjects().size());
         StreamObject streamObject = request.getStreamObjects().get(0);
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(streamObject.getAttributes()).bucket());
         assertEquals(233, streamObject.getStreamId());
         assertEquals(11, streamObject.getObjectId());
         assertEquals(10, streamObject.getStartOffset());
         assertEquals(16, streamObject.getEndOffset());
 
         {
-            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getObjectSize(), S3ObjectType.STREAM_SET);
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getAttributes());
+            s3ObjectMetadata.setObjectSize(request.getObjectSize());
             ObjectReader objectReader = ObjectReader.reader(s3ObjectMetadata, objectStorage);
             DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
@@ -138,7 +143,8 @@ public class DefaultUploadWriteAheadLogTaskTest {
         }
 
         {
-            S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getObjectSize(), S3ObjectType.STREAM);
+            S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getAttributes());
+            streamObjectMetadata.setObjectSize(request.getStreamObjects().get(0).getObjectSize());
             ObjectReader objectReader = ObjectReader.reader(streamObjectMetadata, objectStorage);
             DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
                 .streamDataBlocks().get(0).dataBlockIndex();
