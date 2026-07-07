@@ -195,6 +195,7 @@ public interface ObjectStorage {
 
     class WriteOptions {
         public static final WriteOptions DEFAULT = new WriteOptions();
+        public static final short UNSET_BUCKET = (short) -2;
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
@@ -202,7 +203,7 @@ public interface ObjectStorage {
         private long apiCallAttemptTimeout = -1L;
         // timeout for the whole write operation
         private long timeout = Long.MAX_VALUE;
-        private short bucketId;
+        private short bucketId = UNSET_BUCKET;
         private boolean enableFastRetry;
         // write context start
         private boolean retry;
@@ -255,8 +256,8 @@ public interface ObjectStorage {
             return apiCallAttemptTimeout;
         }
 
-        // Writer will set the value
-        public WriteOptions bucketId(short bucketId) {
+        // Writer will set the value.
+        WriteOptions bucketId(short bucketId) {
             this.bucketId = bucketId;
             return this;
         }
