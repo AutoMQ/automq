@@ -34,10 +34,14 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
-import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
@@ -64,6 +68,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
@@ -74,10 +79,32 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
     private static final PendingRequestTracker PENDING_APPEND_TRACKER = new PendingRequestTracker();
     private static final PendingRequestTracker PENDING_FETCH_TRACKER = new PendingRequestTracker();
+    private static final Metrics.LongGaugeBundle.LongGauge PENDING_STREAM_APPEND_LATENCY = Metrics.instance()
+        .longGauge("kafka_stream_pending_stream_append_latency",
+            "The maximum latency of pending stream append requests that exceed the pending latency threshold. "
+                + "NOTE: the minimum measurable latency depends on the reporting interval of this metrics.",
+            "nanoseconds")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge PENDING_STREAM_FETCH_LATENCY = Metrics.instance()
+        .longGauge("kafka_stream_pending_stream_fetch_latency",
+            "The maximum latency of pending stream fetch requests that exceed the pending latency threshold. "
+                + "NOTE: the minimum measurable latency depends on the reporting interval of this metrics.",
+            "nanoseconds")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final DeltaHistogram APPEND_STREAM_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STREAM);
+    private static final DeltaHistogram FETCH_STREAM_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.FETCH_STREAM);
+    private static final DeltaHistogram TRIM_STREAM_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.TRIM_STREAM);
+    private static final DeltaHistogram CLOSE_STREAM_SUCCESS_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
+    private static final DeltaHistogram CLOSE_STREAM_FAIL_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.CLOSE_STREAM, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
 
     static {
-        S3StreamMetricsManager.registerPendingStreamAppendLatencySupplier(PENDING_APPEND_TRACKER::pendingLatencyNanos);
-        S3StreamMetricsManager.registerPendingStreamFetchLatencySupplier(PENDING_FETCH_TRACKER::pendingLatencyNanos);
+        PENDING_STREAM_APPEND_LATENCY.record(PENDING_APPEND_TRACKER::pendingLatencyNanos);
+        PENDING_STREAM_FETCH_LATENCY.record(PENDING_FETCH_TRACKER::pendingLatencyNanos);
     }
 
     final AtomicLong confirmOffset;
@@ -125,6 +152,22 @@ public class S3Stream implements Stream, StreamMetadataListener {
         S3Stream s3Stream = new S3Stream(streamId, epoch, startOffset, nextOffset, storage, streamManager, options);
         s3Stream.completeInitialization();
         return s3Stream;
+    }
+
+    public static long maxPendingStreamAppendLatency() {
+        return PENDING_APPEND_TRACKER.pendingLatencyNanos();
+    }
+
+    public static long maxPendingStreamFetchLatency() {
+        return PENDING_FETCH_TRACKER.pendingLatencyNanos();
+    }
+
+    public static long appendStreamLatencySum() {
+        return APPEND_STREAM_LATENCY.sum();
+    }
+
+    public static long appendStreamLatencyCount() {
+        return APPEND_STREAM_LATENCY.count();
     }
 
     private void completeInitialization() {
@@ -195,7 +238,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
             pendingAppends.add(cf);
             PendingRequestTracker.Handle pendingAppend = PENDING_APPEND_TRACKER.begin();
             return cf.whenComplete((nil, ex) -> {
-                StreamOperationStats.getInstance().appendStreamLatency.record(TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS));
+                APPEND_STREAM_LATENCY.record(TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS));
                 pendingAppends.remove(cf);
                 pendingAppend.close();
             });
@@ -267,7 +310,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
                         LOGGER.error("{} stream fetch [{}, {}) {} fail", logIdent, startOffset, endOffset, maxBytes, ex);
                     }
                 }
-                StreamOperationStats.getInstance().fetchStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                FETCH_STREAM_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 if (LOGGER.isDebugEnabled()) {
                     long totalSize = 0L;
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
@@ -329,7 +372,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
                 CompletableFuture<Void> cf = new CompletableFuture<>();
                 lastPendingTrim.whenComplete((nil, ex) -> propagate(trim0(newStartOffset), cf));
                 this.lastPendingTrim = cf;
-                cf.whenComplete((nil, ex) -> StreamOperationStats.getInstance().trimStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
+                cf.whenComplete((nil, ex) -> TRIM_STREAM_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS)));
                 return cf;
             }, LOGGER, "trim");
         } finally {
@@ -402,10 +445,10 @@ public class S3Stream implements Stream, StreamMetadataListener {
             closeCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
                     LOGGER.error("{} close fail", logIdent, ex);
-                    StreamOperationStats.getInstance().closeStreamStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    CLOSE_STREAM_FAIL_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 } else {
                     LOGGER.info("{} closed", logIdent);
-                    StreamOperationStats.getInstance().closeStreamStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    CLOSE_STREAM_SUCCESS_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 }
                 NetworkStats.getInstance().removeStreamReadBytesStats(streamId);
             });

@@ -27,9 +27,13 @@ import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.exceptions.BlockNotContinuousException;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.utils.FutureUtil;
@@ -55,6 +59,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 
 import static com.automq.stream.s3.cache.CacheAccessType.BLOCK_CACHE_HIT;
@@ -64,6 +70,19 @@ import static com.automq.stream.utils.FutureUtil.exec;
 @EventLoopSafe public class StreamReader {
     public static final int GET_OBJECT_STEP = 4;
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReader.class);
+    private static final AttributeKey<String> LABEL_STAGE = AttributeKey.stringKey("stage");
+    private static final String STAGE_GET_OBJECTS = "get_objects";
+    private static final String STAGE_FIND_INDEX = "find_index";
+    private static final Metrics.HistogramBundle GET_INDEX_TIME = Metrics.instance()
+        .histogram("kafka_stream_get_index_time", "Get index time", "nanoseconds");
+    private static final DeltaHistogram READ_BLOCK_CACHE_HIT_STATS = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+    private static final DeltaHistogram READ_BLOCK_CACHE_MISS_STATS = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_BLOCK_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+    private static final DeltaHistogram GET_INDICES_TIME_GET_OBJECT_STATS = GET_INDEX_TIME
+        .histogram(MetricsLevel.DEBUG, Attributes.of(LABEL_STAGE, STAGE_GET_OBJECTS));
+    private static final DeltaHistogram GET_INDICES_TIME_FIND_INDEX_STATS = GET_INDEX_TIME
+        .histogram(MetricsLevel.DEBUG, Attributes.of(LABEL_STAGE, STAGE_FIND_INDEX));
     static final int READAHEAD_SIZE_UNIT = 1024 * 1024 / 2;
     private static final int MAX_READAHEAD_SIZE = Systems.getEnvInt("AUTOMQ_MAX_READAHEAD_SIZE", 32 * 1024 * 1024);
     private static final long READAHEAD_RESET_COLD_DOWN_MILLS = TimeUnit.MINUTES.toMillis(1);
@@ -149,7 +168,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 }
             } else {
                 afterRead(rst, readContext);
-                StorageOperationStats.getInstance().blockCacheReadStreamThroughput.add(MetricsLevel.INFO, rst.sizeInBytes());
+                BlockCacheMetrics.READ_STREAM_THROUGHPUT.add(rst.sizeInBytes());
                 retCf.complete(rst);
             }
         }, retCf, LOGGER, "read"));
@@ -224,7 +243,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
             }
             if (fulfill) {
                 ctx.cf.complete(new ReadDataBlock(ctx.records, ctx.accessType));
-                StorageOperationStats.getInstance().readBlockCacheStats(ctx.accessType == BLOCK_CACHE_HIT).record(ctx.start.elapsedAs(TimeUnit.NANOSECONDS));
+                readBlockCacheStats(ctx.accessType == BLOCK_CACHE_HIT).record(ctx.start.elapsedAs(TimeUnit.NANOSECONDS));
             } else {
                 if (nextStartOffset == startOffset) {
                     // The nextStartOffset is not changed. It means we can't read any more records from the blocks.
@@ -415,7 +434,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
         CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = objectManager.getObjects(streamId, nextLoadingOffset, endOffset, GET_OBJECT_STEP);
         // 2. get block indexes from objects
         CompletableFuture<Void> findBlockIndexesCf = getObjectsCf.whenComplete((rst, ex) -> {
-            StorageOperationStats.getInstance().getIndicesTimeGetObjectStats.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
+            GET_INDICES_TIME_GET_OBJECT_STATS.record(time.elapsedAndResetAs(TimeUnit.NANOSECONDS));
         }).thenComposeAsync(objects -> {
             CompletableFuture<Void> prevCf = CompletableFuture.completedFuture(null);
             for (S3ObjectMetadata objectMetadata : objects) {
@@ -452,12 +471,16 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 inflightLoadIndexCf.completeExceptionally(ex);
                 return;
             }
-            StorageOperationStats.getInstance().getIndicesTimeFindIndexStats.record(time.elapsedAs(TimeUnit.NANOSECONDS));
+            GET_INDICES_TIME_FIND_INDEX_STATS.record(time.elapsedAs(TimeUnit.NANOSECONDS));
             CompletableFuture<Void> cf = inflightLoadIndexCf;
             inflightLoadIndexCf = null;
             cf.complete(null);
         }, eventLoop);
         return inflightLoadIndexCf;
+    }
+
+    private static DeltaHistogram readBlockCacheStats(boolean isCacheHit) {
+        return isCacheHit ? READ_BLOCK_CACHE_HIT_STATS : READ_BLOCK_CACHE_MISS_STATS;
     }
 
     private long calWindowBlocksEndOffset() {

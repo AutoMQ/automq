@@ -33,8 +33,6 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
@@ -45,6 +43,8 @@ import com.automq.stream.s3.Config;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectAttributes.Type;
 import com.automq.stream.s3.operator.AwsObjectStorage;
@@ -76,6 +76,8 @@ import java.util.stream.Collectors;
 
 import io.netty.util.HashedWheelTimer;
 import io.netty.util.Timeout;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
@@ -89,6 +91,14 @@ public class S3ObjectControlManager {
     private static final long DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS = 1000L;
     private static final long DEFAULT_INITIAL_DELAY_MS = 1000L;
     private static final int MAX_DELETE_BATCH_COUNT = 2000;
+    private static final Metrics.LongGaugeBundle S3_OBJECT_COUNT = Metrics.instance()
+        .longGauge("kafka_stream_s3_object_count", "The total count of s3 objects in different states", "");
+    private static final Metrics.LongGaugeBundle S3_OBJECT_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_s3_object_size", "The total size of s3 objects in bytes", "bytes");
+    private static final AttributeKey<String> LABEL_OBJECT_STATE = AttributeKey.stringKey("state");
+    private static final String S3_OBJECT_PREPARED_STATE = "prepared";
+    private static final String S3_OBJECT_COMMITTED_STATE = "committed";
+    private static final String S3_OBJECT_MARK_DESTROYED_STATE = "mark_destroyed";
 
     private final QuorumController quorumController;
     private final Logger log;
@@ -121,6 +131,8 @@ public class S3ObjectControlManager {
 
     private final ObjectCleaner objectCleaner;
     private final TimelineLong s3ObjectSize;
+    private final Metrics.LongGaugeBundle.LongGauge s3ObjectCountMetric;
+    private final Metrics.LongGaugeBundle.LongGauge s3ObjectSizeMetric;
 
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
@@ -157,12 +169,28 @@ public class S3ObjectControlManager {
         this.lifecycleCheckTimer.scheduleWithFixedDelay(this::triggerCheckEvent,
             DEFAULT_INITIAL_DELAY_MS, DEFAULT_LIFECYCLE_CHECK_INTERVAL_MS, TimeUnit.MILLISECONDS);
         this.objectCleaner = new ObjectCleaner();
-        S3StreamKafkaMetricsManager.setS3ObjectCountMapSupplier(() -> Map.of(
-            S3StreamKafkaMetricsConstants.S3_OBJECT_PREPARED_STATE, preparedObjects0.size() + preparedObjects1.size(),
-            S3StreamKafkaMetricsConstants.S3_OBJECT_MARK_DESTROYED_STATE, markDestroyedObjects0.size() + markDestroyedObjects1.size(),
-            S3StreamKafkaMetricsConstants.S3_OBJECT_COMMITTED_STATE, objectsMetadata.size()
-                - preparedObjects0.size() - markDestroyedObjects0.size() - preparedObjects1.size() - markDestroyedObjects1.size()));
-        S3StreamKafkaMetricsManager.setS3ObjectSizeSupplier(s3ObjectSize::get);
+        this.s3ObjectCountMetric = S3_OBJECT_COUNT.register(MetricsLevel.INFO, Attributes.empty(), result -> {
+            if (!quorumController.isActive()) {
+                return;
+            }
+            result.record(preparedObjects0.size() + preparedObjects1.size(), Attributes.builder()
+                .put(LABEL_OBJECT_STATE, S3_OBJECT_PREPARED_STATE)
+                .build());
+            result.record(markDestroyedObjects0.size() + markDestroyedObjects1.size(), Attributes.builder()
+                .put(LABEL_OBJECT_STATE, S3_OBJECT_MARK_DESTROYED_STATE)
+                .build());
+            result.record(objectsMetadata.size()
+                - preparedObjects0.size() - markDestroyedObjects0.size() - preparedObjects1.size() - markDestroyedObjects1.size(),
+                Attributes.builder()
+                    .put(LABEL_OBJECT_STATE, S3_OBJECT_COMMITTED_STATE)
+                    .build());
+        });
+        this.s3ObjectSizeMetric = S3_OBJECT_SIZE.register(MetricsLevel.INFO, Attributes.empty(), result -> {
+            if (!quorumController.isActive()) {
+                return;
+            }
+            result.record(s3ObjectSize.get());
+        });
     }
 
     private void triggerCheckEvent() {

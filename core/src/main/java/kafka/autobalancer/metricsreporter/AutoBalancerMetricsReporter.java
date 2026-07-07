@@ -54,8 +54,7 @@ import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.automq.stream.s3.S3Stream;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
@@ -401,12 +400,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                 // TODO: fix latency calculation
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
                         TimeUnit.NANOSECONDS.toMillis((long) appendLatencyAvg.derive(
-                                StreamOperationStats.getInstance().appendStreamLatency.sum(),
-                                StreamOperationStats.getInstance().appendStreamLatency.count())))
+                                S3Stream.appendStreamLatencySum(),
+                                S3Stream.appendStreamLatencyCount())))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS,
-                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamAppendLatency()))
+                        TimeUnit.NANOSECONDS.toMillis(S3Stream.maxPendingStreamAppendLatency()))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS,
-                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamFetchLatency())));
+                        TimeUnit.NANOSECONDS.toMillis(S3Stream.maxPendingStreamFetchLatency())));
     }
 
     protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {
