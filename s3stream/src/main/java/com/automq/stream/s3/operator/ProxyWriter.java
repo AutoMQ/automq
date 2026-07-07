@@ -37,22 +37,22 @@ import io.netty.buffer.CompositeByteBuf;
  * If object data size is less than ObjectWriter.MAX_UPLOAD_SIZE, we should use single upload to upload it.
  * Else, we should use multi-part upload to upload it.
  */
-class ProxyWriter implements Writer {
+public class ProxyWriter implements Writer {
     final ObjectWriter objectWriter = new ObjectWriter();
     private final WriteOptions writeOptions;
-    private final AbstractObjectStorage objectStorage;
+    private final ObjectStorage objectStorage;
     private final String path;
     private final long minPartSize;
     Writer largeObjectWriter = null;
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
+    public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path, long minPartSize) {
         this.writeOptions = writeOptions;
         this.objectStorage = objectStorage;
         this.path = path;
         this.minPartSize = minPartSize;
     }
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
+    public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path) {
         this(writeOptions, objectStorage, path, Writer.MIN_PART_SIZE);
     }
 
@@ -118,7 +118,7 @@ class ProxyWriter implements Writer {
         return writeOptions.bucketId();
     }
 
-    protected void newLargeObjectWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
+    protected void newLargeObjectWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path) {
         this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
         if (objectWriter.data.readableBytes() > 0) {
             FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);

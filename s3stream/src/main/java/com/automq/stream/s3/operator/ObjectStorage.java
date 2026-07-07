@@ -67,7 +67,48 @@ public interface ObjectStorage {
     default CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf) {
         Writer writer = writer(options, objectPath);
         writer.write(buf);
-        return writer.close().thenApply(nil -> new WriteResult(bucketId()));
+        return writer.close().thenApply(nil -> new WriteResult(writer.bucketId()));
+    }
+
+    /**
+     * Start a multipart upload for the target object path.
+     * <p>
+     * Implementations that do not support low-level multipart operations fail with
+     * {@link UnsupportedOperationException}.
+     */
+    default CompletableFuture<String> createMultipartUpload(WriteOptions options, String path) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Upload one multipart part to the target object path.
+     * <p>
+     * The implementation owns {@code data} after this call and is responsible for releasing it when the returned future
+     * completes. Implementations that do not support low-level multipart operations fail with
+     * {@link UnsupportedOperationException}.
+     */
+    default CompletableFuture<ObjectStorageCompletedPart> uploadPart(WriteOptions options, String path, String uploadId,
+        int partNumber, ByteBuf data) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Copy one source range into a multipart part for the target object path.
+     * <p>
+     * This low-level operation is same-storage copy. Cross-bucket routing should fall back to range read plus
+     * {@link #uploadPart(WriteOptions, String, String, int, ByteBuf)} before calling this method.
+     */
+    default CompletableFuture<ObjectStorageCompletedPart> uploadPartCopy(WriteOptions options, String sourcePath,
+        String path, long start, long end, String uploadId, int partNumber) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Complete a multipart upload for the target object path using the completed parts in part-number order.
+     */
+    default CompletableFuture<Void> completeMultipartUpload(WriteOptions options, String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
     }
 
     CompletableFuture<List<ObjectInfo>> list(String prefix);
@@ -125,6 +166,30 @@ public interface ObjectStorage {
 
         public long size() {
             return size;
+        }
+    }
+
+    class ObjectStorageCompletedPart {
+        private final int partNumber;
+        private final String partId;
+        private final String checkSum;
+
+        public ObjectStorageCompletedPart(int partNumber, String partId, String checkSum) {
+            this.partNumber = partNumber;
+            this.partId = partId;
+            this.checkSum = checkSum;
+        }
+
+        public int getPartNumber() {
+            return partNumber;
+        }
+
+        public String getPartId() {
+            return partId;
+        }
+
+        public String getCheckSum() {
+            return checkSum;
         }
     }
 
@@ -191,7 +256,7 @@ public interface ObjectStorage {
         }
 
         // Writer will set the value
-        WriteOptions bucketId(short bucketId) {
+        public WriteOptions bucketId(short bucketId) {
             this.bucketId = bucketId;
             return this;
         }

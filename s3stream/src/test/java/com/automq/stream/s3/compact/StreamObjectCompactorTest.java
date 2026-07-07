@@ -86,6 +86,7 @@ import static org.mockito.Mockito.when;
 @Timeout(60)
 @Tag("S3Unit")
 class StreamObjectCompactorTest {
+    private static final short DATA_BUCKET_ID = 3;
 
     private ObjectManager objectManager;
     private MemoryObjectStorage objectStorage;
@@ -95,7 +96,7 @@ class StreamObjectCompactorTest {
     @BeforeEach
     void setUp() {
         objectManager = Mockito.mock(ObjectManager.class);
-        objectStorage = new MemoryObjectStorage();
+        objectStorage = new MemoryObjectStorage(DATA_BUCKET_ID);
         stream = Mockito.mock(S3Stream.class);
     }
 
@@ -257,6 +258,7 @@ class StreamObjectCompactorTest {
         // verify compact request
         List<CompactStreamObjectRequest> requests = ac.getAllValues();
         CompactStreamObjectRequest req1 = requests.get(0);
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(req1.getAttributes()).bucket());
         assertEquals(5, req1.getObjectId());
         assertEquals(233L, req1.getStreamId());
         assertEquals(13L, req1.getStartOffset());
@@ -264,6 +266,7 @@ class StreamObjectCompactorTest {
         assertEquals(List.of(1L, 2L), req1.getSourceObjectIds());
 
         CompactStreamObjectRequest req2 = requests.get(1);
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(req2.getAttributes()).bucket());
         assertEquals(6, req2.getObjectId());
         assertEquals(233L, req2.getStreamId());
         assertEquals(30L, req2.getStartOffset());
@@ -272,7 +275,9 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req1.getObjectSize(), S3ObjectType.STREAM), objectStorage);
+            S3ObjectMetadata metadata = new S3ObjectMetadata(5, req1.getAttributes());
+            metadata.setObjectSize(req1.getObjectSize());
+            ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -300,7 +305,9 @@ class StreamObjectCompactorTest {
             objectReader.close();
         }
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(6, req2.getObjectSize(), S3ObjectType.STREAM), objectStorage);
+            S3ObjectMetadata metadata = new S3ObjectMetadata(6, req2.getAttributes());
+            metadata.setObjectSize(req2.getObjectSize());
+            ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
             assertEquals(3, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 30L, 33L).get();
             assertEquals(3, rst.streamDataBlocks().size());
@@ -360,6 +367,7 @@ class StreamObjectCompactorTest {
         CompactStreamObjectRequest req = new CompactByPhysicalMerge(streamId, 0L, 14L,
             objects.subList(0, 2), 5, 5000, objectStorage).compact().get();
         // verify compact request
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(req.getAttributes()).bucket());
         assertEquals(5, req.getObjectId());
         assertEquals(233L, req.getStreamId());
         assertEquals(13L, req.getStartOffset());
@@ -368,7 +376,9 @@ class StreamObjectCompactorTest {
 
         // verify compacted object record, expect [13,16) + [16, 17) compact to one data block group.
         {
-            ObjectReader objectReader = ObjectReader.reader(new S3ObjectMetadata(5, req.getObjectSize(), S3ObjectType.STREAM), objectStorage);
+            S3ObjectMetadata metadata = new S3ObjectMetadata(5, req.getAttributes());
+            metadata.setObjectSize(req.getObjectSize());
+            ObjectReader objectReader = ObjectReader.reader(metadata, objectStorage);
             assertEquals(2, objectReader.basicObjectInfo().get().indexBlock().count());
             ObjectReader.FindIndexResult rst = objectReader.find(streamId, 13L, 18L).get();
             assertEquals(2, rst.streamDataBlocks().size());
@@ -576,6 +586,7 @@ class StreamObjectCompactorTest {
         CompactByCompositeObject compact = new CompactByCompositeObject(streamId, 0L, 0L, metadataList.subList(0, 2), 5, objectStorage);
         CompactStreamObjectRequest req = compact.compact().get();
         assertEquals(ObjectAttributes.Type.Composite, ObjectAttributes.from(req.getAttributes()).type());
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(req.getAttributes()).bucket());
         assertEquals(5, req.getObjectId());
         assertEquals(streamId, req.getStreamId());
         assertEquals(10L, req.getStartOffset());
@@ -608,11 +619,13 @@ class StreamObjectCompactorTest {
         writer.close().get();
         S3ObjectMetadata object6Metadata = new S3ObjectMetadata(6, S3ObjectType.STREAM, List.of(new StreamOffsetRange(streamId, 18, 19)),
             System.currentTimeMillis(), System.currentTimeMillis(), writer.size(), 6);
+        object6Metadata.setAttributes(ObjectAttributes.builder().bucket(DATA_BUCKET_ID).build().attributes());
 
         // compact object5 and object6, expect the composite object contains 16 ~ 18 and delete object1
         compact = new CompactByCompositeObject(streamId, 0L, 17L, List.of(object5Metadata, object6Metadata), 7, objectStorage);
         req = compact.compact().get();
         assertEquals(ObjectAttributes.Type.Composite, ObjectAttributes.from(req.getAttributes()).type());
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(req.getAttributes()).bucket());
         assertEquals(7, req.getObjectId());
         assertEquals(16L, req.getStartOffset());
         assertEquals(19L, req.getEndOffset());
