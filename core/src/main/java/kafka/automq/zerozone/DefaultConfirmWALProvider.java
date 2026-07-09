@@ -19,7 +19,6 @@
 
 package kafka.automq.zerozone;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -51,8 +50,8 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
         ObjectStorage objectStorage = objectStorages.computeIfAbsent(bucketURI.bucketId(), id -> {
                 try {
                     return ObjectStorageFactory.instance().builder(bucketURI).readWriteIsolate(false)
-                        .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-                        .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+                        .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+                        .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
                         .build();
                 } catch (IllegalArgumentException e) {
                     return null;

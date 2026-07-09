@@ -19,9 +19,6 @@
 
 package com.automq.stream.s3.network;
 
-import com.automq.stream.s3.metrics.Metrics;
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.Threads;
 
@@ -40,34 +37,25 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
-import io.opentelemetry.api.common.Attributes;
 
 public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);
     private static final long MAX_TOKEN_PART_SIZE = 1024 * 1024;
-    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_INBOUND_LIMITER_QUEUE_SIZE = Metrics.instance()
-        .longGauge("kafka_stream_network_inbound_limiter_queue_size", "Network inbound limiter queue size", "")
-        .register(MetricsLevel.DEBUG, Attributes.empty());
-    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE = Metrics.instance()
-        .longGauge("kafka_stream_network_outbound_limiter_queue_size", "Network outbound limiter queue size", "")
-        .register(MetricsLevel.DEBUG, Attributes.empty());
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
     private final long maxTokens;
     private final ScheduledExecutorService refillThreadPool;
     private final ExecutorService callbackThreadPool;
     private final Queue<BucketItem> queuedCallbacks;
-    private final Type type;
     private final long tokenSize;
     private final AtomicLong availableTokens;
 
-    public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
-        this(type, tokenSize, refillIntervalMs, tokenSize);
+    public AsyncNetworkBandwidthLimiter(long tokenSize, int refillIntervalMs) {
+        this(tokenSize, refillIntervalMs, tokenSize);
     }
 
     @SuppressWarnings("this-escape")
-    public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
-        this.type = type;
+    public AsyncNetworkBandwidthLimiter(long tokenSize, int refillIntervalMs, long maxTokens) {
         this.tokenSize = tokenSize;
         this.availableTokens = new AtomicLong(this.tokenSize);
         this.maxTokens = maxTokens;
@@ -78,16 +66,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(2, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
-        switch (type) {
-            case INBOUND:
-                NETWORK_INBOUND_LIMITER_QUEUE_SIZE.record(this::getQueueSize);
-                break;
-            case OUTBOUND:
-                NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE.record(this::getQueueSize);
-                break;
-        }
-        LOGGER.info("AsyncNetworkBandwidthLimiter initialized, type: {}, tokenSize: {}, maxTokens: {}, refillIntervalMs: {}",
-            type.getName(), tokenSize, maxTokens, refillIntervalMs);
     }
 
     private void run() {
@@ -146,6 +124,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         return availableTokens.get();
     }
 
+    @Override
     public int getQueueSize() {
         lock.lock();
         try {
@@ -161,7 +140,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((v, e) -> NetworkStats.getInstance().recordNetworkUsageTotal(type, throttleStrategy, size));
         if (Objects.requireNonNull(throttleStrategy) == ThrottleStrategy.BYPASS) {
             forceConsume(size);
             cf.complete(null);
@@ -189,22 +167,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.availableTokens.getAndUpdate(old -> Math.max(-maxTokens, old - size));
     }
 
-    public enum Type {
-        INBOUND("Inbound"),
-        OUTBOUND("Outbound");
-
-        private final String name;
-
-        Type(String name) {
-            this.name = name;
-        }
-
-        public String getName() {
-            return name;
-        }
-    }
-
-    private class BucketItem implements Comparable<BucketItem> {
+    private static class BucketItem implements Comparable<BucketItem> {
         private final ThrottleStrategy strategy;
         private final CompletableFuture<Void> cf;
         private final long timestamp;
@@ -229,7 +192,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             size -= completeSize;
             if (size <= 0) {
                 executor.submit(() -> cf.complete(null));
-                NetworkStats.getInstance().recordNetworkLimiterQueueTime(type, strategy, System.nanoTime() - timestamp);
                 return true;
             }
             return false;

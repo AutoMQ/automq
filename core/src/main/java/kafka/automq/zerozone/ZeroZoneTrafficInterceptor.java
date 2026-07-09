@@ -47,7 +47,6 @@ import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -122,8 +121,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.clientRackProvider = clientRackProvider;
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
             .readWriteIsolate(true)
-            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
             .build();
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());

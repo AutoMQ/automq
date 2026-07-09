@@ -26,6 +26,7 @@ import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.utils.Utils;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
+import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
 import org.apache.commons.lang3.StringUtils;
@@ -155,6 +156,10 @@ public class AutoMQConfig {
     public static final String S3_NETWORK_BASELINE_BANDWIDTH_DOC = "The total available bandwidth for object storage requests. This is used to prevent stream set object compaction and catch-up read from monopolizing normal read and write traffic. Produce and Consume will also separately consume traffic in and traffic out. " +
         "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s.";
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 1024 * 1024 * 1024; // 1GBps
+
+    public static final String S3_NETWORK_BANDWIDTH_MODE_CONFIG = "s3.network.bandwidth.mode";
+    public static final String S3_NETWORK_BANDWIDTH_MODE_DOC = "The network bandwidth limiting mode. Valid values are separate and shared. " +
+        "In separate mode, inbound and outbound traffic use independent bandwidth buckets. In shared mode, inbound and outbound traffic share one bandwidth bucket.";
 
     public static final String S3_NETWORK_REFILL_PERIOD_MS_CONFIG = "s3.network.refill.period.ms";
     public static final String S3_NETWORK_REFILL_PERIOD_MS_DOC = "The network bandwidth token refill period in milliseconds.";
@@ -296,6 +301,9 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_MOCK_ENABLE_DOC)
             .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
             .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
+            .define(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG, STRING, NetworkBandwidthMode.SEPARATE.getName(),
+                ConfigDef.CaseInsensitiveValidString.in(NetworkBandwidthMode.SEPARATE.getName(), NetworkBandwidthMode.SHARED.getName()),
+                MEDIUM, AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_DOC)
             .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, S3_REFILL_PERIOD_MS, MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
