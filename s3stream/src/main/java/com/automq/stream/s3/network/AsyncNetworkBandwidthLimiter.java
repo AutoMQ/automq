@@ -19,8 +19,8 @@
 
 package com.automq.stream.s3.network;
 
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.Threads;
@@ -40,10 +40,17 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import io.netty.util.concurrent.DefaultThreadFactory;
+import io.opentelemetry.api.common.Attributes;
 
 public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final Logger LOGGER = new LogContext().logger(AsyncNetworkBandwidthLimiter.class);
     private static final long MAX_TOKEN_PART_SIZE = 1024 * 1024;
+    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_INBOUND_LIMITER_QUEUE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_network_inbound_limiter_queue_size", "Network inbound limiter queue size", "")
+        .register(MetricsLevel.DEBUG, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_network_outbound_limiter_queue_size", "Network outbound limiter queue size", "")
+        .register(MetricsLevel.DEBUG, Attributes.empty());
     private final Lock lock = new ReentrantLock();
     private final Condition condition = lock.newCondition();
     private final long maxTokens;
@@ -71,7 +78,14 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(2, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
-        S3StreamMetricsManager.registerNetworkLimiterQueueSizeSupplier(type, this::getQueueSize);
+        switch (type) {
+            case INBOUND:
+                NETWORK_INBOUND_LIMITER_QUEUE_SIZE.record(this::getQueueSize);
+                break;
+            case OUTBOUND:
+                NETWORK_OUTBOUND_LIMITER_QUEUE_SIZE.record(this::getQueueSize);
+                break;
+        }
         LOGGER.info("AsyncNetworkBandwidthLimiter initialized, type: {}, tokenSize: {}, maxTokens: {}, refillIntervalMs: {}",
             type.getName(), tokenSize, maxTokens, refillIntervalMs);
     }
@@ -147,7 +161,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((v, e) -> NetworkStats.getInstance().networkUsageTotalStats(type, throttleStrategy).add(MetricsLevel.INFO, size));
+        cf.whenComplete((v, e) -> NetworkStats.getInstance().recordNetworkUsageTotal(type, throttleStrategy, size));
         if (Objects.requireNonNull(throttleStrategy) == ThrottleStrategy.BYPASS) {
             forceConsume(size);
             cf.complete(null);
@@ -215,7 +229,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             size -= completeSize;
             if (size <= 0) {
                 executor.submit(() -> cf.complete(null));
-                NetworkStats.getInstance().networkLimiterQueueTimeStats(type, strategy).record(System.nanoTime() - timestamp);
+                NetworkStats.getInstance().recordNetworkLimiterQueueTime(type, strategy, System.nanoTime() - timestamp);
                 return true;
             }
             return false;

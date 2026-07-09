@@ -17,29 +17,24 @@
  * limitations under the License.
  */
 
-package com.automq.stream.s3.metrics.stats;
+package org.apache.kafka.automq;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.wrapper.CounterMetric;
+import java.util.function.Supplier;
 
-public class CompactionStats {
-    private static volatile CompactionStats instance = null;
+/**
+ * Exposes the active controller state to AutoMQ components that live outside the controller module.
+ */
+public final class ControllerState {
+    private static volatile Supplier<Boolean> isActiveSupplier = () -> false;
 
-    public final CounterMetric compactionReadSizeStats = S3StreamMetricsManager.buildCompactionReadSizeMetric();
-    public final CounterMetric compactionWriteSizeStats = S3StreamMetricsManager.buildCompactionWriteSizeMetric();
-
-    private CompactionStats() {
+    private ControllerState() {
     }
 
-    public static CompactionStats getInstance() {
-        if (instance == null) {
-            synchronized (CompactionStats.class) {
-                if (instance == null) {
-                    instance = new CompactionStats();
-                }
-            }
-        }
-        return instance;
+    public static void setIsActiveSupplier(Supplier<Boolean> isActiveSupplier) {
+        ControllerState.isActiveSupplier = isActiveSupplier;
     }
 
+    public static boolean isActive() {
+        return isActiveSupplier.get();
+    }
 }

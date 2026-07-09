@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
@@ -50,6 +51,42 @@ class MetricsGaugeTest {
 
         verify(measurement).record(eq(0.5), any());
         verify(measurement, never()).record(eq(0.0), any());
+        gauge.close();
+    }
+
+    /** Verifies LongGauge callback registration can decide whether to emit each callback sample. */
+    @Test
+    void longGaugeShouldRecordFromCallbackDuringCollection() throws Exception {
+        AtomicReference<Boolean> active = new AtomicReference<>(false);
+        Metrics.LongGaugeBundle.LongGauge gauge = Metrics.instance()
+            .longGauge("test_long_callback", "test", "")
+            .register(MetricsLevel.INFO, Attributes.empty(), measurement -> {
+                if (active.get()) {
+                    measurement.record(10L, Attributes.empty());
+                }
+            });
+        ObservableLongMeasurement measurement = mock(ObservableLongMeasurement.class);
+
+        invokeRecord(gauge, ObservableLongMeasurement.class, measurement);
+        active.set(true);
+        invokeRecord(gauge, ObservableLongMeasurement.class, measurement);
+
+        verify(measurement).record(eq(10L), any());
+        gauge.close();
+    }
+
+    /** Verifies DoubleGauge callback registration can emit dynamic callback samples. */
+    @Test
+    void doubleGaugeShouldRecordFromCallbackDuringCollection() throws Exception {
+        Metrics.DoubleGaugeBundle.DoubleGauge gauge = Metrics.instance()
+            .doubleGauge("test_double_callback", "test", "")
+            .register(MetricsLevel.INFO, Attributes.empty(),
+                measurement -> measurement.record(0.75, Attributes.empty()));
+        ObservableDoubleMeasurement measurement = mock(ObservableDoubleMeasurement.class);
+
+        invokeRecord(gauge, ObservableDoubleMeasurement.class, measurement);
+
+        verify(measurement).record(eq(0.75), any());
         gauge.close();
     }
 

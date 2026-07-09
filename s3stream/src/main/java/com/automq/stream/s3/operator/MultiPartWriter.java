@@ -21,9 +21,8 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3ObjectMetrics;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.utils.FutureUtil;
@@ -185,14 +184,13 @@ public class MultiPartWriter implements Writer {
             objectPart = null;
         }
 
-        S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        S3ObjectMetrics.recordReadyCloseStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         closeCf = new CompletableFuture<>();
         CompletableFuture<Void> uploadDoneCf = uploadIdCf.thenCompose(uploadId -> CompletableFuture.allOf(parts.toArray(new CompletableFuture[0])));
         FutureUtil.propagate(uploadDoneCf.thenCompose(nil -> operator.completeMultipartUpload(writeOptions, path, uploadId, genCompleteParts())), closeCf);
         closeCf.whenComplete((nil, ex) -> {
-            S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
-            S3ObjectStats.getInstance().objectUploadSizeStats.record(totalWriteSize.get());
+            S3ObjectMetrics.recordTotalStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3ObjectMetrics.recordObject();
         });
         return closeCf;
     }
@@ -284,7 +282,7 @@ public class MultiPartWriter implements Writer {
             TimerUtil timerUtil = new TimerUtil();
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(writeOptions, path, uploadId, partNumber, partBuf)), partCf);
             partCf.whenComplete((nil, ex) -> {
-                S3ObjectStats.getInstance().objectStageUploadPartStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3ObjectMetrics.recordUploadPartStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             });
         }
 

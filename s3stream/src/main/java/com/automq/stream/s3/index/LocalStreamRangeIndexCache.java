@@ -22,7 +22,8 @@ package com.automq.stream.s3.index;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectStreamRange;
@@ -58,10 +59,17 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
+import io.opentelemetry.api.common.Attributes;
 
 public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycleListener {
     private static final short VERSION = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalStreamRangeIndexCache.class);
+    private static final Metrics.LongGaugeBundle.LongGauge LOCAL_STREAM_RANGE_INDEX_CACHE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_local_stream_range_index_cache_size", "Local stream range index cache size", "bytes")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge LOCAL_STREAM_RANGE_INDEX_CACHE_STREAM_NUM = Metrics.instance()
+        .longGauge("kafka_stream_local_stream_range_index_cache_stream_num", "Local stream range index cache stream number", "")
+        .register(MetricsLevel.INFO, Attributes.empty());
     private static final int COMPACT_NUM = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_COMPACT_NUM", 3);
     public static final int MAX_INDEX_SIZE = Systems.getEnvInt("AUTOMQ_STREAM_RANGE_INDEX_MAX_SIZE", 1024 * 1024);
     private static final int DEFAULT_UPLOAD_CACHE_ON_STREAM_CLOSE_INTERVAL_MS = 5000;
@@ -81,18 +89,8 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private long lastUploadTime = 0L;
 
     private LocalStreamRangeIndexCache() {
-        
-    }
-
-    public static LocalStreamRangeIndexCache create() {
-        LocalStreamRangeIndexCache cache = new LocalStreamRangeIndexCache();
-        cache.completeInitialization();
-        return cache;
-    }
-
-    private void completeInitialization() {
-        S3StreamMetricsManager.registerLocalStreamRangeIndexCacheSizeSupplier(this::totalSize);
-        S3StreamMetricsManager.registerLocalStreamRangeIndexCacheStreamNumSupplier(() -> {
+        LOCAL_STREAM_RANGE_INDEX_CACHE_SIZE.record(this::totalSize);
+        LOCAL_STREAM_RANGE_INDEX_CACHE_STREAM_NUM.record(() -> {
             readLock.lock();
             try {
                 return streamRangeIndexMap.size();
@@ -100,6 +98,10 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
                 readLock.unlock();
             }
         });
+    }
+
+    public static LocalStreamRangeIndexCache create() {
+        return new LocalStreamRangeIndexCache();
     }
 
     public void start() {

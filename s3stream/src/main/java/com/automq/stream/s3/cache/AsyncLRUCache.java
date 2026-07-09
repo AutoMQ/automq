@@ -19,8 +19,8 @@
 
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.AsyncLRUCacheStats;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +32,9 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
 /**
  * An asynchronous LRU cache that supports asynchronous value computation.
  *
@@ -40,49 +43,89 @@ import java.util.function.Function;
  */
 public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     private static final Logger LOGGER = LoggerFactory.getLogger(AsyncLRUCache.class);
-    private final AsyncLRUCacheStats stats = AsyncLRUCacheStats.getInstance();
-    private final String cacheName;
+    private static final AttributeKey<String> LABEL_CACHE_NAME = AttributeKey.stringKey("cacheName");
+    private static final Metrics.LongGaugeBundle ASYNC_CACHE_ITEM_NUMBER = Metrics.instance()
+        .longGauge("kafka_stream_async_cache_item_count", "AsyncLRU cache item number", "");
+    private static final Metrics.LongGaugeBundle ASYNC_CACHE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_async_cache_item_size", "AsyncLRU cache size", "");
+    private static final Metrics.LongGaugeBundle ASYNC_CACHE_MAX_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_async_cache_max_size", "AsyncLRU cache max size", "");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_EVICT_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_evict", "AsyncLRU cache evict count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_HIT_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_hit", "AsyncLRU cache hit count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_MISS_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_miss", "AsyncLRU cache miss count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_PUT_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_put", "AsyncLRU cache put item count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_POP_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_pop", "AsyncLRU cache pop item count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_OVERWRITE_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_overwrite", "AsyncLRU cache overwrite item count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_REMOVE_NOT_COMPLETE_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_remove_item_not_complete",
+            "AsyncLRU cache remove not completed item count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_REMOVE_COMPLETE_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_remove_item_complete",
+            "AsyncLRU cache remove completed item count", "count");
+    private static final Metrics.LongCounterBundle ASYNC_CACHE_ITEM_COMPLETE_EXCEPTIONALLY_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_async_cache_item_complete_exceptionally",
+            "AsyncLRU cache item complete exceptionally count", "count");
     private final long maxSize;
+    private final Metrics.LongCounterBundle.LongCounter evictCount;
+    private final Metrics.LongCounterBundle.LongCounter hitCount;
+    private final Metrics.LongCounterBundle.LongCounter missCount;
+    private final Metrics.LongCounterBundle.LongCounter putCount;
+    private final Metrics.LongCounterBundle.LongCounter popCount;
+    private final Metrics.LongCounterBundle.LongCounter overwriteCount;
+    private final Metrics.LongCounterBundle.LongCounter removeNotCompleted;
+    private final Metrics.LongCounterBundle.LongCounter removeCompleted;
+    private final Metrics.LongCounterBundle.LongCounter itemCompleteExceptionally;
     final AtomicLong totalSize = new AtomicLong(0);
     final LRUCache<K, V> cache = new LRUCache<>();
     final Set<V> completedSet = new HashSet<>();
     final Set<V> removedSet = new HashSet<>();
 
-    protected AsyncLRUCache(String cacheName, long maxSize) {
-        this.cacheName = cacheName;
+    public AsyncLRUCache(String cacheName, long maxSize) {
         if (maxSize <= 0) {
             throw new IllegalArgumentException("maxSize must be positive");
         }
         this.maxSize = maxSize;
+
+        Attributes attributes = Attributes.of(LABEL_CACHE_NAME, cacheName);
+        ASYNC_CACHE_SIZE.register(MetricsLevel.DEBUG, attributes).record(this::totalSize);
+        ASYNC_CACHE_MAX_SIZE.register(MetricsLevel.DEBUG, attributes).record(() -> maxSize);
+        ASYNC_CACHE_ITEM_NUMBER.register(MetricsLevel.DEBUG, attributes).record(this::size);
+        evictCount = ASYNC_CACHE_EVICT_COUNT.register(MetricsLevel.DEBUG, attributes);
+        hitCount = ASYNC_CACHE_HIT_COUNT.register(MetricsLevel.DEBUG, attributes);
+        missCount = ASYNC_CACHE_MISS_COUNT.register(MetricsLevel.DEBUG, attributes);
+        putCount = ASYNC_CACHE_PUT_COUNT.register(MetricsLevel.DEBUG, attributes);
+        popCount = ASYNC_CACHE_POP_COUNT.register(MetricsLevel.DEBUG, attributes);
+        overwriteCount = ASYNC_CACHE_OVERWRITE_COUNT.register(MetricsLevel.DEBUG, attributes);
+        removeNotCompleted = ASYNC_CACHE_REMOVE_NOT_COMPLETE_COUNT.register(MetricsLevel.DEBUG, attributes);
+        removeCompleted = ASYNC_CACHE_REMOVE_COMPLETE_COUNT.register(MetricsLevel.DEBUG, attributes);
+        itemCompleteExceptionally = ASYNC_CACHE_ITEM_COMPLETE_EXCEPTIONALLY_COUNT.register(MetricsLevel.DEBUG, attributes);
     }
 
     public static <K, V extends AsyncMeasurable> AsyncLRUCache<K, V> create(String cacheName, long maxSize) {
-        AsyncLRUCache<K, V> asyncLRUCache = new AsyncLRUCache<>(cacheName, maxSize);
-        asyncLRUCache.completeInitialization();
-        return asyncLRUCache;
-    }
-
-    private void completeInitialization() {
-        S3StreamMetricsManager.registerAsyncCacheSizeSupplier(this::totalSize, cacheName);
-        S3StreamMetricsManager.registerAsyncCacheMaxSizeSupplier(() -> maxSize, cacheName);
-        S3StreamMetricsManager.registerAsyncCacheItemNumberSupplier(this::size, cacheName);
+        return new AsyncLRUCache<>(cacheName, maxSize);
     }
 
     public synchronized void put(K key, V value) {
         V oldValue = cache.get(key);
         if (oldValue != null && oldValue != value) {
-            stats.markOverWrite(cacheName);
+            overwriteCount.add(1);
             cache.remove(key);
             afterRemoveValue(oldValue);
         } else {
-            stats.markPut(cacheName);
+            putCount.add(1);
         }
 
         cache.put(key, value);
         value.size().whenComplete((v, ex) -> {
             synchronized (AsyncLRUCache.this) {
                 if (ex != null) {
-                    stats.markItemCompleteExceptionally(cacheName);
+                    itemCompleteExceptionally.add(1);
                     cache.remove(key);
                 } else if (!removedSet.contains(value)) {
                     completedSet.add(value);
@@ -104,9 +147,9 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
     public synchronized V get(K key) {
         V val = cache.get(key);
         if (val == null) {
-            stats.markMiss(cacheName);
+            missCount.add(1);
         } else {
-            stats.markHit(cacheName);
+            hitCount.add(1);
         }
         return val;
     }
@@ -140,11 +183,11 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
         try {
             boolean completed = completedSet.remove(value);
             if (completed) {
-                stats.markRemoveCompleted(cacheName);
+                removeCompleted.add(1);
                 totalSize.addAndGet(-value.size().get());
                 value.close();
             } else {
-                stats.markRemoveNotCompleted(cacheName);
+                removeNotCompleted.add(1);
                 removedSet.add(value);
             }
         } catch (Throwable e) {
@@ -158,7 +201,7 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
             afterRemoveValue(entry.getValue());
         }
 
-        stats.markPop(cacheName);
+        popCount.add(1);
 
         return entry;
     }
@@ -189,6 +232,6 @@ public class AsyncLRUCache<K, V extends AsyncMeasurable> {
             });
         }
 
-        stats.markEvict(cacheName);
+        evictCount.add(1);
     }
 }
