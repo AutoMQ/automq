@@ -16,12 +16,8 @@
  */
 package kafka.server;
 
-import kafka.automq.table.metric.TableTopicMetricsManager;
-
-import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.server.ProcessRole;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
 import com.automq.opentelemetry.AutoMQTelemetryManager;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
@@ -29,7 +25,6 @@ import com.automq.shell.AutoMQApplication;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -51,7 +46,6 @@ public final class TelemetrySupport {
     private static final String COMMON_JMX_PATH = "/jmx/rules/common.yaml";
     private static final String BROKER_JMX_PATH = "/jmx/rules/broker.yaml";
     private static final String CONTROLLER_JMX_PATH = "/jmx/rules/controller.yaml";
-    private static final String KAFKA_METRICS_PREFIX = "kafka_stream_";
 
     private TelemetrySupport() {
         // Utility class
@@ -74,39 +68,13 @@ public final class TelemetrySupport {
     }
 
     private static void initializeMetrics(AutoMQTelemetryManager manager, KafkaConfig config) {
-        S3StreamKafkaMetricsManager.setTruststoreCertsSupplier(() -> {
-            try {
-                Password password = config.getPassword("ssl.truststore.certificates");
-                return password != null ? password.value() : null;
-            } catch (Exception e) {
-                LOGGER.error("Failed to obtain truststore certificates", e);
-                return null;
-            }
-        });
-
-        S3StreamKafkaMetricsManager.setCertChainSupplier(() -> {
-            try {
-                Password password = config.getPassword("ssl.keystore.certificate.chain");
-                return password != null ? password.value() : null;
-            } catch (Exception e) {
-                LOGGER.error("Failed to obtain certificate chain", e);
-                return null;
-            }
-        });
-
         Meter meter = manager.getMeter();
         MetricsLevel metricsLevel = parseMetricsLevel(config.s3MetricsLevel());
         long metricsIntervalMs = (long) config.s3ExporterReportIntervalMs();
         MetricsConfig metricsConfig = new MetricsConfig(metricsLevel, Attributes.empty(), metricsIntervalMs);
 
         Metrics.instance().setup(meter, metricsConfig);
-        S3StreamMetricsManager.configure(new MetricsConfig(metricsLevel, Attributes.empty(), metricsIntervalMs));
-        S3StreamMetricsManager.initMetrics(meter, KAFKA_METRICS_PREFIX);
-
-        S3StreamKafkaMetricsManager.configure(new MetricsConfig(metricsLevel, Attributes.empty(), metricsIntervalMs));
-        S3StreamKafkaMetricsManager.initMetrics(meter, KAFKA_METRICS_PREFIX);
-
-        TableTopicMetricsManager.initMetrics(meter);
+        KafkaCertificateMetrics.setup(config);
     }
 
     private static MetricsLevel parseMetricsLevel(String rawLevel) {

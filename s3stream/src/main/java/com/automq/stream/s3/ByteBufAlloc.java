@@ -20,6 +20,8 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.WrappedByteBuf;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.utils.Systems;
 
 import org.slf4j.Logger;
@@ -28,6 +30,7 @@ import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.LongAdder;
 
 import io.netty.buffer.AbstractByteBufAllocator;
@@ -38,12 +41,15 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocatorMetric;
 import io.netty.buffer.UnpooledByteBufAllocator;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 public class ByteBufAlloc {
 
     public static final boolean MEMORY_USAGE_DETECT = Boolean.parseBoolean(System.getenv("AUTOMQ_MEMORY_USAGE_DETECT"));
     public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL", 60000);
 
+    private static final AttributeKey<String> LABEL_TYPE = AttributeKey.stringKey("type");
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
 
     public static final int DEFAULT = 0;
@@ -70,6 +76,10 @@ public class ByteBufAlloc {
 
     private static long lastMetricLogTime = System.currentTimeMillis();
     private static final Map<Integer, String> ALLOC_TYPE = new HashMap<>();
+    private static final Metrics.LongGaugeBundle BUFFER_ALLOCATED_MEMORY_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_buffer_allocated_memory_size", "Buffer allocated memory size", "bytes");
+    private static final Metrics.LongGaugeBundle BUFFER_USED_MEMORY_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_buffer_used_memory_size", "Buffer used memory size", "bytes");
 
     public static ByteBufAllocMetric byteBufAllocMetric = null;
 
@@ -106,6 +116,11 @@ public class ByteBufAlloc {
         registerAllocType(S3_WAL, "s3_wal");
         registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
         registerAllocType(SNAPSHOT_READ_CACHE, "snapshot_read_cache");
+        BUFFER_ALLOCATED_MEMORY_SIZE.register(MetricsLevel.INFO,
+            Attributes.of(LABEL_TYPE, "-1/unknown"), observable ->
+                allocatedMemory("-1/unknown").ifPresent(observable::record));
+        BUFFER_USED_MEMORY_SIZE.register(MetricsLevel.DEBUG, Attributes.empty(), observable ->
+            usedMemory().ifPresent(observable::record));
 
     }
 
@@ -190,6 +205,10 @@ public class ByteBufAlloc {
         }
 
         ALLOC_TYPE.put(type, name);
+        String typeName = type + "/" + name;
+        BUFFER_ALLOCATED_MEMORY_SIZE.register(MetricsLevel.INFO,
+            Attributes.of(LABEL_TYPE, typeName), observable ->
+                allocatedMemory(typeName).ifPresent(observable::record));
     }
 
     private static AbstractByteBufAllocator getAllocatorByPolicy(ByteBufAllocPolicy policy) {
@@ -204,6 +223,23 @@ public class ByteBufAlloc {
             return ((ByteBufAllocatorMetricProvider) allocator).metric();
         }
         return null;
+    }
+
+    private static OptionalLong allocatedMemory(String typeName) {
+        ByteBufAllocMetric snapshot = byteBufAllocMetric;
+        if (snapshot == null) {
+            return OptionalLong.empty();
+        }
+        Long value = snapshot.getDetailedMap().get(typeName);
+        return value == null ? OptionalLong.empty() : OptionalLong.of(value);
+    }
+
+    private static OptionalLong usedMemory() {
+        ByteBufAllocMetric snapshot = byteBufAllocMetric;
+        if (snapshot == null) {
+            return OptionalLong.empty();
+        }
+        return OptionalLong.of(snapshot.getUsedMemory());
     }
 
     public static class ByteBufAllocMetric {

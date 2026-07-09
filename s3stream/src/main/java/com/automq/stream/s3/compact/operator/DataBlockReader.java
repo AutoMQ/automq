@@ -24,9 +24,8 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.compact.CompactionMetrics;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.stats.CompactionStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
@@ -53,6 +52,7 @@ import static com.automq.stream.s3.ByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_REA
 public class DataBlockReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReader.class);
     private static final ByteBufSeqAlloc DIRECT_ALLOC = new ByteBufSeqAlloc(STREAM_SET_OBJECT_COMPACTION_READ, 1);
+
     private final S3ObjectMetadata metadata;
     private final String objectKey;
     private final ObjectStorage objectStorage;
@@ -200,7 +200,7 @@ public class DataBlockReader {
     private CompletableFuture<ByteBuf> rangeRead(long start, long end) {
         return rangeRead0(start, end).whenComplete((ret, ex) -> {
             if (ex == null) {
-                CompactionStats.getInstance().compactionReadSizeStats.add(MetricsLevel.INFO, ret.readableBytes());
+                CompactionMetrics.COMPACTION_READ_SIZE.add(ret.readableBytes());
             }
         });
     }

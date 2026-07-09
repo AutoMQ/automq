@@ -1,10 +1,11 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
-import com.automq.stream.s3.metrics.{MetricsLevel, TimerUtil}
+import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel, TimerUtil}
 import com.automq.stream.s3.network.{AsyncNetworkBandwidthLimiter, GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
+import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
@@ -37,8 +38,6 @@ import org.apache.kafka.common.{TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.image.{LocalReplicaChanges, MetadataImage, TopicsDelta}
 import org.apache.kafka.metadata.LeaderConstants
 import org.apache.kafka.server.common.{DirectoryEventHandler, MetadataVersion}
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsConstants._
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log._
 
@@ -54,6 +53,36 @@ import scala.compat.java8.OptionConverters.RichOptionalGeneric
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, EnumerationHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
+  private val LABEL_FETCH_LIMITER_NAME = AttributeKey.stringKey("limiter_name")
+  private val LABEL_FETCH_EXECUTOR_NAME = AttributeKey.stringKey("executor_name")
+  private val LABEL_NODE_ID = AttributeKey.stringKey("node_id")
+  private val LABEL_TOPIC_NAME = AttributeKey.stringKey("topic")
+  private val LABEL_RACK_ID = AttributeKey.stringKey("rack")
+  private val FETCH_LIMITER_FAST_NAME = "fast"
+  private val FETCH_LIMITER_SLOW_NAME = "slow"
+  private val FETCH_EXECUTOR_FAST_NAME = "fast"
+  private val FETCH_EXECUTOR_SLOW_NAME = "slow"
+  private val FETCH_EXECUTOR_DELAYED_NAME = "delayed"
+
+  private val FETCH_LIMITER_PERMIT_NUM = S3Metrics.instance()
+    .longGauge("kafka_stream_fetch_limiter_permit_num", "The number of permits in fetch limiters", "")
+  private val FETCH_LIMITER_WAITING_TASK_NUM = S3Metrics.instance()
+    .longGauge("kafka_stream_fetch_limiter_waiting_task_num", "The number of tasks waiting for permits in fetch limiters", "")
+  private val FETCH_PENDING_TASK_NUM = S3Metrics.instance()
+    .longGauge("kafka_stream_fetch_pending_task_num", "The number of pending tasks in fetch executors", "")
+  private val FETCH_LIMITER_TIMEOUT_COUNT = S3Metrics.instance()
+    .longCounter("kafka_stream_fetch_limiter_timeout_count", "The number of acquire permits timeout in fetch limiters", "")
+  private val FETCH_LIMITER_TIME = S3Metrics.instance()
+    .histogram("kafka_stream_fetch_limiter_time", "The time cost of acquire permits in fetch limiters", "nanoseconds")
+  private val TOPIC_PARTITION_COUNT = S3Metrics.instance()
+    .longGauge("kafka_stream_topic_partition_count", "The number of partitions for each topic on each broker", "")
+
+  private def fetchLimiterAttributes(limiterName: String): Attributes =
+    Attributes.of(LABEL_FETCH_LIMITER_NAME, limiterName)
+
+  private def fetchExecutorAttributes(executorName: String): Attributes =
+    Attributes.of(LABEL_FETCH_EXECUTOR_NAME, executorName)
+
   def emptyReadResults(partitions: Seq[TopicIdPartition]): Seq[(TopicIdPartition, LogReadResult)] = {
     partitions.map(tp => tp -> createLogReadResult(null))
   }
@@ -102,54 +131,61 @@ class ElasticReplicaManager(
   delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam, delayedElectLeaderPurgatoryParam,
   delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier, addPartitionsToTxnManager,
   directoryEventHandler) {
+  import ElasticReplicaManager.{fetchExecutorAttributes, fetchLimiterAttributes, FETCH_EXECUTOR_DELAYED_NAME, FETCH_EXECUTOR_FAST_NAME, FETCH_EXECUTOR_SLOW_NAME, FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_PERMIT_NUM, FETCH_LIMITER_SLOW_NAME, FETCH_LIMITER_TIME, FETCH_LIMITER_TIMEOUT_COUNT, FETCH_LIMITER_WAITING_TASK_NUM, FETCH_PENDING_TASK_NUM, LABEL_NODE_ID, LABEL_RACK_ID, LABEL_TOPIC_NAME, TOPIC_PARTITION_COUNT}
 
   partitionMetricsCleanerExecutor.scheduleAtFixedRate(() => {
     brokerTopicStats.removeRedundantMetrics(allPartitions.keys ++ snapshotReadPartitions.keys.asScala)
   }, 1, 1, TimeUnit.HOURS)
 
+  TOPIC_PARTITION_COUNT.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
+    partitionDistribution().foreach { case (topic, count) =>
+      measurement.record(count.toLong, Attributes.builder()
+        .put(LABEL_TOPIC_NAME, topic)
+        .put(LABEL_RACK_ID, config.rack.getOrElse(""))
+        .put(LABEL_NODE_ID, config.nodeId.toString)
+        .build())
+    }
+  })
+
   protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
-
-  private val fetchExecutorQueueSizeGaugeMap = new util.HashMap[String, Integer]()
-  S3StreamKafkaMetricsManager.setFetchPendingTaskNumSupplier(() => {
-    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_FAST_NAME, fastFetchExecutor match {
-      case executor: ThreadPoolExecutor => executor.getQueue.size()
-      case _ => 0
-    })
-    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_SLOW_NAME, slowFetchExecutor match {
-      case executor: ThreadPoolExecutor => executor.getQueue.size()
-      case _ => 0
-    })
-    fetchExecutorQueueSizeGaugeMap.put(FETCH_EXECUTOR_DELAYED_NAME, DelayedFetch.executorQueueSize)
-    fetchExecutorQueueSizeGaugeMap
-  })
 
   private val fetchLimiterSize = Systems.getEnvInt("AUTOMQ_FETCH_LIMITER_SIZE",
     // autoscale the fetch limiter size based on heap size, min 200MiB, max 1GiB, every 3GB heap add 100MiB limiter
      Math.min(1024, 100 * Math.max(2, (Systems.HEAP_MEMORY_SIZE / (1024 * 1024 * 1024) / 3)).asInstanceOf[Int]) * 1024 * 1024
   )
+
+  private def partitionDistribution(): Map[String, Int] = {
+    allPartitions.keys.groupBy(_.topic).map(kv => kv._1 -> kv._2.size)
+  }
   private val fastFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_FAST_NAME)
   private val slowFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_SLOW_NAME)
-  private val fetchLimiterWaitingTasksGaugeMap = new util.HashMap[String, Integer]()
-  S3StreamKafkaMetricsManager.setFetchLimiterWaitingTaskNumSupplier(() => {
-    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.waitingThreads())
-    fetchLimiterWaitingTasksGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.waitingThreads())
-    fetchLimiterWaitingTasksGaugeMap
+  FETCH_PENDING_TASK_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
+    measurement.record(fetchExecutorQueueSize(fastFetchExecutor), fetchExecutorAttributes(FETCH_EXECUTOR_FAST_NAME))
+    measurement.record(fetchExecutorQueueSize(slowFetchExecutor), fetchExecutorAttributes(FETCH_EXECUTOR_SLOW_NAME))
+    measurement.record(DelayedFetch.executorQueueSize, fetchExecutorAttributes(FETCH_EXECUTOR_DELAYED_NAME))
   })
-  private val fetchLimiterPermitsGaugeMap = new util.HashMap[String, Integer]()
-  S3StreamKafkaMetricsManager.setFetchLimiterPermitNumSupplier(() => {
-    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_FAST_NAME, fastFetchLimiter.availablePermits())
-    fetchLimiterPermitsGaugeMap.put(FETCH_LIMITER_SLOW_NAME, slowFetchLimiter.availablePermits())
-    fetchLimiterPermitsGaugeMap
+  FETCH_LIMITER_WAITING_TASK_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
+    measurement.record(fastFetchLimiter.waitingThreads(), fetchLimiterAttributes(FETCH_LIMITER_FAST_NAME))
+    measurement.record(slowFetchLimiter.waitingThreads(), fetchLimiterAttributes(FETCH_LIMITER_SLOW_NAME))
+  })
+  FETCH_LIMITER_PERMIT_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
+    measurement.record(fastFetchLimiter.availablePermits(), fetchLimiterAttributes(FETCH_LIMITER_FAST_NAME))
+    measurement.record(slowFetchLimiter.availablePermits(), fetchLimiterAttributes(FETCH_LIMITER_SLOW_NAME))
   })
   private val fetchLimiterTimeoutCounterMap = util.Map.of(
-    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(fastFetchLimiter.name),
-    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeoutMetric(slowFetchLimiter.name)
+    fastFetchLimiter.name, FETCH_LIMITER_TIMEOUT_COUNT.register(MetricsLevel.INFO, fetchLimiterAttributes(fastFetchLimiter.name)),
+    slowFetchLimiter.name, FETCH_LIMITER_TIMEOUT_COUNT.register(MetricsLevel.INFO, fetchLimiterAttributes(slowFetchLimiter.name))
   )
   private val fetchLimiterTimeHistogramMap = util.Map.of(
-    fastFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, fastFetchLimiter.name),
-    slowFetchLimiter.name, S3StreamKafkaMetricsManager.buildFetchLimiterTimeMetric(MetricsLevel.INFO, slowFetchLimiter.name)
+    fastFetchLimiter.name, FETCH_LIMITER_TIME.histogram(MetricsLevel.INFO, fetchLimiterAttributes(fastFetchLimiter.name)),
+    slowFetchLimiter.name, FETCH_LIMITER_TIME.histogram(MetricsLevel.INFO, fetchLimiterAttributes(slowFetchLimiter.name))
   )
+
+  private def fetchExecutorQueueSize(executorService: ExecutorService): Int = executorService match {
+    case executor: ThreadPoolExecutor => executor.getQueue.size()
+    case _ => 0
+  }
 
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
@@ -623,7 +659,7 @@ class ElasticReplicaManager(
 
     if (handler == null) {
       // the handler will be null if it timed out to acquire from limiter
-      fetchLimiterTimeoutCounterMap.get(limiter.name).add(MetricsLevel.INFO, 1)
+      fetchLimiterTimeoutCounterMap.get(limiter.name).add(1)
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       ElasticReplicaManager.emptyReadResults(readPartitionInfo.map(_._1))
     } else {

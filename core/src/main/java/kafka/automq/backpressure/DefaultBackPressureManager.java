@@ -20,8 +20,9 @@
 package kafka.automq.backpressure;
 
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
 
@@ -33,12 +34,29 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 import static kafka.automq.backpressure.BackPressureConfig.RECONFIGURABLE_CONFIGS;
 
 public class DefaultBackPressureManager implements BackPressureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultBackPressureManager.class);
+    private static final AttributeKey<String> LABEL_BACK_PRESSURE_STATE = AttributeKey.stringKey("state");
+    private static final AtomicReference<DefaultBackPressureManager> ACTIVE_MANAGER = new AtomicReference<>();
+    private static final Metrics.LongGaugeBundle BACK_PRESSURE_STATE = Metrics.instance()
+        .longGauge("kafka_stream_back_pressure_state", "Back pressure state", "");
+    static {
+        BACK_PRESSURE_STATE.register(MetricsLevel.INFO, Attributes.empty(), measurement -> {
+            DefaultBackPressureManager manager = ACTIVE_MANAGER.get();
+            if (manager != null) {
+                manager.stateMetrics().forEach((state, value) ->
+                    measurement.record(value, Attributes.of(LABEL_BACK_PRESSURE_STATE, state)));
+            }
+        });
+    }
 
     private final BackPressureConfig config;
     private final Regulator regulator;
@@ -66,20 +84,18 @@ public class DefaultBackPressureManager implements BackPressureManager {
     /**
      * The current state metrics of the system.
      * Only used for monitoring.
-     *
-     * @see S3StreamKafkaMetricsManager#setBackPressureStateSupplier
      */
     private final Map<String, Integer> stateMetrics = new HashMap<>(LoadLevel.values().length);
 
     public DefaultBackPressureManager(BackPressureConfig config, Regulator regulator) {
         this.config = config;
         this.regulator = regulator;
+        ACTIVE_MANAGER.set(this);
     }
 
     @Override
     public void start() {
         this.checkerScheduler = Threads.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("back-pressure-checker-%d", false), LOGGER, true, false);
-        S3StreamKafkaMetricsManager.setBackPressureStateSupplier(this::stateMetrics);
     }
 
     @Override

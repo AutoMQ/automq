@@ -19,11 +19,10 @@
 
 package com.automq.stream.s3.metrics.stats;
 
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.wrapper.Counter;
-import com.automq.stream.s3.metrics.wrapper.CounterMetric;
-import com.automq.stream.s3.metrics.wrapper.HistogramMetric;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
@@ -35,8 +34,20 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
 public class NetworkStats {
     private static final long NETWORK_RATE_MIN_INTERVAL_MS = TimeUnit.SECONDS.toMillis(30);
+    private static final AttributeKey<String> LABEL_TYPE = AttributeKey.stringKey("type");
+    private static final Metrics.LongCounterBundle NETWORK_INBOUND_USAGE = Metrics.instance()
+        .longCounter("kafka_stream_network_inbound_usage", "Network inbound usage", "bytes");
+    private static final Metrics.LongCounterBundle NETWORK_OUTBOUND_USAGE = Metrics.instance()
+        .longCounter("kafka_stream_network_outbound_usage", "Network outbound usage", "bytes");
+    private static final Metrics.HistogramBundle NETWORK_INBOUND_LIMITER_QUEUE_TIME = Metrics.instance()
+        .histogram("kafka_stream_network_inbound_limiter_queue_time", "Network inbound limiter queue time", "nanoseconds");
+    private static final Metrics.HistogramBundle NETWORK_OUTBOUND_LIMITER_QUEUE_TIME = Metrics.instance()
+        .histogram("kafka_stream_network_outbound_limiter_queue_time", "Network outbound limiter queue time", "nanoseconds");
     private static final NetworkStats INSTANCE = new NetworkStats();
     // <StreamId, <FastReadBytes, SlowReadBytes>>
     private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
@@ -44,29 +55,50 @@ public class NetworkStats {
     private final Counter networkOutboundUsageTotal = new Counter();
     private final MinIntervalRate networkInboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
     private final MinIntervalRate networkOutboundRate = new MinIntervalRate(NETWORK_RATE_MIN_INTERVAL_MS);
-    private final Map<ThrottleStrategy, CounterMetric> networkInboundUsageTotalStats = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, CounterMetric> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, HistogramMetric> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
-    private final Map<ThrottleStrategy, HistogramMetric> networkOutboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> networkInboundUsageTotalStats = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, DeltaHistogram> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
+    private final Map<ThrottleStrategy, DeltaHistogram> networkOutboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
 
     private NetworkStats() {
+        for (ThrottleStrategy strategy : ThrottleStrategy.values()) {
+            Metrics.LongCounterBundle.LongCounter inboundUsage = NETWORK_INBOUND_USAGE
+                .register(MetricsLevel.INFO, attributes(strategy));
+            inboundUsage.add(0);
+            networkInboundUsageTotalStats.put(strategy, inboundUsage);
+
+            Metrics.LongCounterBundle.LongCounter outboundUsage = NETWORK_OUTBOUND_USAGE
+                .register(MetricsLevel.INFO, attributes(strategy));
+            outboundUsage.add(0);
+            networkOutboundUsageTotalStats.put(strategy, outboundUsage);
+
+            DeltaHistogram inboundQueueTime = NETWORK_INBOUND_LIMITER_QUEUE_TIME
+                .histogram(MetricsLevel.INFO, attributes(strategy));
+            networkInboundLimiterQueueTimeStatsMap.put(strategy, inboundQueueTime);
+
+            DeltaHistogram outboundQueueTime = NETWORK_OUTBOUND_LIMITER_QUEUE_TIME
+                .histogram(MetricsLevel.INFO, attributes(strategy));
+            networkOutboundLimiterQueueTimeStatsMap.put(strategy, outboundQueueTime);
+        }
     }
 
     public static NetworkStats getInstance() {
         return INSTANCE;
     }
 
-    public CounterMetric networkUsageTotalStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
-        Map<ThrottleStrategy, CounterMetric> stats = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotalStats : networkOutboundUsageTotalStats;
-        CounterMetric metric = stats.get(strategy);
+    public void recordNetworkUsageTotal(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy, long value) {
+        Counter total = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotal : networkOutboundUsageTotal;
+        total.inc(value);
+        Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> stats = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotalStats : networkOutboundUsageTotalStats;
+        Metrics.LongCounterBundle.LongCounter metric = stats.get(strategy);
         if (metric == null) {
             if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
-                metric = stats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundUsageMetric(strategy, networkInboundUsageTotal::inc));
+                metric = stats.computeIfAbsent(strategy, k -> NETWORK_INBOUND_USAGE.register(MetricsLevel.INFO, attributes(strategy)));
             } else {
-                metric = stats.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundUsageMetric(strategy, networkOutboundUsageTotal::inc));
+                metric = stats.computeIfAbsent(strategy, k -> NETWORK_OUTBOUND_USAGE.register(MetricsLevel.INFO, attributes(strategy)));
             }
         }
-        return metric;
+        metric.add(value);
     }
 
     public Optional<Counter> fastReadBytesStats(long streamId) {
@@ -125,19 +157,27 @@ public class NetworkStats {
         return streamReadBytesStats;
     }
 
-    public HistogramMetric networkLimiterQueueTimeStats(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy) {
-        HistogramMetric metric;
+    public void recordNetworkLimiterQueueTime(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy, long value) {
+        DeltaHistogram metric;
         if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
             metric = networkInboundLimiterQueueTimeStatsMap.get(strategy);
             if (metric == null) {
-                metric = networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkInboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+                metric = networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy,
+                    k -> NETWORK_INBOUND_LIMITER_QUEUE_TIME.histogram(MetricsLevel.INFO, attributes(strategy)));
             }
         } else {
             metric = networkOutboundLimiterQueueTimeStatsMap.get(strategy);
             if (metric == null) {
-                metric = networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy, k -> S3StreamMetricsManager.buildNetworkOutboundLimiterQueueTimeMetric(MetricsLevel.INFO, strategy));
+                metric = networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy,
+                    k -> NETWORK_OUTBOUND_LIMITER_QUEUE_TIME.histogram(MetricsLevel.INFO, attributes(strategy)));
             }
         }
-        return metric;
+        metric.record(value);
+    }
+
+    private static Attributes attributes(ThrottleStrategy strategy) {
+        return Attributes.builder()
+            .put(LABEL_TYPE, strategy.getName())
+            .build();
     }
 }

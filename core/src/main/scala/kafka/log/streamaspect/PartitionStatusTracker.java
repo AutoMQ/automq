@@ -21,8 +21,9 @@ package kafka.log.streamaspect;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -34,17 +35,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 public class PartitionStatusTracker {
     private static final Logger LOGGER = LoggerFactory.getLogger(PartitionStatusTracker.class);
     private static final long UNEXPECTED_STATUS_TIMEOUT_MS = 60000;
     private static final String UNEXPECTED_STATUS = "UNEXPECTED";
+    private static final AttributeKey<String> LABEL_STATUS = AttributeKey.stringKey("status");
+    private static final AtomicReference<PartitionStatusTracker> ACTIVE_TRACKER = new AtomicReference<>();
+    private static final Metrics.LongGaugeBundle PARTITION_STATUS_STATISTICS = Metrics.instance()
+        .longGauge("kafka_stream_partition_status_statistics", "The statistics of partition status", "");
+    static {
+        PARTITION_STATUS_STATISTICS.register(MetricsLevel.INFO, Attributes.empty(), measurement -> {
+            PartitionStatusTracker tracker = ACTIVE_TRACKER.get();
+            if (tracker != null) {
+                Statistics.statusNames().forEach(status ->
+                    measurement.record(tracker.statistics.get(status), Attributes.of(LABEL_STATUS, status)));
+            }
+        });
+    }
+
     final Map<TopicPartition, Tracker> trackers = new ConcurrentHashMap<>();
     private Statistics statistics = new Statistics();
     private final ReentrantLock lock = new ReentrantLock();
@@ -62,7 +80,7 @@ public class PartitionStatusTracker {
                 LOGGER.error("Error in partition status tracker check", t);
             }
         }, 30, 30, TimeUnit.SECONDS);
-        S3StreamKafkaMetricsManager.setPartitionStatusStatisticsSupplier(Statistics.statusNames(), n -> PartitionStatusTracker.this.statistics.get(n));
+        ACTIVE_TRACKER.set(this);
     }
 
     public Tracker tracker(TopicPartition tp) {

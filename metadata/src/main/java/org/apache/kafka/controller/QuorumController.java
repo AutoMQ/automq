@@ -17,6 +17,7 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.automq.ControllerState;
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType;
 import org.apache.kafka.clients.admin.FeatureUpdate;
 import org.apache.kafka.common.Uuid;
@@ -184,7 +185,6 @@ import org.apache.kafka.server.common.KRaftVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 import org.apache.kafka.server.fault.FaultHandler;
 import org.apache.kafka.server.fault.FaultHandlerException;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.CreateTopicPolicy;
 import org.apache.kafka.snapshot.SnapshotReader;
@@ -2279,7 +2279,7 @@ public final class QuorumController implements Controller {
             eligibleLeaderReplicasEnabled ? " Eligible leader replicas enabled." : "");
 
         this.raftClient.register(metaLogListener);
-        S3StreamKafkaMetricsManager.setIsActiveSupplier(this::isActive);
+        ControllerState.setIsActiveSupplier(this::isActive);
     }
 
     @Override

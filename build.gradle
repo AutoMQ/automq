@@ -2030,7 +2030,7 @@ project(':server-common') {
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
-    implementation libs.opentelemetrySdk
+    api libs.opentelemetrySdk
 
     // AutoMQ inject start
     implementation project(':s3stream')

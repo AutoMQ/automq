@@ -53,7 +53,8 @@ import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
 import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
@@ -77,12 +78,20 @@ import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import io.opentelemetry.api.common.Attributes;
+
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_MAIN;
 
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
+    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_INBOUND_AVAILABLE_BANDWIDTH = Metrics.instance()
+        .longGauge("kafka_stream_network_inbound_available_bandwidth", "Network inbound available bandwidth", "bytes")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH = Metrics.instance()
+        .longGauge("kafka_stream_network_outbound_available_bandwidth", "Network outbound available bandwidth", "bytes")
+        .register(MetricsLevel.INFO, Attributes.empty());
     protected final Config config;
     private StreamMetadataManager metadataManager;
 
@@ -133,13 +142,13 @@ public class DefaultS3Client implements Client {
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.INBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
-        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.INBOUND, () ->
+        NETWORK_INBOUND_AVAILABLE_BANDWIDTH.record(() ->
             config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkInboundRate());
         // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting tail-reading performance.
         GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
             refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth() * 5);
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
-        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
+        NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH.record(() ->
             config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkOutboundRate());
 
         this.localIndexCache = new LocalStreamRangeIndexCache();

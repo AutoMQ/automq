@@ -29,7 +29,6 @@ import java.util.concurrent.ExecutionException;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.Meter;
 
 public final class TableTopicMetricsManager {
     private static final Cache<String, Attributes> TOPIC_ATTRIBUTE_CACHE = CacheBuilder.newBuilder()
@@ -42,10 +41,6 @@ public final class TableTopicMetricsManager {
         .doubleGauge("kafka_tableworker_eventloop_busy_ratio", "Table worker event loop busy ratio", "%");
 
     private TableTopicMetricsManager() {
-    }
-
-    public static void initMetrics(Meter meter) {
-        // Metrics instruments are registered via Metrics.instance(); no additional setup required.
     }
 
     public static Metrics.LongGaugeBundle.LongGauge registerDelay(String topic) {
