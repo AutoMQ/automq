@@ -20,7 +20,9 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import com.automq.stream.s3.metrics.{Metrics, MetricsLevel}
 import com.automq.stream.utils.{FutureUtil, Systems}
+import io.opentelemetry.api.common.Attributes
 import io.netty.buffer.Unpooled
 import kafka.automq.runtime.{DataPathMonitor, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
@@ -37,7 +39,6 @@ import org.apache.kafka.common.utils.{ThreadUtils, Time}
 import org.apache.kafka.common.{KafkaException, TopicPartition, Uuid}
 import org.apache.kafka.metadata.stream.StreamTags
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.checkpoint.LeaderEpochCheckpointFile
 import org.apache.kafka.storage.internals.log._
@@ -702,7 +703,10 @@ object ElasticLog extends Logging {
         Math.min(1024, 100 * Math.max(1, (Systems.HEAP_MEMORY_SIZE / (1024 * 1024 * 1024) / 6)).asInstanceOf[Int]) * 1024 * 1024
     )
     private val APPEND_PERMIT_SEMAPHORE = new Semaphore(APPEND_PERMIT)
-    S3StreamKafkaMetricsManager.setLogAppendPermitNumSupplier(() => APPEND_PERMIT_SEMAPHORE.availablePermits())
+    private val LOG_APPEND_PERMIT_NUM = Metrics.instance()
+        .longGauge("kafka_stream_log_append_permit_num", "The number of permits in elastic log append limiter", "")
+    LOG_APPEND_PERMIT_NUM.register(MetricsLevel.INFO, Attributes.empty(),
+        measurement => measurement.record(APPEND_PERMIT_SEMAPHORE.availablePermits()))
 
     private val LAST_RECORD_TIMESTAMP = new AtomicLong()
     private val KafkaMetricsGroup = new KafkaMetricsGroup(ElasticLog.getClass)

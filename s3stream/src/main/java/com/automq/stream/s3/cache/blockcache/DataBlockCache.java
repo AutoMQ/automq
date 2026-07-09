@@ -22,9 +22,8 @@ package com.automq.stream.s3.cache.blockcache;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.LRUCache;
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.AsyncSemaphore;
 import com.automq.stream.utils.FutureUtil;
@@ -41,6 +40,8 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+import io.opentelemetry.api.common.Attributes;
+
 /**
  * The DataBlockCache, akin to Linux's Page Cache, has the following responsibilities:
  * - Caching data blocks, releasing the least active data block when the cache size surpasses the maximum size.
@@ -49,6 +50,9 @@ import java.util.concurrent.TimeUnit;
 @EventLoopSafe
 public class DataBlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockCache.class);
+    private static final Metrics.LongGaugeBundle.LongGauge BLOCK_CACHE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_block_cache_size", "Block cache size", "bytes")
+        .register(MetricsLevel.INFO, Attributes.empty());
     static final long DATA_TTL = TimeUnit.MINUTES.toMillis(1);
     static final long CHECK_EXPIRED_DATA_INTERVAL = TimeUnit.MINUTES.toMillis(1);
     final Cache[] caches;
@@ -71,7 +75,7 @@ public class DataBlockCache {
         for (int i = 0; i < eventLoops.length; i++) {
             caches[i] = new Cache(eventLoops[i]);
         }
-        S3StreamMetricsManager.registerBlockCacheSizeSupplier(() -> maxSize - sizeLimiter.permits());
+        BLOCK_CACHE_SIZE.record(() -> maxSize - sizeLimiter.permits());
     }
 
     /**
@@ -173,9 +177,9 @@ public class DataBlockCache {
             // else the listener will be invoked immediately after data loaded in the same eventLoop.
             if (!dataBlock.dataFuture().isDone()) {
                 if (options.isReadahead()) {
-                    StorageOperationStats.getInstance().blockCacheReadaheadThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                    BlockCacheMetrics.READAHEAD_THROUGHPUT.add(dataBlock.dataBlockIndex().size());
                 } else {
-                    StorageOperationStats.getInstance().blockCacheBlockMissThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                    BlockCacheMetrics.BLOCK_MISS_THROUGHPUT.add(dataBlock.dataBlockIndex().size());
                 }
             }
             // DataBlock#retain should will before the complete the future to avoid the other read use #markRead to really free the data block.
@@ -200,7 +204,7 @@ public class DataBlockCache {
                     reader.read(new ObjectReader.ReadOptions().throttleStrategy(throttleStrategy), dataBlock.dataBlockIndex());
                 ColdReadInflightRegistry.track(readCf, startTimeNanos);
                 readCf.whenCompleteAsync((rst, ex) -> {
-                    StorageOperationStats.getInstance().blockCacheReadS3Throughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                    BlockCacheMetrics.READ_S3_THROUGHPUT.add(dataBlock.dataBlockIndex().size());
                     reader.release();
                     DataBlockGroupKey key = new DataBlockGroupKey(dataBlock.objectId(), dataBlock.dataBlockIndex());
                     if (ex != null) {
@@ -255,7 +259,7 @@ public class DataBlockCache {
                 lru.pop();
                 if (blocks.remove(key, dataBlock)) {
                     dataBlock.free();
-                    StorageOperationStats.getInstance().blockCacheBlockEvictThroughput.add(MetricsLevel.INFO, dataBlock.dataBlockIndex().size());
+                    BlockCacheMetrics.BLOCK_EVICT_THROUGHPUT.add(dataBlock.dataBlockIndex().size());
                 } else {
                     LOGGER.error("[BUG] duplicated free data block {}", dataBlock);
                 }

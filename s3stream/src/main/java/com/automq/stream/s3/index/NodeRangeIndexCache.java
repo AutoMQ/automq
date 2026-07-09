@@ -21,8 +21,9 @@ package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.cache.AsyncLRUCache;
 import com.automq.stream.s3.cache.AsyncMeasurable;
+import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.stats.MetadataStats;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Time;
 import com.google.common.base.Ticker;
@@ -41,6 +42,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
 public class NodeRangeIndexCache {
     private static final int MAX_CACHE_SIZE = 100 * 1024 * 1024;
     private static final int DEFAULT_EXPIRE_TIME_MS = 60000;
@@ -48,6 +52,21 @@ public class NodeRangeIndexCache {
     public static final int MIN_CACHE_UPDATE_INTERVAL_MS = 1000; // 1s
     private static final int DEFAULT_UPDATE_CONCURRENCY_LIMIT = 10;
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeRangeIndexCache.class);
+    private static final AttributeKey<String> LABEL_TYPE = AttributeKey.stringKey("type");
+    private static final String LABEL_STATUS_UPDATE = "update";
+    private static final String LABEL_STATUS_INVALIDATE = "invalidate";
+    private static final Metrics.LongCounterBundle RANGE_INDEX_CACHE_OPERATION_COUNT = Metrics.instance()
+        .longCounter("kafka_stream_node_range_index_cache_operation_count", "Range index cache operation count", "");
+    private static final Metrics.LongCounterBundle.LongCounter RANGE_INDEX_UPDATE_COUNT =
+        RANGE_INDEX_CACHE_OPERATION_COUNT.register(MetricsLevel.INFO,
+            attributes(LABEL_STATUS_UPDATE));
+    private static final Metrics.LongCounterBundle.LongCounter RANGE_INDEX_INVALIDATE_COUNT =
+        RANGE_INDEX_CACHE_OPERATION_COUNT.register(MetricsLevel.INFO,
+            attributes(LABEL_STATUS_INVALIDATE));
+    private static final Metrics.LongCounterBundle.LongCounter RANGE_INDEX_HIT_COUNT =
+        RANGE_INDEX_CACHE_OPERATION_COUNT.register(MetricsLevel.INFO, attributes(S3StreamMetricsConstant.LABEL_STATUS_HIT));
+    private static final Metrics.LongCounterBundle.LongCounter RANGE_INDEX_MISS_COUNT =
+        RANGE_INDEX_CACHE_OPERATION_COUNT.register(MetricsLevel.INFO, attributes(S3StreamMetricsConstant.LABEL_STATUS_MISS));
     private static volatile NodeRangeIndexCache instance = null;
     private final ExpireLRUCache nodeRangeIndexMap = new ExpireLRUCache(MAX_CACHE_SIZE, DEFAULT_EXPIRE_TIME_MS);
     private final Map<Long, Long> nodeCacheUpdateTimestamp = new ConcurrentHashMap<>();
@@ -66,6 +85,34 @@ public class NodeRangeIndexCache {
             }
         }
         return instance;
+    }
+
+    /**
+     * Records a remote range index cache update.
+     */
+    public static void recordRangeIndexUpdate() {
+        RANGE_INDEX_UPDATE_COUNT.add(1);
+    }
+
+    /**
+     * Records a remote range index cache invalidation.
+     */
+    public static void recordRangeIndexInvalidate() {
+        RANGE_INDEX_INVALIDATE_COUNT.add(1);
+    }
+
+    /**
+     * Records a remote range index cache hit.
+     */
+    public static void recordRangeIndexHit() {
+        RANGE_INDEX_HIT_COUNT.add(1);
+    }
+
+    /**
+     * Records a remote range index cache miss.
+     */
+    public static void recordRangeIndexMiss() {
+        RANGE_INDEX_MISS_COUNT.add(1);
     }
 
     void clear() {
@@ -111,10 +158,14 @@ public class NodeRangeIndexCache {
             cf.whenComplete((v, e) -> updateLimiter.release());
             indexCache = new StreamRangeIndexCache(cf);
             this.nodeRangeIndexMap.put(nodeId, indexCache);
-            MetadataStats.getInstance().getRangeIndexUpdateCountStats().add(MetricsLevel.INFO, 1);
+            recordRangeIndexUpdate();
             LOGGER.info("Update stream range index for node {}, concurrency limiter left: {}", nodeId, updateLimiter.availablePermits());
         }
         return indexCache.searchObjectId(streamId, startOffset);
+    }
+
+    private static Attributes attributes(String type) {
+        return Attributes.of(LABEL_TYPE, type);
     }
 
     static class StreamRangeIndexCache implements AsyncMeasurable {

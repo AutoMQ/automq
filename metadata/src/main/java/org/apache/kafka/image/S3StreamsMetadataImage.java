@@ -38,9 +38,8 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamsMetadataMetrics;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
@@ -172,11 +171,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
         ctx.cf.whenComplete((r, ex) -> {
             long timeElapsedNanos = TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS);
-            if (ex != null) {
-                MetadataStats.getInstance().getObjectsTimeFailedStats().record(timeElapsedNanos);
-            } else {
-                MetadataStats.getInstance().getObjectsTimeSuccessStats().record(timeElapsedNanos);
-            }
+            S3StreamsMetadataMetrics.recordGetObjectsTime(ex == null, timeElapsedNanos);
         });
         return ctx.cf;
     }
@@ -327,7 +322,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (firstTimeSearchInSSO && ctx.isFromSparseIndex) {
-                        MetadataStats.getInstance().getRangeIndexSkippedObjectNumStats().record(streamSetObjectIndex - finalStartSearchIndex);
+                        S3StreamsMetadataMetrics.recordRangeIndexSkippedObjectNum(streamSetObjectIndex - finalStartSearchIndex);
                         firstTimeSearchInSSO = false;
                     }
                     if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
@@ -432,13 +427,13 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 int startIndex = -1;
                 if (objectId >= 0) {
                     startIndex = findStartSearchIndex(objectId, node.orderList());
-                    MetadataStats.getInstance().getRangeIndexHitCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexHit();
                 } else {
-                    MetadataStats.getInstance().getRangeIndexMissCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexMiss();
                 }
                 if (startIndex < 0 && ctx.indexCache.nodeId() != node.getNodeId()) {
                     NodeRangeIndexCache.getInstance().invalidate(node.getNodeId());
-                    MetadataStats.getInstance().getRangeIndexInvalidateCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexInvalidate();
                 }
                 return Math.max(0, startIndex);
             });

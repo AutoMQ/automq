@@ -71,7 +71,6 @@ import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
@@ -82,6 +81,8 @@ import com.automq.stream.s3.compact.CompactOperations;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.google.common.base.Strings;
@@ -109,6 +110,9 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 /**
@@ -117,6 +121,11 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 @SuppressWarnings({"all", "this-escape"})
 public class StreamControlManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
+    private static final Metrics.LongGaugeBundle STREAM_SET_OBJECT_NUM = Metrics.instance()
+        .longGauge("kafka_stream_stream_set_object_num", "The total number of stream set objects", "");
+    private static final Metrics.LongGaugeBundle STREAM_OBJECT_NUM = Metrics.instance()
+        .longGauge("kafka_stream_stream_object_num", "The total number of stream objects", "");
+    private static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
 
     private final Logger log;
 
@@ -132,6 +141,8 @@ public class StreamControlManager {
 
     private final TimelineHashMap<Long, Integer> stream2node;
     private final TimelineHashMap<Integer/* nodeId */, /* streams */DeltaList<Long>> node2streams;
+    private final Metrics.LongGaugeBundle.LongGauge streamSetObjectNumMetric;
+    private final Metrics.LongGaugeBundle.LongGauge streamObjectNumMetric;
 
     private Set<Integer> cleaningUpNodes = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
@@ -174,21 +185,21 @@ public class StreamControlManager {
 
         cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
 
-        S3StreamKafkaMetricsManager.setStreamSetObjectNumSupplier(() -> {
-            Map<String, Integer> numMap = new HashMap<>();
+        this.streamSetObjectNumMetric = STREAM_SET_OBJECT_NUM.register(MetricsLevel.INFO, Attributes.empty(), result -> {
             if (!quorumController.isActive()) {
-                return numMap;
+                return;
             }
             for (NodeRuntimeMetadata nodeRuntimeMetadata : nodesMetadata.values()) {
-                numMap.put(String.valueOf(nodeRuntimeMetadata.getNodeId()), nodeRuntimeMetadata.streamSetObjects().size());
+                result.record(nodeRuntimeMetadata.streamSetObjects().size(), Attributes.builder()
+                    .put(LABEL_NODE_ID, String.valueOf(nodeRuntimeMetadata.getNodeId()))
+                    .build());
             }
-            return numMap;
         });
-        S3StreamKafkaMetricsManager.setStreamObjectNumSupplier(() -> {
+        this.streamObjectNumMetric = STREAM_OBJECT_NUM.register(MetricsLevel.INFO, Attributes.empty(), result -> {
             if (!quorumController.isActive()) {
-                return 0;
+                return;
             }
-            return streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum();
+            result.record(streamsMetadata.values().stream().mapToInt(it -> it.streamObjects().size()).sum());
         });
     }
 

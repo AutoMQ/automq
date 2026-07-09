@@ -19,8 +19,12 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -63,6 +67,12 @@ public class LogCache {
     private static final int MAX_BLOCKS_COUNT = 64;
     private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
         1, "LOG_CACHE_ASYNC", true, LOGGER);
+    private static final DeltaHistogram APPEND_STORAGE_LOG_CACHE_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_HIT_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_MISS_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
     static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
@@ -115,7 +125,7 @@ public class LogCache {
         if (added) {
             size.addAndGet(recordBatch.occupiedSize());
         }
-        StorageOperationStats.getInstance().appendLogCacheStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        APPEND_STORAGE_LOG_CACHE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return added;
     }
 
@@ -167,8 +177,12 @@ public class LogCache {
 
         long timeElapsed = TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
-        StorageOperationStats.getInstance().readLogCacheStats(isCacheHit).record(timeElapsed);
+        readLogCacheStats(isCacheHit).record(timeElapsed);
         return records;
+    }
+
+    private static DeltaHistogram readLogCacheStats(boolean isCacheHit) {
+        return isCacheHit ? READ_STORAGE_LOG_CACHE_HIT_LATENCY : READ_STORAGE_LOG_CACHE_MISS_LATENCY;
     }
 
     public List<StreamRecordBatch> get0(Long streamId, long startOffset, long endOffset, int maxBytes) {

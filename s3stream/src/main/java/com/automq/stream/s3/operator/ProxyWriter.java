@@ -21,9 +21,8 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3ObjectMetrics;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.utils.FutureUtil;
 
@@ -165,13 +164,11 @@ public class ProxyWriter implements Writer {
 
         @Override
         public CompletableFuture<Void> close() {
-            S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            int size = data.readableBytes();
+            S3ObjectMetrics.recordReadyCloseStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
             cf.whenComplete((nil, e) -> {
-                S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
-                S3ObjectStats.getInstance().objectUploadSizeStats.record(size);
+                S3ObjectMetrics.recordTotalStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                S3ObjectMetrics.recordObject();
             });
             return cf;
         }

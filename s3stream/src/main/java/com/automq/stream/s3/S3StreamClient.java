@@ -31,8 +31,11 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -69,6 +72,10 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.MINOR_V1_COMPAC
 
 public class S3StreamClient implements StreamClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StreamClient.class);
+    private static final DeltaHistogram CREATE_STREAM_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.CREATE_STREAM);
+    private static final DeltaHistogram OPEN_STREAM_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.OPEN_STREAM);
     private static final long COMPACTION_COOLDOWN_AFTER_OPEN_STREAM = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_COOLDOWN_AFTER_OPEN_STREAM", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
     private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
@@ -129,7 +136,7 @@ public class S3StreamClient implements StreamClient {
             checkState();
             TimerUtil timerUtil = new TimerUtil();
             return FutureUtil.exec(() -> streamManager.createStream(options.tags()).thenCompose(streamId -> {
-                StreamOperationStats.getInstance().createStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                CREATE_STREAM_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return openStream0(streamId, options.epoch(), options.tags(), OpenStreamOptions.builder().epoch(options.epoch()).tags(options.tags()).build());
             }), LOGGER, "createAndOpenStream");
         });
@@ -188,7 +195,7 @@ public class S3StreamClient implements StreamClient {
                 if (!snapshotRead) {
                     runInLock(() -> openedStreams.put(streamId, stream));
                 }
-                StreamOperationStats.getInstance().openStreamLatency.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                OPEN_STREAM_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 return stream;
             });
             if (!snapshotRead) {
