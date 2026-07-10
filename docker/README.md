@@ -284,3 +284,19 @@ Both configurations use the new bucket URI pattern as recommended in the AutoMQ 
 
 For more details, see the [AutoMQ documentation](https://www.automq.com/docs/automq/getting-started/cluster-deployment-on-linux#step-2-edit-the-cluster-configuration-template).
 
+
+
+
+Architecture
+
+```text
+Client
+   │
+   ▼
+API Gateway
+   │
+   ▼
+Broker
+   │
+   ▼
+Storage
