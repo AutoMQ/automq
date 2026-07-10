@@ -2,7 +2,7 @@ package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel, TimerUtil}
-import com.automq.stream.s3.network.{AsyncNetworkBandwidthLimiter, GlobalNetworkBandwidthLimiters, ThrottleStrategy}
+import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
@@ -1015,7 +1015,7 @@ class ElasticReplicaManager(
   }
 
   private def acquireNetworkOutPermit(size: Int, throttleStrategy: ThrottleStrategy): Unit = {
-    GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND)
+    GlobalNetworkBandwidthLimiters.instance().outbound()
       .consume(throttleStrategy, size).join()
   }
 

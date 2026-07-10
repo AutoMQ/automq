@@ -53,10 +53,6 @@ import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
 import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metrics.Metrics;
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.stats.NetworkStats;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -78,20 +74,12 @@ import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
-import io.opentelemetry.api.common.Attributes;
-
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_MAIN;
 
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
-    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_INBOUND_AVAILABLE_BANDWIDTH = Metrics.instance()
-        .longGauge("kafka_stream_network_inbound_available_bandwidth", "Network inbound available bandwidth", "bytes")
-        .register(MetricsLevel.INFO, Attributes.empty());
-    private static final Metrics.LongGaugeBundle.LongGauge NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH = Metrics.instance()
-        .longGauge("kafka_stream_network_outbound_available_bandwidth", "Network outbound available bandwidth", "bytes")
-        .register(MetricsLevel.INFO, Attributes.empty());
     protected final Config config;
     private StreamMetadataManager metadataManager;
 
@@ -134,22 +122,7 @@ public class DefaultS3Client implements Client {
 
     @Override
     public void start() {
-        long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
-        if (refillToken <= 0) {
-            throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
-                config.networkBaselineBandwidth(), config.refillPeriodMs()));
-        }
-        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-            refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
-        NETWORK_INBOUND_AVAILABLE_BANDWIDTH.record(() ->
-            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkInboundRate());
-        // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting tail-reading performance.
-        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-            refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth() * 5);
-        networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
-        NETWORK_OUTBOUND_AVAILABLE_BANDWIDTH.record(() ->
-            config.networkBaselineBandwidth() - (long) NetworkStats.getInstance().networkOutboundRate());
+        setupNetworkLimiters();
 
         this.localIndexCache = LocalStreamRangeIndexCache.create();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
@@ -194,10 +167,16 @@ public class DefaultS3Client implements Client {
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
         this.storage.shutdown();
-        this.networkInboundLimiter.shutdown();
-        this.networkOutboundLimiter.shutdown();
+        // Network limiters are process-level singletons managed by GlobalNetworkBandwidthLimiters.
         this.requestSender.shutdown();
         LOGGER.info("S3Client shutdown successfully");
+    }
+
+    protected void setupNetworkLimiters() {
+        GlobalNetworkBandwidthLimiters.instance().setup(
+            config.networkBandwidthMode(), config.networkBaselineBandwidth(), config.refillPeriodMs());
+        networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().inbound();
+        networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().outbound();
     }
 
     @Override
