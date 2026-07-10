@@ -23,7 +23,8 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.wrapper.Counter;
 import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.MeteredNetworkBandwidthLimiter;
+import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.apache.commons.lang3.tuple.ImmutablePair;
@@ -44,10 +45,6 @@ public class NetworkStats {
         .longCounter("kafka_stream_network_inbound_usage", "Network inbound usage", "bytes");
     private static final Metrics.LongCounterBundle NETWORK_OUTBOUND_USAGE = Metrics.instance()
         .longCounter("kafka_stream_network_outbound_usage", "Network outbound usage", "bytes");
-    private static final Metrics.HistogramBundle NETWORK_INBOUND_LIMITER_QUEUE_TIME = Metrics.instance()
-        .histogram("kafka_stream_network_inbound_limiter_queue_time", "Network inbound limiter queue time", "nanoseconds");
-    private static final Metrics.HistogramBundle NETWORK_OUTBOUND_LIMITER_QUEUE_TIME = Metrics.instance()
-        .histogram("kafka_stream_network_outbound_limiter_queue_time", "Network outbound limiter queue time", "nanoseconds");
     private static final NetworkStats INSTANCE = new NetworkStats();
     // <StreamId, <FastReadBytes, SlowReadBytes>>
     private final Map<Long, Pair<Counter, Counter>> streamReadBytesStats = new ConcurrentHashMap<>();
@@ -59,6 +56,8 @@ public class NetworkStats {
     private final Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> networkOutboundUsageTotalStats = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, DeltaHistogram> networkInboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
     private final Map<ThrottleStrategy, DeltaHistogram> networkOutboundLimiterQueueTimeStatsMap = new ConcurrentHashMap<>();
+    private volatile long networkBaselineBandwidth = -1;
+    private volatile NetworkBandwidthMode networkBandwidthMode = NetworkBandwidthMode.SEPARATE;
 
     private NetworkStats() {
         for (ThrottleStrategy strategy : ThrottleStrategy.values()) {
@@ -71,14 +70,6 @@ public class NetworkStats {
                 .register(MetricsLevel.INFO, attributes(strategy));
             outboundUsage.add(0);
             networkOutboundUsageTotalStats.put(strategy, outboundUsage);
-
-            DeltaHistogram inboundQueueTime = NETWORK_INBOUND_LIMITER_QUEUE_TIME
-                .histogram(MetricsLevel.INFO, attributes(strategy));
-            networkInboundLimiterQueueTimeStatsMap.put(strategy, inboundQueueTime);
-
-            DeltaHistogram outboundQueueTime = NETWORK_OUTBOUND_LIMITER_QUEUE_TIME
-                .histogram(MetricsLevel.INFO, attributes(strategy));
-            networkOutboundLimiterQueueTimeStatsMap.put(strategy, outboundQueueTime);
         }
     }
 
@@ -86,13 +77,21 @@ public class NetworkStats {
         return INSTANCE;
     }
 
-    public void recordNetworkUsageTotal(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy, long value) {
-        Counter total = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotal : networkOutboundUsageTotal;
+    /**
+     * Configures broker-level network utilization calculation.
+     */
+    public void setup(long baselineBandwidth, NetworkBandwidthMode mode) {
+        this.networkBaselineBandwidth = baselineBandwidth;
+        this.networkBandwidthMode = mode;
+    }
+
+    public void recordNetworkUsageTotal(MeteredNetworkBandwidthLimiter.Direction direction, ThrottleStrategy strategy, long value) {
+        Counter total = direction == MeteredNetworkBandwidthLimiter.Direction.INBOUND ? networkInboundUsageTotal : networkOutboundUsageTotal;
         total.inc(value);
-        Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> stats = type == AsyncNetworkBandwidthLimiter.Type.INBOUND ? networkInboundUsageTotalStats : networkOutboundUsageTotalStats;
+        Map<ThrottleStrategy, Metrics.LongCounterBundle.LongCounter> stats = direction == MeteredNetworkBandwidthLimiter.Direction.INBOUND ? networkInboundUsageTotalStats : networkOutboundUsageTotalStats;
         Metrics.LongCounterBundle.LongCounter metric = stats.get(strategy);
         if (metric == null) {
-            if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+            if (direction == MeteredNetworkBandwidthLimiter.Direction.INBOUND) {
                 metric = stats.computeIfAbsent(strategy, k -> NETWORK_INBOUND_USAGE.register(MetricsLevel.INFO, attributes(strategy)));
             } else {
                 metric = stats.computeIfAbsent(strategy, k -> NETWORK_OUTBOUND_USAGE.register(MetricsLevel.INFO, attributes(strategy)));
@@ -134,14 +133,35 @@ public class NetworkStats {
     }
 
     /**
-     * Returns the broker-level network utilization against the configured baseline bandwidth.
+     * Returns the total inbound and outbound network usage bytes per second.
      */
-    public double networkUtil(long baselineBandwidth) {
+    public double networkSharedRate() {
+        return networkInboundRate() + networkOutboundRate();
+    }
+
+    /**
+     * Returns broker-level network utilization using the latest configured baseline bandwidth and bandwidth mode.
+     * Returns {@link Double#NaN} before a valid network stats setup.
+     */
+    public double networkUtil() {
+        if (networkBaselineBandwidth <= 0) {
+            return Double.NaN;
+        }
+        return calculateNetworkUtil(networkInboundRate(), networkOutboundRate(), networkBaselineBandwidth, networkBandwidthMode);
+    }
+
+    /**
+     * Calculates network utilization from sampled directional rates and the configured bandwidth mode.
+     */
+    static double calculateNetworkUtil(double inboundRate, double outboundRate, long baselineBandwidth, NetworkBandwidthMode mode) {
         if (baselineBandwidth <= 0) {
             return Double.NaN;
         }
-        double inboundUtil = networkInboundRate() / baselineBandwidth;
-        double outboundUtil = networkOutboundRate() / baselineBandwidth;
+        double inboundUtil = inboundRate / baselineBandwidth;
+        double outboundUtil = outboundRate / baselineBandwidth;
+        if (mode == NetworkBandwidthMode.SHARED) {
+            return inboundUtil + outboundUtil;
+        }
         return Math.max(inboundUtil, outboundUtil);
     }
 
@@ -157,22 +177,32 @@ public class NetworkStats {
         return streamReadBytesStats;
     }
 
-    public void recordNetworkLimiterQueueTime(AsyncNetworkBandwidthLimiter.Type type, ThrottleStrategy strategy, long value) {
+    public void recordNetworkLimiterQueueTime(MeteredNetworkBandwidthLimiter.Direction direction, ThrottleStrategy strategy, long value) {
         DeltaHistogram metric;
-        if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
+        if (direction == MeteredNetworkBandwidthLimiter.Direction.INBOUND) {
             metric = networkInboundLimiterQueueTimeStatsMap.get(strategy);
             if (metric == null) {
                 metric = networkInboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy,
-                    k -> NETWORK_INBOUND_LIMITER_QUEUE_TIME.histogram(MetricsLevel.INFO, attributes(strategy)));
+                    k -> NetworkInboundLimiterQueueTimeMetric.BUNDLE.histogram(MetricsLevel.INFO, attributes(strategy)));
             }
         } else {
             metric = networkOutboundLimiterQueueTimeStatsMap.get(strategy);
             if (metric == null) {
                 metric = networkOutboundLimiterQueueTimeStatsMap.computeIfAbsent(strategy,
-                    k -> NETWORK_OUTBOUND_LIMITER_QUEUE_TIME.histogram(MetricsLevel.INFO, attributes(strategy)));
+                    k -> NetworkOutboundLimiterQueueTimeMetric.BUNDLE.histogram(MetricsLevel.INFO, attributes(strategy)));
             }
         }
         metric.record(value);
+    }
+
+    private static class NetworkInboundLimiterQueueTimeMetric {
+        private static final Metrics.HistogramBundle BUNDLE = Metrics.instance()
+            .histogram("kafka_stream_network_inbound_limiter_queue_time", "Network inbound limiter queue time", "nanoseconds");
+    }
+
+    private static class NetworkOutboundLimiterQueueTimeMetric {
+        private static final Metrics.HistogramBundle BUNDLE = Metrics.instance()
+            .histogram("kafka_stream_network_outbound_limiter_queue_time", "Network outbound limiter queue time", "nanoseconds");
     }
 
     private static Attributes attributes(ThrottleStrategy strategy) {

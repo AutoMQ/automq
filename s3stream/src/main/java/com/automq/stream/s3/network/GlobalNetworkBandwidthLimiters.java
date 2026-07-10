@@ -19,15 +19,24 @@
 
 package com.automq.stream.s3.network;
 
-import java.util.HashMap;
-import java.util.Map;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.stats.NetworkStats;
+import com.automq.stream.utils.LogContext;
+
+import org.slf4j.Logger;
+
+import io.opentelemetry.api.common.Attributes;
 
 public class GlobalNetworkBandwidthLimiters {
-    private final Map<AsyncNetworkBandwidthLimiter.Type, AsyncNetworkBandwidthLimiter> limiters = new HashMap<>();
+    private static final Logger LOGGER = new LogContext().logger(GlobalNetworkBandwidthLimiters.class);
+    private static final int OUTBOUND_MAX_TOKENS_MULTIPLIER = 5;
+    private static final int SHARED_MAX_TOKENS_MULTIPLIER = 2;
 
     private static final GlobalNetworkBandwidthLimiters INSTANCE = new GlobalNetworkBandwidthLimiters();
-    private NetworkBandwidthLimiter inboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
-    private NetworkBandwidthLimiter outboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
+    private volatile boolean setup = false;
+    private volatile NetworkBandwidthLimiter inboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
+    private volatile NetworkBandwidthLimiter outboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
 
     private GlobalNetworkBandwidthLimiters() {}
 
@@ -35,32 +44,74 @@ public class GlobalNetworkBandwidthLimiters {
         return INSTANCE;
     }
 
-    public void setup(AsyncNetworkBandwidthLimiter.Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
-        if (limiters.containsKey(type)) {
-            throw new IllegalArgumentException(type + " is already setup");
+    /**
+     * Initializes global directional limiter views from the configured bandwidth mode.
+     */
+    public synchronized void setup(NetworkBandwidthMode mode, long bandwidth, int refillIntervalMs) {
+        if (setup) {
+            throw new IllegalArgumentException("Network bandwidth limiters are already setup");
         }
-        limiters.put(type, new AsyncNetworkBandwidthLimiter(type, tokenSize, refillIntervalMs, maxTokens));
-        if (type == AsyncNetworkBandwidthLimiter.Type.INBOUND) {
-            inboundLimiter = limiters.get(type);
-        } else if (type == AsyncNetworkBandwidthLimiter.Type.OUTBOUND) {
-            outboundLimiter = limiters.get(type);
+        long tokenSize = (long) (bandwidth * ((double) refillIntervalMs / 1000));
+        if (tokenSize <= 0) {
+            throw new IllegalArgumentException(String.format("tokenSize must be greater than 0, bandwidth: %d, refill period: %dms",
+                bandwidth, refillIntervalMs));
         }
+        NetworkStats.getInstance().setup(bandwidth, mode);
+
+        if (mode == NetworkBandwidthMode.SHARED) {
+            AsyncNetworkBandwidthLimiter physicalSharedLimiter = new AsyncNetworkBandwidthLimiter(
+                tokenSize, refillIntervalMs, bandwidth * SHARED_MAX_TOKENS_MULTIPLIER);
+            inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalSharedLimiter);
+            outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalSharedLimiter);
+            Metrics.LongGaugeBundle.LongGauge networkSharedAvailableBandwidthMetric =
+                NetworkSharedAvailableBandwidthMetric.BUNDLE.register(MetricsLevel.INFO, Attributes.empty());
+            networkSharedAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkSharedRate());
+        } else {
+            AsyncNetworkBandwidthLimiter physicalInboundLimiter = new AsyncNetworkBandwidthLimiter(
+                tokenSize, refillIntervalMs, bandwidth);
+            // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting
+            // tail-reading performance.
+            AsyncNetworkBandwidthLimiter physicalOutboundLimiter = new AsyncNetworkBandwidthLimiter(
+                tokenSize, refillIntervalMs, bandwidth * OUTBOUND_MAX_TOKENS_MULTIPLIER);
+            inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalInboundLimiter);
+            outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalOutboundLimiter);
+            Metrics.LongGaugeBundle.LongGauge networkInboundAvailableBandwidthMetric =
+                NetworkInboundAvailableBandwidthMetric.BUNDLE.register(MetricsLevel.INFO, Attributes.empty());
+            networkInboundAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkInboundRate());
+            Metrics.LongGaugeBundle.LongGauge networkOutboundAvailableBandwidthMetric =
+                NetworkOutboundAvailableBandwidthMetric.BUNDLE.register(MetricsLevel.INFO, Attributes.empty());
+            networkOutboundAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkOutboundRate());
+        }
+        setup = true;
+        LOGGER.info("Global network bandwidth limiters setup, mode: {}, bandwidth: {}, tokenSize: {}, refillIntervalMs: {}",
+            mode.getName(), bandwidth, tokenSize, refillIntervalMs);
     }
 
-    public NetworkBandwidthLimiter get(AsyncNetworkBandwidthLimiter.Type type) {
-        AsyncNetworkBandwidthLimiter limiter = limiters.get(type);
-        if (limiter == null) {
-            return AsyncNetworkBandwidthLimiter.NOOP;
-        }
-        return limiter;
+    private NetworkBandwidthLimiter meter(MeteredNetworkBandwidthLimiter.Direction direction, NetworkBandwidthLimiter delegate) {
+        return new MeteredNetworkBandwidthLimiter(direction, delegate);
     }
 
     public NetworkBandwidthLimiter inbound() {
         return inboundLimiter;
     }
 
-    public  NetworkBandwidthLimiter outbound() {
+    public NetworkBandwidthLimiter outbound() {
         return outboundLimiter;
+    }
+
+    private static class NetworkInboundAvailableBandwidthMetric {
+        private static final Metrics.LongGaugeBundle BUNDLE = Metrics.instance()
+            .longGauge("kafka_stream_network_inbound_available_bandwidth", "Network inbound available bandwidth", "bytes");
+    }
+
+    private static class NetworkOutboundAvailableBandwidthMetric {
+        private static final Metrics.LongGaugeBundle BUNDLE = Metrics.instance()
+            .longGauge("kafka_stream_network_outbound_available_bandwidth", "Network outbound available bandwidth", "bytes");
+    }
+
+    private static class NetworkSharedAvailableBandwidthMetric {
+        private static final Metrics.LongGaugeBundle BUNDLE = Metrics.instance()
+            .longGauge("kafka_stream_network_shared_available_bandwidth", "Network shared available bandwidth", "bytes");
     }
 
 }

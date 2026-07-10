@@ -30,7 +30,6 @@ import kafka.automq.table.process.exception.RecordProcessorException;
 import org.apache.kafka.server.record.ErrorsTolerance;
 
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -104,7 +103,7 @@ public class IcebergWriter implements Writer {
         this.processor = processor;
         this.config = config;
         this.deltaWrite = StringUtils.isNoneBlank(config.cdcField()) || config.upsertEnable();
-        this.outboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
+        this.outboundLimiter = GlobalNetworkBandwidthLimiters.instance().outbound();
     }
 
     @Override
