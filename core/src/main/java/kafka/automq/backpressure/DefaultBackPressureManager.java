@@ -181,7 +181,6 @@ public class DefaultBackPressureManager implements BackPressureManager {
 
     @Override
     public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
-        BackPressureConfig.validate(configs);
     }
 
     @Override

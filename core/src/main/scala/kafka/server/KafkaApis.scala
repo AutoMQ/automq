@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.api.ElectLeadersRequestOps
 import kafka.automq.interceptor.ClientIdMetadata
+import kafka.automq.metadata.KafkaGoMetadataResponseRewriter
 import kafka.controller.ReplicaAssignment
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.network.RequestChannel
@@ -133,6 +134,8 @@ class KafkaApis(val requestChannel: RequestChannel,
   private val listOffsetSlowExecutor = KafkaApis.newListOffsetExecutor("kafka-apis-list-offset-slow-%d")
   private val listOffsetRequestExecutor = KafkaApis.newListOffsetExecutor("kafka-apis-list-offset-request-%d")
   private val listOffsetInflightPartitions = new AtomicInteger(0)
+  private val kafkaGoMetadataResponseRewriter = new KafkaGoMetadataResponseRewriter(config)
+  config.addReconfigurable(kafkaGoMetadataResponseRewriter)
   // AutoMQ inject end
 
 
@@ -141,6 +144,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     ThreadUtils.shutdownExecutor(listOffsetFastExecutor, 5, TimeUnit.SECONDS, logger.underlying)
     ThreadUtils.shutdownExecutor(listOffsetSlowExecutor, 5, TimeUnit.SECONDS, logger.underlying)
     ThreadUtils.shutdownExecutor(listOffsetRequestExecutor, 5, TimeUnit.SECONDS, logger.underlying)
+    config.removeReconfigurable(kafkaGoMetadataResponseRewriter)
     // AutoMQ inject end
     aclApis.close()
     info("Shutdown complete.")
@@ -1517,6 +1521,10 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val completeTopicMetadata =  unknownTopicIdsTopicMetadata ++
       topicMetadata ++ unauthorizedForCreateTopicMetadata ++ unauthorizedForDescribeTopicMetadata
+
+    // AutoMQ inject start
+    kafkaGoMetadataResponseRewriter.rewrite(request.header.clientId, completeTopicMetadata.asJava)
+    // AutoMQ inject end
 
     val brokers = metadataCache.getAliveBrokerNodes(request.context.listenerName)
 

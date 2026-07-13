@@ -801,6 +801,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
   val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
   val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
+  def kafkaGoMetadataCompatibilityEnabled: Boolean = getBoolean(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG)
   val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG);
   // AutoMQ inject end
