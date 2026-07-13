@@ -23,6 +23,7 @@ import java.util.concurrent.{CompletionStage, TimeUnit}
 import java.util.concurrent.atomic.AtomicReference
 import kafka.controller.KafkaController
 import kafka.automq.AutoMQConfig
+import kafka.automq.metadata.KafkaGoMetadataResponseRewriter
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
@@ -64,6 +65,15 @@ class DynamicBrokerConfigTest {
   def testRetryStormBackoffConfigsAreDynamic(): Unit = {
     assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG))
     assertTrue(DynamicBrokerConfig.AllDynamicConfigs.contains(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG))
+  }
+
+  /** Given kafka-go metadata compatibility is configurable, the registry exposes its key for AdminClient updates. */
+  @Test
+  @Tag("S3Unit")
+  def testKafkaGoMetadataCompatibilityConfigIsDynamic(): Unit = {
+    assertTrue(KafkaGoMetadataResponseRewriter.RECONFIGURABLE_CONFIGS.asScala
+      .forall(DynamicBrokerConfig.AllDynamicConfigs.contains))
+    assertTrue(KafkaConfig(TestUtils.createBrokerConfig(0, null)).kafkaGoMetadataCompatibilityEnabled)
   }
 
   @Test

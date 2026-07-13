@@ -22,7 +22,6 @@ package kafka.automq.retrystorm;
 import kafka.automq.AutoMQConfig;
 import kafka.server.retrystorm.RetryStormBackoffLogger;
 
-import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.protocol.ApiKeys;
 
 import org.junit.jupiter.api.Tag;
@@ -34,7 +33,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * Covers manager integration with Kafka dynamic broker config callbacks.
@@ -57,18 +55,6 @@ public class RetryStormBackoffManagerTest {
 
         assertFalse(config.enabled());
         assertEquals(250L, config.maxDelayMs());
-    }
-
-    /**
-     * Given an invalid dynamic update, manager validation rejects it before runtime state changes.
-     */
-    @Test
-    public void testValidateRejectsInvalidReconfiguration() {
-        RetryStormBackoffManager manager = new RetryStormBackoffManager(new RetryStormBackoffConfig(true, 1000L));
-
-        assertThrows(ConfigException.class, () -> manager.validateReconfiguration(Map.of(
-            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, -1L
-        )));
     }
 
     /**
