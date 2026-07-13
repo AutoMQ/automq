@@ -802,6 +802,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG)
   val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
   val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
+  def kafkaGoMetadataCompatibilityEnabled: Boolean = getBoolean(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/

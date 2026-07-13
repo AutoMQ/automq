@@ -59,16 +59,6 @@ public class BackPressureConfig {
         this.cooldownMs = cooldownMs;
     }
 
-    public static void validate(Map<String, ?> raw) throws ConfigException {
-        Map<String, Object> configs = new HashMap<>(raw);
-        if (configs.containsKey(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)) {
-            ConfigUtils.getBoolean(configs, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG);
-        }
-        if (configs.containsKey(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)) {
-            validateCooldownMs(ConfigUtils.getLong(configs, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG));
-        }
-    }
-
     public static void validateCooldownMs(long cooldownMs) throws ConfigException {
         if (cooldownMs < 0) {
             throw new ConfigException(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, cooldownMs, "The cooldown time must be non-negative.");
@@ -76,12 +66,11 @@ public class BackPressureConfig {
     }
 
     public void update(Map<String, ?> raw) {
-        Map<String, Object> configs = new HashMap<>(raw);
-        if (configs.containsKey(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)) {
-            this.enabled = ConfigUtils.getBoolean(configs, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG);
+        if (raw.containsKey(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)) {
+            this.enabled = (Boolean) raw.get(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG);
         }
-        if (configs.containsKey(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)) {
-            this.cooldownMs = ConfigUtils.getLong(configs, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG);
+        if (raw.containsKey(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)) {
+            this.cooldownMs = (Long) raw.get(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG);
         }
     }
 
