@@ -21,6 +21,9 @@ package kafka.automq.backpressure;
 
 import kafka.automq.AutoMQConfig;
 
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +32,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -49,6 +53,15 @@ public class DefaultBackPressureManagerTest {
     ScheduledExecutorService scheduler;
     int schedulerScheduleCalled = 0;
     long schedulerScheduleDelay = 0;
+
+    @Test
+    public void testConfigDefRejectsNegativeCooldown() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+
+        assertThrows(ConfigException.class, () -> configDef.parse(Map.of(
+            AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, -1L)));
+    }
 
     @BeforeEach
     public void setup() {
@@ -89,14 +102,14 @@ public class DefaultBackPressureManagerTest {
         assertRegulatorCalled(0, 0);
 
         manager.reconfigure(Map.of(
-            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "true"
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, true
         ));
         callChecker(sourceC, LoadLevel.NORMAL);
         callChecker(sourceB, LoadLevel.NORMAL);
         assertRegulatorCalled(1, 1);
 
         manager.reconfigure(Map.of(
-            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, "false"
+            AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, false
         ));
         callChecker(sourceC, LoadLevel.NORMAL);
         callChecker(sourceB, LoadLevel.HIGH);
