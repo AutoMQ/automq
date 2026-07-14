@@ -65,32 +65,32 @@ public class PartitionUtil {
                     String transform = matcher.group(1);
                     switch (transform) {
                         case "year":
-                            specBuilder.year(matcher.group(2));
+                            specBuilder.year(TableIdentifierUtil.sanitize(matcher.group(2)));
                             break;
                         case "month":
-                            specBuilder.month(matcher.group(2));
+                            specBuilder.month(TableIdentifierUtil.sanitize(matcher.group(2)));
                             break;
                         case "day":
-                            specBuilder.day(matcher.group(2));
+                            specBuilder.day(TableIdentifierUtil.sanitize(matcher.group(2)));
                             break;
                         case "hour":
-                            specBuilder.hour(matcher.group(2));
+                            specBuilder.hour(TableIdentifierUtil.sanitize(matcher.group(2)));
                             break;
                         case "bucket": {
                             Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                            specBuilder.bucket(args.getLeft(), args.getRight());
+                            specBuilder.bucket(TableIdentifierUtil.sanitize(args.getLeft()), args.getRight());
                             break;
                         }
                         case "truncate": {
                             Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                            specBuilder.truncate(args.getLeft(), args.getRight());
+                            specBuilder.truncate(TableIdentifierUtil.sanitize(args.getLeft()), args.getRight());
                             break;
                         }
                         default:
                             throw new UnsupportedOperationException("Unsupported transform: " + transform);
                     }
                 } else {
-                    specBuilder.identity(partitionField);
+                    specBuilder.identity(TableIdentifierUtil.sanitize(partitionField));
                 }
             });
         return specBuilder.build();
@@ -125,40 +125,41 @@ public class PartitionUtil {
                 transformer = "identity";
                 fieldName = newPartition;
             }
-            Types.NestedField nestedField = tableSchema.findField(fieldName);
+            String sanitizedFieldName = TableIdentifierUtil.sanitize(fieldName);
+            Types.NestedField nestedField = tableSchema.findField(sanitizedFieldName);
             if (nestedField == null) {
                 continue;
             }
             newPartitionFieldIdSet.add(nestedField.fieldId());
             switch (transformer) {
                 case "year": {
-                    changeCount += addOrUpdate(nestedField, Expressions.year(fieldName), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.year(sanitizedFieldName), updateSpec, id2field);
                     break;
                 }
                 case "month": {
-                    changeCount += addOrUpdate(nestedField, Expressions.month(fieldName), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.month(sanitizedFieldName), updateSpec, id2field);
                     break;
                 }
                 case "day": {
-                    changeCount += addOrUpdate(nestedField, Expressions.day(fieldName), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.day(sanitizedFieldName), updateSpec, id2field);
                     break;
                 }
                 case "hour": {
-                    changeCount += addOrUpdate(nestedField, Expressions.hour(fieldName), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.hour(sanitizedFieldName), updateSpec, id2field);
                     break;
                 }
                 case "bucket": {
                     Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                    changeCount += addOrUpdate(nestedField, bucket(args.getLeft(), args.getRight()), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, bucket(TableIdentifierUtil.sanitize(args.getLeft()), args.getRight()), updateSpec, id2field);
                     break;
                 }
                 case "truncate": {
                     Pair<String, Integer> args = transformArgPair(matcher.group(2));
-                    changeCount += addOrUpdate(nestedField, Expressions.truncate(args.getLeft(), args.getRight()), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.truncate(TableIdentifierUtil.sanitize(args.getLeft()), args.getRight()), updateSpec, id2field);
                     break;
                 }
                 case "identity": {
-                    changeCount += addOrUpdate(nestedField, Expressions.ref(fieldName), updateSpec, id2field);
+                    changeCount += addOrUpdate(nestedField, Expressions.ref(sanitizedFieldName), updateSpec, id2field);
                     break;
                 }
                 default:
