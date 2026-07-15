@@ -237,6 +237,22 @@ public class DefaultRecordProcessorTest {
     }
 
     /**
+     * Given a schema-id key converter and a null key, the Debezium key sentinel silently resolves no identifiers.
+     */
+    @Test
+    void testIdentifierColumnsFromDebeziumKeySkipsSchemaIdConverterWhenKeyMissing() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC,
+            new AvroRegistryConverter(schemaRegistryClient, "http://mock:8081", true), new StringConverter(),
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord(null, "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of(), result.getIdentifierColumns());
+    }
+
+    /**
      * Given unchanged record schemas, changing identifier columns must still change the composite schema identity.
      */
     @Test

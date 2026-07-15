@@ -59,6 +59,7 @@ import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.FR
 public class DefaultRecordProcessor implements RecordProcessor {
     private static final Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
     private static final String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
+    private static final String NULL_KEY_SCHEMA_IDENTITY = "null";
     private static final ConversionResult EMPTY_HEADERS_RESULT =
         new ConversionResult(Map.of(), HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
     private final String topicName;
@@ -117,7 +118,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
             Objects.requireNonNull(kafkaRecord, "Kafka record cannot be null");
 
             ConversionResult headerResult = processHeaders(kafkaRecord);
-            ConversionResult keyResult = keyConverter.convert(topicName, kafkaRecord.key());
+            ConversionResult keyResult = convertKey(kafkaRecord);
             ConversionResult valueResult = valueConverter.convert(topicName, kafkaRecord.value());
 
             GenericRecord baseRecord = wrapValue(valueResult);
@@ -159,6 +160,9 @@ public class DefaultRecordProcessor implements RecordProcessor {
         if (!fromDebeziumKey) {
             return idColumns;
         }
+        if (keyResult == null) {
+            return List.of();
+        }
         String keySchemaId = keyResult.getSchemaIdentity();
         if (Objects.equals(lastKeySchemaId, keySchemaId)) {
             return lastKeyIds;
@@ -167,6 +171,13 @@ public class DefaultRecordProcessor implements RecordProcessor {
         lastKeySchemaId = keySchemaId;
         lastKeyIds = ids;
         return ids;
+    }
+
+    private ConversionResult convertKey(Record kafkaRecord) throws ConverterException {
+        if (fromDebeziumKey && kafkaRecord.key() == null) {
+            return null;
+        }
+        return keyConverter.convert(topicName, kafkaRecord.key());
     }
 
     private List<String> resolveIdentifierColumns(Schema keySchema) {
@@ -285,7 +296,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
         List<String> identifierColumns) {
         // Extract schema identities
         String headerIdentity = headerResult.getSchemaIdentity();
-        String keyIdentity = keyResult.getSchemaIdentity();
+        String keyIdentity = keyResult == null ? NULL_KEY_SCHEMA_IDENTITY : keyResult.getSchemaIdentity();
         String valueIdentity = valueResult.getSchemaIdentity();
         return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity
             + "|id:" + encodeIdentifierColumns(identifierColumns);
