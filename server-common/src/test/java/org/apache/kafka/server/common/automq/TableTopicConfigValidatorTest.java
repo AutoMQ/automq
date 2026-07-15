@@ -49,6 +49,9 @@ public class TableTopicConfigValidatorTest {
         PartitionValidator.INSTANCE.ensureValid("config_name", "[year(l1.l2.c1), month(c2), day(c3), hour(c4), bucket(c5, 1), truncate(c6, 10)]");
     }
 
+    /**
+     * Given identifier column configuration, the validator accepts normal columns and a standalone Debezium key sentinel.
+     */
     @Test
     public void testIdColumnsValidator() {
         // invalid column name

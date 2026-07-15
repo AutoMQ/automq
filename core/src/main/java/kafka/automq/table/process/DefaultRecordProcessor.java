@@ -83,6 +83,15 @@ public class DefaultRecordProcessor implements RecordProcessor {
         this(topicName, keyConverter, valueConverter, transforms, List.of());
     }
 
+    /**
+     * Creates a processor with explicit transforms and identifier column configuration.
+     *
+     * @param topicName source Kafka topic name
+     * @param keyConverter converter used for Kafka record keys
+     * @param valueConverter converter used for Kafka record values
+     * @param transforms ordered transform chain applied after value conversion
+     * @param idColumns configured identifier columns, or {@code [_from_debezium_key_]} to derive them from the key schema
+     */
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter,
                                   List<Transform> transforms, List<String> idColumns) {
         this.transformChain = transforms;

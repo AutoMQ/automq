@@ -195,6 +195,9 @@ public class DefaultRecordProcessorTest {
         assertEquals(ByteBuffer.wrap(value), ByteBuffer.wrap((byte[]) finalRecord.get(RecordAssembler.KAFKA_VALUE_FIELD)));
     }
 
+    /**
+     * Given the Debezium key sentinel, the processor derives identifier columns from the key record schema.
+     */
     @Test
     void testIdentifierColumnsFromDebeziumKeySchema() {
         Schema keySchema = SchemaBuilder.record("Key")
@@ -218,6 +221,9 @@ public class DefaultRecordProcessorTest {
         assertEquals(List.of("region_id", "user_id"), result.getIdentifierColumns());
     }
 
+    /**
+     * Given the Debezium key sentinel with a converter that has no key schema, the processor keeps processing silently.
+     */
     @Test
     void testIdentifierColumnsFromDebeziumKeySchemaFallbackWhenKeySchemaMissing() {
         DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new StringConverter(), new StringConverter(),
@@ -230,6 +236,9 @@ public class DefaultRecordProcessorTest {
         assertEquals(List.of(), result.getIdentifierColumns());
     }
 
+    /**
+     * Given unchanged record schemas, changing identifier columns must still change the composite schema identity.
+     */
     @Test
     void testSchemaIdentityIncludesIdentifierColumns() {
         Converter rawConverter = new RawConverter();
@@ -268,6 +277,9 @@ public class DefaultRecordProcessorTest {
         assertNotEquals(fbResult.getFinalSchemaIdentity(), eaResult.getFinalSchemaIdentity());
     }
 
+    /**
+     * Given otherwise equal processing results, resolved identifier columns participate in equality and hash code.
+     */
     @Test
     void testProcessingResultEqualityIncludesIdentifierColumns() {
         GenericRecord record = new GenericRecordBuilder(USER_SCHEMA_V1)

@@ -421,6 +421,9 @@ public class IcebergTableManagerTest {
         assertTrue(schemaChanges.isEmpty());
     }
 
+    /**
+     * Given a table without identifiers, ensureIdentifierFields commits the expected identifier field IDs.
+     */
     @Test
     public void setsIdentifierFieldsWhenTableHasNone() {
         TableIdentifier tableId = randomTableId();
@@ -438,6 +441,9 @@ public class IcebergTableManagerTest {
         ), updatedTable.schema().identifierFieldIds());
     }
 
+    /**
+     * Given a table with stale identifiers, ensureIdentifierFields replaces them with the expected set.
+     */
     @Test
     public void updatesExistingIdentifierFields() {
         TableIdentifier tableId = randomTableId();

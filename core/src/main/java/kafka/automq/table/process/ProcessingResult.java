@@ -58,6 +58,15 @@ public final class ProcessingResult {
         this(finalRecord, finalSchema, finalSchemaIdentity, List.of());
     }
 
+    /**
+     * Creates a successful processing result with the resolved identifier columns.
+     *
+     * @param finalRecord the Avro GenericRecord ready for further processing, must not be null
+     * @param finalSchema the Avro schema matching the finalRecord, must not be null
+     * @param finalSchemaIdentity unique identifier for schema and identifier comparison, must not be null
+     * @param identifierColumns resolved identifier column names, or empty when no identifier columns apply
+     * @throws IllegalArgumentException if finalRecord, finalSchema, or finalSchemaIdentity is null
+     */
     public ProcessingResult(GenericRecord finalRecord, Schema finalSchema, String finalSchemaIdentity, List<String> identifierColumns) {
         this.finalRecord = Objects.requireNonNull(finalRecord, "finalRecord cannot be null");
         this.finalSchema = Objects.requireNonNull(finalSchema, "finalSchema cannot be null");
@@ -92,6 +101,9 @@ public final class ProcessingResult {
     public DataError getError() {
         return error;
     }
+    /**
+     * Returns the resolved identifier column names that should be applied to the Iceberg schema.
+     */
     public List<String> getIdentifierColumns() {
         return identifierColumns;
     }

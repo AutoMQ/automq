@@ -97,6 +97,9 @@ class ControllerConfigurationValidatorTableTest {
         assertEquals("raw convert type cannot be used with 'flatten_debezium' transform type", exception.getMessage)
     }
 
+    /**
+     * Given the Debezium key identifier sentinel, controller-side validation only accepts by_schema_id key conversion.
+     */
     @Test
     def testDebeziumKeyIdentifierRequiresKeyBySchemaId(): Unit = {
         val config = new util.TreeMap[String, String]()

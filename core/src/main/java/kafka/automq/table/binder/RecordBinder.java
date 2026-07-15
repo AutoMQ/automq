@@ -65,6 +65,14 @@ public class RecordBinder {
         this(AvroSchemaUtil.toIceberg(avroRecord.getSchema()), avroRecord.getSchema());
     }
 
+    /**
+     * Creates a binder whose Iceberg schema carries identifier field IDs resolved from column names.
+     *
+     * @param avroRecord source Avro record used to derive the Iceberg schema
+     * @param identifierColumns identifier column names to resolve, or empty when the schema has no identifiers
+     * @return a binder for the Avro record schema with matching Iceberg identifier fields
+     * @throws IllegalArgumentException if any identifier column does not exist in the derived Iceberg schema
+     */
     public static RecordBinder create(GenericRecord avroRecord, List<String> identifierColumns) {
         org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroRecord.getSchema());
         if (identifierColumns == null || identifierColumns.isEmpty()) {
