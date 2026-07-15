@@ -279,7 +279,15 @@ public class DefaultRecordProcessor implements RecordProcessor {
         String keyIdentity = keyResult.getSchemaIdentity();
         String valueIdentity = valueResult.getSchemaIdentity();
         return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity
-            + "|id:" + identifierColumns.hashCode();
+            + "|id:" + encodeIdentifierColumns(identifierColumns);
+    }
+
+    private String encodeIdentifierColumns(List<String> identifierColumns) {
+        StringBuilder builder = new StringBuilder();
+        for (String column : identifierColumns) {
+            builder.append(column.length()).append('#').append(column);
+        }
+        return builder.toString();
     }
 
     @Override

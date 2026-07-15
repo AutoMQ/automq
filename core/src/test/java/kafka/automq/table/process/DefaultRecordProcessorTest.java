@@ -247,6 +247,27 @@ public class DefaultRecordProcessorTest {
         assertNotEquals(idResult.getFinalSchemaIdentity(), appointmentIdResult.getFinalSchemaIdentity());
     }
 
+    /**
+     * Given identifier column names with colliding hash codes, schema identity must still distinguish them.
+     */
+    @Test
+    void testSchemaIdentityDistinguishesIdentifierHashCollisions() {
+        Converter rawConverter = new RawConverter();
+        Record kafkaRecord = createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]);
+        DefaultRecordProcessor fbProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("FB"));
+        DefaultRecordProcessor eaProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("Ea"));
+
+        ProcessingResult fbResult = fbProcessor.process(TEST_PARTITION, kafkaRecord);
+        ProcessingResult eaResult = eaProcessor.process(TEST_PARTITION, kafkaRecord);
+
+        assertEquals(List.of("FB").hashCode(), List.of("Ea").hashCode());
+        assertTrue(fbResult.isSuccess());
+        assertTrue(eaResult.isSuccess());
+        assertNotEquals(fbResult.getFinalSchemaIdentity(), eaResult.getFinalSchemaIdentity());
+    }
+
     @Test
     void testProcessingResultEqualityIncludesIdentifierColumns() {
         GenericRecord record = new GenericRecordBuilder(USER_SCHEMA_V1)
