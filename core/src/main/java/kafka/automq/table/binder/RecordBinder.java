@@ -32,10 +32,13 @@ import org.apache.iceberg.types.Types;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 import static org.apache.avro.Schema.Type.ARRAY;
 import static org.apache.avro.Schema.Type.NULL;
@@ -60,6 +63,31 @@ public class RecordBinder {
 
     public RecordBinder(GenericRecord avroRecord) {
         this(AvroSchemaUtil.toIceberg(avroRecord.getSchema()), avroRecord.getSchema());
+    }
+
+    /**
+     * Creates a binder whose Iceberg schema carries identifier field IDs resolved from column names.
+     *
+     * @param avroRecord source Avro record used to derive the Iceberg schema
+     * @param identifierColumns identifier column names to resolve, or empty when the schema has no identifiers
+     * @return a binder for the Avro record schema with matching Iceberg identifier fields
+     * @throws IllegalArgumentException if any identifier column does not exist in the derived Iceberg schema
+     */
+    public static RecordBinder create(GenericRecord avroRecord, List<String> identifierColumns) {
+        org.apache.iceberg.Schema icebergSchema = AvroSchemaUtil.toIceberg(avroRecord.getSchema());
+        if (identifierColumns == null || identifierColumns.isEmpty()) {
+            return new RecordBinder(icebergSchema, avroRecord.getSchema());
+        }
+        Set<Integer> identifierFieldIds = identifierColumns.stream()
+            .map(column -> {
+                Types.NestedField field = icebergSchema.findField(column);
+                if (field == null) {
+                    throw new IllegalArgumentException(String.format("Cannot find identifier field %s in schema %s", column, icebergSchema));
+                }
+                return field.fieldId();
+            })
+            .collect(Collectors.toCollection(HashSet::new));
+        return new RecordBinder(new org.apache.iceberg.Schema(icebergSchema.columns(), identifierFieldIds), avroRecord.getSchema());
     }
 
     public RecordBinder(org.apache.iceberg.Schema icebergSchema, Schema avroSchema) {

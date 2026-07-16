@@ -72,8 +72,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
-import static java.util.stream.Collectors.toSet;
-
 public class IcebergWriter implements Writer {
     private static final Logger LOGGER = LoggerFactory.getLogger(IcebergWriter.class);
     private static final int TARGET_FILE_SIZE = 64 * 1024 * 1024;
@@ -159,16 +157,17 @@ public class IcebergWriter implements Writer {
         }
 
         GenericRecord finalRecord = result.getFinalRecord();
+        List<String> identifierColumns = result.getIdentifierColumns();
 
         RecordBinder currentBinder = this.binder;
         // first write
         if (currentBinder == null) {
-            currentBinder = new RecordBinder(finalRecord);
+            currentBinder = RecordBinder.create(finalRecord, identifierColumns);
         }
 
         // schema change
         if (!result.getFinalSchemaIdentity().equals(lastSchemaIdentity)) {
-            Schema icebergSchema = new RecordBinder(finalRecord).getIcebergSchema();
+            Schema icebergSchema = RecordBinder.create(finalRecord, identifierColumns).getIcebergSchema();
             //  compare table schema and evolution
             icebergTableManager.handleSchemaChangesWithFlush(
                 icebergSchema,
@@ -349,11 +348,6 @@ public class IcebergWriter implements Writer {
         FileAppenderFactory<Record> appenderFactory;
 
         Set<Integer> identifierFieldIds = table.schema().identifierFieldIds();
-        if (!config.idColumns().isEmpty()) {
-            identifierFieldIds = config.idColumns().stream()
-                .map(colName -> table.schema().findField(colName).fieldId())
-                .collect(toSet());
-        }
         // Use a consistent partition spec instead of retrieve from table in real times.
         PartitionSpec spec = icebergTableManager.spec();
         if (identifierFieldIds.isEmpty()) {

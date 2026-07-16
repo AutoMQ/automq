@@ -37,6 +37,7 @@ public class TableTopicConfigValidator {
     static final Pattern LIST_STRING_REGEX = Pattern.compile("\\[(.*)\\]");
     public static final String COMMA_NO_PARENS_REGEX = ",(?![^()]*+\\))";
     private static final Pattern COLUMN_NAME_REGEX = Pattern.compile("[a-zA-Z0-9_\\-\\.]+");
+    public static final String FROM_DEBEZIUM_KEY = "_from_debezium_key_";
 
     public static class PartitionValidator implements ConfigDef.Validator {
         public static final PartitionValidator INSTANCE = new PartitionValidator();
@@ -115,6 +116,10 @@ public class TableTopicConfigValidator {
             try {
                 String str = (String) value;
                 List<String> idColumns = stringToList(str, COMMA_NO_PARENS_REGEX);
+                if (idColumns.contains(FROM_DEBEZIUM_KEY) && idColumns.size() != 1) {
+                    throw new ConfigException(name, value,
+                        String.format("%s must be used alone", FROM_DEBEZIUM_KEY));
+                }
                 idColumns.forEach(idColumn -> {
                     if (!COLUMN_NAME_REGEX.matcher(idColumn).matches()) {
                         throw new ConfigException(name, value, String.format("Invalid column name %s", idColumn));
@@ -137,6 +142,9 @@ public class TableTopicConfigValidator {
         Matcher matcher = LIST_STRING_REGEX.matcher(value);
         if (matcher.matches()) {
             value = matcher.group(1);
+        }
+        if (value.isEmpty()) {
+            return Collections.emptyList();
         }
         return Arrays.stream(value.split(regex)).map(String::trim).collect(toList());
     }
