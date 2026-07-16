@@ -78,13 +78,13 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            StreamRecordBatch.of(233, 0, 10, 2, random(512)),
-            StreamRecordBatch.of(233, 0, 12, 2, random(128)),
-            StreamRecordBatch.of(233, 0, 14, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512), DefaultByteBufSupplier.INSTANCE)
         ));
         map.put(234L, List.of(
-            StreamRecordBatch.of(234, 0, 20, 2, random(128)),
-            StreamRecordBatch.of(234, 0, 22, 2, random(128))
+            StreamRecordBatch.of(234, 0, 20, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(234, 0, 22, 2, random(128), DefaultByteBufSupplier.INSTANCE)
         ));
 
         Config config = new Config()
@@ -171,9 +171,9 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            StreamRecordBatch.of(233, 0, 10, 2, random(512)),
-            StreamRecordBatch.of(233, 0, 12, 2, random(128)),
-            StreamRecordBatch.of(233, 0, 14, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512), DefaultByteBufSupplier.INSTANCE)
         ));
         Config config = new Config()
             .objectBlockSize(16 * 1024 * 1024)
@@ -209,10 +209,10 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
         map.put(233L, List.of(
-            StreamRecordBatch.of(233, 0, 10, 2, random(512))
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE)
         ));
         map.put(234L, List.of(
-            StreamRecordBatch.of(234, 0, 20, 2, random(128))
+            StreamRecordBatch.of(234, 0, 20, 2, random(128), DefaultByteBufSupplier.INSTANCE)
         ));
 
         Config config = new Config()

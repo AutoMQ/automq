@@ -21,6 +21,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.DefaultAppendResult;
 import com.automq.stream.RecordBatchWithContextWrapper;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
@@ -72,6 +73,7 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
+import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
 import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
 
@@ -79,6 +81,8 @@ public class S3Stream implements Stream, StreamMetadataListener {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
     private static final PendingRequestTracker PENDING_APPEND_TRACKER = new PendingRequestTracker();
     private static final PendingRequestTracker PENDING_FETCH_TRACKER = new PendingRequestTracker();
+    // Shared for the process lifetime so streams reuse the same bounded set of active slabs.
+    private static final RecyclingByteBufSeqAlloc RECORD_ALLOC = new RecyclingByteBufSeqAlloc(ENCODE_RECORD);
     private static final Metrics.LongGaugeBundle.LongGauge PENDING_STREAM_APPEND_LATENCY = Metrics.instance()
         .longGauge("kafka_stream_pending_stream_append_latency",
             "The maximum latency of pending stream append requests that exceed the pending latency threshold. "
@@ -253,7 +257,8 @@ public class S3Stream implements Stream, StreamMetadataListener {
             return FutureUtil.failedFuture(new StreamClientException(ErrorCode.STREAM_ALREADY_CLOSED, logIdent + " stream is not writable"));
         }
         long offset = nextOffset.getAndAdd(recordBatch.count());
-        StreamRecordBatch streamRecordBatch = StreamRecordBatch.of(streamId, epoch, offset, recordBatch.count(), Unpooled.wrappedBuffer(recordBatch.rawPayload()));
+        StreamRecordBatch streamRecordBatch = StreamRecordBatch.of(streamId, epoch, offset, recordBatch.count(),
+            Unpooled.wrappedBuffer(recordBatch.rawPayload()), RECORD_ALLOC);
         CompletableFuture<AppendResult> cf = storage.append(context, streamRecordBatch).thenApply(nil -> {
             updateConfirmOffset(offset + recordBatch.count());
             return new DefaultAppendResult(offset);

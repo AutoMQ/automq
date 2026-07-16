@@ -23,7 +23,7 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.s3.ByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
@@ -47,7 +47,7 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
     }
 
     @Override
-    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSeqAlloc alloc) {
+    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();

@@ -32,6 +32,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.LongSupplier;
 
 import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
@@ -50,6 +51,8 @@ public class ByteBufAlloc {
     public static final int MEMORY_USAGE_DETECT_INTERVAL = Systems.getEnvInt("AUTOMQ_MEMORY_USAGE_DETECT_TIME_INTERVAL", 60000);
 
     private static final AttributeKey<String> LABEL_TYPE = AttributeKey.stringKey("type");
+    private static final AttributeKey<String> LABEL_SOURCE = AttributeKey.stringKey("source");
+    private static final String SOURCE_BYTE_BUF_ALLOC = "byte_buf_alloc";
     private static final Logger LOGGER = LoggerFactory.getLogger(ByteBufAlloc.class);
 
     public static final int DEFAULT = 0;
@@ -67,6 +70,7 @@ public class ByteBufAlloc {
     public static final int S3_WAL = 12;
     public static final int POOLED_MEMORY_RECORDS = 13;
     public static final int SNAPSHOT_READ_CACHE = 14;
+    public static final int ROUTER_CHANNEL = 15;
 
     // the MAX_TYPE_NUMBER may change when new type added.
     public static final int MAX_TYPE_NUMBER = 20;
@@ -116,8 +120,9 @@ public class ByteBufAlloc {
         registerAllocType(S3_WAL, "s3_wal");
         registerAllocType(POOLED_MEMORY_RECORDS, "pooled_memory_records");
         registerAllocType(SNAPSHOT_READ_CACHE, "snapshot_read_cache");
+        registerAllocType(ROUTER_CHANNEL, "router_channel");
         BUFFER_ALLOCATED_MEMORY_SIZE.register(MetricsLevel.INFO,
-            Attributes.of(LABEL_TYPE, "-1/unknown"), observable ->
+            allocatedMemoryAttributes("-1/unknown", SOURCE_BYTE_BUF_ALLOC), observable ->
                 allocatedMemory("-1/unknown").ifPresent(observable::record));
         BUFFER_USED_MEMORY_SIZE.register(MetricsLevel.DEBUG, Attributes.empty(), observable ->
             usedMemory().ifPresent(observable::record));
@@ -147,6 +152,29 @@ public class ByteBufAlloc {
             return Optional.of(((PooledByteBufAllocatorMetric) metric).chunkSize());
         }
         return Optional.empty();
+    }
+
+    /**
+     * Gets the metric label value for an allocation type.
+     *
+     * @param type allocation type
+     * @return the registered type label, or {@code -1/unknown} when the type is not registered
+     */
+    public static String getAllocTypeName(int type) {
+        String name = ALLOC_TYPE.get(type);
+        return name == null ? "-1/unknown" : type + "/" + name;
+    }
+
+    /**
+     * Registers an additional allocated-memory gauge with the standard type and source labels.
+     *
+     * @param type allocation type
+     * @param source allocation source
+     * @param valueSupplier current allocated bytes
+     */
+    public static void registerAllocatedMemoryGauge(int type, String source, LongSupplier valueSupplier) {
+        BUFFER_ALLOCATED_MEMORY_SIZE.register(MetricsLevel.INFO,
+            allocatedMemoryAttributes(getAllocTypeName(type), source)).record(valueSupplier);
     }
 
     public static CompositeByteBuf compositeByteBuffer() {
@@ -205,10 +233,17 @@ public class ByteBufAlloc {
         }
 
         ALLOC_TYPE.put(type, name);
-        String typeName = type + "/" + name;
+        String typeName = getAllocTypeName(type);
         BUFFER_ALLOCATED_MEMORY_SIZE.register(MetricsLevel.INFO,
-            Attributes.of(LABEL_TYPE, typeName), observable ->
+            allocatedMemoryAttributes(typeName, SOURCE_BYTE_BUF_ALLOC), observable ->
                 allocatedMemory(typeName).ifPresent(observable::record));
+    }
+
+    private static Attributes allocatedMemoryAttributes(String type, String source) {
+        return Attributes.builder()
+            .put(LABEL_TYPE, type)
+            .put(LABEL_SOURCE, source)
+            .build();
     }
 
     private static AbstractByteBufAllocator getAllocatorByPolicy(ByteBufAllocPolicy policy) {

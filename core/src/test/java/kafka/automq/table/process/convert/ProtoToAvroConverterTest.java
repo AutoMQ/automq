@@ -30,6 +30,7 @@ import org.apache.avro.Schema;
 import org.apache.avro.SchemaBuilder;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.avro.protobuf.ProtobufData;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
@@ -47,6 +48,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * Focused unit tests for {@link ProtoToAvroConverter} exercise converter paths that are
  * hard to reach through the higher-level registry converter integration tests.
  */
+@Tag("S3Unit")
 class ProtoToAvroConverterTest {
 
     private static final String SIMPLE_PROTO = """

@@ -1,6 +1,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -69,7 +70,7 @@ public class ObjectWALServiceTest {
 
             // append new record and verify
             for (int i = 0; i < 10; i++) {
-                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256))));
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
             }
             List<CompletableFuture<StreamRecordBatch>> getCfList = new ArrayList<>();
             for (int i = 0; i < appendCfList.size(); i++) {
@@ -99,7 +100,7 @@ public class ObjectWALServiceTest {
             wal.start();
             // append new record and verify
             for (int i = 0; i < 10; i++) {
-                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256))));
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
             }
             ((DefaultWriter) (wal.writer)).flush().join();
             for (int i = 0; i < appendCfList.size() - 3; i++) {
@@ -133,7 +134,7 @@ public class ObjectWALServiceTest {
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
             appendCfList.add(wal.append(TraceContext.DEFAULT,
-                StreamRecordBatch.of(233L, 10, 100L + i, 1, generateByteBuf(256))));
+                StreamRecordBatch.of(233L, 10, 100L + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
             // ensure objects are flushed/uploaded
             ((DefaultWriter) (wal.writer)).flush().join();
             if (i == 4) {
@@ -166,7 +167,7 @@ public class ObjectWALServiceTest {
 
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int i = 0; i < 8; i++) {
-            appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1))));
+            appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE)));
             if (i % 2 == 0) {
                 ((DefaultWriter) (wal.writer)).flush().join();
             }
@@ -209,7 +210,7 @@ public class ObjectWALServiceTest {
                 break;
             }
             for (int i = 0; i < 10; i++) {
-                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256))));
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
             }
             ((DefaultWriter) (wal.writer)).flush().join();
             trimIndex = r * 9;
@@ -240,7 +241,7 @@ public class ObjectWALServiceTest {
             resetIndex = appendCfList.size();
             wal.reset().get();
             for (int i = 0; i < 10; i++) {
-                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256))));
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
             }
             wal.shutdownGracefully();
         }
@@ -324,7 +325,7 @@ public class ObjectWALServiceTest {
 
         // write 4 objects
         for (int i = 0; i < 4; i++) {
-            wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1)));
+            wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE));
             ((DefaultWriter) (wal.writer)).flush().join();
         }
 
@@ -352,7 +353,7 @@ public class ObjectWALServiceTest {
 
         long startOffset = 0L;
         for (int i = 0; i < 4; i++) {
-            startOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1)).encoded(), startOffset);
+            startOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), startOffset);
         }
 
         ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
@@ -372,11 +373,11 @@ public class ObjectWALServiceTest {
     public void testRecoverFromV0AndV1Objects() throws IOException {
         ObjectWALConfig config = ObjectWALConfig.builder().withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
         long nextOffset = 0L;
-        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L, 1, generateByteBuf(1)).encoded(), nextOffset);
+        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset);
         long record1Offset = nextOffset;
-        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 101L, 1, generateByteBuf(1)).encoded(), nextOffset);
-        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 102L, 1, generateByteBuf(1)).encoded(), nextOffset, false, 0);
-        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 103L, 1, generateByteBuf(1)).encoded(), nextOffset, false, record1Offset);
+        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 101L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset);
+        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 102L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset, false, 0);
+        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 103L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset, false, record1Offset);
 
         ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
         acquire(config);

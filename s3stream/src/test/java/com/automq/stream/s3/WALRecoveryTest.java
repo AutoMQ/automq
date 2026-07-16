@@ -46,7 +46,7 @@ public class WALRecoveryTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALRecoveryTest.class);
 
     private static StreamRecordBatch newRecord(long streamId, long offset) {
-        return StreamRecordBatch.of(streamId, 0, offset, 1, random(1));
+        return StreamRecordBatch.of(streamId, 0, offset, 1, random(1), DefaultByteBufSupplier.INSTANCE);
     }
 
     @Test
@@ -162,9 +162,9 @@ public class WALRecoveryTest {
         long secondOffset = bigCount;
         long thirdOffset = secondOffset + 1;
         List<RecoverResult> recoverResults = List.of(
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, 0L, (int) bigCount, random(1))),
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset, 1, random(1))),
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, thirdOffset, 1, random(1)))
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, 0L, (int) bigCount, random(1), DefaultByteBufSupplier.INSTANCE)),
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset, 1, random(1), DefaultByteBufSupplier.INSTANCE)),
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, thirdOffset, 1, random(1), DefaultByteBufSupplier.INSTANCE))
         );
 
         Map<Long, Long> streamEndOffsets = new HashMap<>(Map.of(42L, 0L));
@@ -194,11 +194,11 @@ public class WALRecoveryTest {
         long bigCount = Integer.MAX_VALUE;
         long secondOffset = bigCount;
         List<RecoverResult> recoverResults = List.of(
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, 0L, (int) bigCount, random(1)),
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, 0L, (int) bigCount, random(1), DefaultByteBufSupplier.INSTANCE),
                 DefaultRecordOffset.of(0, 100, 0)),
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset, 1, random(1)),
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset, 1, random(1), DefaultByteBufSupplier.INSTANCE),
                 DefaultRecordOffset.of(0, 200, 0)),
-            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset + 1, 1, random(1)),
+            new TestRecoverResult(StreamRecordBatch.of(42L, 0, secondOffset + 1, 1, random(1), DefaultByteBufSupplier.INSTANCE),
                 DefaultRecordOffset.of(0, 300, 0))
         );
 

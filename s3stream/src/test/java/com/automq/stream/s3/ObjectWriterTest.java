@@ -137,6 +137,6 @@ public class ObjectWriterTest {
     }
 
     StreamRecordBatch newRecord(long streamId, long offset, int count, int payloadSize) {
-        return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize));
+        return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize), DefaultByteBufSupplier.INSTANCE);
     }
 }
