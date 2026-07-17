@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -38,7 +39,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.ReferenceCounted;
 
+import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
+
 @EventLoopSafe public class DataBlock extends AbstractReferenceCounted {
+    // Shared by block-cache reads for the lifetime of the process.
+    private static final RecyclingByteBufSeqAlloc BLOCK_CACHE_ALLOC = new RecyclingByteBufSeqAlloc(BLOCK_CACHE);
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlock.class);
     private static final int UNREAD_INIT = -1;
     private final long objectId;
@@ -175,7 +180,7 @@ import io.netty.util.ReferenceCounted;
         List<StreamRecordBatch> records = new ArrayList<>();
         int remainingBytes = maxBytes;
         // TODO: iterator from certain offset
-        try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator()) {
+        try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator(BLOCK_CACHE_ALLOC)) {
             while (it.hasNext()) {
                 StreamRecordBatch recordBatch = it.next();
                 if (recordBatch.getBaseOffset() < endOffset && recordBatch.getLastOffset() > startOffset) {

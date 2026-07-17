@@ -19,7 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -79,7 +79,8 @@ public class DefaultWriter implements Writer {
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
     private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
-    private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
+    // Owned by this class for the process lifetime so WAL writers reuse the same slabs.
+    private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
     private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
     private static final ScheduledExecutorService SCHEDULE = Threads.newSingleThreadScheduledExecutor("S3_WAL_SCHEDULE", true, LOGGER);
 
@@ -480,7 +481,8 @@ public class DefaultWriter implements Writer {
             trimOffset.set(inclusiveTrimRecordOffset);
             // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
             // So we use a fake record to trigger the wal object upload.
-            persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
+            persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER,
+                BYTE_BUF_ALLOC));
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
                 Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {

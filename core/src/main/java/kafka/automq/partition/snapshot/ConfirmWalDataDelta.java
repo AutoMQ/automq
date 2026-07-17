@@ -198,10 +198,14 @@ public class ConfirmWalDataDelta implements ConfirmWAL.AppendListener {
         }
         List<StreamRecordBatch> records = new ArrayList<>();
         ByteBuf buf = Unpooled.wrappedBuffer(data);
-        while (buf.readableBytes() > 0) {
-            StreamRecordBatch record = StreamRecordBatch.parse(buf, false);
-            records.add(record);
+        try {
+            while (buf.readableBytes() > 0) {
+                StreamRecordBatch record = StreamRecordBatch.parse(buf, false, null);
+                records.add(record);
+            }
+            return records;
+        } finally {
+            buf.release();
         }
-        return records;
     }
 }

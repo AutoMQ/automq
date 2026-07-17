@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.ByteBufSeqAlloc;
 import com.automq.stream.Context;
 import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
@@ -92,7 +91,6 @@ import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
-import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
@@ -120,7 +118,6 @@ public class S3Storage implements Storage {
     private static final DeltaHistogram FORCE_UPLOAD_WAL_COMPLETE_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
     private static final DeltaHistogram READ_STORAGE_LATENCY = OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.READ_STORAGE);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
-    private static final ByteBufSeqAlloc DECODE_LINK_RECORD_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 1);
     private static final ByteBufSupplier ENCODE_LINK_RECORD_INSTANT_ALLOC = new DefaultByteBufSupplier(ENCODE_RECORD);
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
