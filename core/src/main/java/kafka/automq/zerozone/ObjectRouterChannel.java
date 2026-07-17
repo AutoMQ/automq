@@ -19,7 +19,7 @@
 
 package kafka.automq.zerozone;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -48,7 +48,9 @@ import io.netty.buffer.ByteBuf;
 public class ObjectRouterChannel implements RouterChannel {
     private static final ExecutorService ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private static final long OVER_CAPACITY_RETRY_DELAY_MS = 1000L;
-    private static final ByteBufSeqAlloc ALLOC = new ByteBufSeqAlloc(ByteBufAlloc.ENCODE_RECORD, 4);
+    // Owned by this class for the process lifetime so all router channels reuse the same slabs.
+    private static final RecyclingByteBufSeqAlloc ALLOC =
+        new RecyclingByteBufSeqAlloc(ByteBufAlloc.ROUTER_CHANNEL);
     private final Logger logger;
     private final AtomicLong mockOffset = new AtomicLong(0);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();

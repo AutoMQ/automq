@@ -20,6 +20,7 @@
 package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamRecordBatchCodec;
@@ -278,10 +279,10 @@ import static org.mockito.Mockito.when;
         long offset = index.startOffset();
         // the first N - 1 record's count = 1, body size = 1
         for (int i = 0; i < index.recordCount() - 1; i++, offset++) {
-            records.add(StreamRecordBatch.of(STREAM_ID, 0, offset, 1, TestUtils.random(1)));
+            records.add(StreamRecordBatch.of(STREAM_ID, 0, offset, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
         }
         // the last record padding the remaining
-        records.add(StreamRecordBatch.of(STREAM_ID, 0, offset, index.endOffsetDelta() - (index.recordCount() - 1), TestUtils.random(remainingSize)));
+        records.add(StreamRecordBatch.of(STREAM_ID, 0, offset, index.endOffsetDelta() - (index.recordCount() - 1), TestUtils.random(remainingSize), DefaultByteBufSupplier.INSTANCE));
         ByteBuf buf = new ObjectWriter.DataBlock(STREAM_ID, records).buffer();
         assertEquals(index.size(), buf.readableBytes());
         return buf;

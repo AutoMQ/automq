@@ -70,6 +70,7 @@ import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.metadata.ObjectUtils;
@@ -1537,7 +1538,7 @@ public class StreamControlManagerTest {
             objectWriter.write(
                 range.streamId(),
                 List.of(
-                    StreamRecordBatch.of(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1))
+                    StreamRecordBatch.of(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1), DefaultByteBufSupplier.INSTANCE)
                 )
             )
         );

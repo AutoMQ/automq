@@ -22,6 +22,7 @@ package com.automq.stream.s3.compact;
 import com.automq.stream.s3.CompositeObject;
 import com.automq.stream.s3.CompositeObjectReader;
 import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.S3Stream;
@@ -648,7 +649,7 @@ class StreamObjectCompactorTest {
     }
 
     StreamRecordBatch newRecord(long offset, int count, int payloadSize) {
-        return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize));
+        return StreamRecordBatch.of(streamId, 0, offset, count, TestUtils.random(payloadSize), DefaultByteBufSupplier.INSTANCE);
     }
 
     private S3ObjectMetadata s3ObjectMetadata(long objectId, long startOffset, long endOffset, long objectSize,
