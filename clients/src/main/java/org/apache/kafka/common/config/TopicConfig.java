@@ -312,8 +312,8 @@ public class TopicConfig {
         "Note: 'flatten_debezium' requires schema-based conversion.";
 
     public static final String TABLE_TOPIC_ID_COLUMNS_CONFIG = "automq.table.topic.id.columns";
-    public static final String TABLE_TOPIC_ID_COLUMNS_DOC = "The primary key, comma-separated list of columns that identify a row in tables."
-        + "ex. [region, name]";
+    public static final String TABLE_TOPIC_ID_COLUMNS_DOC = "The primary key, comma-separated list of columns that identify a row in tables. "
+        + "ex. [region, name]. Use [_from_debezium_key_] to derive identifier columns from the schema-based Debezium Kafka key.";
     public static final String TABLE_TOPIC_PARTITION_BY_CONFIG = "automq.table.topic.partition.by";
     public static final String TABLE_TOPIC_PARTITION_BY_DOC = "The partition fields of the table. ex. [bucket(name), month(timestamp)]";
     public static final String TABLE_TOPIC_UPSERT_ENABLE_CONFIG = "automq.table.topic.upsert.enable";

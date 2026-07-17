@@ -72,6 +72,7 @@ import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
 import static org.apache.kafka.server.common.MetadataVersion.IBP_3_0_IV1;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY;
 import static org.apache.kafka.server.record.TableTopicConvertType.BY_LATEST_SCHEMA;
 import static org.apache.kafka.server.record.TableTopicConvertType.BY_SCHEMA_ID;
 import static org.apache.kafka.server.record.TableTopicConvertType.RAW;
@@ -853,6 +854,9 @@ public class LogConfig extends AbstractConfig {
         String valueConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG);
         String keyConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG);
         String transformProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG);
+        List<String> idColumns = TableTopicConfigValidator.stringToList(
+            props.getProperty(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG),
+            TableTopicConfigValidator.COMMA_NO_PARENS_REGEX);
 
         // Validation logic using new (or mapped) configs
         if ((BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
@@ -863,6 +867,11 @@ public class LogConfig extends AbstractConfig {
         }
         if (!(BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && FLATTEN_DEBEZIUM.name.equals(transformProperty)) {
             throw new InvalidConfigurationException(valueConvertProperty + " convert type cannot be used with '" + FLATTEN_DEBEZIUM.name + "' transform type");
+        }
+        if (idColumns.equals(List.of(FROM_DEBEZIUM_KEY)) && !BY_SCHEMA_ID.name.equals(keyConvertProperty)) {
+            throw new InvalidConfigurationException(
+                TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG + "=[" + FROM_DEBEZIUM_KEY + "] requires "
+                    + TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG + " to be '" + BY_SCHEMA_ID.name + "'");
         }
     }
 
