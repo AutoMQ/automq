@@ -87,6 +87,11 @@ public class S3StreamClient implements StreamClient {
     private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
     static final double MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO = 0.9;
     private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 20);
+    /**
+     * Timeout for graceful stream close during shutdown. If streams do not close within this
+     * period, the client escalates to force close to prevent shutdown from hanging indefinitely.
+     */
+    private static final long GRACEFUL_CLOSE_TIMEOUT_MS = Systems.getEnvLong("AUTOMQ_STREAM_GRACEFUL_CLOSE_TIMEOUT_MS", TimeUnit.SECONDS.toMillis(30));
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
     final Map<Long, StreamWrapper> openedStreams;
@@ -248,6 +253,7 @@ public class S3StreamClient implements StreamClient {
                 stream.close(true);
             }));
         }
+        long startMs = System.currentTimeMillis();
         for (; ; ) {
             lock.lock();
             try {
@@ -264,6 +270,17 @@ public class S3StreamClient implements StreamClient {
                 lock.unlock();
             }
             Threads.sleep(1000);
+            // If graceful close does not complete within the timeout, escalate to force close to
+            // prevent shutdown from hanging indefinitely (e.g. when the node epoch is expired or
+            // the WAL is fenced by a duplicate broker).
+            if (!forceCloseMark && System.currentTimeMillis() - startMs > GRACEFUL_CLOSE_TIMEOUT_MS) {
+                LOGGER.warn("graceful stream close timed out after {}ms, escalating to force close", GRACEFUL_CLOSE_TIMEOUT_MS);
+                forceCloseMark = true;
+                runInLock(() -> closingStreams.forEach((streamId, stream) -> {
+                    LOGGER.info("force close closing stream after timeout, streamId={}", streamId);
+                    stream.close(true);
+                }));
+            }
         }
     }
 
