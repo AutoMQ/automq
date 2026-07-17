@@ -22,11 +22,13 @@ package kafka.automq.partition.snapshot;
 import org.apache.kafka.common.message.AutomqGetPartitionSnapshotResponseData;
 
 import com.automq.stream.s3.ConfirmWAL;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -42,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 public class ConfirmWalDataDeltaTest {
 
     ConfirmWAL confirmWAL;
@@ -135,7 +138,7 @@ public class ConfirmWalDataDeltaTest {
     }
 
     int onAppend(long recordBaseOffset) {
-        StreamRecordBatch record = StreamRecordBatch.of(1, 2, recordBaseOffset, 1, Unpooled.wrappedBuffer(new byte[1024]));
+        StreamRecordBatch record = StreamRecordBatch.of(1, 2, recordBaseOffset, 1, Unpooled.wrappedBuffer(new byte[1024]), DefaultByteBufSupplier.INSTANCE);
         nextWalOffset = walOffset + record.encoded().readableBytes();
         delta.onAppend(
             record,

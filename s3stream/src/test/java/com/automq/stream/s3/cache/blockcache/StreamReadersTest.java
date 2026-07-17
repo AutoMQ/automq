@@ -11,6 +11,7 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -61,11 +62,11 @@ public class StreamReadersTest {
         // Create mock objects for testing with different offset ranges
         // Object 1: STREAM_ID_1 offset 0-2
         objects.put(1L, MockObject.builder(1L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_1, List.of(
-            StreamRecordBatch.of(STREAM_ID_1, 0, 0, 2, TestUtils.random(100))
+            StreamRecordBatch.of(STREAM_ID_1, 0, 0, 2, TestUtils.random(100), DefaultByteBufSupplier.INSTANCE)
         )).build());
         // Object 2: STREAM_ID_2 offset 0-1
         objects.put(2L, MockObject.builder(2L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID_2, List.of(
-            StreamRecordBatch.of(STREAM_ID_2, 0, 0, 1, TestUtils.random(100))
+            StreamRecordBatch.of(STREAM_ID_2, 0, 0, 1, TestUtils.random(100), DefaultByteBufSupplier.INSTANCE)
         )).build());
 
         objectManager = mock(ObjectManager.class);

@@ -577,11 +577,23 @@ public interface ObjectReader extends AsyncMeasurable {
             return recordCount;
         }
 
+        /**
+         * Returns an iterator whose records retain slices of this data block's buffer.
+         * Each returned record must be released after use.
+         */
         public CloseableIterator<StreamRecordBatch> iterator() {
-            return iterator(true);
+            return iterator0(null);
         }
 
-        public CloseableIterator<StreamRecordBatch> iterator(boolean copy) {
+        /**
+         * Returns an iterator whose records are copied with the supplied allocator.
+         * Each returned record must be released after use.
+         */
+        public CloseableIterator<StreamRecordBatch> iterator(ByteBufSupplier alloc) {
+            return iterator0(Objects.requireNonNull(alloc, "alloc"));
+        }
+
+        private CloseableIterator<StreamRecordBatch> iterator0(ByteBufSupplier alloc) {
             ByteBuf buf = this.buf.duplicate();
             AtomicInteger currentBlockRecordCount = new AtomicInteger(0);
             AtomicInteger remainingRecordCount = new AtomicInteger(recordCount);
@@ -603,7 +615,7 @@ public interface ObjectReader extends AsyncMeasurable {
                         buf.skipBytes(4);
                     }
                     currentBlockRecordCount.decrementAndGet();
-                    return StreamRecordBatch.parse(buf, copy);
+                    return StreamRecordBatch.parse(buf, alloc != null, alloc);
                 }
 
                 @Override
@@ -612,6 +624,10 @@ public interface ObjectReader extends AsyncMeasurable {
             };
         }
 
+        /**
+         * Returns records that retain slices of this data block's buffer.
+         * Each returned record must be released after use.
+         */
         public List<StreamRecordBatch> records() {
             List<StreamRecordBatch> records = new ArrayList<>(recordCount);
             try (CloseableIterator<StreamRecordBatch> it = iterator()) {

@@ -19,7 +19,7 @@
 
 package com.automq.stream.s3.compact.operator;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
@@ -51,7 +51,9 @@ import static com.automq.stream.s3.ByteBufAlloc.STREAM_SET_OBJECT_COMPACTION_REA
 //TODO: refactor to reduce duplicate code with ObjectWriter
 public class DataBlockReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DataBlockReader.class);
-    private static final ByteBufSeqAlloc DIRECT_ALLOC = new ByteBufSeqAlloc(STREAM_SET_OBJECT_COMPACTION_READ, 1);
+    // Owned by this class for the process lifetime so data block readers reuse the same slabs.
+    private static final RecyclingByteBufSeqAlloc DIRECT_ALLOC =
+        new RecyclingByteBufSeqAlloc(STREAM_SET_OBJECT_COMPACTION_READ, 1);
 
     private final S3ObjectMetadata metadata;
     private final String objectKey;
