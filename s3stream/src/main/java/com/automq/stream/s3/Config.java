@@ -31,7 +31,7 @@ import java.util.function.Supplier;
 public class Config {
     private int nodeId;
     private List<BucketURI> dataBuckets;
-    private String walConfig = "0@file:///tmp/s3stream_wal";
+    private String walConfig = "0@file:///var/kafka/wal";
     private long walCacheSize = 200 * 1024 * 1024;
     private long walUploadThreshold = 100 * 1024 * 1024;
     // -1L means don't upload by time
