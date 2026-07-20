@@ -630,7 +630,13 @@ class ElasticLog(val metaStream: MetaStream,
 
             // AutoMQ inject start
             val (newSegment, newSegmentCf) = createAndSaveSegment(logSegmentManager, "", logIdent)(newOffset, _dir, config, streamSliceManager, time)
-            newSegmentCf.get()
+            // Segment metadata and subsequent data appends are persisted through the same ordered WAL. Do not block
+            // the append path on the metadata acknowledgement; a later append cannot be confirmed ahead of it.
+            newSegmentCf.whenComplete((_, ex) => {
+                if (ex != null) {
+                    recordLogWriteFailedIfUnexpected(FutureUtil.cause(ex))
+                }
+            })
             // AutoMQ inject end
             segments.add(newSegment)
 
