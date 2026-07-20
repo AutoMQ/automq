@@ -29,7 +29,10 @@ import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 
 import org.slf4j.Logger;
 
@@ -40,6 +43,7 @@ import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -48,6 +52,10 @@ import io.netty.buffer.ByteBuf;
 public class ObjectRouterChannel implements RouterChannel {
     private static final ExecutorService ASYNC_EXECUTOR = Executors.newCachedThreadPool();
     private static final long OVER_CAPACITY_RETRY_DELAY_MS = 1000L;
+    private static final long CACHE_WEIGHT_UNIT = 100L << 20;
+    private static final long HEAP_PER_CACHE_WEIGHT_UNIT = 6L << 30;
+    private static final long CACHE_MAX_WEIGHT = cacheMaxWeight(Systems.HEAP_MEMORY_SIZE);
+    private static final long CACHE_EXPIRE_SECONDS = 10;
     // Owned by this class for the process lifetime so all router channels reuse the same slabs.
     private static final RecyclingByteBufSeqAlloc ALLOC =
         new RecyclingByteBufSeqAlloc(ByteBufAlloc.ROUTER_CHANNEL);
@@ -56,6 +64,18 @@ public class ObjectRouterChannel implements RouterChannel {
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    // The data written by the local router channel is cached to avoid reading it back from object storage.
+    private final Cache<ByteBuf /* channel offset */, CachedData> cache = CacheBuilder.newBuilder()
+        .expireAfterWrite(CACHE_EXPIRE_SECONDS, TimeUnit.SECONDS)
+        .maximumWeight(CACHE_MAX_WEIGHT)
+        .weigher((ByteBuf k, CachedData v) -> v.readableBytes())
+        .removalListener(notification -> {
+            CachedData data = notification.getValue();
+            if (data != null) {
+                data.release();
+            }
+        })
+        .build();
 
     private final ObjectWALService wal;
     private final int nodeId;
@@ -66,6 +86,8 @@ public class ObjectRouterChannel implements RouterChannel {
     private final Map<Long, RecordOffset> channelEpoch2LastRecordOffset = new HashMap<>();
 
     private final CompletableFuture<Void> startCf;
+    private boolean closed;
+    private CompletableFuture<Void> closeCf;
 
     public ObjectRouterChannel(int nodeId, short channelId, ObjectWALService wal) {
         this.logger = new LogContext(String.format("[OBJECT_ROUTER_CHANNEL-%s-%s] ", channelId, nodeId)).logger(ObjectRouterChannel.class);
@@ -91,11 +113,19 @@ public class ObjectRouterChannel implements RouterChannel {
         // The record will be released after appending is done. Use the ALLOC to decrease the memory fragmentation.
         StreamRecordBatch record = StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data, ALLOC);
         for (; ; ) {
+            readLock.lock();
             try {
+                if (closed) {
+                    record.release();
+                    return CompletableFuture.failedFuture(new IllegalStateException("ObjectRouterChannel is closed"));
+                }
                 record.retain();
                 return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
                     readLock.lock();
                     try {
+                        if (closed) {
+                            throw new IllegalStateException("ObjectRouterChannel is closed");
+                        }
                         long epoch = this.channelEpoch;
                         ChannelOffset channelOffset = ChannelOffset.of(channelId, orderHint, nodeId, targetNodeId, walRst.recordOffset().buffer());
                         channelEpoch2LastRecordOffset.put(epoch, walRst.recordOffset());
@@ -103,7 +133,21 @@ public class ObjectRouterChannel implements RouterChannel {
                     } finally {
                         readLock.unlock();
                     }
-                }).whenComplete((r, e) -> record.release());
+                }).whenComplete((rst, ex) -> {
+                    readLock.lock();
+                    try {
+                        if (rst != null && !closed && targetNodeId != this.nodeId) {
+                            // The channel offset is an immutable unpooled buffer, so the cache key does not own a
+                            // reference. The cache owns the payload reference until a reader takes it or the entry is
+                            // removed.
+                            cache.put(rst.channelOffset().slice(), new CachedData(record.getPayload()));
+                        } else {
+                            record.release();
+                        }
+                    } finally {
+                        readLock.unlock();
+                    }
+                });
             } catch (OverCapacityException e) {
                 logger.warn("OverCapacityException occurred while appending, err={}", e.getMessage());
                 // Use block-based delayed retries for network backpressure.
@@ -112,6 +156,8 @@ public class ObjectRouterChannel implements RouterChannel {
                 logger.error("[UNEXPECTED], append wal fail", e);
                 record.release();
                 return CompletableFuture.failedFuture(e);
+            } finally {
+                readLock.unlock();
             }
         }
     }
@@ -122,6 +168,15 @@ public class ObjectRouterChannel implements RouterChannel {
     }
 
     CompletableFuture<ByteBuf> get0(ByteBuf channelOffset) {
+        CachedData cachedData = cache.getIfPresent(channelOffset);
+        if (cachedData != null) {
+            ByteBuf buf = cachedData.take();
+            if (buf != null) {
+                // Router channel data is read once, so the cache entry is no longer useful after a hit.
+                cache.invalidate(channelOffset);
+                return CompletableFuture.completedFuture(buf);
+            }
+        }
         return wal.get(DefaultRecordOffset.of(ChannelOffset.of(channelOffset).walRecordOffset())).thenApply(streamRecordBatch -> {
             ByteBuf payload = streamRecordBatch.getPayload().retainedSlice();
             streamRecordBatch.release();
@@ -168,7 +223,59 @@ public class ObjectRouterChannel implements RouterChannel {
     }
 
     @Override
-    public CompletableFuture<Void> close() {
-        return startCf.thenAcceptAsync(nil -> FutureUtil.suppress(wal::shutdownGracefully, logger), ASYNC_EXECUTOR);
+    public synchronized CompletableFuture<Void> close() {
+        if (closeCf != null) {
+            return closeCf;
+        }
+        closeCf = startCf.thenRunAsync(() -> {
+            writeLock.lock();
+            try {
+                closed = true;
+                cache.invalidateAll();
+                cache.cleanUp();
+            } finally {
+                writeLock.unlock();
+            }
+            FutureUtil.suppress(wal::shutdownGracefully, logger);
+        }, ASYNC_EXECUTOR);
+        return closeCf;
+    }
+
+    static final class CachedData {
+        private final ByteBuf data;
+        private final int readableBytes;
+        private boolean ownedByCache = true;
+
+        CachedData(ByteBuf data) {
+            this.data = data;
+            this.readableBytes = data.readableBytes();
+        }
+
+        synchronized ByteBuf take() {
+            if (!ownedByCache) {
+                return null;
+            }
+            ownedByCache = false;
+            return data;
+        }
+
+        synchronized void release() {
+            if (ownedByCache) {
+                ownedByCache = false;
+                data.release();
+            }
+        }
+
+        int readableBytes() {
+            return readableBytes;
+        }
+    }
+
+    static long cacheMaxWeight(long heapMemorySize) {
+        long units = heapMemorySize / HEAP_PER_CACHE_WEIGHT_UNIT;
+        if (heapMemorySize % HEAP_PER_CACHE_WEIGHT_UNIT != 0) {
+            units++;
+        }
+        return Math.max(units, 1) * CACHE_WEIGHT_UNIT;
     }
 }
