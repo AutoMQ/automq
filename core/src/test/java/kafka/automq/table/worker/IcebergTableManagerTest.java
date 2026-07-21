@@ -23,6 +23,7 @@ import com.google.common.collect.ImmutableMap;
 
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -522,9 +523,41 @@ public class IcebergTableManagerTest {
         manager.applySchemaChange(table, schemaChanges);
         return catalog.loadTable(manager.tableId());
     }
+    
+    @Test
+    public void shouldSetObjectStoreEnabledWhenConfigIsTrue() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId, true);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        assertEquals("true", table.properties().get(TableProperties.OBJECT_STORE_ENABLED));
+    }
+
+    @Test
+    public void shouldNotSetObjectStoreEnabledWhenConfigIsFalse() {
+        TableIdentifier tableId = randomTableId();
+        IcebergTableManager manager = newManager(tableId, false);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        assertNull(table.properties().get(TableProperties.OBJECT_STORE_ENABLED));
+    }
 
     private IcebergTableManager newManager(TableIdentifier tableId) {
-        return new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+        return newManager(tableId, true);
+    }
+
+    private IcebergTableManager newManager(TableIdentifier tableId, boolean icebergObjectStoreEnabled) {
+        WorkerConfig config = mock(WorkerConfig.class);
+        when(config.icebergObjectStoreEnabled()).thenReturn(icebergObjectStoreEnabled);
+        return new IcebergTableManager(catalog, tableId, config);
     }
 
     private TableIdentifier randomTableId() {
