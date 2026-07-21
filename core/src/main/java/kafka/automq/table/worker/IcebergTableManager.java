@@ -101,7 +101,9 @@ public class IcebergTableManager {
                     try {
                         PartitionSpec spec = PartitionUtil.buildPartitionSpec(config.partitionBy(), schema);
                         Map<String, String> options = new HashMap<>();
-                        options.put(TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED, "true");
+                        if (config.icebergObjectStoreEnabled()) {
+                            options.put(TableProperties.OBJECT_STORE_ENABLED, "true");
+                        }
                         options.put(TableProperties.OBJECT_STORE_ENABLED, "true");
                         LOGGER.info("Table {} does not exist, create with schema={}, partition={}", tableId, schema, spec);
                         result.set(catalog.createTable(tableId, schema, spec, options));
