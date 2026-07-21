@@ -17,6 +17,10 @@
 
 package org.apache.kafka.common.config;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * <p>Keys that can be used to configure a topic. These keys are useful when creating or reconfiguring a
  * topic using the AdminClient.
@@ -334,10 +338,12 @@ public class TopicConfig {
     public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
     public static final int AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
 
-    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_CONFIG = "automq.table.topic.iceberg.object.store.enabled";
-    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_DOC = "Enable/disable setting write.object-storage.enabled when creating Iceberg tables. "
-        + "Set to false for catalogs like Databricks Unity Catalog that forbid modifying this property.";
-    public static final boolean AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_DEFAULT = true;
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG = "automq.table.topic.iceberg.auto-create.properties";
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DOC = "The default table properties used when auto-creating Iceberg tables, formatted as a list of key=value pairs. "
+        + "Example: write.metadata.delete-after-commit.enabled=true,write.object-storage.enabled=true";
+    public static final List<String> AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DEFAULT = Collections.unmodifiableList(
+        Arrays.asList("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true")
+    );
 
     public static final String KAFKA_LINKS_ID_CONFIG = "automq.kafka.links.id";
     public static final String KAFKA_LINKS_ID_DOC = "The unique id of a kafka link";
