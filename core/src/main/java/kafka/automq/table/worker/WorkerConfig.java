@@ -119,9 +119,9 @@ public class WorkerConfig {
     public ErrorsTolerance errorsTolerance() {
         return config.errorsTolerance;
     }
-    
-    public boolean icebergObjectStoreEnabled() {
-        return config.tableTopicIcebergObjectStoreEnabled;
+
+    public List<String> icebergAutoCreateProperties() {
+        return config.tableTopicIcebergAutoCreateProperties;
     }
 
     public void refresh() {
