@@ -405,8 +405,8 @@ public class S3Storage implements Storage {
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
                 LOGGER.error("append WAL fail", ex);
+                request.cf.completeExceptionally(ex);
                 storageFailureHandler.handle(ex);
-                return;
             }
         });
         return false;
