@@ -364,6 +364,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG, BOOLEAN, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DEFAULT, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_CONFIG, BOOLEAN, TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_DEFAULT, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)
@@ -440,6 +441,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicExpireSnapshotEnabled;
     public final int tableTopicExpireSnapshotOlderThanHours;
     public final int tableTopicExpireSnapshotRetainLast;
+    public final boolean tableTopicIcebergObjectStoreEnabled;
     // AutoMQ inject end
 
     private final int maxMessageSize;
@@ -513,6 +515,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicExpireSnapshotEnabled = getBoolean(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG);
         this.tableTopicExpireSnapshotOlderThanHours = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG);
         this.tableTopicExpireSnapshotRetainLast = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG);
+        this.tableTopicIcebergObjectStoreEnabled = getBoolean(TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_OBJECT_STORE_ENABLED_CONFIG);
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
