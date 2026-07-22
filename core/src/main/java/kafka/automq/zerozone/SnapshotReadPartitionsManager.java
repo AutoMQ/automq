@@ -113,10 +113,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     }
 
     public synchronized void close() {
+        if (closed) {
+            return;
+        }
         closed = true;
         subscribers.forEach((k, s) -> s.close());
         CompletableFuture.allOf(closingSubscribers.toArray(new CompletableFuture[0])).join();
         subscribers.clear();
+        asyncSender.close();
     }
 
     @Override

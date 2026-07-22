@@ -35,24 +35,22 @@ import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
-import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -61,13 +59,8 @@ import io.netty.util.concurrent.FastThreadLocal;
 
 public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterInV2.class);
-    private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterInV2.class);
-    private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterInAppendPermitAcquireFailTimeNanos");
-
-    private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
-        Integer.MAX_VALUE
-    );
-    private static final int PLACEHOLDER_PERMIT = Systems.getEnvInt("AUTOMQ_ROUTER_IN_PLACEHOLDER_PERMIT", 256);
+    private static final int ORDER_QUEUE_STRIPES_PER_CPU = 64;
+    private static final int MAX_ORDER_QUEUE_COUNT = 1 << Short.SIZE;
 
     static {
         // RouterIn will parallel append the records from one AutomqZoneRouterRequest.
@@ -80,7 +73,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private final String rack;
     private final RouterInProduceHandler localAppendHandler;
     private RouterInProduceHandler routerInProduceHandler;
-    private final BlockingQueue<PartitionProduceRequest> unpackLinkQueue = new ArrayBlockingQueue<>(Systems.CPU_CORES * 8192);
+    private final OrderQueue[] orderQueues;
     private final EventLoop[] appendEventLoops;
     private final FastThreadLocal<RequestLocal> requestLocals = new FastThreadLocal<>() {
         @Override
@@ -90,7 +83,6 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         }
     };
     private final Time time;
-    private final RouterPermitLimiter appendPermitLimiter;
 
     public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time) {
         this.channelProvider = channelProvider;
@@ -99,14 +91,12 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         this.localAppendHandler = kafkaApis::handleProduceAppendJavaCompatible;
         this.routerInProduceHandler = this.localAppendHandler;
         this.time = time;
-        this.appendPermitLimiter = new RouterPermitLimiter(
-            "[ROUTER_IN]",
-            time,
-            APPEND_PERMIT,
-            APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
-            LOGGER
-        );
 
+        this.orderQueues = new OrderQueue[Math.min(MAX_ORDER_QUEUE_COUNT,
+            Systems.CPU_CORES * ORDER_QUEUE_STRIPES_PER_CPU)];
+        for (int i = 0; i < orderQueues.length; i++) {
+            orderQueues[i] = new OrderQueue();
+        }
         this.appendEventLoops = new EventLoop[Systems.CPU_CORES];
         for (int i = 0; i < appendEventLoops.length; i++) {
             this.appendEventLoops[i] = new EventLoop("ROUTER_IN_V2_APPEND_" + i);
@@ -120,7 +110,11 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             String str = String.format("The router request epoch %s is less than fenced epoch %s.", requestEpoch, channelProvider.epoch().getFenced());
             return CompletableFuture.failedFuture(new IllegalStateException(str));
         }
-        return handleZoneRouterRequest0(request);
+        long startNanos = time.nanoseconds();
+        CompletableFuture<AutomqZoneRouterResponse> cf = handleZoneRouterRequest0(request);
+        cf.whenComplete((rst, ex) ->
+            ZeroZoneMetricsManager.IN_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos));
+        return cf;
     }
 
     private CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest0(AutomqZoneRouterRequestData request) {
@@ -131,25 +125,18 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         long startNanos = time.nanoseconds();
         for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
             PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
-            // Acquire placeholder permit upfront as admission control before data is fetched
-            int placeholderPermit = appendPermitLimiter.acquire(PLACEHOLDER_PERMIT);
-            AtomicInteger acquiredPermit = new AtomicInteger(placeholderPermit);
-            // Note: responseCf is guaranteed to be completed AFTER unpackLinkCf callback (in handleUnpackLink -> append0 chain).
-            // Therefore, the release callback registered on responseCf will always see the fully updated acquiredPermit value.
-            partitionProduceRequest.responseCf.whenComplete((resp, ex) -> appendPermitLimiter.release(acquiredPermit.get()));
             partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset).whenComplete((rst, ex) -> {
                 if (ex == null) {
                     int actualSize = rst.readableBytes();
                     size.addAndGet(actualSize);
-                    // Try to acquire more permits based on actual data size (non-blocking)
-                    acquiredPermit.addAndGet(appendPermitLimiter.acquireUpTo(actualSize));
                 }
             });
-            addToUnpackLinkQueue(partitionProduceRequest);
+            OrderQueue orderQueue = orderQueue(partitionProduceRequest.channelOffset.orderHint());
+            orderQueue.add(partitionProduceRequest);
             // trigger unpack processing and record metrics
             partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                handleUnpackLink();
-                ZeroZoneMetricsManager.GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                orderQueue.drain(this::scheduleAppend);
+                ZeroZoneMetricsManager.IN_GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
             });
             subResponseList.add(partitionProduceRequest.responseCf);
         }
@@ -161,46 +148,31 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         });
     }
 
-    private void handleUnpackLink() {
-        if (unpackLinkQueue.isEmpty()) {
-            return;
-        }
-        synchronized (unpackLinkQueue) {
-            while (!unpackLinkQueue.isEmpty()) {
-                PartitionProduceRequest req = unpackLinkQueue.peek();
-                if (req.unpackLinkCf.isDone()) {
-                    EventLoop eventLoop = appendEventLoops[Math.abs(req.channelOffset.orderHint() % appendEventLoops.length)];
-                    req.unpackLinkCf.thenComposeAsync(buf -> {
-                        ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
-                        try {
-                            return append0(req.channelOffset, zoneRouterProduceRequest, false);
-                        } finally {
-                            buf.release();
-                        }
-                    }, eventLoop).whenComplete((resp, ex) -> {
-                        if (ex != null) {
-                            LOGGER.error("[ROUTER_IN],[FAILED]", ex);
-                            req.responseCf.completeExceptionally(ex);
-                            return;
-                        }
-                        req.responseCf.complete(resp);
-                    });
-                    unpackLinkQueue.poll();
-                } else {
-                    break;
-                }
+    private void scheduleAppend(PartitionProduceRequest req) {
+        EventLoop eventLoop = appendEventLoop(req.channelOffset.orderHint());
+        req.unpackLinkCf.thenComposeAsync(buf -> {
+            try {
+                ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
+                return append0(req.channelOffset, zoneRouterProduceRequest, false);
+            } finally {
+                buf.release();
             }
-        }
+        }, eventLoop).whenComplete((resp, ex) -> {
+            if (ex != null) {
+                LOGGER.error("[ROUTER_IN],[FAILED]", ex);
+                req.responseCf.completeExceptionally(ex);
+                return;
+            }
+            req.responseCf.complete(resp);
+        });
     }
 
-    private void addToUnpackLinkQueue(PartitionProduceRequest req) {
-        for (;;) {
-            try {
-                unpackLinkQueue.put(req);
-                return;
-            } catch (InterruptedException ignored) {
-            }
-        }
+    private OrderQueue orderQueue(short orderHint) {
+        return orderQueues[index(orderHint, orderQueues.length)];
+    }
+
+    private EventLoop appendEventLoop(short orderHint) {
+        return appendEventLoops[index(orderHint, appendEventLoops.length)];
     }
 
     @Override
@@ -209,7 +181,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         ZoneRouterProduceRequest zoneRouterProduceRequest
     ) {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        appendEventLoops[Math.abs(channelOffset.orderHint() % appendEventLoops.length)].execute(() ->
+        appendEventLoop(channelOffset.orderHint()).execute(() ->
             FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
     }
@@ -219,6 +191,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         ZoneRouterProduceRequest zoneRouterProduceRequest,
         boolean local
     ) {
+        long startNanos = time.nanoseconds();
         ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
         ProduceRequestData data = zoneRouterProduceRequest.data();
         if (LOGGER.isTraceEnabled()) {
@@ -231,7 +204,10 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
         RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
         // We should release the request after append completed.
-        cf.whenComplete((resp, ex) -> FutureUtil.suppress(zoneRouterProduceRequest::close, LOGGER));
+        cf.whenComplete((resp, ex) -> {
+            ZeroZoneMetricsManager.IN_APPEND_PARTITION_LATENCY.record(time.nanoseconds() - startNanos);
+            FutureUtil.suppress(zoneRouterProduceRequest::close, LOGGER);
+        });
         handler.handleProduceAppend(
             ProduceRequestArgs.builder()
                 .clientId(buildClientId(realEntriesPerPartition))
@@ -281,6 +257,10 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         return null;
     }
 
+    static int index(short orderHint, int length) {
+        return Short.toUnsignedInt(orderHint) % length;
+    }
+
     static class PartitionProduceRequest {
         final ChannelOffset channelOffset;
         CompletableFuture<ByteBuf> unpackLinkCf;
@@ -288,6 +268,25 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
 
         public PartitionProduceRequest(ChannelOffset channelOffset) {
             this.channelOffset = channelOffset;
+        }
+    }
+
+    static class OrderQueue {
+        private final ArrayDeque<PartitionProduceRequest> queue = new ArrayDeque<>();
+
+        synchronized void add(PartitionProduceRequest request) {
+            queue.add(request);
+        }
+
+        synchronized void drain(Consumer<PartitionProduceRequest> consumer) {
+            while (!queue.isEmpty() && queue.peek().unpackLinkCf.isDone()) {
+                PartitionProduceRequest request = queue.poll();
+                try {
+                    consumer.accept(request);
+                } catch (RuntimeException t) {
+                    request.responseCf.completeExceptionally(t);
+                }
+            }
         }
     }
 

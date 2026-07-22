@@ -81,6 +81,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private final RouterOutV2 routerOutV2;
     private final RouterInV2 routerInV2;
     private final CommittedEpochManager committedEpochManager;
+    private final AsyncSender asyncSender;
 
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
     private volatile AutoMQVersion version;
@@ -112,7 +113,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         Time time = Time.SYSTEM;
 
-        AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
+        this.asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
 
         this.config = kafkaConfig.automq().zoneRouterChannels().get();
 
@@ -152,6 +153,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         if (closed.compareAndSet(false, true)) {
             committedEpochManager.close();
             snapshotReadPartitionsManager.close();
+            asyncSender.close();
         }
     }
 
