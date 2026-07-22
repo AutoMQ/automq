@@ -210,7 +210,7 @@ just shell      # Enter node-0 shell — jstack, jmap, jcmd available
 just shell 1    # Enter node-1 shell
 ```
 
-> To change JVM heap size, edit `HEAP_OPTS` in `justfile` (default: `-Xms256m -Xmx256m`).
+> To change the broker JVM heap size, set `KAFKA_HEAP_OPTS` before starting DevKit. The default is `-Xms1g -Xmx4g -XX:MetaspaceSize=96m`.
 
 ## IDEA Remote Debugging
 
