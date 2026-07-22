@@ -35,7 +35,9 @@ public class ServerLogConfigs {
 
     public static final String LOG_DIRS_CONFIG = LOG_PREFIX + "dirs";
     public static final String LOG_DIR_CONFIG = LOG_PREFIX + "dir";
-    public static final String LOG_DIR_DEFAULT = "/tmp/kafka-logs";
+    // AutoMQ inject start: use a stable non-tmpfs directory as the default to avoid unexpected swap behaviour
+    public static final String LOG_DIR_DEFAULT = "/var/kafka/logs";
+    // AutoMQ inject end
     public static final String LOG_DIR_DOC = "The directory in which the log data is kept (supplemental for " + LOG_DIRS_CONFIG + " property)";
     public static final String LOG_DIRS_DOC = "A comma-separated list of the directories where the log data is stored. If not set, the value in " + LOG_DIR_CONFIG + " is used.";
 
