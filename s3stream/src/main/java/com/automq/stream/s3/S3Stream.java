@@ -468,39 +468,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
     private CompletableFuture<Void> close0() {
         return storage.forceUpload(streamId)
-            .exceptionally(ex -> {
-                // Best-effort upload: if force upload fails (e.g. WAL is fenced by a duplicate
-                // broker), proceed with closing the stream. Data will be recovered by the new
-                // epoch owner via WAL replay.
-                logger.warn("forceUpload failed during close, proceeding with stream close", ex);
-                return null;
-            })
             .thenCompose(nil -> streamManager.closeStream(streamId, epoch))
-            .exceptionally(ex -> {
-                // If closeStream fails due to epoch expiry or node fencing (e.g. a duplicate
-                // broker has taken over), treat it as a successful close from this node's
-                // perspective. The new epoch owner is responsible for the stream lifecycle.
-                Throwable cause = FutureUtil.cause(ex);
-                if (isNodeFencingException(cause)) {
-                    logger.warn("closeStream failed with fencing error, treating as closed: {}", cause.getMessage());
-                    return null;
-                }
-                throw new java.util.concurrent.CompletionException(cause);
-            });
-    }
-
-    /**
-     * Check if the exception indicates the node has been fenced or its epoch has expired.
-     */
-    private static boolean isNodeFencingException(Throwable ex) {
-        if (ex == null) {
-            return false;
-        }
-        // Match by class name to avoid a hard dependency on the kafka-clients module.
-        String className = ex.getClass().getSimpleName();
-        return "NodeEpochExpiredException".equals(className)
-            || "NodeEpochNotExistException".equals(className)
-            || "NodeFencedException".equals(className);
     }
 
     @Override
