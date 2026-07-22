@@ -33,11 +33,8 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
-import org.apache.kafka.server.metrics.KafkaMetricsGroup;
 
-import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
-import com.yammer.metrics.core.Histogram;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,13 +60,6 @@ import io.netty.buffer.Unpooled;
 
 public class RouterOutV2 {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
-    private static final KafkaMetricsGroup METRICS_GROUP = new KafkaMetricsGroup(RouterOutV2.class);
-    private static final Histogram APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST = METRICS_GROUP.newHistogram("RouterOutAppendPermitAcquireFailTimeNanos");
-    // Disabled by default to avoid blocking request-handler threads.
-    // Blocking handlers prevents AUTOMQ_ZONE_ROUTER processing, causing produce requests to fail continuously.
-    private static final int APPEND_PERMIT = Systems.getEnvInt("AUTOMQ_APPEND_PERMIT_SIZE",
-        Integer.MAX_VALUE
-    );
 
     private final Node currentNode;
     private final RouterChannel routerChannel;
@@ -79,7 +69,6 @@ public class RouterOutV2 {
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
-    private final RouterPermitLimiter appendPermitLimiter;
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, AsyncSender asyncSender, Time time) {
@@ -89,13 +78,6 @@ public class RouterOutV2 {
         this.localProxy = new LocalProxy(localRouterHandler);
         this.asyncSender = asyncSender;
         this.time = time;
-        this.appendPermitLimiter = new RouterPermitLimiter(
-            "[ROUTER_OUT]",
-            time,
-            APPEND_PERMIT,
-            APPEND_PERMIT_ACQUIRE_FAIL_TIME_HIST,
-            LOGGER
-        );
     }
 
     public void handleProduceAppendProxy(ProduceRequestArgs args) {
@@ -115,19 +97,18 @@ public class RouterOutV2 {
             }
             short orderHint = orderHint(tp, args.clientId().connectionId());
             int recordSize = records.sizeInBytes();
-            int permits = appendPermitLimiter.acquire(recordSize);
             ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
             CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest)));
             CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
                 long timeNanos = time.nanoseconds();
-                ZeroZoneMetricsManager.APPEND_CHANNEL_LATENCY.record(timeNanos - startNanos);
+                ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(timeNanos - startNanos);
                 ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), zoneRouterProduceRequest, recordSize, timeoutMillis);
                 sendProxyRequest(node, proxyRequest);
                 return proxyRequest.cf.thenAccept(response -> {
                     if (!acks0) {
                         responseMap.put(tp, response);
                     }
-                    ZeroZoneMetricsManager.PROXY_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
+                    ZeroZoneMetricsManager.OUT_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
                 });
             }).exceptionally(ex -> {
                 LOGGER.error("Exception in processing append proxies", ex);
@@ -135,11 +116,6 @@ public class RouterOutV2 {
                 responseMap.put(tp, errorPartitionResponse(Errors.LEADER_NOT_AVAILABLE));
                 return null;
             });
-            if (acks0) {
-                channelCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permits));
-            } else {
-                proxyCf.whenComplete((rst, ex) -> appendPermitLimiter.release(permits));
-            }
             cfList.add(proxyCf);
         }
         Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
@@ -215,6 +191,9 @@ public class RouterOutV2 {
         }
 
         public synchronized void send(ProxyRequest request) {
+            long startNanos = time.nanoseconds();
+            request.cf.whenComplete((rst, ex) ->
+                ZeroZoneMetricsManager.OUT_REQUEST_TARGET_LATENCY.record(time.nanoseconds() - startNanos));
             ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
             synchronized (this) {
                 if (requestBatch == null) {
