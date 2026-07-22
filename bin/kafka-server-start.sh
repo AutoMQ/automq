@@ -30,6 +30,18 @@ calculate_max_heap_kb() {
     fi
 }
 
+# AutoMQ inject start
+get_java_major_version() {
+    local java
+    if [[ -z "$JAVA_HOME" ]]; then
+        java="java"
+    else
+        java="$JAVA_HOME/bin/java"
+    fi
+    "$java" -version 2>&1 | sed -E -n 's/.* version "([0-9]+).*$/\1/p'
+}
+# AutoMQ inject end
+
 if [ $# -lt 1 ];
 then
 	echo "USAGE: $0 [-daemon] server.properties [--override property=value]*"
@@ -45,6 +57,20 @@ if [ "x$KAFKA_HEAP_OPTS" = "x" ]; then
     max_heap_kb=$(calculate_max_heap_kb)
     export KAFKA_HEAP_OPTS="-Xmx${max_heap_kb}k -Xms${max_heap_kb}k -XX:MetaspaceSize=96m"
 fi
+
+# AutoMQ inject start
+if [ "x$KAFKA_JVM_PERFORMANCE_OPTS" = "x" ]; then
+    java_major_version=$(get_java_major_version)
+    if [[ "$java_major_version" -ge 23 ]]; then
+        gc_opts="-XX:+UseZGC -XX:ZCollectionIntervalMinor=5"
+    elif [[ "$java_major_version" -ge 21 ]]; then
+        gc_opts="-XX:+UseZGC -XX:+ZGenerational -XX:ZCollectionIntervalMinor=5"
+    else
+        gc_opts="-XX:+UseZGC -XX:ZCollectionInterval=5"
+    fi
+    export KAFKA_JVM_PERFORMANCE_OPTS="-server $gc_opts -Djava.awt.headless=true"
+fi
+# AutoMQ inject end
 
 if [ "x$KAFKA_OPTS" = "x" ]; then
     export KAFKA_OPTS="-XX:+ExitOnOutOfMemoryError -XX:+HeapDumpOnOutOfMemoryError -Dio.netty.allocator.maxOrder=11"
