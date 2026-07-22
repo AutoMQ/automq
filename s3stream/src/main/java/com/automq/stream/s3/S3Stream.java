@@ -468,7 +468,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
     private CompletableFuture<Void> close0() {
         return storage.forceUpload(streamId)
-            .thenCompose(nil -> streamManager.closeStream(streamId, epoch))
+            .thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 
     @Override
