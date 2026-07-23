@@ -64,6 +64,7 @@ public class CompactionUploader {
 
     public void shutdown() {
         this.isShutdown = true;
+        this.isAborted = true;
         this.streamSetObjectUploadPool.shutdown();
         try {
             if (!this.streamSetObjectUploadPool.awaitTermination(10, TimeUnit.SECONDS)) {
@@ -78,6 +79,15 @@ public class CompactionUploader {
                 this.streamObjectUploadPool.shutdownNow();
             }
         } catch (InterruptedException ignored) {
+        }
+
+        if (streamSetObjectWriter != null) {
+            streamSetObjectWriter.release().whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    LOGGER.warn("Failed to release stream set object writer during shutdown", ex);
+                }
+            });
+            streamSetObjectWriter = null;
         }
     }
 
@@ -100,6 +110,10 @@ public class CompactionUploader {
             streamSetObjectIdCf = this.objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES));
         }
         return streamSetObjectIdCf.thenComposeAsync(objectId -> {
+            if (isAborted) {
+                compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                return CompletableFuture.completedFuture(null);
+            }
             if (streamSetObjectWriter == null) {
                 streamSetObjectWriter = new DataBlockWriter(objectId, objectStorage, config.objectPartSize());
             }
@@ -122,6 +136,13 @@ public class CompactionUploader {
                     return CompletableFuture.completedFuture(null);
                 }
                 DataBlockWriter dataBlockWriter = new DataBlockWriter(objectId, objectStorage, config.objectPartSize());
+                // Re-check isAborted after allocating the writer to handle the race where
+                // shutdown() is called between the first check and writer creation.
+                if (isAborted) {
+                    dataBlockWriter.release();
+                    compactedObject.streamDataBlocks().forEach(StreamDataBlock::release);
+                    return CompletableFuture.completedFuture(null);
+                }
                 CompletableFuture<Void> cf = CompactionUtils.chainWriteDataBlock(dataBlockWriter, compactedObject.streamDataBlocks(), streamObjectUploadPool);
                 return cf.thenCompose(nil -> dataBlockWriter.close()).thenApply(nil -> {
                     StreamObject streamObject = new StreamObject();
