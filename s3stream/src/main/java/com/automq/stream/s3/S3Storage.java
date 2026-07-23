@@ -405,7 +405,9 @@ public class S3Storage implements Storage {
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
                 LOGGER.error("append WAL fail", ex);
-                request.cf.completeExceptionally(ex);
+                Throwable cause = FutureUtil.cause(ex);
+                EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
+                executor.execute(() -> request.cf.completeExceptionally(cause));
                 storageFailureHandler.handle(ex);
             }
         });
