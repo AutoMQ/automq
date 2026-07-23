@@ -17,6 +17,10 @@
 
 package org.apache.kafka.common.config;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * <p>Keys that can be used to configure a topic. These keys are useful when creating or reconfiguring a
  * topic using the AdminClient.
@@ -333,6 +337,24 @@ public class TopicConfig {
     public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG = "automq.table.topic.expire.snapshot.retain.last";
     public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
     public static final int AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
+
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG = "automq.table.topic.iceberg.auto-create.properties";
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DOC =
+        "A comma-separated list of 'key=value' pairs passed verbatim as table properties to Catalog#createTable "
+        + "when the Iceberg table does not already exist. Each entry must contain exactly one '=' with a non-blank key; "
+        + "duplicate keys are rejected at topic-configuration time. "
+        + "The user-supplied list completely replaces the built-in defaults, so to omit a default property "
+        + "(e.g. write.object-storage.enabled for Databricks Unity Catalog) simply exclude it from this list. "
+        + "Permission boundary: this config allows setting any Iceberg catalog property, including path-control "
+        + "properties (write.data.path, write.metadata.path) and format/implementation properties "
+        + "(write.parquet.compression-codec, etc.). These are applied at table-creation time only and are not "
+        + "validated against the catalog's own permission model; misconfigured values may render the table "
+        + "unreadable or cause catalog errors. Operators should restrict who can alter this topic config "
+        + "in multi-tenant environments. "
+        + "Example: write.metadata.delete-after-commit.enabled=true,write.metadata.previous-versions-max=10";
+    public static final List<String> AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DEFAULT = Collections.unmodifiableList(
+        Arrays.asList("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true")
+    );
 
     public static final String KAFKA_LINKS_ID_CONFIG = "automq.kafka.links.id";
     public static final String KAFKA_LINKS_ID_DOC = "The unique id of a kafka link";

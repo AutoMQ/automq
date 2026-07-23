@@ -26,7 +26,6 @@ import com.google.common.annotations.VisibleForTesting;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
-import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.SupportsNamespaces;
@@ -101,8 +100,17 @@ public class IcebergTableManager {
                     try {
                         PartitionSpec spec = PartitionUtil.buildPartitionSpec(config.partitionBy(), schema);
                         Map<String, String> options = new HashMap<>();
-                        options.put(TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED, "true");
-                        options.put(TableProperties.OBJECT_STORE_ENABLED, "true");
+                        List<String> properties = config.icebergAutoCreateProperties();
+                        if (properties != null) {
+                            for (String prop : properties) {
+                                int index = prop.indexOf('=');
+                                if (index > 0) {
+                                    String key = prop.substring(0, index).trim();
+                                    String value = prop.substring(index + 1).trim();
+                                    options.put(key, value);
+                                }
+                            }
+                        }
                         LOGGER.info("Table {} does not exist, create with schema={}, partition={}", tableId, schema, spec);
                         result.set(catalog.createTable(tableId, schema, spec, options));
                     } catch (AlreadyExistsException e1) {
