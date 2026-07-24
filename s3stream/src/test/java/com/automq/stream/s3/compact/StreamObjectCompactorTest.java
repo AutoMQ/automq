@@ -52,7 +52,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -205,7 +205,7 @@ class StreamObjectCompactorTest {
             System.currentTimeMillis(), System.currentTimeMillis(), 100, 2);
 
         List<List<S3ObjectMetadata>> groups = group0(
-            List.of(bigObject, normalObject), Long.MAX_VALUE, obj -> true);
+            List.of(bigObject, normalObject), Long.MAX_VALUE, MAJOR, (__, ___) -> true);
 
         // No group should be empty
         for (List<S3ObjectMetadata> g : groups) {
@@ -231,7 +231,8 @@ class StreamObjectCompactorTest {
             List.of(new StreamOffsetRange(streamId, 10, 20)),
             System.currentTimeMillis(), System.currentTimeMillis(), 100, 3);
 
-        List<List<S3ObjectMetadata>> groups = group0(List.of(first, duplicate, second), Long.MAX_VALUE, obj -> true);
+        List<List<S3ObjectMetadata>> groups = group0(List.of(first, duplicate, second), Long.MAX_VALUE, MAJOR,
+            (__, ___) -> true);
 
         List<S3ObjectMetadata> deduplicated = groups.stream().flatMap(List::stream).collect(Collectors.toList());
         assertEquals(List.of(duplicate, second), deduplicated);
@@ -250,7 +251,7 @@ class StreamObjectCompactorTest {
         when(stream.confirmOffset()).thenReturn(32L);
 
         StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
-            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
+            .groupSizeThreshold(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
@@ -348,7 +349,7 @@ class StreamObjectCompactorTest {
         when(stream.confirmOffset()).thenReturn(32L);
 
         StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
-            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
+            .groupSizeThreshold(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(MAJOR);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
@@ -422,12 +423,117 @@ class StreamObjectCompactorTest {
                 System.currentTimeMillis(), System.currentTimeMillis(), 1, 6)
         );
 
-        Predicate<S3ObjectMetadata> objectFilter = __ -> true;
-        List<List<S3ObjectMetadata>> groups = group0(objects, 512, objectFilter);
+        BiPredicate<List<S3ObjectMetadata>, Integer> objectFilter = (__, ___) -> true;
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512, MAJOR, objectFilter);
         assertEquals(3, groups.size());
         assertEquals(List.of(2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(3L, 4L), groups.get(1).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
         assertEquals(List.of(5L, 6L), groups.get(2).stream().map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+    }
+
+    /**
+     * Given a MINOR_V1 group below the threshold, when the next object crosses the threshold, then the object remains
+     * in the current group and the following object starts a new group.
+     */
+    @Test
+    public void testGroupMinorV1CrossesSizeThresholdOnce() {
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, 3, Normal),
+            s3ObjectMetadata(2, 1, 2, 2, Normal),
+            s3ObjectMetadata(3, 2, 3, 2, Normal));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 4, MINOR_V1, (__, ___) -> true);
+
+        assertEquals(List.of(1L, 2L), groups.get(0).stream().map(S3ObjectMetadata::objectId).toList());
+        assertEquals(List.of(3L), groups.get(1).stream().map(S3ObjectMetadata::objectId).toList());
+    }
+
+    /**
+     * Given a MINOR_V1 group already above the threshold, when another object follows, then the next object starts a
+     * new group.
+     */
+    @Test
+    public void testGroupMinorV1DoesNotExtendOversizedGroup() {
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, 5, Normal),
+            s3ObjectMetadata(2, 1, 2, 2, Normal));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 4, MINOR_V1, (__, ___) -> true);
+
+        assertEquals(List.of(1L), groups.get(0).stream().map(S3ObjectMetadata::objectId).toList());
+        assertEquals(List.of(2L), groups.get(1).stream().map(S3ObjectMetadata::objectId).toList());
+    }
+
+    /**
+     * Given a hard-threshold compaction group, when the next object would cross the threshold, then it starts a new
+     * group.
+     */
+    @Test
+    public void testGroupMajorRetainsHardSizeThreshold() {
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, 3, Normal),
+            s3ObjectMetadata(2, 1, 2, 2, Normal));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 4, MAJOR, (__, ___) -> true);
+
+        assertEquals(List.of(1L), groups.get(0).stream().map(S3ObjectMetadata::objectId).toList());
+        assertEquals(List.of(2L), groups.get(1).stream().map(S3ObjectMetadata::objectId).toList());
+    }
+
+    /**
+     * Given a small normal object continuously bridging two composite objects, when MAJOR_V1 filters candidates, then
+     * the bridge remains eligible so filtering does not create an artificial offset gap between the composites.
+     */
+    @Test
+    public void testMajorV1IncludesSmallNormalObjectBridgingCompositeObjects() {
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, 10, Composite),
+            s3ObjectMetadata(2, 1, 2, 3, Normal),
+            s3ObjectMetadata(3, 2, 3, 10, Composite));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 100, MAJOR_V1, getObjectFilter(MAJOR_V1, 4));
+
+        assertEquals(1, groups.size());
+        assertEquals(List.of(1L, 2L, 3L),
+            groups.get(0).stream().map(S3ObjectMetadata::objectId).toList());
+    }
+
+    /**
+     * Given a small normal object with a real offset gap on either side, when MAJOR_V1 filters candidates, then the
+     * normal object remains excluded because it does not bridge continuous composite objects.
+     */
+    @Test
+    public void testMajorV1SkipsSmallNormalObjectWhenCompositeBridgeHasGap() {
+        List<S3ObjectMetadata> previousGap = List.of(
+            s3ObjectMetadata(1, 0, 1, 10, Composite),
+            s3ObjectMetadata(2, 2, 3, 3, Normal),
+            s3ObjectMetadata(3, 3, 4, 10, Composite));
+        List<S3ObjectMetadata> nextGap = List.of(
+            s3ObjectMetadata(4, 0, 1, 10, Composite),
+            s3ObjectMetadata(5, 1, 2, 3, Normal),
+            s3ObjectMetadata(6, 3, 4, 10, Composite));
+        BiPredicate<List<S3ObjectMetadata>, Integer> objectFilter = getObjectFilter(MAJOR_V1, 4);
+
+        assertFalse(objectFilter.test(previousGap, 1));
+        assertFalse(objectFilter.test(nextGap, 1));
+    }
+
+    /**
+     * Given a small normal object at either edge of the object list, when MAJOR_V1 filters candidates, then it is
+     * excluded without attempting to read a missing neighbor.
+     */
+    @Test
+    public void testMajorV1SkipsSmallNormalObjectAtListEdge() {
+        List<S3ObjectMetadata> normalFirst = List.of(
+            s3ObjectMetadata(1, 0, 1, 3, Normal),
+            s3ObjectMetadata(2, 1, 2, 10, Composite));
+        List<S3ObjectMetadata> normalLast = List.of(
+            s3ObjectMetadata(3, 0, 1, 10, Composite),
+            s3ObjectMetadata(4, 1, 2, 3, Normal));
+        BiPredicate<List<S3ObjectMetadata>, Integer> objectFilter = getObjectFilter(MAJOR_V1, 4);
+
+        assertFalse(objectFilter.test(normalFirst, 0));
+        assertFalse(objectFilter.test(normalLast, 1));
     }
 
     private List<S3ObjectMetadata> prepareS3ObjectMetadata(int normalObjectNumber, int compositeObjectNumber, int smallObjectNumber,
@@ -488,8 +594,10 @@ class StreamObjectCompactorTest {
         int majorCompactionObjectThreshold = 4 * 1024 * 1024;
         List<S3ObjectMetadata> metadataList = prepareS3ObjectMetadata(20, 20, 20,
             majorCompactionObjectThreshold, majorCompactionObjectThreshold, 64);
-        Predicate<S3ObjectMetadata> objectFilter = getObjectFilter(MAJOR_V1, majorCompactionObjectThreshold);
-        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+        BiPredicate<List<S3ObjectMetadata>, Integer> objectFilter = getObjectFilter(MAJOR_V1,
+            majorCompactionObjectThreshold);
+        List<List<S3ObjectMetadata>> groups = group0(metadataList, 10 * majorCompactionObjectThreshold, MAJOR_V1,
+            objectFilter);
 
         // major_v1 compaction small composite object can still be compacted
         assertTrue(groups.stream().flatMap(List::stream)
@@ -505,7 +613,7 @@ class StreamObjectCompactorTest {
         long disableMajorV1CompactionSkipSmallObject = 0;
 
         objectFilter = getObjectFilter(MAJOR_V1, disableMajorV1CompactionSkipSmallObject);
-        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, MAJOR_V1, objectFilter);
 
         assertTrue(groups.stream().flatMap(List::stream)
             .anyMatch(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite)));
@@ -517,7 +625,7 @@ class StreamObjectCompactorTest {
 
         // MINOR_V1 should skip composite object
         objectFilter = getObjectFilter(MINOR_V1, majorCompactionObjectThreshold);
-        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, objectFilter);
+        groups = group0(metadataList, 10 * majorCompactionObjectThreshold, MINOR_V1, objectFilter);
 
         assertTrue(groups.stream().flatMap(List::stream).filter(meta -> ObjectAttributes.from(meta.attributes()).type().equals(Composite))
             .findAny().isEmpty());
@@ -565,7 +673,7 @@ class StreamObjectCompactorTest {
         when(stream.confirmOffset()).thenReturn(1500L);
 
         StreamObjectCompactor task = builder().objectManager(objectManager).objectStorage(objectStorage)
-            .maxStreamObjectSize(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
+            .groupSizeThreshold(1024 * 1024 * 1024).stream(stream).dataBlockGroupSizeThreshold(1).build();
         task.compact(CLEANUP);
 
         ArgumentCaptor<CompactStreamObjectRequest> ac = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
