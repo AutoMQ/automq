@@ -773,6 +773,8 @@ public class S3Storage implements Storage {
             }
         }, backgroundExecutor).exceptionally(ex -> {
             LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            context.cf.completeExceptionally(ex);
+            storageFailureHandler.handle(ex);
             return null;
         });
     }

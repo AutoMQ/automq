@@ -56,6 +56,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -73,6 +74,7 @@ public class S3StorageTest {
     ObjectManager objectManager;
     WriteAheadLog wal;
     ObjectStorage objectStorage;
+    StorageFailureHandler storageFailureHandler;
     S3Storage storage;
     Config config;
 
@@ -88,9 +90,10 @@ public class S3StorageTest {
         streamManager = mock(StreamManager.class);
         wal = spy(new MemoryWriteAheadLog());
         objectStorage = new MemoryObjectStorage();
+        storageFailureHandler = mock(StorageFailureHandler.class);
         storage = new S3Storage(config, wal,
             streamManager, objectManager, new StreamReaders(config.blockCacheSize(), objectManager, objectStorage,
-            new DefaultObjectReaderFactory(objectStorage)), objectStorage, mock(StorageFailureHandler.class));
+            new DefaultObjectReaderFactory(objectStorage)), objectStorage, storageFailureHandler);
     }
 
     @Test
@@ -172,6 +175,25 @@ public class S3StorageTest {
         commitCfList.get(1).complete(new CommitStreamSetObjectResponse());
         cf1.get(1, TimeUnit.SECONDS);
         cf2.get(1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Given object preparation fails, when a WAL upload starts, then the upload future fails and storage failover runs.
+     */
+    @Test
+    public void testUploadWALObject_prepareFailureTriggersStorageFailover() {
+        RuntimeException prepareFailure = new RuntimeException("prepare failure");
+        Mockito.when(objectManager.prepareObject(any(), anyLong()))
+            .thenReturn(CompletableFuture.failedFuture(prepareFailure));
+
+        LogCache.LogCacheBlock logCacheBlock = new LogCache.LogCacheBlock(1024);
+        logCacheBlock.put(newRecord(233L, 10L));
+        logCacheBlock.lastRecordOffset(DefaultRecordOffset.of(0, 10L, 0));
+
+        CompletableFuture<Void> uploadCf = storage.uploadDeltaWAL(logCacheBlock);
+
+        assertThrows(ExecutionException.class, () -> uploadCf.get(1, TimeUnit.SECONDS));
+        verify(storageFailureHandler, timeout(1000)).handle(any());
     }
 
     @Test
