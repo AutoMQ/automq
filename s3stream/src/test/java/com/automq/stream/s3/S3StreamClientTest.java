@@ -31,10 +31,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -102,6 +106,18 @@ public class S3StreamClientTest {
         assertFalse(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(89, hardThreshold));
         assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(90, hardThreshold));
         assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(100, hardThreshold));
+    }
+
+    /**
+     * Given object-count pressure, when selecting V1 compactions, then pressure appends MAJOR_V1 after the regular task
+     * without duplicating an already scheduled MAJOR_V1.
+     */
+    @Test
+    public void testObjectCountPressureAppendsMajorV1AfterScheduledCompaction() {
+        assertEquals(List.of(MINOR_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, true, true));
+        assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
+        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
+        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
     }
 
 }
