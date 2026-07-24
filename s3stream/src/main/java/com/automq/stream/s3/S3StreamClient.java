@@ -68,6 +68,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.MINOR_COMPACTION_SIZE_THRESHOLD;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.MINOR_V1_COMPACTION_SIZE_THRESHOLD;
 
 public class S3StreamClient implements StreamClient {
@@ -436,29 +437,42 @@ public class S3StreamClient implements StreamClient {
         }
 
         private void compactV1(CompactionHint hint, long now) {
-            if (now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL ||
-                shouldRunMajorV1CompactionByObjectCount(hint.objectsCount, MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD)) {
-                compact(MAJOR_V1, hint);
-                lastMajorV1CompactionTimestamp = System.currentTimeMillis();
-            } else if (now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL) {
-                compact(MINOR_V1, hint);
-                lastMinorV1CompactionTimestamp = System.currentTimeMillis();
-            } else {
-                compact(CLEANUP_V1, hint);
+            boolean majorDue = now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL;
+            boolean minorDue = now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL;
+            boolean majorRequiredByObjectCount = shouldRunMajorV1CompactionByObjectCount(hint.objectsCount,
+                MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
+            for (StreamObjectCompactor.CompactionType compactionType : v1CompactionTypes(majorDue, minorDue,
+                majorRequiredByObjectCount)) {
+                compact(compactionType, hint);
+                if (MAJOR_V1.equals(compactionType)) {
+                    lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+                } else if (MINOR_V1.equals(compactionType)) {
+                    lastMinorV1CompactionTimestamp = System.currentTimeMillis();
+                }
             }
         }
 
         private void compact(StreamObjectCompactor.CompactionType compactionType, CompactionHint hint) {
+            // Select the policy-specific threshold here so StreamObjectCompactor only applies the grouping behavior of
+            // each compaction type and does not reconstruct size configuration from unrelated parameters.
+            long groupSizeThreshold;
+            if (MINOR.equals(compactionType)) {
+                groupSizeThreshold = MINOR_COMPACTION_SIZE_THRESHOLD;
+            } else if (MINOR_V1.equals(compactionType)) {
+                groupSizeThreshold = MINOR_V1_COMPACTION_SIZE;
+            } else {
+                groupSizeThreshold = config.streamObjectCompactionMaxSizeBytes();
+            }
+            // Under normal object counts, leave small normal objects to MINOR_V1. Disable the filter under object-count
+            // pressure so MAJOR_V1 can reduce metadata even before MINOR_V1 has enlarged every small object.
+            long majorV1MinNormalObjectSize = hint != null
+                && hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD ? MINOR_V1_COMPACTION_SIZE : 0;
             StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
                 .objectManager(objectManager)
                 .stream(this)
                 .objectStorage(objectStorage)
-                .maxStreamObjectSize(config.streamObjectCompactionMaxSizeBytes())
-                .minorV1CompactionThreshold(MINOR_V1_COMPACTION_SIZE);
-
-            if (hint != null) {
-                taskBuilder.majorV1CompactionSkipSmallObject(hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
-            }
+                .groupSizeThreshold(groupSizeThreshold)
+                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
 
             taskBuilder.build().compact(compactionType);
         }
@@ -466,6 +480,24 @@ public class S3StreamClient implements StreamClient {
 
     static boolean shouldRunMajorV1CompactionByObjectCount(int objectsCount, int maxObjectThreshold) {
         return objectsCount >= (int) Math.ceil(maxObjectThreshold * MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO);
+    }
+
+    static List<StreamObjectCompactor.CompactionType> v1CompactionTypes(boolean majorDue, boolean minorDue,
+        boolean majorRequiredByObjectCount) {
+        StreamObjectCompactor.CompactionType scheduledType;
+        if (majorDue) {
+            scheduledType = MAJOR_V1;
+        } else if (minorDue) {
+            scheduledType = MINOR_V1;
+        } else {
+            scheduledType = CLEANUP_V1;
+        }
+        // Object-count pressure accelerates MAJOR_V1 after the regular lifecycle task instead of starving MINOR_V1
+        // or CLEANUP_V1. A regularly scheduled MAJOR_V1 already satisfies the pressure request.
+        if (majorRequiredByObjectCount && !MAJOR_V1.equals(scheduledType)) {
+            return List.of(scheduledType, MAJOR_V1);
+        }
+        return List.of(scheduledType);
     }
 
     static class CompactionHint {
