@@ -25,8 +25,10 @@ import com.automq.stream.s3.trace.context.TraceContext;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Context;
 
+/**
+ * Context for a single fetch operation.
+ */
 public class FetchContext extends TraceContext {
-    public static final FetchContext DEFAULT = new FetchContext();
     private ReadOptions readOptions = ReadOptions.DEFAULT;
 
     public FetchContext() {

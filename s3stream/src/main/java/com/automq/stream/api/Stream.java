@@ -87,7 +87,7 @@ public interface Stream {
     CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint);
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return fetch(FetchContext.DEFAULT, startOffset, endOffset, maxBytesHint);
+        return fetch(new FetchContext(), startOffset, endOffset, maxBytesHint);
     }
 
     /**

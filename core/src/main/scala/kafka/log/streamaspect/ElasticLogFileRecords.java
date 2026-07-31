@@ -311,7 +311,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
-        return batchesFrom(FetchContext.DEFAULT, startOffset);
+        return () -> batchIterator(new FetchContext(), startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     public Iterable<RecordBatch> batchesFrom(FetchContext fetchContext, final long startOffset) {
@@ -319,7 +319,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, long maxOffset, int fetchSize) {
-        return batchIterator(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize);
+        return batchIterator(new FetchContext(), startOffset, maxOffset, fetchSize);
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(FetchContext fetchContext, long startOffset, long maxOffset, int fetchSize) {
@@ -539,7 +539,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
             }
             Records records;
             try {
-                records = elasticLogFileRecords.readAll0(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize).get();
+                records = elasticLogFileRecords.readAll0(new FetchContext(), startOffset, maxOffset, fetchSize).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }
