@@ -24,10 +24,21 @@ import com.automq.stream.api.exceptions.FastReadFailFastException;
 public class ReadOptions {
     public static final ReadOptions DEFAULT = new ReadOptions();
 
-    private boolean fastRead;
-    private boolean pooledBuf;
-    private boolean prioritizedRead;
-    private boolean snapshotRead;
+    private final boolean fastRead;
+    private final boolean pooledBuf;
+    private final boolean prioritizedRead;
+    private final boolean snapshotRead;
+
+    public ReadOptions() {
+        this(false, false, false, false);
+    }
+
+    private ReadOptions(boolean fastRead, boolean pooledBuf, boolean prioritizedRead, boolean snapshotRead) {
+        this.fastRead = fastRead;
+        this.pooledBuf = pooledBuf;
+        this.prioritizedRead = prioritizedRead;
+        this.snapshotRead = snapshotRead;
+    }
 
     public static Builder builder() {
         return new Builder();
@@ -49,19 +60,37 @@ public class ReadOptions {
         return snapshotRead;
     }
 
+    /**
+     * Return read options with the requested snapshot-read mode.
+     *
+     * @deprecated Use {@link #withSnapshotRead(boolean)} to make the copy semantics explicit.
+     */
+    @Deprecated
     public ReadOptions snapshotRead(boolean snapshotRead) {
-        this.snapshotRead = snapshotRead;
-        return this;
+        return withSnapshotRead(snapshotRead);
+    }
+
+    /**
+     * Return read options with the requested snapshot-read mode.
+     */
+    public ReadOptions withSnapshotRead(boolean snapshotRead) {
+        if (this.snapshotRead == snapshotRead) {
+            return this;
+        }
+        return new ReadOptions(fastRead, pooledBuf, prioritizedRead, snapshotRead);
     }
 
     public static class Builder {
-        private final ReadOptions options = new ReadOptions();
+        private boolean fastRead;
+        private boolean pooledBuf;
+        private boolean prioritizedRead;
+        private boolean snapshotRead;
 
         /**
          * Read from cache, if the data is not in cache, then fail fast with {@link FastReadFailFastException}.
          */
         public Builder fastRead(boolean fastRead) {
-            options.fastRead = fastRead;
+            this.fastRead = fastRead;
             return this;
         }
 
@@ -69,22 +98,22 @@ public class ReadOptions {
          * Use pooled buffer for reading. The caller is responsible for releasing the buffer.
          */
         public Builder pooledBuf(boolean pooledBuf) {
-            options.pooledBuf = pooledBuf;
+            this.pooledBuf = pooledBuf;
             return this;
         }
 
         public Builder prioritizedRead(boolean prioritizedRead) {
-            options.prioritizedRead = prioritizedRead;
+            this.prioritizedRead = prioritizedRead;
             return this;
         }
 
         public Builder snapshotRead(boolean snapshotRead) {
-            options.snapshotRead = snapshotRead;
+            this.snapshotRead = snapshotRead;
             return this;
         }
 
         public ReadOptions build() {
-            return options;
+            return new ReadOptions(fastRead, pooledBuf, prioritizedRead, snapshotRead);
         }
     }
 
