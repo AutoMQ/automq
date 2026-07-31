@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
@@ -51,14 +50,14 @@ class ReadOptionsTest {
      * Given default read options, when snapshot-read mode is derived, then the shared default remains unchanged.
      */
     @Test
-    void testWithSnapshotReadCopiesOptions() {
+    void testToBuilderCopiesOptions() {
         ReadOptions original = ReadOptions.builder()
             .fastRead(true)
             .pooledBuf(true)
             .prioritizedRead(true)
             .build();
 
-        ReadOptions derived = original.withSnapshotRead(true);
+        ReadOptions derived = original.toBuilder().snapshotRead(true).build();
 
         assertFalse(original.snapshotRead());
         assertFalse(ReadOptions.DEFAULT.snapshotRead());
@@ -67,21 +66,6 @@ class ReadOptionsTest {
         assertTrue(derived.prioritizedRead());
         assertTrue(derived.snapshotRead());
         assertNotSame(original, derived);
-        assertSame(derived, derived.withSnapshotRead(true));
     }
 
-    /**
-     * Given the legacy fluent API, when snapshot-read mode is requested, then it returns a copy instead of mutating.
-     */
-    @SuppressWarnings("deprecation")
-    @Test
-    void testLegacySnapshotReadMethodCopiesOptions() {
-        ReadOptions original = ReadOptions.DEFAULT;
-
-        ReadOptions derived = original.snapshotRead(true);
-
-        assertFalse(original.snapshotRead());
-        assertTrue(derived.snapshotRead());
-        assertNotSame(original, derived);
-    }
 }
