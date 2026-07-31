@@ -57,7 +57,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -98,31 +98,28 @@ public class StreamObjectCompactor {
         EnumSet.of(MINOR, MAJOR, MINOR_V1, MAJOR_V1);
 
     private final Logger s3ObjectLogger;
-    private final long maxStreamObjectSize;
+    private final long groupSizeThreshold;
     private final Stream stream;
     private final ObjectManager objectManager;
     private final ObjectStorage objectStorage;
     private final int dataBlockGroupSizeThreshold;
-    private final long minorV1CompactionThreshold;
-    private final boolean majorV1CompactionSkipSmallObject;
+    private final long majorV1MinNormalObjectSize;
     private CompactStreamObjectRequest request;
 
     private StreamObjectCompactor(ObjectManager objectManager,
                                   ObjectStorage objectStorage,
                                   Stream stream,
-                                  long maxStreamObjectSize,
+                                  long groupSizeThreshold,
                                   int dataBlockGroupSizeThreshold,
-                                  long minorV1CompactionThreshold,
-                                  boolean majorV1CompactionSkipSmallObject) {
+                                  long majorV1MinNormalObjectSize) {
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
         this.stream = stream;
-        this.maxStreamObjectSize = Math.min(maxStreamObjectSize, Writer.MAX_OBJECT_SIZE);
+        this.groupSizeThreshold = Math.min(groupSizeThreshold, Writer.MAX_OBJECT_SIZE);
         String logIdent = "[StreamObjectsCompactionTask streamId=" + stream.streamId() + "] ";
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
         this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
-        this.minorV1CompactionThreshold = minorV1CompactionThreshold;
-        this.majorV1CompactionSkipSmallObject = majorV1CompactionSkipSmallObject;
+        this.majorV1MinNormalObjectSize = majorV1MinNormalObjectSize;
     }
 
     public void compact(CompactionType compactionType) {
@@ -141,26 +138,46 @@ public class StreamObjectCompactor {
         }
     }
 
-    protected static Predicate<S3ObjectMetadata> getObjectFilter(CompactionType compactionType, long minMajorV1CompactionSize) {
+    protected static BiPredicate<List<S3ObjectMetadata>, Integer> getObjectFilter(CompactionType compactionType,
+        long majorV1MinNormalObjectSize) {
         boolean includeCompositeObject = MAJOR_V1.equals(compactionType);
 
-        return object -> {
+        return (objects, index) -> {
+            S3ObjectMetadata object = objects.get(index);
             ObjectAttributes.Type objectType = ObjectAttributes.from(object.attributes()).type();
             if (!includeCompositeObject && objectType == Composite) {
                 return false;
             }
 
-            // MAJOR_V1 compaction won't compact small object into composite object.
-            // let MINOR_V1 handle small object merge.
-            // set minMajorV1CompactionSize = 0 to disable this.
+            // Normally leave small normal objects to MINOR_V1 to avoid repeatedly linking them into composite objects.
+            // A small normal object between two continuous composite objects is retained because filtering it would
+            // create an artificial offset gap and permanently prevent the two composite objects from being grouped.
+            // Set majorV1MinNormalObjectSize to zero to disable the size filter.
             if (MAJOR_V1.equals(compactionType) &&
                 objectType == Normal &&
-                object.objectSize() < minMajorV1CompactionSize) {
-                return false;
+                object.objectSize() < majorV1MinNormalObjectSize) {
+                return isMajorV1BridgeObject(objects, index);
             }
 
             return true;
         };
+    }
+
+    /**
+     * Detect a normal object that bridges two composite objects in the offset-ordered, unfiltered object list.
+     */
+    static boolean isMajorV1BridgeObject(List<S3ObjectMetadata> objects, int index) {
+        if (index == 0 || index == objects.size() - 1) {
+            return false;
+        }
+        S3ObjectMetadata previous = objects.get(index - 1);
+        S3ObjectMetadata current = objects.get(index);
+        S3ObjectMetadata next = objects.get(index + 1);
+        return ObjectAttributes.from(previous.attributes()).type() == Composite
+            && ObjectAttributes.from(current.attributes()).type() == Normal
+            && ObjectAttributes.from(next.attributes()).type() == Composite
+            && previous.endOffset() == current.startOffset()
+            && current.endOffset() == next.startOffset();
     }
 
     void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException {
@@ -193,8 +210,9 @@ public class StreamObjectCompactor {
             objectGroups = cleanupV1Groups(livingObjects, startOffset);
         } else {
             objectGroups = group0(livingObjects,
-                getMaxGroupSize(compactionType),
-                getObjectFilter(compactionType, majorV1CompactionSkipSmallObject ? minorV1CompactionThreshold : 0));
+                groupSizeThreshold,
+                compactionType,
+                getObjectFilter(compactionType, majorV1MinNormalObjectSize));
         }
 
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
@@ -217,21 +235,6 @@ public class StreamObjectCompactor {
             request = requestOpt.get();
             objectManager.compactStreamObject(request).get();
             s3ObjectLogger.info("Compact stream finished, {} {} cost {}ms", compactionType, request, start.elapsedAs(TimeUnit.MILLISECONDS));
-        }
-    }
-
-    long getMaxGroupSize(CompactionType compactionType) {
-        switch (compactionType) {
-            case MINOR:
-                return MINOR_COMPACTION_SIZE_THRESHOLD;
-            case MAJOR:
-                return this.maxStreamObjectSize;
-            case MINOR_V1:
-                return this.minorV1CompactionThreshold;
-            case MAJOR_V1:
-                return this.maxStreamObjectSize;
-            default:
-                throw new IllegalArgumentException("Unsupported compaction type: " + compactionType);
         }
     }
 
@@ -518,8 +521,9 @@ public class StreamObjectCompactor {
     }
 
     static List<List<S3ObjectMetadata>> group0(List<S3ObjectMetadata> objects,
-                                               long maxStreamObjectSize,
-                                               Predicate<S3ObjectMetadata> objectFilter) {
+                                               long groupSizeThreshold,
+                                               CompactionType compactionType,
+                                               BiPredicate<List<S3ObjectMetadata>, Integer> objectFilter) {
         objects = deduplicateObjectsById(objects, "stream object compaction");
         // TODO: switch to include/exclude composite object
         List<List<S3ObjectMetadata>> objectGroups = new LinkedList<>();
@@ -528,8 +532,10 @@ public class StreamObjectCompactor {
         long groupNextOffset = -1L;
         List<S3ObjectMetadata> group = new LinkedList<>();
         int partCount = 0;
-        for (S3ObjectMetadata object : objects) {
-            if (!objectFilter.test(object)) {
+        boolean softGroupSizeThreshold = isSoftGroupSizeThreshold(compactionType);
+        for (int index = 0; index < objects.size(); index++) {
+            S3ObjectMetadata object = objects.get(index);
+            if (!objectFilter.test(objects, index)) {
                 continue;
             }
 
@@ -543,8 +549,11 @@ public class StreamObjectCompactor {
             }
             // group the objects when the object's range is continuous
             if (groupNextOffset != object.startOffset()
-                // the group object size is less than maxStreamObjectSize
-                || (groupSize + object.objectSize() > maxStreamObjectSize && !group.isEmpty())
+                // MINOR_V1 allows crossing the threshold once so small objects can reach the minimum size consumed by
+                // MAJOR_V1. Once a group has reached the threshold, the next object starts a new group.
+                || (!group.isEmpty() && (softGroupSizeThreshold
+                    ? groupSize >= groupSizeThreshold
+                    : groupSize + object.objectSize() > groupSizeThreshold))
                 // object count in a group is larger than MAX_OBJECT_GROUP_COUNT
                 || group.size() >= MAX_OBJECT_GROUP_COUNT
                 || partCount + objectPartCount > Writer.MAX_PART_COUNT
@@ -570,6 +579,11 @@ public class StreamObjectCompactor {
         return objectGroups;
     }
 
+    static boolean isSoftGroupSizeThreshold(CompactionType compactionType) {
+        // The soft threshold is part of MINOR_V1 behavior, not a caller-tunable size policy.
+        return MINOR_V1.equals(compactionType);
+    }
+
     // no operation for now.
     public void close() {
     }
@@ -582,10 +596,9 @@ public class StreamObjectCompactor {
         private ObjectManager objectManager;
         private ObjectStorage objectStorage;
         private Stream stream;
-        private long maxStreamObjectSize;
+        private long groupSizeThreshold;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
-        private long minorV1CompactionThreshold = MINOR_V1_COMPACTION_SIZE_THRESHOLD;
-        private boolean majorV1CompactionSkipSmallObject = false;
+        private long majorV1MinNormalObjectSize;
 
         public Builder objectManager(ObjectManager objectManager) {
             this.objectManager = objectManager;
@@ -603,15 +616,15 @@ public class StreamObjectCompactor {
         }
 
         /**
-         * Set compacted stream object max size.
+         * Set the stream object compaction group size threshold.
          *
-         * @param maxStreamObjectSize compacted stream object max size in bytes.
-         *                            If it is bigger than {@link Writer#MAX_OBJECT_SIZE},
-         *                            it will be set to {@link Writer#MAX_OBJECT_SIZE}.
+         * @param groupSizeThreshold compaction group size threshold in bytes. If it is bigger than
+         *                           {@link Writer#MAX_OBJECT_SIZE}, it will be set to
+         *                           {@link Writer#MAX_OBJECT_SIZE}.
          * @return builder.
          */
-        public Builder maxStreamObjectSize(long maxStreamObjectSize) {
-            this.maxStreamObjectSize = maxStreamObjectSize;
+        public Builder groupSizeThreshold(long groupSizeThreshold) {
+            this.groupSizeThreshold = groupSizeThreshold;
             return this;
         }
 
@@ -620,33 +633,35 @@ public class StreamObjectCompactor {
             return this;
         }
 
-        public Builder minorV1CompactionThreshold(long minorV1CompactionThreshold) {
-            this.minorV1CompactionThreshold = minorV1CompactionThreshold;
-            return this;
-        }
-
-        public Builder majorV1CompactionSkipSmallObject(boolean majorV1CompactionSkipSmallObject) {
-            this.majorV1CompactionSkipSmallObject = majorV1CompactionSkipSmallObject;
+        /**
+         * Set the minimum normal object size included in MAJOR_V1 compaction.
+         *
+         * @param majorV1MinNormalObjectSize minimum normal object size in bytes; zero disables size filtering.
+         * @return builder.
+         */
+        public Builder majorV1MinNormalObjectSize(long majorV1MinNormalObjectSize) {
+            this.majorV1MinNormalObjectSize = majorV1MinNormalObjectSize;
             return this;
         }
 
         public StreamObjectCompactor build() {
-            return new StreamObjectCompactor(objectManager, objectStorage, stream, maxStreamObjectSize, dataBlockGroupSizeThreshold, minorV1CompactionThreshold, majorV1CompactionSkipSmallObject);
+            return new StreamObjectCompactor(objectManager, objectStorage, stream, groupSizeThreshold,
+                dataBlockGroupSizeThreshold, majorV1MinNormalObjectSize);
         }
     }
 
     public enum CompactionType {
         // cleanup: remove the expired objects.
         CLEANUP,
-        // minor: 1. CLEANUP; 2. physical merge the object to a large object with max group size MINOR_COMPACTION_SIZE_THRESHOLD
+        // minor: 1. CLEANUP; 2. physically merge objects with a hard group size threshold
         MINOR,
-        // major: 1. CLEANUP; 2. physical merge the object to a large object with max group size maxStreamObjectSize
+        // major: 1. CLEANUP; 2. physical merge the object to a large object with a hard group size threshold
         MAJOR,
         // cleanup v1: 1. CLEANUP; 2. cleanup the composite object which dirty data exceed MAX_DIRTY_BYTES
         CLEANUP_V1,
-        // minor v1: 1. CLEANUP; 2. physical merge the small object to a large object with max group size MINOR_V1_COMPACTION_SIZE_THRESHOLD
+        // minor v1: 1. CLEANUP; 2. physically merge objects until the group crosses the size threshold
         MINOR_V1,
-        // major v1: 1. CLEANUP; 2. use composite object logic merge the small object to a large object with max group size maxStreamObjectSize
+        // major v1: 1. CLEANUP; 2. use composite object logic with a hard group size threshold
         MAJOR_V1
     }
 }
