@@ -58,6 +58,7 @@ import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -183,7 +184,7 @@ public class S3StorageTest {
     @Test
     public void testUploadWALObject_prepareFailureTriggersStorageFailover() {
         RuntimeException prepareFailure = new RuntimeException("prepare failure");
-        Mockito.when(objectManager.prepareObject(any(), anyLong()))
+        Mockito.when(objectManager.prepareObject(anyInt(), anyLong()))
             .thenReturn(CompletableFuture.failedFuture(prepareFailure));
 
         LogCache.LogCacheBlock logCacheBlock = new LogCache.LogCacheBlock(1024);
