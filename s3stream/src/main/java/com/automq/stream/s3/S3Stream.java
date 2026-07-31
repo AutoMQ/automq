@@ -243,7 +243,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
         if (snapshotRead()) {
-            context.readOptions().snapshotRead(true);
+            context.setReadOptions(context.readOptions().toBuilder().snapshotRead(true).build());
         }
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();

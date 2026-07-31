@@ -50,7 +50,7 @@ public interface Storage {
         int maxBytes);
 
     default CompletableFuture<ReadDataBlock> read(long streamId, long startOffset, long endOffset, int maxBytes) {
-        return read(FetchContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+        return read(new FetchContext(), streamId, startOffset, endOffset, maxBytes);
     }
 
     /**
