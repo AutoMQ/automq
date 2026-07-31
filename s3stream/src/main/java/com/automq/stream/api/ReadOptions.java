@@ -44,6 +44,17 @@ public class ReadOptions {
         return new Builder();
     }
 
+    /**
+     * Return a new builder initialized with this instance's values.
+     */
+    public Builder toBuilder() {
+        return new Builder()
+            .fastRead(fastRead)
+            .pooledBuf(pooledBuf)
+            .prioritizedRead(prioritizedRead)
+            .snapshotRead(snapshotRead);
+    }
+
     public boolean fastRead() {
         return fastRead;
     }
@@ -58,26 +69,6 @@ public class ReadOptions {
 
     public boolean snapshotRead() {
         return snapshotRead;
-    }
-
-    /**
-     * Return read options with the requested snapshot-read mode.
-     *
-     * @deprecated Use {@link #withSnapshotRead(boolean)} to make the copy semantics explicit.
-     */
-    @Deprecated
-    public ReadOptions snapshotRead(boolean snapshotRead) {
-        return withSnapshotRead(snapshotRead);
-    }
-
-    /**
-     * Return read options with the requested snapshot-read mode.
-     */
-    public ReadOptions withSnapshotRead(boolean snapshotRead) {
-        if (this.snapshotRead == snapshotRead) {
-            return this;
-        }
-        return new ReadOptions(fastRead, pooledBuf, prioritizedRead, snapshotRead);
     }
 
     public static class Builder {
