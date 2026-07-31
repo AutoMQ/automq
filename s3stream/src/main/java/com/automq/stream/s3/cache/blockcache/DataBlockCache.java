@@ -253,12 +253,13 @@ public class DataBlockCache {
                 }
                 DataBlockGroupKey key = entry.getKey();
                 DataBlock dataBlock = entry.getValue();
-                if (!dataBlock.isExpired(expiredTimestamp) && !sizeLimiter.requiredRelease()) {
+                boolean expired = dataBlock.isExpired(expiredTimestamp);
+                if (!expired && !sizeLimiter.requiredRelease()) {
                     break;
                 }
                 lru.pop();
                 if (blocks.remove(key, dataBlock)) {
-                    dataBlock.free();
+                    dataBlock.free(expired ? DataBlock.EvictReason.EXPIRED : DataBlock.EvictReason.CAPACITY);
                     BlockCacheMetrics.BLOCK_EVICT_THROUGHPUT.add(dataBlock.dataBlockIndex().size());
                 } else {
                     LOGGER.error("[BUG] duplicated free data block {}", dataBlock);

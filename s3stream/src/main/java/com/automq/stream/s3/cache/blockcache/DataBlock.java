@@ -82,7 +82,7 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
      */
     public void completeExceptionally(Throwable ex) {
         loadCf.completeExceptionally(ex);
-        free0();
+        free0(EvictReason.NONE);
     }
 
     public CompletableFuture<DataBlock> dataFuture() {
@@ -90,15 +90,19 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
     }
 
     public void free() {
-        release();
-        free0();
+        free(EvictReason.NONE);
     }
 
-    private void free0() {
+    public void free(EvictReason evictReason) {
+        release();
+        free0(evictReason);
+    }
+
+    private void free0(EvictReason evictReason) {
         freeCf.complete(this);
         for (FreeListener listener : freeListeners) {
             try {
-                listener.onFree(this);
+                listener.onFree(this, evictReason);
             } catch (Throwable e) {
                 LOGGER.error("invoke onFree fail", e);
             }
@@ -112,7 +116,7 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 
     public FreeListenerHandle registerFreeListener(FreeListener listener) {
         if (freeCf.isDone()) {
-            listener.onFree(this);
+            listener.onFree(this, EvictReason.NONE);
             return () -> {
             };
         } else {
@@ -207,11 +211,24 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
     }
 
     public interface FreeListener {
-        void onFree(DataBlock dataBlock);
+        void onFree(DataBlock dataBlock, EvictReason evictReason);
     }
 
     public interface FreeListenerHandle {
         void close();
+    }
+
+    /**
+     * Why a cached {@link DataBlock} was freed, so listeners can tell a benign read-completion
+     * free apart from an eviction caused by cache pressure vs. one caused by TTL expiration.
+     */
+    public enum EvictReason {
+        /** Freed because it was fully read, or the load failed; not an eviction. */
+        NONE,
+        /** Evicted because the cache is full and needs space. */
+        CAPACITY,
+        /** Evicted because the block's TTL elapsed before it was fully read. */
+        EXPIRED
     }
 
 }
