@@ -25,6 +25,7 @@ import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
@@ -286,13 +287,15 @@ public class S3Stream implements Stream, StreamMetadataListener {
         @SpanAttribute long startOffset,
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
-        if (snapshotRead()) {
-            context.readOptions().snapshotRead(true);
-        }
+        FetchContext effectiveContext = new FetchContext(context);
+        ReadOptions effectiveReadOptions = snapshotRead()
+            ? context.readOptions().withSnapshotRead(true)
+            : context.readOptions();
+        effectiveContext.setReadOptions(effectiveReadOptions);
         TimerUtil timerUtil = new TimerUtil();
         readLock.lock();
         try {
-            CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), logger, "fetch");
+            CompletableFuture<FetchResult> cf = exec(() -> fetch0(effectiveContext, startOffset, endOffset, maxBytes), logger, "fetch");
             CompletableFuture<FetchResult> retCf = cf.thenApply(rs -> {
                 // TODO: move the fast / slow read metrics to kafka module.
                 long totalSize = 0L;
@@ -300,7 +303,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
                     totalSize += recordBatch.rawPayload().remaining();
                 }
                 final long finalSize = totalSize;
-                if (context.readOptions().fastRead()) {
+                if (effectiveContext.readOptions().fastRead()) {
                     NetworkStats.getInstance().fastReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                 } else {
                     NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
