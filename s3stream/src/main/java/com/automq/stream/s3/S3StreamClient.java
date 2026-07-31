@@ -88,6 +88,7 @@ public class S3StreamClient implements StreamClient {
     private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
     static final double MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO = 0.9;
     private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 20);
+    private static final long COMPACTION_METADATA_REPLAY_DELAY_MS = TimeUnit.SECONDS.toMillis(1);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
     final Map<Long, StreamWrapper> openedStreams;
@@ -441,8 +442,15 @@ public class S3StreamClient implements StreamClient {
             boolean minorDue = now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL;
             boolean majorRequiredByObjectCount = shouldRunMajorV1CompactionByObjectCount(hint.objectsCount,
                 MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
-            for (StreamObjectCompactor.CompactionType compactionType : v1CompactionTypes(majorDue, minorDue,
-                majorRequiredByObjectCount)) {
+            List<StreamObjectCompactor.CompactionType> compactionTypes = v1CompactionTypes(majorDue, minorDue,
+                majorRequiredByObjectCount);
+            for (int i = 0; i < compactionTypes.size(); i++) {
+                StreamObjectCompactor.CompactionType compactionType = compactionTypes.get(i);
+                if (i > 0) {
+                    // Give the local metadata image time to replay the previous compaction. This is best effort; a later
+                    // scheduler pass will retry if the metadata image is still stale.
+                    Threads.sleep(COMPACTION_METADATA_REPLAY_DELAY_MS);
+                }
                 compact(compactionType, hint);
                 if (MAJOR_V1.equals(compactionType)) {
                     lastMajorV1CompactionTimestamp = System.currentTimeMillis();
