@@ -88,10 +88,10 @@ public class S3StreamTest {
     }
 
     /**
-     * Given a pending snapshot fetch, when a local fetch uses the shared default context, then their read modes remain isolated.
+     * Given a pending snapshot fetch, when a local fetch starts, then the default overload creates isolated contexts.
      */
     @Test
-    public void testSnapshotFetchDoesNotPolluteDefaultContext() throws Exception {
+    public void testDefaultFetchContextsAreIsolated() throws Exception {
         S3Stream snapshotStream = S3Stream.create(234L, 1L, 100L, 120L, storage, streamManager,
             OpenStreamOptions.builder().readWriteMode(OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ).build());
         CompletableFuture<ReadDataBlock> snapshotRead = new CompletableFuture<>();
@@ -99,8 +99,8 @@ public class S3StreamTest {
         Mockito.when(storage.read(any(), eq(233L), eq(110L), eq(120L), eq(100)))
             .thenReturn(CompletableFuture.completedFuture(newReadDataBlock(110, 115, 110)));
 
-        CompletableFuture<FetchResult> snapshotFetch = snapshotStream.fetch(FetchContext.DEFAULT, 110L, 120L, 100);
-        FetchResult localFetch = stream.fetch(FetchContext.DEFAULT, 110L, 120L, 100).get(1, TimeUnit.SECONDS);
+        CompletableFuture<FetchResult> snapshotFetch = snapshotStream.fetch(110L, 120L, 100);
+        FetchResult localFetch = stream.fetch(110L, 120L, 100).get(1, TimeUnit.SECONDS);
 
         ArgumentCaptor<FetchContext> snapshotContext = ArgumentCaptor.forClass(FetchContext.class);
         ArgumentCaptor<FetchContext> localContext = ArgumentCaptor.forClass(FetchContext.class);
@@ -108,9 +108,8 @@ public class S3StreamTest {
         verify(storage).read(localContext.capture(), eq(233L), eq(110L), eq(120L), eq(100));
         assertFalse(ReadOptions.DEFAULT.snapshotRead());
         assertTrue(snapshotContext.getValue().readOptions().snapshotRead());
-        assertNotSame(FetchContext.DEFAULT, snapshotContext.getValue());
         assertFalse(localContext.getValue().readOptions().snapshotRead());
-        assertNotSame(FetchContext.DEFAULT, localContext.getValue());
+        assertNotSame(snapshotContext.getValue(), localContext.getValue());
 
         snapshotRead.complete(newReadDataBlock(110, 115, 110));
         snapshotFetch.get(1, TimeUnit.SECONDS);
