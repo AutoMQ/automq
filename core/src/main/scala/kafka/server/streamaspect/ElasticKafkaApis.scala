@@ -3,7 +3,6 @@ package kafka.server.streamaspect
 import com.automq.stream.s3.metrics.TimerUtil
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.Threads
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
 import kafka.coordinator.transaction.TransactionCoordinator
@@ -82,12 +81,12 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
-  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000)
+  val deleteTopicHandleExecutor: ExecutorService = Threads.newFixedThreadPool(1, "kafka-apis-delete-topic-handle-executor", true, 1000, LoggerFactory.getLogger(classOf[ElasticKafkaApis]))
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
 
-  private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
+  private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPool(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)

@@ -3,8 +3,7 @@ package kafka.server.streamaspect
 import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel, TimerUtil}
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
-import com.automq.stream.utils.{FutureUtil, Systems}
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
+import com.automq.stream.utils.{FutureUtil, Systems, Threads}
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -40,6 +39,7 @@ import org.apache.kafka.metadata.LeaderConstants
 import org.apache.kafka.server.common.{DirectoryEventHandler, MetadataVersion}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log._
+import org.slf4j.LoggerFactory
 
 import java.util
 import java.util.Optional
@@ -123,8 +123,8 @@ class ElasticReplicaManager(
   brokerEpochSupplier: () => Long = () => -1,
   addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
   directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
-  private val fastFetchExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(4, 4, 0L, TimeUnit.MILLISECONDS, "kafka-apis-fast-fetch-executor", true, 10000),
-  private val slowFetchExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(12, 12, 0L, TimeUnit.MILLISECONDS, "kafka-apis-slow-fetch-executor", true, 10000),
+  private val fastFetchExecutor: ExecutorService = Threads.newFixedThreadPool(4, "kafka-apis-fast-fetch-executor", true, 10000, LoggerFactory.getLogger(classOf[ElasticReplicaManager])),
+  private val slowFetchExecutor: ExecutorService = Threads.newFixedThreadPool(12, "kafka-apis-slow-fetch-executor", true, 10000, LoggerFactory.getLogger(classOf[ElasticReplicaManager])),
   private val partitionMetricsCleanerExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("kafka-partition-metrics-cleaner", true)),
 ) extends ReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers, metadataCache,
   logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient, delayedProducePurgatoryParam,

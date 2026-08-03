@@ -81,7 +81,7 @@ public class DefaultWriter implements Writer {
     private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
     // Owned by this class for the process lifetime so WAL writers reuse the same slabs.
     private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
-    private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
+    private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
     private static final ScheduledExecutorService SCHEDULE = Threads.newSingleThreadScheduledExecutor("S3_WAL_SCHEDULE", true, LOGGER);
 
     protected final ObjectWALConfig config;
