@@ -156,11 +156,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.checkS3ApiMode = checkS3ApiMode;
 
         String prefix = threadPrefix + "-" + currentIndex + "-";
-        writeLimiterCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+        writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-write-limiter-cb-executor", true, logger);
-        readCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+        readCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-read-cb-executor", true, logger);
-        writeCallbackExecutor = Threads.newFixedThreadPoolWithMonitor(1,
+        writeCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-write-cb-executor", true, logger);
         scheduler = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory(prefix + "s3-scheduler", true), logger);

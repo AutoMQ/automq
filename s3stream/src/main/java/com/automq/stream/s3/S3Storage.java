@@ -156,7 +156,7 @@ public class S3Storage implements Storage {
     private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
-    private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
+    private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
         4, "s3-storage-upload-wal", true, LOGGER);
     private final DelayTrim delayTrim;
     /**
