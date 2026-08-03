@@ -63,7 +63,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.refillThreadPool =
             Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"), LOGGER);
         // The threads number must be larger than 1 because the #run will occupy one thread.
-        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(2, "callback-thread", true, LOGGER);
+        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPool(2, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
     }

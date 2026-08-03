@@ -346,7 +346,8 @@ public class DeleteObjectsAccumulatorTest {
 
         CountDownLatch latch = new CountDownLatch(batchNumber);
 
-        ExecutorService executorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(batchNumber, "delete-obj-accumulator-thread", true, LOGGER);
+        ExecutorService executorService = Threads.newFixedFastThreadLocalThreadPool(batchNumber,
+            "delete-obj-accumulator-thread", true, LOGGER);
         for (int j = 0; j < batchNumber; j++) {
             int finalJ = j;
             executorService.submit(() -> {
