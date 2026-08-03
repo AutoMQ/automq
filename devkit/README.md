@@ -85,8 +85,8 @@ just logs 0 | tail -20          # newest entries
 
 `just logs` only shows container stdout/stderr. Kafka component logs are written
 inside the node container under `/tmp/kafka-logs`, for example
-`/tmp/kafka-logs/server.log`, `controller.log`, `s3-object.log`, and
-`s3stream-threads.log`. Use `just exec` when checking detailed broker logs:
+`/tmp/kafka-logs/server.log`, `controller.log`, and `s3-object.log`. Use
+`just exec` when checking detailed broker logs:
 
 ```bash
 just exec 0 grep -R ERROR /tmp/kafka-logs

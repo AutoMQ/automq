@@ -63,8 +63,6 @@ import com.automq.stream.s3.wal.DefaultWalHandle;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WalHandle;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,7 +70,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
@@ -153,9 +150,6 @@ public class DefaultS3Client implements Client {
         this.kvClient = new ControllerKVClient(this.requestSender);
         Context.instance().kvClient(this.kvClient);
         this.failover = failover();
-
-        S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
-        S3StreamThreadPoolMonitor.init();
 
         this.storage.startup();
         this.compactionManager.start();

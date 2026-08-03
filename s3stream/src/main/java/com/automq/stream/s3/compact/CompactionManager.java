@@ -131,8 +131,8 @@ public class CompactionManager {
             ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger, true, false);
         this.utilityScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("compaction-utility-executor-%d", true), logger, true, false);
-        this.compactThreadPool = Threads.newFixedThreadPoolWithMonitor(1, "object-compaction-manager", true, logger);
-        this.forceSplitThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "force-split-executor", true, logger);
+        this.compactThreadPool = Threads.newFixedThreadPool(1, "object-compaction-manager", true, logger);
+        this.forceSplitThreadPool = Threads.newFixedFastThreadLocalThreadPool(1, "force-split-executor", true, logger);
         this.running.set(true);
         CompactionMetrics.COMPACTION_DELAY_TIME.record(() -> compactionDelayTime);
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +

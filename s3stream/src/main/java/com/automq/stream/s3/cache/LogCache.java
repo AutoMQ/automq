@@ -65,7 +65,7 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
-    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
+    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPool(
         1, "LOG_CACHE_ASYNC", true, LOGGER);
     private static final DeltaHistogram APPEND_STORAGE_LOG_CACHE_LATENCY =
         OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE);

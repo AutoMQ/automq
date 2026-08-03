@@ -75,7 +75,7 @@ import java.util.function.Supplier;
 public class TableCoordinator implements Closeable {
     private static final Logger LOGGER = LoggerFactory.getLogger(TableCoordinator.class);
     private static final ScheduledExecutorService SCHEDULER = Threads.newSingleThreadScheduledExecutor("table-coordinator", true, LOGGER);
-    private static final ExecutorService EXPIRE_SNAPSHOT_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES * 2, "table-coordinator-expire-snapshot", true, LOGGER);
+    private static final ExecutorService EXPIRE_SNAPSHOT_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES * 2, "table-coordinator-expire-snapshot", true, LOGGER);
     private static final String TABLE_COMMIT_CHECKPOINT_KEY = "TABLE_COMMIT_CHECKPOINT";
     private static final String SNAPSHOT_COMMIT_ID = "automq.commit.id";
     private static final String WATERMARK = "automq.watermark";
