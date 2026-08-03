@@ -491,15 +491,22 @@ import static com.automq.stream.utils.FutureUtil.exec;
         return nextReadOffset;
     }
 
-    private void handleBlockFree(Block block) {
+    private void handleBlockFree(Block block, DataBlock.EvictReason evictReason) {
         if (closed) {
             return;
         }
         Block blockInMap = blocksMap.get(block.index.startOffset());
         if (block == blockInMap) {
-            // The unread block is evicted; It means the cache is full, we need to reset the readahead.
+            // The unread block is evicted; we need to reset the readahead.
             readahead.reset();
-            READAHEAD_RESET_LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
+            if (evictReason == DataBlock.EvictReason.EXPIRED) {
+                // The block sat unread past its TTL; usually the consumer is reading slower than the readahead pace,
+                // not that the cache is undersized.
+                READAHEAD_RESET_LOG_SUPPRESSOR.warn("The unread block is evicted because it exceeded the cache TTL, "
+                    + "the consumer may be reading too slowly");
+            } else {
+                READAHEAD_RESET_LOG_SUPPRESSOR.warn("The unread block is evicted, please increase the block cache size");
+            }
         }
     }
 
@@ -595,7 +602,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
                     }
                     data = newData;
                     newData.markUnread();
-                    freeListenerHandle = data.registerFreeListener(b -> handleBlockFree(this));
+                    freeListenerHandle = data.registerFreeListener((b, evictReason) -> handleBlockFree(this, evictReason));
                 }
             }).exceptionally(ex -> {
                 exception = ex;
