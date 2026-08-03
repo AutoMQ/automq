@@ -57,6 +57,9 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 
     private final CompletableFuture<DataBlock> freeCf = new CompletableFuture<>();
     final List<FreeListener> freeListeners = new ArrayList<>();
+    // Reason recorded when this block is freed, so listeners registered after the fact (see
+    // registerFreeListener) can be told the real cause instead of defaulting to NONE.
+    private volatile EvictReason evictReason = EvictReason.NONE;
 
     private final Time time;
 
@@ -99,6 +102,7 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
     }
 
     private void free0(EvictReason evictReason) {
+        this.evictReason = evictReason;
         freeCf.complete(this);
         for (FreeListener listener : freeListeners) {
             try {
@@ -116,7 +120,10 @@ import static com.automq.stream.s3.ByteBufAlloc.BLOCK_CACHE;
 
     public FreeListenerHandle registerFreeListener(FreeListener listener) {
         if (freeCf.isDone()) {
-            listener.onFree(this, EvictReason.NONE);
+            // Block was already freed (e.g. tryEvictExpired() ran before this listener got registered).
+            // Replay the actual eviction reason instead of NONE, otherwise a late registrant like
+            // StreamReader would misclassify an EXPIRED eviction as a capacity one.
+            listener.onFree(this, evictReason);
             return () -> {
             };
         } else {
