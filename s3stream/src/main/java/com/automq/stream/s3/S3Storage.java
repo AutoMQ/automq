@@ -780,6 +780,14 @@ public class S3Storage implements Storage {
             }
         }, backgroundExecutor).exceptionally(ex -> {
             LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            // poll out current task so the prepare pipeline isn't wedged, and fail the remaining queued tasks.
+            DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
+            Objects.requireNonNull(peek).cf.completeExceptionally(ex);
+            for (DeltaWALUploadTaskContext remaining : walPrepareQueue) {
+                remaining.cf.completeExceptionally(ex);
+            }
+            walPrepareQueue.clear();
+            storageFailureHandler.handle(ex);
             return null;
         });
     }
