@@ -96,6 +96,46 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private volatile boolean shutdown = false;
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
+    private boolean enabled = true;
+
+    private boolean isControllerOnly(Object processRoles) {
+        if (processRoles == null) {
+            return false;
+        }
+
+        if (processRoles instanceof Iterable<?>) {
+            boolean hasRole = false;
+            for (Object role : (Iterable<?>) processRoles) {
+                String roleName = String.valueOf(role).trim();
+                if (roleName.isEmpty()) {
+                    continue;
+                }
+                hasRole = true;
+                if ("broker".equalsIgnoreCase(roleName)) {
+                    return false;
+                }
+            }
+            return hasRole;
+        }
+
+        String roles = String.valueOf(processRoles).trim();
+        if (roles.isEmpty()) {
+            return false;
+        }
+
+        boolean hasRole = false;
+        for (String role : roles.split(",")) {
+            String roleName = role.trim();
+            if (roleName.isEmpty()) {
+                continue;
+            }
+            hasRole = true;
+            if ("broker".equalsIgnoreCase(roleName)) {
+                return false;
+            }
+        }
+        return hasRole;
+    }
 
     String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
         String listenerStr = String.valueOf(configs.get(SocketServerConfigs.LISTENERS_CONFIG));
@@ -128,6 +168,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     @Override
     public void init(List<KafkaMetric> metrics) {
+        if (!enabled) {
+            return;
+        }
         metricsReporterRunner = new KafkaThread("AutoBalancerMetricsReporterRunner", this, true);
         yammerMetricProcessor = new YammerMetricProcessor();
         metricsReporterRunner.start();
@@ -221,6 +264,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     public void configure(Map<String, ?> rawConfigs) {
 
         Map<String, Object> configs = new HashMap<>(rawConfigs);
+
+        if (isControllerOnly(configs.get(KRaftConfigs.PROCESS_ROLES_CONFIG))) {
+            enabled = false;
+            LOGGER.info("Skipping AutoBalancerMetricsReporter on controller-only node");
+            return;
+        }
 
         StaticAutoBalancerConfig staticAutoBalancerConfig = new StaticAutoBalancerConfig(configs, false);
         Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);

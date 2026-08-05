@@ -21,6 +21,7 @@ import kafka.autobalancer.config.StaticAutoBalancerConfig;
 
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.network.SocketServerConfigs;
+import org.apache.kafka.server.config.KRaftConfigs;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
@@ -29,6 +30,7 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Timeout(60)
@@ -87,4 +89,62 @@ public class AutoBalancerMetricsReporterTest {
         ), staticConfig4.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG)));
 
     }
+
+    @Test
+    public void testControllerOnlyNodeDisablesMetricsReporter() {
+        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
+
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(KRaftConfigs.PROCESS_ROLES_CONFIG, "controller");
+        configs.put(SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093");
+
+        Assertions.assertDoesNotThrow(() -> reporter.configure(configs));
+        Mockito.verify(reporter, Mockito.never()).getBootstrapServers(Mockito.anyMap(), Mockito.anyString());
+        Mockito.verify(reporter, Mockito.never()).createAutoBalancerMetricsProducer(Mockito.any());
+
+        reporter.init(List.of());
+        Assertions.assertNull(reporter.yammerMetricProcessor);
+    }
+
+    @Test
+    public void testBrokerOnlyNodeContinuesMetricsReporterConfiguration() {
+        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
+        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+
+        reporter.configure(Map.of(
+            KRaftConfigs.PROCESS_ROLES_CONFIG, "broker",
+            KRaftConfigs.NODE_ID_CONFIG, "1",
+            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
+        ));
+
+        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+    }
+
+    @Test
+    public void testCombinedNodeContinuesMetricsReporterConfiguration() {
+        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
+        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+
+        reporter.configure(Map.of(
+            KRaftConfigs.PROCESS_ROLES_CONFIG, List.of("broker", "controller"),
+            KRaftConfigs.NODE_ID_CONFIG, "1",
+            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093,PLAINTEXT://127.0.0.1:9092"
+        ));
+
+        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+    }
+
+    @Test
+    public void testMissingProcessRolesPreservesExistingBehavior() {
+        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
+        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+
+        reporter.configure(Map.of(
+            KRaftConfigs.NODE_ID_CONFIG, "1",
+            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
+        ));
+
+        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+    }
+
 }
