@@ -29,6 +29,7 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
@@ -370,6 +371,9 @@ public final class MetadataDelta {
             case S3_STREAM_END_OFFSETS_RECORD:
                 replay((S3StreamEndOffsetsRecord) record);
                 break;
+            case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
+                replay((NodeWALUncommittedOffsetsRecord) record);
+                break;
                 // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -543,6 +547,13 @@ public final class MetadataDelta {
     }
 
     public void replay(S3StreamEndOffsetsRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    /**
+     * Replay node WAL responsibility entry upserts and tombstones into the streams image delta.
+     */
+    public void replay(NodeWALUncommittedOffsetsRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
     // AutoMQ for Kafka inject end

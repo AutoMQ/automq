@@ -20,6 +20,7 @@ package org.apache.kafka.image;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -30,6 +31,7 @@ import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
@@ -38,6 +40,7 @@ import org.apache.kafka.timeline.TimelineHashMap;
 
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,6 +58,9 @@ public final class S3StreamsMetadataDelta {
     private final Map<Long, S3StreamMetadataDelta> changedStreams = new HashMap<>();
 
     private final Map<Integer, NodeS3WALMetadataDelta> changedNodes = new HashMap<>();
+    private final Map<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> changedUncommittedOffsets =
+        new HashMap<>();
+    private boolean snapshotReplay = false;
 
     private final Set<Long> newStreams = new HashSet<>();
     private final Set<Long> deletedStreams = new HashSet<>();
@@ -77,6 +83,7 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(S3StreamRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        updateStreamEndOffset(record.streamId(), record.startOffset());
         deletedStreams.remove(record.streamId());
     }
 
@@ -92,6 +99,17 @@ public final class S3StreamsMetadataDelta {
         deletedNodes.remove(record.nodeId());
     }
 
+    /**
+     * Replay a chunk of node WAL responsibility entry upserts and tombstones.
+     */
+    public void replay(NodeWALUncommittedOffsetsRecord record) {
+        for (NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset entry : record.entries()) {
+            NodeWALUncommittedOffsetKey key = new NodeWALUncommittedOffsetKey(record.nodeId(), entry.streamId());
+            changedUncommittedOffsets.put(key, new NodeWALUncommittedOffset(
+                entry.streamId(), entry.startOffset(), entry.endOffset()));
+        }
+    }
+
     public void replay(RemoveNodeWALMetadataRecord record) {
         // add the nodeId to the deletedNodes
         deletedNodes.add(record.nodeId());
@@ -100,6 +118,7 @@ public final class S3StreamsMetadataDelta {
 
     public void replay(RangeRecord record) {
         getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        updateStreamEndOffset(record.streamId(), record.endOffset());
     }
 
     public void replay(RemoveRangeRecord record) {
@@ -143,6 +162,7 @@ public final class S3StreamsMetadataDelta {
     }
 
     public void finishSnapshot() {
+        snapshotReplay = true;
         for (S3StreamMetadataImage stream : image.streamMetadataList()) {
             long streamId = stream.getStreamId();
             S3StreamMetadataDelta delta = changedStreams.get(streamId);
@@ -206,6 +226,7 @@ public final class S3StreamsMetadataDelta {
         TimelineHashMap<Long, Long> newStreamEndOffsets;
         TimelineHashMap<Long, S3StreamMetadataImage> newStreamMetadataMap;
         TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> newNodeMetadataMap;
+        TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> newUncommittedOffsets;
         TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams;
         TimelineHashMap<Long, TopicIdPartition> stream2partition;
         if (registry == RegistryRef.NOOP) {
@@ -213,12 +234,14 @@ public final class S3StreamsMetadataDelta {
             newStreamEndOffsets = new TimelineHashMap<>(registry.registry(), 100000);
             newStreamMetadataMap = new TimelineHashMap<>(registry.registry(), 100000);
             newNodeMetadataMap = new TimelineHashMap<>(registry.registry(), 100);
+            newUncommittedOffsets = new TimelineHashMap<>(registry.registry(), 100000);
             partition2streams = new TimelineHashMap<>(registry.registry(), 100000);
             stream2partition = new TimelineHashMap<>(registry.registry(), 100000);
         } else {
             newStreamEndOffsets = image.timelineStreamEndOffsets();
             newStreamMetadataMap = image.timelineStreamMetadata();
             newNodeMetadataMap = image.timelineNodeMetadata();
+            newUncommittedOffsets = image.timelineUncommittedOffsets();
             partition2streams = image.partition2streams();
             stream2partition = image.stream2partition();
         }
@@ -248,6 +271,22 @@ public final class S3StreamsMetadataDelta {
             // remove the deleted nodes
             deletedNodes.forEach(newNodeMetadataMap::remove);
 
+            if (snapshotReplay) {
+                List<NodeWALUncommittedOffsetKey> absentSnapshotOffsets = new ArrayList<>();
+                newUncommittedOffsets.keySet().forEach(key -> {
+                    if (!changedUncommittedOffsets.containsKey(key)) {
+                        absentSnapshotOffsets.add(key);
+                    }
+                });
+                absentSnapshotOffsets.forEach(newUncommittedOffsets::remove);
+            }
+            changedUncommittedOffsets.forEach((key, offset) -> {
+                if (offset.startOffset() < offset.endOffset()) {
+                    newUncommittedOffsets.put(key, offset);
+                } else if (offset.startOffset() == offset.endOffset()) {
+                    newUncommittedOffsets.remove(key);
+                }
+            });
             Map<TopicIdPartition, Set<Long>> newPartition2streams = new HashMap<>();
             Function<TopicIdPartition, Set<Long>> getPartitionStreams = k -> {
                 Set<Long> s = partition2streams.get(k);
@@ -288,7 +327,7 @@ public final class S3StreamsMetadataDelta {
         });
         registry = registry.next();
         return new S3StreamsMetadataImage(currentAssignedStreamId, registry, newStreamMetadataMap, newNodeMetadataMap,
-            partition2streams, stream2partition, newStreamEndOffsets);
+            newUncommittedOffsets, partition2streams, stream2partition, newStreamEndOffsets);
     }
 
     @Override

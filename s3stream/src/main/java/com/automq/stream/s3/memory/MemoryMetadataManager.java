@@ -316,7 +316,7 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     }
 
     @Override
-    public synchronized CompletableFuture<Void> closeStream(long streamId, long epoch) {
+    public synchronized CompletableFuture<Void> closeStream(long streamId, long epoch, long endOffset) {
         StreamMetadata stream = streams.get(streamId);
         if (stream == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " not found"));
@@ -326,6 +326,9 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
         }
         if (stream.epoch() != epoch) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("stream " + streamId + " epoch " + epoch + " is not equal to current epoch " + stream.epoch()));
+        }
+        if (endOffset >= 0) {
+            stream.endOffset(endOffset);
         }
         stream.state(StreamState.CLOSED);
         return CompletableFuture.completedFuture(null);

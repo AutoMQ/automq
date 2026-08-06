@@ -55,6 +55,8 @@ import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.streams.StreamCloseHook;
@@ -93,6 +95,14 @@ public class ControllerStreamManager implements StreamManager {
         this.version = version;
         this.failoverMode = failoverMode;
         this.streamCloseHook = id -> CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns whether the finalized cluster version supports ownership transfer before force upload completes.
+     */
+    @Override
+    public boolean isFastCloseSupported() {
+        return version.get().isFastPartitionReassignmentSupported();
     }
 
     @Override
@@ -345,24 +355,52 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
-        return closeStream(streamId, epoch, nodeId, nodeEpoch);
+        return closeStream(streamId, epoch, -1L);
+    }
+
+    /**
+     * Closes a stream with an optional fast-close boundary when the finalized version supports it.
+     */
+    @Override
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, long endOffset) {
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, endOffset);
     }
 
     public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch) {
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Closes a stream for the supplied node identity and optional fast-close boundary.
+     */
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
         try {
             CompletableFuture<Void> cf = new CompletableFuture<>();
             this.streamCloseHook.beforeStreamClose(streamId)
-                .whenComplete((nil, ex) -> FutureUtil.propagate(closeStream0(streamId, epoch, nodeId, nodeEpoch), cf));
+                .whenComplete((nil, ex) -> FutureUtil.propagate(
+                    closeStream0(streamId, epoch, nodeId, nodeEpoch, endOffset), cf));
             return cf;
         } catch (Throwable ex) {
-            return closeStream0(streamId, epoch, nodeId, nodeEpoch);
+            return closeStream0(streamId, epoch, nodeId, nodeEpoch, endOffset);
         }
     }
 
     public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch) {
+        return closeStream0(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Sends the close request without invoking the stream-close hook.
+     */
+    public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
         CloseStreamRequest request = new CloseStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch);
+        if (endOffset >= 0 && version.get().isFastPartitionReassignmentSupported()) {
+            request.setEndOffset(endOffset);
+        }
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -400,10 +438,13 @@ public class ControllerStreamManager implements StreamManager {
                     logger.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
-                case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
                     logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_FENCED:
+                    logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH,
+                        Errors.forCode(resp.errorCode()).message());
                 default:
                     logger.warn("Error while closing stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();

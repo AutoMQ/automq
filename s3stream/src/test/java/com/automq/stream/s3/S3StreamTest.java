@@ -22,6 +22,7 @@ package com.automq.stream.s3;
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.ReadOptions;
+import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -36,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -44,11 +46,14 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class S3StreamTest {
@@ -114,6 +119,152 @@ public class S3StreamTest {
         snapshotRead.complete(newReadDataBlock(110, 115, 110));
         snapshotFetch.get(1, TimeUnit.SECONDS);
         assertEquals(1, localFetch.recordBatchList().size());
+    }
+
+    /**
+     * Given a V6 stream with a blocked force upload, when close drains existing work, then Controller fast close
+     * completes with the broker append tail without waiting for ObjectStorage.
+     */
+    @Test
+    public void testV6CloseDoesNotWaitForForceUpload() {
+        CompletableFuture<Void> forceUpload = new CompletableFuture<>();
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(forceUpload);
+        when(streamManager.closeStream(233L, 1L, 233L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        CompletableFuture<Void> close = stream.close();
+
+        assertTrue(close.isDone());
+        assertFalse(forceUpload.isDone());
+        verify(streamManager).closeStream(233L, 1L, 233L);
+    }
+
+    /**
+     * Given Controller opens the new owner at the source final append tail, when the target performs its first append,
+     * then the new batch starts exactly at that authorized tail.
+     */
+    @Test
+    public void testFirstTargetAppendStartsAtControllerAuthorizedTail() throws Exception {
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(2);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        long firstTargetBaseOffset = stream.append(recordBatch).get().baseOffset();
+
+        assertEquals(233L, firstTargetBaseOffset);
+        assertEquals(235L, stream.nextOffset());
+    }
+
+    /**
+     * Given a V5 stream with a blocked force upload, when close starts, then legacy Controller close waits until
+     * the upload completes.
+     */
+    @Test
+    public void testV5CloseWaitsForForceUploadBeforeLegacyClose() {
+        CompletableFuture<Void> forceUpload = new CompletableFuture<>();
+        when(storage.forceUpload(233L)).thenReturn(forceUpload);
+        when(streamManager.closeStream(233L, 1L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        CompletableFuture<Void> close = stream.close();
+
+        assertFalse(close.isDone());
+        verify(streamManager, never()).closeStream(233L, 1L);
+
+        forceUpload.complete(null);
+
+        assertTrue(close.isDone());
+        verify(streamManager).closeStream(233L, 1L);
+    }
+
+    /**
+     * Given pending append work on a V6 stream, when close starts, then force upload and Controller close start only
+     * after the append drains and use the resulting append tail.
+     */
+    @Test
+    public void testV6ClosePreservesAppendDrain() {
+        CompletableFuture<Void> append = new CompletableFuture<>();
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(1);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(append);
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(new CompletableFuture<>());
+        when(streamManager.closeStream(233L, 1L, 234L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.append(recordBatch);
+        CompletableFuture<Void> close = stream.close();
+
+        assertFalse(close.isDone());
+        verify(storage, never()).forceUpload(233L);
+        verify(streamManager, never()).closeStream(233L, 1L, 234L);
+
+        append.complete(null);
+
+        assertTrue(close.isDone());
+        verify(storage).forceUpload(233L);
+        verify(streamManager).closeStream(233L, 1L, 234L);
+    }
+
+    /**
+     * Given pending trim work on a V6 stream, when close starts, then force upload and Controller close start only
+     * after the trim drains.
+     */
+    @Test
+    public void testV6ClosePreservesTrimDrain() {
+        CompletableFuture<Void> trim = new CompletableFuture<>();
+        when(streamManager.trimStream(233L, 1L, 150L)).thenReturn(trim);
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(new CompletableFuture<>());
+        when(streamManager.closeStream(233L, 1L, 233L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.trim(150L);
+        CompletableFuture<Void> close = stream.close();
+
+        assertFalse(close.isDone());
+        verify(storage, never()).forceUpload(233L);
+        verify(streamManager, never()).closeStream(233L, 1L, 233L);
+
+        trim.complete(null);
+
+        assertTrue(close.isDone());
+        verify(storage).forceUpload(233L);
+        verify(streamManager).closeStream(233L, 1L, 233L);
+    }
+
+    /**
+     * Given a V6 force upload fails, when Controller fast close succeeds, then close succeeds independently and the
+     * source remains closed to new appends.
+     */
+    @Test
+    public void testV6ForceUploadFailureDoesNotFailCloseAndAppendRemainsRejected() {
+        RuntimeException uploadFailure = new RuntimeException("upload failed");
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(CompletableFuture.failedFuture(uploadFailure));
+        when(streamManager.closeStream(233L, 1L, 233L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        CompletableFuture<Void> close = stream.close();
+
+        close.join();
+        assertThrows(ExecutionException.class, () -> stream.append(mock(RecordBatch.class)).get());
+    }
+
+    /**
+     * Given V6 Controller close fails while upload remains in progress, when the source is closing, then the failure
+     * reaches the close caller and the source remains closed to new appends.
+     */
+    @Test
+    public void testV6ControllerCloseFailureIsVisibleAndAppendRemainsRejected() {
+        RuntimeException closeFailure = new RuntimeException("close failed");
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(new CompletableFuture<>());
+        when(streamManager.closeStream(233L, 1L, 233L)).thenReturn(CompletableFuture.failedFuture(closeFailure));
+
+        CompletableFuture<Void> close = stream.close();
+
+        ExecutionException closeException = assertThrows(ExecutionException.class, close::get);
+        assertEquals(closeFailure, closeException.getCause());
+        assertThrows(ExecutionException.class, () -> stream.append(mock(RecordBatch.class)).get());
     }
 
     @Test

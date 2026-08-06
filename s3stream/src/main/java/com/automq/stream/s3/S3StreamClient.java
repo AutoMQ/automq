@@ -189,7 +189,8 @@ public class S3StreamClient implements StreamClient {
             if (snapshotRead) {
                 openStreamCf = CompletableFuture.completedFuture(new StreamMetadata(streamId, epoch, -1, -1, StreamState.OPENED));
             } else {
-                openStreamCf = streamManager.openStream(streamId, epoch, tags);
+                openStreamCf = storage.awaitUpload(streamId)
+                    .thenCompose(nil -> streamManager.openStream(streamId, epoch, tags));
             }
             CompletableFuture<Stream> cf = openStreamCf.thenApply(metadata -> {
                 StreamWrapper stream = new StreamWrapper(newStream(metadata, options));

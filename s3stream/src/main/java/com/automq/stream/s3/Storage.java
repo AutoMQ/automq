@@ -57,4 +57,9 @@ public interface Storage {
      * Force stream record in WAL upload to s3
      */
     CompletableFuture<Void> forceUpload(long streamId);
+
+    /**
+     * Await the latest upload started for the stream on this storage instance.
+     */
+    CompletableFuture<Void> awaitUpload(long streamId);
 }

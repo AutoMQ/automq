@@ -200,6 +200,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
     override def close(): Unit = {
         ElasticUnifiedLog.Logs.remove(elasticLog.topicPartition, this)
+        // Avoid holding the UnifiedLog lock while the append callback drains. Final producer/log/partition metadata
+        // must be captured only after every admitted append has completed.
+        elasticLog.lastAppendAckFuture.get()
         lock synchronized {
             maybeFlushMetadataFile()
             elasticLog.checkIfMemoryMappedBufferClosed()
@@ -214,8 +217,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             flush(true)
             elasticLog.close()
         }
-        // graceful await append ack
-        elasticLog.lastAppendAckFuture.get()
         elasticLog.isMemoryMappedBufferClosed = true
         // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
         // The deletion here aims to clean the old directory.
@@ -347,8 +348,8 @@ object ElasticUnifiedLog extends Logging {
             val localLog = ElasticFailureHandlers.openWithRetry(topicPartition, forceCleanShutdownRecovery =>
                     ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
                         partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
-                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead,
-                        forceCleanShutdownRecovery),
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead = snapshotRead,
+                        forceCleanShutdownRecovery = forceCleanShutdownRecovery),
                 openFailureContext
             )
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint), scheduler)

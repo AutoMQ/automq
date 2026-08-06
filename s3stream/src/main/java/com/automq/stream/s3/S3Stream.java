@@ -466,7 +466,16 @@ public class S3Stream implements Stream, StreamMetadataListener {
     }
 
     private CompletableFuture<Void> close0() {
-        return storage.forceUpload(streamId)
+        CompletableFuture<Void> forceUploadCf = storage.forceUpload(streamId);
+        if (streamManager.isFastCloseSupported()) {
+            forceUploadCf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    LOGGER.error("{} background force upload after fast close failed", logIdent, ex);
+                }
+            });
+            return streamManager.closeStream(streamId, epoch, nextOffset.get());
+        }
+        return forceUploadCf
             .thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 

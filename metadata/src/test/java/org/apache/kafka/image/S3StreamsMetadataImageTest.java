@@ -19,6 +19,9 @@ package org.apache.kafka.image;
 
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -28,6 +31,7 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
@@ -137,7 +141,8 @@ public class S3StreamsMetadataImageTest {
         RecordTestUtils.replayAll(delta0, List.of(record0));
         S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -146,7 +151,9 @@ public class S3StreamsMetadataImageTest {
         S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
         RecordTestUtils.replayAll(delta1, List.of(record1));
         S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image2, delta1.apply());
     }
 
@@ -154,7 +161,8 @@ public class S3StreamsMetadataImageTest {
     public void testImage_compatible() {
         S3StreamsMetadataImage image = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(image);
         delta.replay(new S3StreamRecord().setStreamId(233L));
         delta.replay((S3StreamSetObjectRecord) new S3StreamSetObject(0, 1, List.of(new StreamOffsetRange(233L, 100, 200L)), 0).toRecord(AutoMQVersion.V0).message());
@@ -173,6 +181,130 @@ public class S3StreamsMetadataImageTest {
         image = delta.apply();
 
         Assertions.assertEquals(300L, image.streamEndOffsets().get(233L));
+    }
+
+    /**
+     * Given stream and range records, verify image replay and snapshot preserve the logical end.
+     */
+    @Test
+    public void testLogicalEndReplayAndSnapshot() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(100L));
+        delta.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(100L).setEndOffset(150L).setNodeId(BROKER0));
+        S3StreamsMetadataImage image = delta.apply();
+        assertEquals(150L, image.streamEndOffsets().get(STREAM0));
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(delta, writer.records());
+        assertEquals(150L, delta.apply().streamEndOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given node WAL responsibility deltas, verify replay upserts and tombstones entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetReplay() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 10L, 20L));
+        S3StreamsMetadataImage image = delta.apply();
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            image.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+
+        S3StreamsMetadataImage previousImage = image;
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 15L, 20L));
+        image = delta.apply();
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 15L, 20L),
+            image.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            previousImage.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 20L, 20L));
+        assertTrue(delta.apply().nodeWALUncommittedOffsets(BROKER0).isEmpty());
+    }
+
+    /**
+     * Given raw responsibility entries, verify snapshot preserves them and splits records at
+     * 10,000 entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetSnapshotRoundTripAndChunking() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        List<NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset> entries = new ArrayList<>();
+        for (long streamId = 0; streamId < 10_002; streamId++) {
+            long endOffset = streamId == STREAM1 ? 50L : 200L;
+            entries.add(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(streamId).setStartOffset(0L).setEndOffset(endOffset));
+        }
+        entries.add(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+            .setStreamId(20_000L).setStartOffset(0L).setEndOffset(200L));
+        delta.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(entries));
+        S3StreamsMetadataImage image = delta.apply();
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        List<NodeWALUncommittedOffsetsRecord> records = writer.records().stream()
+            .map(ApiMessageAndVersion::message)
+            .filter(NodeWALUncommittedOffsetsRecord.class::isInstance)
+            .map(NodeWALUncommittedOffsetsRecord.class::cast)
+            .collect(Collectors.toList());
+        assertEquals(List.of(10_000, 3), records.stream().map(record -> record.entries().size())
+            .collect(Collectors.toList()));
+        NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset raw = records.stream()
+            .flatMap(record -> record.entries().stream())
+            .filter(entry -> entry.streamId() == STREAM0)
+            .findFirst().orElseThrow();
+        assertEquals(0L, raw.startOffset());
+        assertTrue(records.stream().flatMap(record -> record.entries().stream())
+            .anyMatch(entry -> entry.streamId() == STREAM1));
+        assertTrue(records.stream().flatMap(record -> record.entries().stream())
+            .anyMatch(entry -> entry.streamId() == 20_000L));
+
+        S3StreamsMetadataDelta snapshotDelta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(snapshotDelta, writer.records());
+        Map<Long, NodeWALUncommittedOffset> snapshotOffsets = snapshotDelta.apply()
+            .nodeWALUncommittedOffsets(BROKER0);
+        assertEquals(10_003, snapshotOffsets.size());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 200L), snapshotOffsets.get(STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(STREAM1, 0L, 50L), snapshotOffsets.get(STREAM1));
+    }
+
+    /**
+     * Given an older image with multiple entries, verify completing a snapshot removes entries
+     * absent from all of its chunks while retaining replayed entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetSnapshotCompletionRemovesAbsentEntries() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(10L),
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM1).setStartOffset(0L).setEndOffset(10L))));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(uncommittedRecord(BROKER0, STREAM1, 5L, 10L));
+        delta.finishSnapshot();
+        Map<Long, NodeWALUncommittedOffset> offsets = delta.apply()
+            .nodeWALUncommittedOffsets(BROKER0);
+        assertEquals(Map.of(STREAM1, new NodeWALUncommittedOffset(STREAM1, 5L, 10L)), offsets);
+    }
+
+    private static NodeWALUncommittedOffsetsRecord uncommittedRecord(
+        int nodeId, long streamId, long startOffset, long endOffset
+    ) {
+        return new NodeWALUncommittedOffsetsRecord().setNodeId(nodeId).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(streamId).setStartOffset(startOffset).setEndOffset(endOffset)));
     }
 
     private void testToImageAndBack(S3StreamsMetadataImage image) {
@@ -277,6 +409,7 @@ public class S3StreamsMetadataImageTest {
             ref,
             streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(ref.registry(), 0));
 
@@ -443,6 +576,7 @@ public class S3StreamsMetadataImageTest {
         ref = ref.next();
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
 
         InRangeObjects objects = streamsImage.getObjects(STREAM0, 22L, 55, 4, defaultRangeGetter).get();
@@ -475,7 +609,8 @@ public class S3StreamsMetadataImageTest {
         nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
         ref = ref.next();
         return new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
-            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 
     private S3StreamsMetadataImage generateStreamImage(long streamId, Range<Long> streamObjectRange,
@@ -524,6 +659,7 @@ public class S3StreamsMetadataImageTest {
         ref = ref.next();
         return new S3StreamsMetadataImage(streamId, ref, streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 

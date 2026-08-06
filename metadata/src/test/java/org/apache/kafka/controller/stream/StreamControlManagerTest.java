@@ -44,6 +44,7 @@ import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamRespons
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -63,8 +64,12 @@ import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
@@ -102,6 +107,7 @@ import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -353,6 +359,380 @@ public class StreamControlManagerTest {
         assertEquals(BROKER1, range.nodeId());
     }
 
+    /**
+     * Given a V5 cluster, a fast close is rejected while a legacy close retains the existing record contract.
+     */
+    @Test
+    public void testV5RejectsFastCloseAndAcceptsLegacyClose() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V5);
+        createAndOpenStream0();
+
+        ControllerResult<CloseStreamResponse> fastClose = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.UNSUPPORTED_VERSION.code(), fastClose.response().errorCode());
+        assertEquals(0, fastClose.records().size());
+
+        ControllerResult<CloseStreamResponse> legacyClose = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        assertEquals(Errors.NONE.code(), legacyClose.response().errorCode());
+        assertEquals(1, legacyClose.records().size());
+        assertInstanceOf(S3StreamRecord.class, legacyClose.records().get(0).message());
+    }
+
+    /**
+     * Given a finalized V6 cluster, a non-negative close end offset is accepted.
+     */
+    @Test
+    public void testV6AcceptsFastClose() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+
+        ControllerResult<CloseStreamResponse> result = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(3, result.records().size());
+    }
+
+    /**
+     * Given a V6 stream with a logical end, verify fast close rejects regression, avoids an empty
+     * responsibility entry at the boundary, and atomically records a later handoff boundary.
+     */
+    @Test
+    public void testV6FastCloseRecordsNodeWALResponsibility() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+        manager.replay(new S3StreamEndOffsetsRecord().setEndOffsets(
+            S3StreamEndOffsetsCodec.encode(List.of(new StreamEndOffset(STREAM0, 10L)))));
+
+        ControllerResult<CloseStreamResponse> belowEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(9L));
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), belowEnd.response().errorCode());
+        assertEquals(0, belowEnd.records().size());
+
+        ControllerResult<CloseStreamResponse> atEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.NONE.code(), atEnd.response().errorCode());
+        assertEquals(2, atEnd.records().size());
+        assertInstanceOf(S3StreamRecord.class, atEnd.records().get(0).message());
+        assertInstanceOf(RangeRecord.class, atEnd.records().get(1).message());
+
+        ControllerResult<CloseStreamResponse> afterEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(20L));
+        assertEquals(Errors.NONE.code(), afterEnd.response().errorCode());
+        assertEquals(3, afterEnd.records().size());
+        assertInstanceOf(S3StreamRecord.class, afterEnd.records().get(0).message());
+        assertInstanceOf(RangeRecord.class, afterEnd.records().get(1).message());
+        NodeWALUncommittedOffsetsRecord entryRecord = assertInstanceOf(
+            NodeWALUncommittedOffsetsRecord.class, afterEnd.records().get(2).message());
+        assertEquals(BROKER0, entryRecord.nodeId());
+        assertEquals(List.of(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+            .setStreamId(STREAM0).setStartOffset(10L).setEndOffset(20L)), entryRecord.entries());
+
+        replay(manager, afterEnd.records());
+        assertEquals(20L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(20L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a fast close exactly at logical end, verify replay seals the range and closes without
+     * recording historical WAL responsibility.
+     */
+    @Test
+    public void testV6FastCloseAtLogicalEndSealsRangeWithoutEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+        manager.replay(new S3StreamEndOffsetsRecord().setEndOffsets(
+            S3StreamEndOffsetsCodec.encode(List.of(new StreamEndOffset(STREAM0, 10L)))));
+
+        ControllerResult<CloseStreamResponse> result = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(2, result.records().size());
+        assertTrue(result.records().stream()
+            .noneMatch(record -> record.message() instanceof NodeWALUncommittedOffsetsRecord));
+
+        replay(manager, result.records());
+        StreamRuntimeMetadata stream = manager.streamsMetadata().get(STREAM0);
+        assertEquals(StreamState.CLOSED, stream.currentState());
+        assertEquals(10L, stream.endOffset());
+        assertEquals(10L, stream.currentRangeMetadata().endOffset());
+        assertTrue(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().isEmpty());
+    }
+
+    /**
+     * Given a completed fast close, verify an exact retry is record-free, a conflicting retry is
+     * rejected, and an old owner cannot retry after a new owner opens the stream.
+     */
+    @Test
+    public void testV6FastCloseRetryIsIdempotentAndFencedAfterReopen() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<CloseStreamResponse> close = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        replay(manager, close.records());
+
+        ControllerResult<CloseStreamResponse> exactRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.NONE.code(), exactRetry.response().errorCode());
+        assertTrue(exactRetry.records().isEmpty());
+
+        ControllerResult<CloseStreamResponse> conflictingRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(101L));
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), conflictingRetry.response().errorCode());
+        assertTrue(conflictingRetry.records().isEmpty());
+
+        openStream(BROKER1, EPOCH1, STREAM0);
+        ControllerResult<CloseStreamResponse> staleRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.STREAM_FENCED.code(), staleRetry.response().errorCode());
+        assertTrue(staleRetry.records().isEmpty());
+    }
+
+    /**
+     * Given historical commits have advanced a fast-close entry, verify an exact close retry does
+     * not recreate the original responsibility interval.
+     */
+    @Test
+    public void testV6FastCloseRetryDoesNotRecreateAdvancedEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> commit = commitRange(
+            BROKER0, BROKER_EPOCH0, 1L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
+
+        ControllerResult<CloseStreamResponse> retry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.NONE.code(), retry.response().errorCode());
+        assertTrue(retry.records().isEmpty());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a node retains active historical WAL responsibility, verify both normal open and a
+     * same-epoch retry open are rejected until that responsibility becomes inactive.
+     */
+    @Test
+    public void testOpenRejectsActiveHistoricalEntryForTargetNode() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+
+        ControllerResult<OpenStreamResponse> retryOpen = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), retryOpen.response().errorCode());
+        assertTrue(retryOpen.records().isEmpty());
+
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1)).records());
+        ControllerResult<OpenStreamResponse> normalOpen = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(2L));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), normalOpen.response().errorCode());
+        assertTrue(normalOpen.records().isEmpty());
+    }
+
+    /**
+     * Given trim makes a raw historical entry inactive, verify open succeeds at the logical end
+     * without physically deleting that entry.
+     */
+    @Test
+    public void testOpenPermitsAndRetainsInactiveHistoricalEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(100L)).records());
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1)).records());
+
+        NodeWALUncommittedOffset inactiveEntry =
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0);
+        ControllerResult<OpenStreamResponse> result = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(2L));
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(100L, result.response().nextOffset());
+        assertTrue(result.records().stream()
+            .noneMatch(record -> record.message() instanceof NodeWALUncommittedOffsetsRecord));
+        replay(manager, result.records());
+        assertEquals(inactiveEntry,
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().startOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().endOffset());
+    }
+
+    /**
+     * Given a node owns both an opened stream and a trimmed historical interval, verify failover
+     * returns both responsibilities with the historical range epoch and visible recovery start.
+     */
+    @Test
+    public void testGetOpeningStreamsIncludesActiveHistoricalResponsibility() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, commitRange(BROKER0, BROKER_EPOCH0, 1L, 0L, 40L).records());
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(60L)).records());
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        Map<Long, GetOpeningStreamsResponseData.StreamMetadata> streams = result.response()
+            .streamMetadataList().stream().collect(Collectors.toMap(
+                GetOpeningStreamsResponseData.StreamMetadata::streamId, metadata -> metadata));
+        assertEquals(2, streams.size());
+        assertEquals(EPOCH0, streams.get(STREAM0).epoch());
+        assertEquals(60L, streams.get(STREAM0).startOffset());
+        assertEquals(60L, streams.get(STREAM0).endOffset());
+        assertEquals(EPOCH0, streams.get(STREAM1).epoch());
+        assertEquals(0L, streams.get(STREAM1).endOffset());
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM1).setStreamEpoch(EPOCH0)).records());
+        assertTrue(manager.hasOpeningStreams(BROKER0));
+    }
+
+    /**
+     * Given historical WAL metadata no longer has one matching sealed ownership range, verify
+     * failover reports corruption instead of silently omitting responsibility.
+     */
+    @Test
+    public void testGetOpeningStreamsRejectsMissingHistoricalRange() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        manager.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(101L))));
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result.response().errorCode());
+        assertTrue(result.response().streamMetadataList().isEmpty());
+        assertTrue(result.records().isEmpty());
+    }
+
+    /**
+     * Given two sealed ranges both match one historical responsibility entry, verify failover
+     * reports ambiguous ownership as metadata corruption.
+     */
+    @Test
+    public void testGetOpeningStreamsRejectsAmbiguousHistoricalRange() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        manager.replay(new RangeRecord()
+            .setStreamId(STREAM0)
+            .setRangeIndex(1)
+            .setEpoch(EPOCH1)
+            .setNodeId(BROKER0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result.response().errorCode());
+        assertTrue(result.response().streamMetadataList().isEmpty());
+        assertTrue(result.records().isEmpty());
+    }
+
+    /**
+     * Given failover establishes its node barrier before WAL upload, verify later normal commits
+     * are fenced while failover commits continue advancing historical responsibility.
+     */
+    @Test
+    public void testGetOpeningStreamsFailoverBarrierFencesNormalCommit() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<CommitStreamSetObjectResponseData> beforeBarrier = commitRange(
+            BROKER0, BROKER_EPOCH0, 1L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), beforeBarrier.response().errorCode());
+        replay(manager, beforeBarrier.records());
+
+        ControllerResult<GetOpeningStreamsResponseData> barrier = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(1, barrier.records().size());
+        assertEquals(1, barrier.response().streamMetadataList().size());
+        assertEquals(40L, barrier.response().streamMetadataList().get(0).endOffset());
+        replay(manager, barrier.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> normalCommit = commitRange(
+            BROKER0, BROKER_EPOCH0, 2L, 40L, 100L);
+        assertEquals(Errors.NODE_FENCED.code(), normalCommit.response().errorCode());
+        assertTrue(normalCommit.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> failoverCommit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(3L)
+                .setOrderId(3L)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM0)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(40L)
+                    .setEndOffset(100L))));
+        assertEquals(Errors.NONE.code(), failoverCommit.response().errorCode());
+        replay(manager, failoverCommit.records());
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+    }
+
+    /**
+     * Given nodes A and B each own one current range and one crossed historical range, verify
+     * failing over A then B and B then A converges to the same openable state.
+     */
+    @Test
+    public void testCrossedHistoricalOwnershipIsFailoverOrderIndependent() {
+        assertEquals(recoverCrossedOwnership(List.of(BROKER0, BROKER1)),
+            recoverCrossedOwnership(List.of(BROKER1, BROKER0)));
+    }
+
     @Test
     public void testCommitStreamSetObjectBasic() {
         Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(ink -> {
@@ -565,6 +945,8 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamSetObject() {
         List<Long> committed = new LinkedList<>();
+        when(objectControlManager.getObject(anyLong())).thenAnswer(args -> committed.contains(args.getArgument(0))
+            ? new S3Object(args.getArgument(0), 999L, 0L, S3ObjectState.COMMITTED, 0) : null);
         when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (committed.contains(objectId)) {
@@ -608,6 +990,8 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamObject() {
         List<Long> committed = new LinkedList<>();
+        when(objectControlManager.getObject(anyLong())).thenAnswer(args -> committed.contains(args.getArgument(0))
+            ? new S3Object(args.getArgument(0), 999L, 0L, S3ObjectState.COMMITTED, 0) : null);
         when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (objectId == NOOP_OBJECT_ID) {
@@ -676,6 +1060,7 @@ public class StreamControlManagerTest {
         ControllerResult<TrimStreamResponse> trimRst = manager.trimStream(BROKER0, EPOCH0, new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L));
         replay(manager, trimRst.records());
         assertEquals(100L, manager.streamsMetadata().get(STREAM0).startOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
 
         ControllerResult<CommitStreamSetObjectResponseData> commitRst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER0).setNodeEpoch(EPOCH0).setObjectStreamRanges(
             List.of(
@@ -683,8 +1068,329 @@ public class StreamControlManagerTest {
             )
         ));
         replay(manager, commitRst.records());
-        assertEquals(10L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
         assertEquals((short) 0, commitRst.response().errorCode());
+    }
+
+    /**
+     * Given a trim beyond committed data, verify fully trimmed, first trim-cross, continuous,
+     * repeated-overlap, and gap commits follow the logical-end contract.
+     */
+    @Test
+    public void testCurrentOwnerCommitClassificationAfterTrim() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(List.of(new ApiMessageAndVersion(
+                new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
+                (short) 0)), true);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<TrimStreamResponse> trimResult = manager.trimStream(BROKER0, BROKER_EPOCH0,
+            new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L));
+        replay(manager, trimResult.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> fullyTrimmed = commitRange(1L, 0L, 90L);
+        assertEquals(Errors.NONE.code(), fullyTrimmed.response().errorCode());
+        replay(manager, fullyTrimmed.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(2L, 90L, 110L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(110L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        ControllerResult<CommitStreamSetObjectResponseData> repeatedOverlap = commitRange(3L, 95L, 120L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), repeatedOverlap.response().errorCode());
+        assertTrue(repeatedOverlap.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> gap = commitRange(4L, 120L, 130L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), gap.response().errorCode());
+        assertTrue(gap.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> continuous = commitRange(5L, 110L, 120L);
+        assertEquals(Errors.NONE.code(), continuous.response().errorCode());
+        replay(manager, continuous.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    /**
+     * Given a fast-closed range with a new owner, verify historical and current-owner commits
+     * advance only their respective logical state and historical commits stay within the seal.
+     */
+    @Test
+    public void testHistoricalAndCurrentOwnerCommitsAreRoutedIndependently() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<CloseStreamResponse> closeResult = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        replay(manager, closeResult.records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<CommitStreamSetObjectResponseData> historical = commitRange(
+            BROKER0, BROKER_EPOCH0, 10L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), historical.response().errorCode());
+        replay(manager, historical.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> currentOwner = commitRange(
+            BROKER1, BROKER_EPOCH0, 11L, 100L, 120L);
+        assertEquals(Errors.NONE.code(), currentOwner.response().errorCode());
+        replay(manager, currentOwner.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> pastHistoricalEnd = commitRange(
+            BROKER0, BROKER_EPOCH0, 12L, 40L, 101L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), pastHistoricalEnd.response().errorCode());
+        assertTrue(pastHistoricalEnd.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> historicalComplete = commitRange(
+            BROKER0, BROKER_EPOCH0, 13L, 40L, 100L);
+        assertEquals(Errors.NONE.code(), historicalComplete.response().errorCode());
+        replay(manager, historicalComplete.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given trim establishes the fast-close logical end, verify an object formed before trim can
+     * still commit across the visible start while the old owner retains historical responsibility.
+     */
+    @Test
+    public void testHistoricalCommitCrossesTrimAtInitialWALProgress() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.trimStream(BROKER0, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(40L)).records());
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(
+            BROKER0, BROKER_EPOCH0, 14L, 0L, 60L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 60L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> repeatedOverlap = commitRange(
+            BROKER0, BROKER_EPOCH0, 15L, 0L, 80L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), repeatedOverlap.response().errorCode());
+    }
+
+    /**
+     * Given trim over a historical range, verify late commits remain fenced, fully trimmed data
+     * preserves metadata without logical advances, and the first trim-cross advances the entry.
+     */
+    @Test
+    public void testHistoricalCommitClassificationAfterTrim() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(40L)).records());
+
+        replay(manager, manager.getOpeningStreams(new GetOpeningStreamsRequestData()
+            .setNodeId(BROKER0).setNodeEpoch(1L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> fenced = commitRange(
+            BROKER0, BROKER_EPOCH0, 20L, 0L, 30L);
+        assertEquals(Errors.NODE_EPOCH_EXPIRED.code(), fenced.response().errorCode());
+        assertTrue(fenced.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> fullyTrimmed = commitRange(
+            BROKER0, 1L, 21L, 0L, 30L);
+        assertEquals(Errors.NONE.code(), fullyTrimmed.response().errorCode());
+        assertTrue(fullyTrimmed.records().stream().anyMatch(record -> record.message() instanceof S3StreamSetObjectRecord));
+        assertTrue(fullyTrimmed.records().stream().noneMatch(record -> record.message() instanceof S3StreamEndOffsetsRecord));
+        replay(manager, fullyTrimmed.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(
+            BROKER0, 1L, 22L, 0L, 60L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 60L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(100L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> afterFullTrim = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(1L)
+                .setObjectId(23L)
+                .setObjectSize(999L)
+                .setOrderId(23L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM1)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(0L)
+                    .setEndOffset(10L))));
+        assertEquals(Errors.NONE.code(), afterFullTrim.response().errorCode());
+        replay(manager, afterFullTrim.records());
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    @Test
+    public void testTrimDoesNotExpandLaterOwnershipRange() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<TrimStreamResponse> result = manager.trimStream(BROKER1, BROKER_EPOCH0,
+            new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(40L));
+        replay(manager, result.records());
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(new RangeMetadata(STREAM0, EPOCH0, 0, 40L, 100L, BROKER0),
+            manager.streamsMetadata().get(STREAM0).ranges().get(0));
+        assertEquals(new RangeMetadata(STREAM0, EPOCH1, 1, 100L, 100L, BROKER1),
+            manager.streamsMetadata().get(STREAM0).ranges().get(1));
+    }
+
+    /**
+     * Given a shared object containing deleted and live streams, verify the deleted range is
+     * terminal success, its node entry is removed, and the live range still commits.
+     */
+    @Test
+    public void testDeletedStreamRangeDoesNotFailSharedObject() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        replay(manager, manager.deleteStream(new DeleteStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0)).records());
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
+            .setNodeId(BROKER0)
+            .setNodeEpoch(BROKER_EPOCH0)
+            .setObjectId(40L)
+            .setObjectSize(999L)
+            .setObjectStreamRanges(List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(0L).setEndOffset(100L),
+                new ObjectStreamRange().setStreamId(STREAM1).setStartOffset(0L).setEndOffset(20L)));
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(request);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(20L, manager.streamsMetadata().get(STREAM1).endOffset());
+        assertTrue(manager.nodesMetadata().get(BROKER0).streamSetObjects().containsKey(40L));
+    }
+
+    /**
+     * Given compaction over an active historical range, verify it does not advance logical or WAL
+     * state.
+     */
+    @Test
+    public void testCompactionDoesNotAdvanceLogicalState() {
+        mockSuccessfulObjectCommits();
+        when(objectControlManager.markDestroyObjects(anyList()))
+            .thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        manager.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(999L).setStartOffset(0L).setEndOffset(50L))));
+        manager.replay(new S3StreamSetObjectRecord().setNodeId(BROKER0).setObjectId(70L)
+            .setOrderId(70L).setDataTimeInMs(1L));
+
+        CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
+            .setNodeId(BROKER0)
+            .setNodeEpoch(BROKER_EPOCH0)
+            .setObjectId(71L)
+            .setObjectSize(999L)
+            .setCompactedObjectIds(List.of(70L))
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(40L)));
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(request);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(999L, 0L, 50L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(999L));
+    }
+
+    /**
+     * Given out-of-order stream and range records, verify runtime logical end only advances.
+     */
+    @Test
+    public void testLogicalEndReplayIsMonotonic() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(100L));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(100L).setEndOffset(150L).setNodeId(BROKER0));
+        assertEquals(150L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(80L));
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(80L).setEndOffset(120L).setNodeId(BROKER0));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).startOffset());
+        assertEquals(150L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> commitRange(long objectId, long startOffset,
+        long endOffset) {
+        return commitRange(BROKER0, BROKER_EPOCH0, objectId, startOffset, endOffset);
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> commitRange(int nodeId, long nodeEpoch,
+        long objectId, long startOffset, long endOffset) {
+        return manager.commitStreamSetObject(new CommitStreamSetObjectRequestData()
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
+            .setObjectId(objectId)
+            .setObjectSize(999L)
+            .setOrderId(objectId)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(startOffset)
+                .setEndOffset(endOffset))));
+    }
+
+    private void mockSuccessfulObjectCommits() {
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).thenAnswer(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(List.of(new ApiMessageAndVersion(new S3ObjectRecord()
+                .setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()), (short) 0)), Errors.NONE);
+        });
+        when(objectControlManager.markDestroyObjects(anyList(), anyList()))
+            .thenReturn(ControllerResult.of(Collections.emptyList(), true));
     }
 
     private long createStream() {
@@ -1163,11 +1869,12 @@ public class StreamControlManagerTest {
         // 4. verify
         streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(100, streamMetadata.startOffset());
+        assertEquals(100, streamMetadata.endOffset());
         assertEquals(1, streamMetadata.ranges().size());
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
-        assertEquals(70, rangeMetadata.startOffset());
-        assertEquals(70, rangeMetadata.endOffset());
+        assertEquals(100, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.endOffset());
         assertEquals(1, streamMetadata.streamObjects().size());
 
         // 5. commit stream set object with stream0-[70, 100)
@@ -1190,7 +1897,7 @@ public class StreamControlManagerTest {
         assertEquals(1, streamMetadata.ranges().size());
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
-        assertEquals(70, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.startOffset());
         assertEquals(100, streamMetadata.endOffset());
     }
 
@@ -1434,6 +2141,112 @@ public class StreamControlManagerTest {
         replay(manager, result.records());
     }
 
+    private CrossedRecoveryState recoverCrossedOwnership(List<Integer> failoverOrder) {
+        setUp();
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        registerAlwaysSuccessEpoch(BROKER2);
+
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        createAndOpenStream(BROKER1, EPOCH0);
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM1).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER0, EPOCH1, STREAM1);
+
+        failoverOrder.forEach(this::recoverCrossedNode);
+
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+        assertFalse(manager.hasOpeningStreams(BROKER1));
+        openStream(BROKER2, EPOCH2, STREAM0);
+        openStream(BROKER2, EPOCH2, STREAM1);
+        return new CrossedRecoveryState(
+            List.of(crossedStreamState(STREAM0), crossedStreamState(STREAM1)),
+            List.of(nodeObjectState(BROKER0), nodeObjectState(BROKER1)));
+    }
+
+    private void recoverCrossedNode(int nodeId) {
+        ControllerResult<GetOpeningStreamsResponseData> barrier = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(nodeId).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(Errors.NONE.code(), barrier.response().errorCode());
+        assertEquals(2, barrier.response().streamMetadataList().size());
+        replay(manager, barrier.records());
+
+        long historicalStreamId = nodeId == BROKER0 ? STREAM0 : STREAM1;
+        long currentStreamId = nodeId == BROKER0 ? STREAM1 : STREAM0;
+        ControllerResult<CommitStreamSetObjectResponseData> commit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(nodeId)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(10L + nodeId)
+                .setOrderId(10L + nodeId)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(
+                    new ObjectStreamRange().setStreamId(historicalStreamId).setStreamEpoch(EPOCH0)
+                        .setStartOffset(0L).setEndOffset(100L),
+                    new ObjectStreamRange().setStreamId(currentStreamId).setStreamEpoch(EPOCH1)
+                        .setStartOffset(100L).setEndOffset(200L))));
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
+
+        for (GetOpeningStreamsResponseData.StreamMetadata stream : barrier.response().streamMetadataList()) {
+            ControllerResult<CloseStreamResponse> close = manager.closeStream(nodeId, BROKER_EPOCH0,
+                new CloseStreamRequest().setStreamId(stream.streamId()).setStreamEpoch(stream.epoch()));
+            Errors closeError = Errors.forCode(close.response().errorCode());
+            assertTrue(closeError == Errors.NONE || closeError == Errors.STREAM_FENCED);
+            replay(manager, close.records());
+        }
+    }
+
+    private CrossedStreamState crossedStreamState(long streamId) {
+        StreamRuntimeMetadata stream = manager.streamsMetadata().get(streamId);
+        return new CrossedStreamState(streamId, stream.currentState(), stream.currentEpoch(),
+            stream.startOffset(), stream.endOffset(), stream.currentRangeOwner());
+    }
+
+    private CrossedNodeObjectState nodeObjectState(int nodeId) {
+        return new CrossedNodeObjectState(nodeId,
+            manager.nodesMetadata().get(nodeId).streamSetObjects().values().stream()
+                .map(object -> new CrossedObjectState(object.objectId(), object.nodeId(), object.orderId(),
+                    object.offsetRangeList()))
+                .sorted((left, right) -> Long.compare(left.objectId(), right.objectId()))
+                .collect(Collectors.toList()));
+    }
+
+    private record CrossedRecoveryState(
+        List<CrossedStreamState> streams,
+        List<CrossedNodeObjectState> nodes
+    ) {
+    }
+
+    private record CrossedStreamState(
+        long streamId,
+        StreamState state,
+        long epoch,
+        long startOffset,
+        long endOffset,
+        int owner
+    ) {
+    }
+
+    private record CrossedNodeObjectState(int nodeId, List<CrossedObjectState> objects) {
+    }
+
+    private record CrossedObjectState(
+        long objectId,
+        int nodeId,
+        long orderId,
+        List<StreamOffsetRange> ranges
+    ) {
+    }
+
     private void replay(StreamControlManager manager, List<ApiMessageAndVersion> records) {
         List<ApiMessage> messages = records.stream().map(x -> x.message())
             .collect(Collectors.toList());
@@ -1478,6 +2291,9 @@ public class StreamControlManagerTest {
                 case S3_STREAM_END_OFFSETS_RECORD:
                     manager.replay((S3StreamEndOffsetsRecord) message);
                     break;
+                case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
+                    manager.replay((NodeWALUncommittedOffsetsRecord) message);
+                    break;
                 default:
                     throw new IllegalStateException("Unknown metadata record type " + type);
             }
@@ -1489,6 +2305,16 @@ public class StreamControlManagerTest {
         assertEquals(S3StreamConstant.INIT_EPOCH, metadata.currentEpoch());
         assertEquals(S3StreamConstant.INIT_RANGE_INDEX, metadata.currentRangeIndex());
         assertEquals(S3StreamConstant.INIT_START_OFFSET, metadata.startOffset());
+    }
+
+    private void createAndOpenStream0() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        ControllerResult<CreateStreamResponse> createResult = manager.createStream(BROKER0, BROKER_EPOCH0,
+            new CreateStreamRequest().setNodeId(BROKER0));
+        replay(manager, createResult.records());
+        ControllerResult<OpenStreamResponse> openResult = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        replay(manager, openResult.records());
     }
 
     private void verifyFirstTimeOpenStreamResult(ControllerResult<OpenStreamResponse> result,

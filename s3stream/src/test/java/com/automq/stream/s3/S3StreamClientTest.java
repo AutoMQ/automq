@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.Stream;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -32,7 +33,9 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
@@ -42,6 +45,7 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
@@ -49,6 +53,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -58,12 +63,15 @@ import static org.mockito.Mockito.when;
 public class S3StreamClientTest {
     private S3StreamClient client;
     private StreamManager streamManager;
+    private Storage storage;
     private ScheduledExecutorService scheduler;
 
     @BeforeEach
     void setup() {
         streamManager = mock(StreamManager.class);
-        client = spy(new S3StreamClient(streamManager, mock(Storage.class), mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
+        storage = mock(Storage.class);
+        when(storage.awaitUpload(anyLong())).thenReturn(CompletableFuture.completedFuture(null));
+        client = spy(new S3StreamClient(streamManager, storage, mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
         scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -94,6 +102,36 @@ public class S3StreamClientTest {
         assertEquals(0, client.openingStreams.size());
         assertEquals(0, client.openedStreams.size());
         assertEquals(0, client.closingStreams.size());
+    }
+
+    @Test
+    public void testOpenWaitsForLocalUpload() {
+        CompletableFuture<Void> upload = new CompletableFuture<>();
+        when(storage.awaitUpload(1L)).thenReturn(upload);
+        when(streamManager.openStream(1L, 2L, Map.of())).thenReturn(CompletableFuture.completedFuture(
+            new StreamMetadata(1L, 2L, 100L, 200L, StreamState.OPENED)));
+
+        CompletableFuture<Stream> open = client.openStream(1L, OpenStreamOptions.builder().epoch(2L).build());
+
+        assertFalse(open.isDone());
+        verify(streamManager, never()).openStream(anyLong(), anyLong(), anyMap());
+
+        upload.complete(null);
+
+        assertTrue(open.isDone());
+        verify(streamManager).openStream(1L, 2L, Map.of());
+    }
+
+    @Test
+    public void testUploadFailurePreventsOpen() {
+        RuntimeException uploadFailure = new RuntimeException("upload failed");
+        when(storage.awaitUpload(1L)).thenReturn(CompletableFuture.failedFuture(uploadFailure));
+
+        CompletableFuture<Stream> open = client.openStream(1L, OpenStreamOptions.builder().epoch(2L).build());
+
+        ExecutionException exception = assertThrows(ExecutionException.class, open::get);
+        assertEquals(uploadFailure, exception.getCause());
+        verify(streamManager, never()).openStream(anyLong(), anyLong(), anyMap());
     }
 
     /**

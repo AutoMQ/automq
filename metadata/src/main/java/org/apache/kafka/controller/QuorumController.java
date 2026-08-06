@@ -104,6 +104,7 @@ import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NoOpRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
@@ -1838,6 +1839,9 @@ public final class QuorumController implements Controller {
                 break;
             case S3_STREAM_END_OFFSETS_RECORD:
                 streamControlManager.replay((S3StreamEndOffsetsRecord) message);
+                break;
+            case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
+                streamControlManager.replay((NodeWALUncommittedOffsetsRecord) message);
                 break;
             default:
                 if (!extensionMatch) {

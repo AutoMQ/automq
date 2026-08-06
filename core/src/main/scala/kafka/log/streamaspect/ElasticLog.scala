@@ -19,7 +19,7 @@
 
 package kafka.log.streamaspect
 
-import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions}
+import com.automq.stream.api.{Client, CreateStreamOptions, KeyValue, OpenStreamOptions, Stream}
 import com.automq.stream.s3.metrics.{Metrics, MetricsLevel}
 import com.automq.stream.utils.{FutureUtil, Systems}
 import io.opentelemetry.api.common.Attributes
@@ -29,6 +29,7 @@ import kafka.cluster.PartitionSnapshot
 import kafka.log.LocalLog.CleanedFileSuffix
 import kafka.log._
 import kafka.log.streamaspect.ElasticLogFileRecords.{BatchIteratorRecordsAdaptor, PooledMemoryRecords}
+import kafka.log.streamaspect.reassignment.FastPartitionReassignmentManager
 import kafka.metrics.KafkaMetricsUtil
 import kafka.utils.{CoreUtils, Logging}
 import org.apache.kafka.common.errors.s3.StreamFencedException
@@ -506,13 +507,27 @@ class ElasticLog(val metaStream: MetaStream,
         partitionMeta.setRecoverOffset(recoveryPoint)
 
         maybeHandleIOException(s"Error while closing $topicPartition in dir ${dir.getParent}") {
-            CoreUtils.swallow(checkIfMemoryMappedBufferClosed(), this)
-            CoreUtils.swallow(segments.close(), this)
             // https://github.com/AutoMQ/automq/issues/2038
             // ElasticLogMeta should be saved after all segments are closed cause of the last segment may append new time index when close.
-            CoreUtils.swallow(persistLogMeta(), this)
-            CoreUtils.swallow(persistPartitionMeta(), this)
-            CoreUtils.swallow(closeStreams().get(), this)
+            // AutoMQ inject start
+            var fastClose = true
+            try {
+                checkIfMemoryMappedBufferClosed()
+                segments.close()
+                persistLogMeta()
+                persistPartitionMeta()
+            } catch {
+                case e: Throwable =>
+                    fastClose = false
+                    warn(s"${logIdent}failed to persist final metadata; closing without handoff", e)
+            }
+            val closeFuture = if (snapshotRead) {
+                streamManager.close()
+            } else {
+                streamManager.close().thenCompose(_ => metaStream.close(fastClose))
+            }
+            CoreUtils.swallow(closeFuture.join(), this)
+            // AutoMQ inject end
         }
         info("log closed")
     }
@@ -522,9 +537,9 @@ class ElasticLog(val metaStream: MetaStream,
      */
     def closeStreams(): CompletableFuture[Void] = {
         if (snapshotRead) {
-            CompletableFuture.allOf(streamManager.close())
+            streamManager.close()
         } else {
-            CompletableFuture.allOf(streamManager.close(), metaStream.close())
+            streamManager.close().thenCompose(_ => metaStream.close(false))
         }
     }
 
@@ -749,6 +764,7 @@ object ElasticLog extends Logging {
         topicId: Option[Uuid],
         leaderEpoch: Long,
         openStreamChecker: OpenStreamChecker,
+        fastReassignmentManager: FastPartitionReassignmentManager = FastPartitionReassignmentManager.instance(),
         snapshotRead: Boolean = false,
         forceCleanShutdownRecovery: Boolean = false
     ): ElasticLog = {
@@ -786,16 +802,26 @@ object ElasticLog extends Logging {
                     segments, new LogOffsetMetadata(0), scheduler, time, topicPartition, logDirFailureChannel, 0, leaderEpoch, true)
             }
 
+            val metaStreamTopicId = topicId.getOrElse(Uuid.ZERO_UUID)
+            val metaStreamFastReassignmentManager = if (topicId.isDefined) {
+                fastReassignmentManager
+            } else {
+                FastPartitionReassignmentManager.disabled()
+            }
             metaStream = if (metaNotExists) {
-                val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, streamTags, logIdent = logIdent)
+                val stream = createMetaStream(client, key, replicationFactor, leaderEpoch, streamTags,
+                    metaStreamTopicId, topicPartition.partition(), metaStreamFastReassignmentManager,
+                    logIdent = logIdent)
                 info(s"${logIdent}created a new meta stream: streamId=${stream.streamId()}")
                 stream
             } else {
                 val metaStreamId = Unpooled.wrappedBuffer(value.get()).readLong()
-                val awaitCostMs = awaitStreamReadyForOpen(openStreamChecker, topicId.get, topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
+                val awaitCostMs = awaitStreamReadyForOpen(openStreamChecker, metaStreamTopicId,
+                    topicPartition.partition(), metaStreamId, leaderEpoch, logIdent = logIdent)
                 // open partition meta stream
                 val stream = client.streamClient().openStream(metaStreamId, OpenStreamOptions.builder().epoch(leaderEpoch).tags(streamTags).build())
-                    .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+                    .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent, metaStreamTopicId,
+                        topicPartition.partition(), metaStreamFastReassignmentManager))
                     .get()
                 info(s"${logIdent}opened existing meta stream: streamId=$metaStreamId awaitCostMs=${TimeUnit.NANOSECONDS.toMillis(awaitCostMs)} ms")
                 stream
@@ -931,7 +957,13 @@ object ElasticLog extends Logging {
         }
 
         // First, open partition meta stream with higher epoch.
-        val metaStream = openStreamWithRetry(client, metaStreamIdOpt.get, currentEpoch + 1, logIdent)
+        val metaStream = new MetaStream(
+            openStreamWithRetry(client, metaStreamIdOpt.get, currentEpoch + 1),
+            META_SCHEDULE_EXECUTOR,
+            logIdent,
+            topicId,
+            topicPartition.partition(),
+            FastPartitionReassignmentManager.disabled())
         info(s"$logIdent opened meta stream: streamId=${metaStreamIdOpt.get}, epoch=${currentEpoch + 1}")
         // fetch metas(log meta, producer snapshot, partition meta, ...) from meta stream
         val metaMap = metaStream.replay().asScala
@@ -940,7 +972,7 @@ object ElasticLog extends Logging {
             // Then, destroy log stream, time index stream, txn stream, ...
             // streamId <0 means the stream is not actually created.
             logMeta.getStreamMap.values().forEach(streamId => if (streamId >= 0) {
-                openStreamWithRetry(client, streamId, currentEpoch + 1, logIdent).destroy()
+                openStreamWithRetry(client, streamId, currentEpoch + 1).destroy()
                 info(s"$logIdent destroyed stream: streamId=$streamId, epoch=${currentEpoch + 1}")
             })
         })
@@ -950,21 +982,22 @@ object ElasticLog extends Logging {
         info(s"$logIdent Destroyed with epoch ${currentEpoch + 1}")
     }
 
-    private def openStreamWithRetry(client: Client, streamId: Long, epoch: Long, logIdent: String): MetaStream = {
+    private def openStreamWithRetry(client: Client, streamId: Long, epoch: Long): Stream = {
         client.streamClient()
             .openStream(streamId, OpenStreamOptions.builder().epoch(epoch).build())
             .exceptionally(_ => client.streamClient()
                 .openStream(streamId, OpenStreamOptions.builder().build()).join()
-            ).thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
-            .join()
+            ).join()
     }
 
-    private[streamaspect] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long, streamTags: util.Map[String, String],
-        logIdent: String): MetaStream = {
+    private[streamaspect] def createMetaStream(client: Client, key: String, replicaCount: Int, leaderEpoch: Long,
+        streamTags: util.Map[String, String], topicId: Uuid, partitionId: Int,
+        fastReassignmentManager: FastPartitionReassignmentManager, logIdent: String): MetaStream = {
         val options = CreateStreamOptions.builder().replicaCount(replicaCount).epoch(leaderEpoch)
         streamTags.forEach((k, v) => options.tag(k, v))
         val metaStream = client.streamClient().createAndOpenStream(options.build())
-            .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent))
+            .thenApply(stream => new MetaStream(stream, META_SCHEDULE_EXECUTOR, logIdent, topicId, partitionId,
+                fastReassignmentManager))
             .get()
         // save partition meta stream id relation to PM
         val streamId = metaStream.streamId()
