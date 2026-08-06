@@ -20,6 +20,8 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import kafka.automq.runtime.{ElasticFailureHandler, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
@@ -34,6 +36,7 @@ import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -56,6 +59,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 )
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
         _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
+
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
 
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -200,9 +206,6 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 
     override def close(): Unit = {
         ElasticUnifiedLog.Logs.remove(elasticLog.topicPartition, this)
-        // Avoid holding the UnifiedLog lock while the append callback drains. Final producer/log/partition metadata
-        // must be captured only after every admitted append has completed.
-        elasticLog.lastAppendAckFuture.get()
         lock synchronized {
             maybeFlushMetadataFile()
             elasticLog.checkIfMemoryMappedBufferClosed()
@@ -211,10 +214,8 @@ class ElasticUnifiedLog(_logStartOffset: Long,
                 // We take a snapshot at the last written offset to hopefully avoid the need to scan the log
                 // after restarting and to ensure that we cannot inadvertently hit the upgrade optimization
                 // (the clean shutdown file is written after the logs are all closed).
-                producerStateManager.takeSnapshot()
+                producerStateManager.takeSnapshot(false)
             }
-            // flush all inflight data/index
-            flush(true)
             elasticLog.close()
         }
         elasticLog.isMemoryMappedBufferClosed = true
@@ -227,7 +228,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
      * Only close streams.
      */
     def closeStreams(): CompletableFuture[Void] = {
-        elasticLog.closeStreams()
+        elasticLog.closeStreams(false)
     }
 
     override private[log] def delete(): Unit = {
@@ -309,6 +310,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+
     private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
     private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000

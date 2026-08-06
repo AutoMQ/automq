@@ -36,6 +36,8 @@ import com.automq.stream.api.RecordBatchWithContext;
 import com.automq.stream.api.Stream;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.utils.AsyncLogger;
+import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -55,11 +57,15 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import io.netty.buffer.Unpooled;
+
+import static com.automq.stream.utils.LockUtils.runInLock;
 
 /**
  * Meta stream is a wrapper of stream, it is used to record basic info of a topicPartition.
@@ -70,7 +76,7 @@ public class MetaStream implements Stream {
     public static final String PRODUCER_SNAPSHOTS_META_KEY = "PRODUCER_SNAPSHOTS";
     public static final String PARTITION_META_KEY = "PARTITION";
     public static final String LEADER_EPOCH_CHECKPOINT_KEY = "LEADER_EPOCH_CHECKPOINT";
-    public static final Logger LOGGER = LoggerFactory.getLogger(MetaStream.class);
+    public static final Logger LOGGER = AsyncLogger.wrap(LoggerFactory.getLogger(MetaStream.class));
 
     private static final double COMPACTION_HOLLOW_RATE = 0.6;
     private static final long COMPACTION_THRESHOLD_MS = TimeUnit.MINUTES.toMillis(1);
@@ -81,6 +87,7 @@ public class MetaStream implements Stream {
     private final Uuid topicId;
     private final int partitionId;
     private final FastPartitionReassignmentManager fastReassignmentManager;
+    private final ReentrantLock lock = new ReentrantLock();
     /**
      * metaCache is used to cache meta key values.
      * key: meta key
@@ -170,11 +177,13 @@ public class MetaStream implements Stream {
         throw new UnsupportedOperationException("append record batch is not supported in meta stream");
     }
 
-    public synchronized CompletableFuture<AppendResult> append(MetaKeyValue kv) {
-        if (state != State.OPEN) {
-            return frozenMutation("append");
-        }
-        return appendAndTrack(kv);
+    public CompletableFuture<AppendResult> append(MetaKeyValue kv) {
+        return runInLock(lock, () -> {
+            if (state != State.OPEN) {
+                return frozenMutation("append");
+            }
+            return appendAndTrack(kv);
+        });
     }
 
     private CompletableFuture<AppendResult> appendAndTrack(MetaKeyValue kv) {
@@ -210,11 +219,11 @@ public class MetaStream implements Stream {
         CompletableFuture<AppendResult> appendFuture = innerStream.append(new DefaultRecordBatch(
             1, System.currentTimeMillis(), Collections.emptyMap(), encoded.duplicate()));
         return appendFuture.thenApply(result -> {
-            synchronized (this) {
+            runInLock(lock, () -> {
                 MetadataValue newValue = new MetadataValue(result.baseOffset(), value);
                 metaCache.compute(key, (ignored, current) -> current == null || current.offset < result.baseOffset()
                     ? newValue : current);
-            }
+            });
             return result;
         });
     }
@@ -225,11 +234,18 @@ public class MetaStream implements Stream {
     }
 
     @Override
-    public synchronized CompletableFuture<Void> trim(long newStartOffset) {
-        if (state != State.OPEN) {
-            return frozenMutation("trim");
-        }
-        return trackMutation(innerStream.trim(newStartOffset));
+    public CompletableFuture<Void> trim(long newStartOffset) {
+        return runInLock(lock, () -> {
+            if (state != State.OPEN) {
+                return frozenMutation("trim");
+            }
+            return trackMutation(innerStream.trim(newStartOffset));
+        });
+    }
+
+    @Override
+    public void beforeClose() {
+        innerStream.beforeClose();
     }
 
     @Override
@@ -243,11 +259,13 @@ public class MetaStream implements Stream {
      * @param fastClose true only when final partition metadata was persisted successfully and handoff is allowed
      * @return close completion
      */
-    public synchronized CompletableFuture<Void> close(boolean fastClose) {
-        if (closeFuture == null) {
-            closeFuture = fastClose ? closeWithHandoff() : closeWithoutHandoff();
-        }
-        return closeFuture;
+    public CompletableFuture<Void> close(boolean fastClose) {
+        return runInLock(lock, () -> {
+            if (closeFuture == null) {
+                closeFuture = fastClose ? closeWithHandoff() : closeWithoutHandoff();
+            }
+            return closeFuture;
+        });
     }
 
     public boolean isFenced() {
@@ -255,11 +273,13 @@ public class MetaStream implements Stream {
     }
 
     @Override
-    public synchronized CompletableFuture<Void> destroy() {
-        if (compactionFuture != null) {
-            compactionFuture.cancel(false);
-        }
-        return innerStream.destroy();
+    public CompletableFuture<Void> destroy() {
+        return runInLock(lock, () -> {
+            if (compactionFuture != null) {
+                compactionFuture.cancel(false);
+            }
+            return innerStream.destroy();
+        });
     }
 
     @Override
@@ -275,6 +295,27 @@ public class MetaStream implements Stream {
      * @throws IOException when authoritative metadata-stream replay fails
      */
     public Map<String, Object> replay() throws IOException {
+        try {
+            return replayAsync(Runnable::run).get();
+        } catch (ExecutionException exception) {
+            Throwable cause = FutureUtil.cause(exception);
+            if (cause instanceof IOException) {
+                throw (IOException) cause;
+            }
+            throw new RuntimeException(cause);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(exception);
+        }
+    }
+
+    /**
+     * Recovers the latest metadata and runs stream-replay continuations on the supplied executor.
+     *
+     * @param executor executor used to decode fetched records and advance replay
+     * @return a future containing decoded metadata cached by this MetaStream
+     */
+    public CompletableFuture<Map<String, Object>> replayAsync(Executor executor) {
         long handoffEndOffset = nextOffset();
         PartitionHandoff.Key correlation = new PartitionHandoff.Key(topicId, partitionId, handoffEndOffset);
         Optional<PartitionHandoff> handoff = fastReassignmentManager.take(correlation);
@@ -283,71 +324,80 @@ public class MetaStream implements Stream {
                 Map<String, Object> metadata = replay(handoff.get().metaStreamHandoff());
                 LOGGER.info("FAST_REASSIGNMENT_OPEN topicId={} partitionId={} handoffEndOffset={} result=handoff",
                     correlation.topicId(), correlation.partitionId(), correlation.metaStreamHandoffEndOffset());
-                return metadata;
+                return CompletableFuture.completedFuture(metadata);
             } catch (RuntimeException exception) {
                 LOGGER.warn("{} failed to replay prepared MetaStream handoff; falling back to the metadata stream",
                     logIdent, exception);
             }
         }
-        return replayFromStream();
+        return replayFromStreamAsync(executor);
     }
 
-    private synchronized Map<String, Object> replayFromStream() throws IOException {
-        ensureOpen("replay");
-        replayDone = false;
-        metaCache.clear();
-        boolean summaryEnabled = LOGGER.isDebugEnabled();
-        StringBuilder sb = new StringBuilder();
-        if (summaryEnabled) {
-            sb.append(logIdent)
-                    .append("metaStream replay summary:")
-                    .append(" id: ")
-                    .append(streamId())
-                    .append(", ");
-        }
-        long totalValueSize = 0L;
+    private CompletableFuture<Map<String, Object>> replayFromStreamAsync(Executor executor) {
+        ReplayState replay = runInLock(lock, () -> {
+            ensureOpen("replay");
+            replayDone = false;
+            return new ReplayState(startOffset(), nextOffset(), LOGGER.isDebugEnabled());
+        });
+        return replayFromStreamAsync(replay, executor).thenApplyAsync(nil -> runInLock(lock, () -> {
+            metaCache = new ConcurrentHashMap<>(replay.metadata);
+            replayDone = true;
+            if (replay.totalValueSize > 0 && replay.summary != null) {
+                LOGGER.debug(replay.summary.append("total value size: ").append(replay.totalValueSize).toString());
+            }
+            return getValidMetaMap();
+        }), executor).whenComplete((nil, exception) -> {
+            if (exception != null && FutureUtil.cause(exception) instanceof IOException) {
+                fenced = true;
+            }
+        });
+    }
 
-        long startOffset = startOffset();
-        long endOffset = nextOffset();
-        long pos = startOffset;
+    private CompletableFuture<Void> replayFromStreamAsync(ReplayState replay, Executor executor) {
+        if (replay.position >= replay.endOffset) {
+            return CompletableFuture.completedFuture(null);
+        }
         FetchContext fetchContext = new FetchContext();
         ReadOptions readOptions = ReadOptions.builder().prioritizedRead(true).build();
         fetchContext.setReadOptions(readOptions);
-
-        try {
-            while (pos < endOffset) {
-                FetchResult fetchRst = fetch(fetchContext, pos, endOffset, 64 * 1024).get();
-                for (RecordBatchWithContext context : fetchRst.recordBatchList()) {
+        return fetch(fetchContext, replay.position, replay.endOffset, 64 * 1024).thenComposeAsync(fetchResult -> {
+            try {
+                for (RecordBatchWithContext context : fetchResult.recordBatchList()) {
                     try {
                         MetaKeyValue kv = MetaKeyValue.decode(Unpooled.copiedBuffer(context.rawPayload()).nioBuffer());
-                        metaCache.put(kv.getKey(), new MetadataValue(context.baseOffset(), kv.getValue()));
-                        totalValueSize += kv.getValue().remaining();
-                        if (summaryEnabled) {
-                            sb.append("(key: ").append(kv.getKey()).append(", offset: ").append(context.baseOffset()).append(", value size: ").append(kv.getValue().remaining()).append("); ");
+                        replay.metadata.put(kv.getKey(), new MetadataValue(context.baseOffset(), kv.getValue()));
+                        replay.totalValueSize += kv.getValue().remaining();
+                        if (replay.summary != null) {
+                            replay.summary.append("(key: ").append(kv.getKey()).append(", offset: ")
+                                .append(context.baseOffset()).append(", value size: ")
+                                .append(kv.getValue().remaining()).append("); ");
                         }
                     } catch (Exception e) {
                         LOGGER.error("{} streamId {}: decode meta failed, offset: {}, error: {}", logIdent, streamId(), context.baseOffset(), e.getMessage());
                     }
-                    pos = context.lastOffset();
+                    replay.position = context.lastOffset();
                 }
-                fetchRst.free();
+            } finally {
+                fetchResult.free();
             }
-            replayDone = true;
-        } catch (ExecutionException e) {
-            if (e.getCause() instanceof IOException) {
-                fenced = true;
-                throw (IOException) (e.getCause());
-            } else {
-                throw new RuntimeException(e.getCause());
-            }
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
+            return replayFromStreamAsync(replay, executor);
+        }, executor);
+    }
 
-        if (totalValueSize > 0 && summaryEnabled) {
-            LOGGER.debug(sb.append("total value size: ").append(totalValueSize).toString());
+    private class ReplayState {
+        private final long endOffset;
+        private final Map<String, MetadataValue> metadata = new HashMap<>();
+        private final StringBuilder summary;
+        private long position;
+        private long totalValueSize;
+
+        private ReplayState(long startOffset, long endOffset, boolean summaryEnabled) {
+            this.position = startOffset;
+            this.endOffset = endOffset;
+            this.summary = summaryEnabled
+                ? new StringBuilder(logIdent).append("metaStream replay summary: id: ").append(streamId()).append(", ")
+                : null;
         }
-        return getValidMetaMap();
     }
 
     /**
@@ -357,20 +407,22 @@ public class MetaStream implements Stream {
      * @param handoff prepared latest-value MetaStream records
      * @return decoded metadata from the newly published state
      */
-    synchronized Map<String, Object> replay(MetaStreamHandoff handoff) {
-        ensureOpen("replay handoff");
-        Map<String, MetadataValue> temporaryCache = new HashMap<>();
-        for (MetaStreamHandoffRecord record : handoff.records()) {
-            ByteBuffer encoded = record.encodedMetaKeyValue();
-            MetaKeyValue keyValue = MetaKeyValue.decode(encoded.duplicate());
-            MetadataValue metadataValue = new MetadataValue(record.baseOffset(), keyValue.getValue());
-            temporaryCache.compute(keyValue.getKey(), (ignored, current) ->
-                current == null || current.offset < record.baseOffset() ? metadataValue : current);
-        }
-        Map<String, Object> metadata = getValidMetaMap(temporaryCache);
-        metaCache = new ConcurrentHashMap<>(temporaryCache);
-        replayDone = true;
-        return metadata;
+    Map<String, Object> replay(MetaStreamHandoff handoff) {
+        return runInLock(lock, () -> {
+            ensureOpen("replay handoff");
+            Map<String, MetadataValue> temporaryCache = new HashMap<>();
+            for (MetaStreamHandoffRecord record : handoff.records()) {
+                ByteBuffer encoded = record.encodedMetaKeyValue();
+                MetaKeyValue keyValue = MetaKeyValue.decode(encoded.duplicate());
+                MetadataValue metadataValue = new MetadataValue(record.baseOffset(), keyValue.getValue());
+                temporaryCache.compute(keyValue.getKey(), (ignored, current) ->
+                    current == null || current.offset < record.baseOffset() ? metadataValue : current);
+            }
+            Map<String, Object> metadata = getValidMetaMap(temporaryCache);
+            metaCache = new ConcurrentHashMap<>(temporaryCache);
+            replayDone = true;
+            return metadata;
+        });
     }
 
     public Optional<ByteBuffer> get(String key) {
@@ -404,24 +456,30 @@ public class MetaStream implements Stream {
         return metaMap;
     }
 
-    private synchronized void tryCompaction() {
+    private void tryCompaction() {
+        runInLock(lock, this::tryCompaction0);
+    }
+
+    private void tryCompaction0() {
         if (state != State.OPEN || compactionFuture != null) {
             return;
         }
         // trigger after 10s to avoid compacting too quick
         compactionFuture = scheduler.schedule(() -> {
-            CompletableFuture<Void> compaction;
-            synchronized (this) {
+            CompletableFuture<Void> compaction = runInLock(lock, () -> {
                 if (state != State.OPEN) {
                     compactionFuture = null;
-                    return;
+                    return null;
                 }
-                compaction = trackMutation(doCompaction(false));
+                return trackMutation(doCompaction(false));
+            });
+            if (compaction == null) {
+                return;
             }
             compaction.whenComplete((nil, exception) -> {
-                synchronized (this) {
+                runInLock(lock, () -> {
                     compactionFuture = null;
-                }
+                });
                 if (exception != null) {
                     LOGGER.error("{} MetaStream compaction failed", logIdent, exception);
                 }
@@ -429,8 +487,12 @@ public class MetaStream implements Stream {
         }, 10, TimeUnit.SECONDS);
     }
 
+    private CompletableFuture<Void> doCompaction(boolean force) {
+        return runInLock(lock, () -> doCompaction0(force));
+    }
+
     @SuppressWarnings("checkstyle:NPathComplexity")
-    private synchronized CompletableFuture<Void> doCompaction(boolean force) {
+    private CompletableFuture<Void> doCompaction0(boolean force) {
         if (!replayDone) {
             return CompletableFuture.completedFuture(null);
         }
@@ -473,14 +535,20 @@ public class MetaStream implements Stream {
         });
     }
 
-    private synchronized <T> CompletableFuture<T> trackMutation(CompletableFuture<T> mutation) {
-        inflightMutations.add(mutation);
-        mutation.whenComplete((nil, ex) -> {
-            synchronized (this) {
-                inflightMutations.remove(mutation);
-            }
+    private <T> CompletableFuture<T> trackMutation(CompletableFuture<T> mutation) {
+        return runInLock(lock, () -> {
+            inflightMutations.add(mutation);
+            mutation.whenComplete((nil, ex) -> {
+                runInLock(lock, () -> {
+                    // Keep failed mutations until close so an asynchronously observed metadata failure cannot be forgotten
+                    // before freeze decides whether a handoff is safe.
+                    if (ex == null) {
+                        inflightMutations.remove(mutation);
+                    }
+                });
+            });
+            return mutation;
         });
-        return mutation;
     }
 
     private void ensureOpen(String mutation) {
@@ -547,32 +615,36 @@ public class MetaStream implements Stream {
      *
      * @return the handoff containing the latest record for each key and the matching exclusive end offset
      */
-    synchronized CompletableFuture<MetaStreamHandoff> freeze() {
-        return freezeMutations().thenApply(nil -> captureFrozenHandoff());
+    CompletableFuture<MetaStreamHandoff> freeze() {
+        return runInLock(lock, () -> freezeMutations().thenApply(nil -> captureFrozenHandoff()));
     }
 
-    private synchronized CompletableFuture<Void> freezeMutations() {
-        state = State.FREEZING;
-        if (compactionFuture != null) {
-            compactionFuture.cancel(false);
-            compactionFuture = null;
-        }
-        CompletableFuture<Void> drainFuture = CompletableFuture.allOf(
-            inflightMutations.toArray(new CompletableFuture<?>[0]));
-        return drainFuture.whenComplete((nil, exception) -> {
-            synchronized (this) {
-                state = State.FROZEN;
+    private CompletableFuture<Void> freezeMutations() {
+        return runInLock(lock, () -> {
+            state = State.FREEZING;
+            if (compactionFuture != null) {
+                compactionFuture.cancel(false);
+                compactionFuture = null;
             }
+            CompletableFuture<Void> drainFuture = CompletableFuture.allOf(
+                inflightMutations.toArray(new CompletableFuture<?>[0]));
+            return drainFuture.whenComplete((nil, exception) -> {
+                runInLock(lock, () -> {
+                    state = State.FROZEN;
+                });
+            });
         });
     }
 
-    private synchronized MetaStreamHandoff captureFrozenHandoff() {
-        List<MetaStreamHandoffRecord> records = metaCache.entrySet().stream()
-            .sorted(Comparator.comparingLong(entry -> entry.getValue().offset))
-            .map(entry -> new MetaStreamHandoffRecord(entry.getValue().offset,
-                MetaKeyValue.encode(MetaKeyValue.of(entry.getKey(), entry.getValue().value()))))
-            .toList();
-        return new MetaStreamHandoff(nextOffset(), records);
+    private MetaStreamHandoff captureFrozenHandoff() {
+        return runInLock(lock, () -> {
+            List<MetaStreamHandoffRecord> records = metaCache.entrySet().stream()
+                .sorted(Comparator.comparingLong(entry -> entry.getValue().offset))
+                .map(entry -> new MetaStreamHandoffRecord(entry.getValue().offset,
+                    MetaKeyValue.encode(MetaKeyValue.of(entry.getKey(), entry.getValue().value()))))
+                .toList();
+            return new MetaStreamHandoff(nextOffset(), records);
+        });
     }
 
     private CompletableFuture<Void> closeAfterHandoff(PartitionHandoff.Key correlation) {

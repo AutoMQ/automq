@@ -88,6 +88,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
+import com.automq.stream.utils.AsyncLogger;
 import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
@@ -196,7 +197,7 @@ public class StreamControlManager {
         FeatureControlManager featureControlManager,
         ReplicationControlManager replicationControlManager) {
         this.snapshotRegistry = snapshotRegistry;
-        this.log = logContext.logger(StreamControlManager.class);
+        this.log = AsyncLogger.wrap(logContext.logger(StreamControlManager.class));
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 100000);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
@@ -886,8 +887,8 @@ public class StreamControlManager {
                 continue;
             }
             long streamStartOffset = streamMetadata.startOffset();
-            // An object uploaded before trim may finish afterwards. Keep its metadata, but a range
-            // fully below the visible start does not advance either logical or historical state.
+            // An upload may finish after trim has removed all of its data. Keep its object metadata,
+            // but do not advance either current-owner or historical WAL progress.
             if (range.endOffset() <= streamStartOffset) {
                 continue;
             }
@@ -900,15 +901,18 @@ public class StreamControlManager {
                     break;
                 }
 
-                // Continue from the effective historical WAL progress.
+                // Normal historical uploads continue from raw WAL progress. After source restart,
+                // getOpeningStreams instead starts WAL recovery at max(visible start, raw progress),
+                // so the first recovered upload also enters this branch.
                 long expectedStartOffset = Math.max(
                     streamStartOffset, uncommittedOffsetRange.startOffset());
                 if (range.startOffset() == expectedStartOffset) {
                     continue;
                 }
 
-                // An object formed before trim may span the new visible start. Accept this only
-                // before historical WAL progress moves past that start.
+                // Trim may advance the visible start while an old-owner object is already uploading.
+                // Accept that object crossing the trim point only before historical WAL progress
+                // itself moves past the new visible start.
                 if (uncommittedOffsetRange.startOffset() <= streamStartOffset
                     && range.startOffset() < streamStartOffset) {
                     continue;
@@ -932,7 +936,8 @@ public class StreamControlManager {
             }
 
             if (streamMetadata.endOffset() > streamStartOffset) {
-                // Trim has not reached the logical end. Continue from that end without overlap.
+                // Normal current-owner uploads, including uploads after a trim below WAL progress,
+                // continue exactly from the logical end without overlap.
                 if (range.startOffset() != streamMetadata.endOffset()) {
                     continuityCheckResult = Errors.OFFSET_NOT_MATCHED;
                     break;
@@ -940,14 +945,15 @@ public class StreamControlManager {
                 continue;
             }
 
-            // Trim has reached the logical end. A new upload starts at the visible offset.
+            // Trim has reached the logical end. A new upload, including one rebuilt after broker
+            // restart from the getOpeningStreams end offset, starts at the visible offset.
             if (range.startOffset() == streamStartOffset) {
                 continue;
             }
 
-            // An object formed before the concurrent trim may contain record batches on both
-            // sides of the trim boundary. Its end is above streamStartOffset because fully
-            // trimmed objects were handled earlier.
+            // A current-owner object formed before trim may contain data on both sides of the trim
+            // boundary. Its end is above the visible start because fully trimmed objects were
+            // handled earlier.
             if (range.startOffset() < streamStartOffset) {
                 continue;
             }

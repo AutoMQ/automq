@@ -46,6 +46,7 @@ import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
+import com.automq.stream.utils.AsyncLogger;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
 import com.automq.stream.utils.PendingRequestTracker;
@@ -78,7 +79,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
 import static com.automq.stream.utils.FutureUtil.propagate;
 
 public class S3Stream implements Stream, StreamMetadataListener {
-    private static final Logger LOGGER = LoggerFactory.getLogger(S3Stream.class);
+    private static final Logger LOGGER = AsyncLogger.wrap(LoggerFactory.getLogger(S3Stream.class));
     private static final PendingRequestTracker PENDING_APPEND_TRACKER = new PendingRequestTracker();
     private static final PendingRequestTracker PENDING_FETCH_TRACKER = new PendingRequestTracker();
     // Shared for the process lifetime so streams reuse the same bounded set of active slabs.
@@ -410,6 +411,11 @@ public class S3Stream implements Stream, StreamMetadataListener {
     @Override
     public CompletableFuture<Void> close() {
         return close(false);
+    }
+
+    @Override
+    public void beforeClose() {
+        storage.beforeStreamClose(streamId);
     }
 
     public CompletableFuture<Void> close(boolean force) {

@@ -327,9 +327,9 @@ class ElasticLogTest {
         assertTrue(client.createdStreams.asScala.forall(_.closeCount.get() == 1))
     }
 
-    /** A data-stream close failure remains contained and prevents sending a handoff. */
+    /** A data-stream close failure remains contained without preventing the concurrent MetaStream handoff and close. */
     @Test
-    def testV6SourceDataStreamCloseFailureDoesNotSendHandoff(): Unit = {
+    def testV6SourceDataStreamCloseFailureStillSendsHandoff(): Unit = {
         val failCloseOnce = new AtomicBoolean(true)
         val client = new CloseTrackingClient(failCloseOnce)
         val attempts = new AtomicInteger()
@@ -347,7 +347,8 @@ class ElasticLogTest {
             fastReassignmentManager = manager)
         source.close()
 
-        assertEquals(0, attempts.get())
+        assertEquals(1, attempts.get())
+        assertTrue(client.createdStreams.asScala.forall(_.closeCount.get() == 1))
     }
 
     /**
@@ -519,48 +520,6 @@ class ElasticLogTest {
             assertFalse(appender.getMessages.asScala.exists(_.contains("FAST_REASSIGNMENT_OPEN")))
         } finally {
             reopened.close()
-            appender.close()
-        }
-    }
-
-    /**
-     * Given prepare returns false or times out, the source marker distinguishes both stable fallback reasons while
-     * preserving the normal close path.
-     */
-    @Test
-    def testPrepareFallbackMarkersExposeFailureAndTimeoutReasons(): Unit = {
-        val appender = LogCaptureAppender.createAndRegister()
-        val topicId = Uuid.randomUuid()
-        val failedSender = new TestSendOperation {
-            override def send(target: Node, handoff: PartitionHandoff): CompletableFuture[Void] =
-                CompletableFuture.failedFuture(new PartitionHandoffSendException(
-                    PartitionHandoffSendException.Reason.SEND_FAILURE))
-        }
-        val timedOutSender = new TestSendOperation {
-            override def send(target: Node,
-                handoff: PartitionHandoff): CompletableFuture[Void] =
-                CompletableFuture.failedFuture(new PartitionHandoffSendException(
-                    PartitionHandoffSendException.Reason.SEND_TIMEOUT))
-        }
-        val failedManager = fastReassignmentManager(failedSender)
-        val timedOutManager = fastReassignmentManager(timedOutSender)
-        val failedSource = createElasticLogWithActiveSegment(
-            dir = TestUtils.randomPartitionLogDir(tmpDir), config = LogTestUtils.createLogConfig(),
-            topicId = topicId, fastReassignmentManager = failedManager)
-        val timedOutSource = createElasticLogWithActiveSegment(
-            dir = TestUtils.randomPartitionLogDir(tmpDir), config = LogTestUtils.createLogConfig(),
-            topicId = topicId, fastReassignmentManager = timedOutManager)
-
-        try {
-            failedSource.close()
-            timedOutSource.close()
-
-            val prepareMarkers = appender.getMessages.asScala.filter(_.contains("FAST_REASSIGNMENT_PREPARE"))
-            assertTrue(prepareMarkers.exists(message =>
-                message.contains("result=fallback") && message.contains("reason=send_failure")))
-            assertTrue(prepareMarkers.exists(message =>
-                message.contains("result=fallback") && message.contains("reason=send_timeout")))
-        } finally {
             appender.close()
         }
     }
@@ -1405,16 +1364,16 @@ class ElasticLogTest {
 
     private class ControllableOpenStreamChecker extends OpenStreamChecker {
         private val checkEntered = new CountDownLatch(1)
-        private val authorized = new AtomicBoolean()
+        private val authorized = new CompletableFuture[Void]()
 
-        override def check(topicId: Uuid, partition: Int, streamId: Long, epoch: Long): Boolean = {
+        override def check(topicId: Uuid, partition: Int, streamId: Long, epoch: Long): CompletableFuture[Void] = {
             checkEntered.countDown()
-            authorized.get()
+            authorized
         }
 
         def awaitCheck(): Boolean = checkEntered.await(10, TimeUnit.SECONDS)
 
-        def authorize(): Unit = authorized.set(true)
+        def authorize(): Unit = authorized.complete(null)
     }
 
 }

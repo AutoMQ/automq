@@ -33,6 +33,7 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.StorageFailureHandler;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
@@ -198,6 +199,7 @@ public class S3Storage implements Storage {
     private boolean shutdownStarted = false;
     private final Set<CompletableFuture<Void>> inflightAppends = ConcurrentHashMap.newKeySet();
     private final Map<Long, CompletableFuture<Void>> pendingStreamUploads = new ConcurrentHashMap<>();
+    private LocalStreamRangeIndexCache localStreamRangeIndexCache;
 
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
@@ -237,6 +239,23 @@ public class S3Storage implements Storage {
             this.backgroundExecutor.scheduleWithFixedDelay(() ->
                     lazyUpload(new LazyCommit(walUploadIntervalMs, false)),
                 walUploadIntervalMs, walUploadIntervalMs, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Sets the broker-local sparse stream range index cache.
+     *
+     * @param localStreamRangeIndexCache local sparse stream range index cache
+     */
+    public void setLocalStreamRangeIndexCache(LocalStreamRangeIndexCache localStreamRangeIndexCache) {
+        this.localStreamRangeIndexCache = localStreamRangeIndexCache;
+    }
+
+    @Override
+    public void beforeStreamClose(long streamId) {
+        LocalStreamRangeIndexCache indexCache = localStreamRangeIndexCache;
+        if (indexCache != null) {
+            indexCache.uploadOnStreamClose();
         }
     }
 

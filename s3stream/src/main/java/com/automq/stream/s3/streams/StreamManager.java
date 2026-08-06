@@ -124,5 +124,4 @@ public interface StreamManager {
      */
     CompletableFuture<Void> deleteStream(long streamId, long epoch);
 
-    void setStreamCloseHook(StreamCloseHook hook);
 }

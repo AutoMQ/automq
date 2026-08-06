@@ -20,7 +20,6 @@
 package com.automq.stream.s3.index;
 
 import com.automq.stream.s3.ByteBufAlloc;
-import com.automq.stream.s3.S3StreamClient;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
@@ -62,7 +61,7 @@ import java.util.function.Supplier;
 import io.netty.buffer.ByteBuf;
 import io.opentelemetry.api.common.Attributes;
 
-public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycleListener {
+public class LocalStreamRangeIndexCache {
     private static final short VERSION = 0;
     private static final Logger LOGGER = LoggerFactory.getLogger(LocalStreamRangeIndexCache.class);
     private static final Metrics.LongGaugeBundle.LongGauge LOCAL_STREAM_RANGE_INDEX_CACHE_SIZE = Metrics.instance()
@@ -86,7 +85,6 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
     private long nodeId = -1;
     private ObjectStorage objectStorage;
     private int totalSize = 0;
-    private CompletableFuture<Void> uploadCf = CompletableFuture.completedFuture(null);
     private long lastUploadTime = 0L;
 
     public LocalStreamRangeIndexCache() {
@@ -117,14 +115,13 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         }
     }
 
-    public synchronized CompletableFuture<Void> uploadOnStreamClose() {
+    public synchronized void uploadOnStreamClose() {
         long now = System.currentTimeMillis();
         if (now - lastUploadTime > DEFAULT_UPLOAD_CACHE_ON_STREAM_CLOSE_INTERVAL_MS) {
-            uploadCf = upload();
+            upload();
             lastUploadTime = now;
             LOGGER.info("Upload local index cache on stream close");
         }
-        return uploadCf.orTimeout(1, TimeUnit.SECONDS);
     }
 
     CompletableFuture<Void> initCf() {
@@ -535,8 +532,4 @@ public class LocalStreamRangeIndexCache implements S3StreamClient.StreamLifeCycl
         return rangeIndexList.get(index).getObjectId();
     }
 
-    @Override
-    public void onStreamClose(long streamId) {
-        upload();
-    }
 }

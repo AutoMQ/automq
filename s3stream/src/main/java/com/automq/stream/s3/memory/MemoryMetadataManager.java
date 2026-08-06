@@ -32,7 +32,6 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
-import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 
@@ -63,7 +62,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     private final ConcurrentMap<Long, List<S3ObjectMetadata>> streamObjects = new ConcurrentHashMap<>();
     private final ConcurrentMap<Long, Pair<Long, S3ObjectMetadata>> streamSetObjects = new ConcurrentHashMap<>();
     private CommitStreamSetObjectHook commitStreamSetObjectHook = req -> CompletableFuture.completedFuture(null);
-    private StreamCloseHook streamCloseHook = streamId -> CompletableFuture.completedFuture(null);
 
     public static void advanceNodeId() {
         NODE_ID_ALLOC.getAndIncrement();
@@ -242,11 +240,6 @@ public class MemoryMetadataManager implements StreamManager, ObjectManager {
     @Override
     public synchronized void setCommitStreamSetObjectHook(CommitStreamSetObjectHook hook) {
         this.commitStreamSetObjectHook = hook;
-    }
-
-    @Override
-    public void setStreamCloseHook(StreamCloseHook hook) {
-        this.streamCloseHook = hook;
     }
 
     @Override

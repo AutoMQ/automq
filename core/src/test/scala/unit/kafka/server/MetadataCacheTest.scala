@@ -41,6 +41,7 @@ import org.junit.jupiter.params.provider.MethodSource
 import java.util
 import java.util.Arrays.asList
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.stream.Collectors
 import scala.collection.{Seq, mutable}
 import scala.jdk.CollectionConverters._
@@ -142,6 +143,20 @@ object MetadataCacheTest {
 }
 
 class MetadataCacheTest {
+
+  @Test
+  def testKRaftNewImageListener(): Unit = {
+    val cache = MetadataCache.kRaftMetadataCache(1, () => KRaftVersion.KRAFT_VERSION_0)
+    val notifications = new AtomicInteger()
+    val handle = cache.addNewImageListener(() => notifications.incrementAndGet())
+
+    cache.setImage(MetadataImage.EMPTY)
+    assertEquals(1, notifications.get())
+
+    handle.close()
+    cache.setImage(MetadataImage.EMPTY)
+    assertEquals(1, notifications.get())
+  }
   val brokerEpoch = 0L
 
   @ParameterizedTest

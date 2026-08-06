@@ -27,6 +27,12 @@ import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.requests.s3.AutomqPreparePartitionHandoffRequest;
 import org.apache.kafka.common.requests.s3.AutomqPreparePartitionHandoffResponse;
 import org.apache.kafka.common.utils.ByteUtils;
+import org.apache.kafka.common.utils.ThreadUtils;
+
+import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -34,10 +40,16 @@ import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+
+import static com.automq.stream.utils.LockUtils.runInLock;
 
 /**
  * Sends optional partition handoff hints in bounded, per-target batches.
@@ -47,16 +59,20 @@ import java.util.stream.Collectors;
  * callers should discard the sender with its broker lifecycle.
  */
 public final class PartitionHandoffSender {
+    private static final Logger LOGGER = LoggerFactory.getLogger(PartitionHandoffSender.class);
     public static final int DEFAULT_MAX_REQUEST_BODY_SIZE = 32 * 1024 * 1024;
     public static final int DEFAULT_TIMEOUT_MS = 100;
     private static final short API_VERSION = 0;
     private static final int REQUEST_TAGGED_FIELDS_SIZE = 1;
     private static final int SINGLE_HANDOFF_ENVELOPE_SIZE =
         REQUEST_TAGGED_FIELDS_SIZE + ByteUtils.sizeOfUnsignedVarint(2);
+    private static final ExecutorService RESPONSE_EXECUTOR = Threads.newFixedThreadPool(
+        1, ThreadUtils.createThreadFactory("partition-handoff-response-%d", true), LOGGER);
 
     private final RequestSender requestSender;
     private final int maximumRequestBodySize;
     private final long timeoutMs;
+    private final Executor responseExecutor;
     private final Map<Node, TargetQueue> targets = new ConcurrentHashMap<>();
 
     /**
@@ -65,7 +81,7 @@ public final class PartitionHandoffSender {
      * @param asyncSender broker network client
      */
     public PartitionHandoffSender(AsyncSender asyncSender) {
-        this(adapt(asyncSender), DEFAULT_MAX_REQUEST_BODY_SIZE, DEFAULT_TIMEOUT_MS);
+        this(adapt(asyncSender), DEFAULT_MAX_REQUEST_BODY_SIZE, DEFAULT_TIMEOUT_MS, RESPONSE_EXECUTOR);
     }
 
     /**
@@ -80,6 +96,23 @@ public final class PartitionHandoffSender {
         int maximumRequestBodySize,
         long timeoutMs
     ) {
+        this(requestSender, maximumRequestBodySize, timeoutMs, RESPONSE_EXECUTOR);
+    }
+
+    /**
+     * Creates a sender with explicit bounds and response executor.
+     *
+     * @param requestSender broker request boundary
+     * @param maximumRequestBodySize maximum actual encoded request-body bytes
+     * @param timeoutMs independent send timeout in milliseconds
+     * @param responseExecutor executor used to process RPC responses and complete handoff results
+     */
+    public PartitionHandoffSender(
+        RequestSender requestSender,
+        int maximumRequestBodySize,
+        long timeoutMs,
+        Executor responseExecutor
+    ) {
         if (maximumRequestBodySize <= 0) {
             throw new IllegalArgumentException("maximumRequestBodySize must be positive");
         }
@@ -89,6 +122,7 @@ public final class PartitionHandoffSender {
         this.requestSender = requestSender;
         this.maximumRequestBodySize = maximumRequestBodySize;
         this.timeoutMs = timeoutMs;
+        this.responseExecutor = Objects.requireNonNull(responseExecutor, "responseExecutor");
     }
 
     /**
@@ -141,15 +175,18 @@ public final class PartitionHandoffSender {
     private final class TargetQueue {
         private final Node target;
         private final Deque<PendingHandoff> queue = new ArrayDeque<>();
+        private final ReentrantLock lock = new ReentrantLock();
         private boolean inflight;
 
         private TargetQueue(Node target) {
             this.target = target;
         }
 
-        private synchronized void add(PendingHandoff handoff) {
-            queue.add(handoff);
-            sendNext();
+        private void add(PendingHandoff handoff) {
+            runInLock(lock, () -> {
+                queue.add(handoff);
+                sendNext();
+            });
         }
 
         private void sendNext() {
@@ -175,7 +212,7 @@ public final class PartitionHandoffSender {
                     PartitionHandoffSendException.Reason.SEND_FAILURE, exception));
                 return;
             }
-            response.orTimeout(timeoutMs, TimeUnit.MILLISECONDS).whenComplete((value, exception) -> {
+            response.orTimeout(timeoutMs, TimeUnit.MILLISECONDS).whenCompleteAsync((value, exception) -> {
                 if (isTimeout(exception)) {
                     complete(batch, new PartitionHandoffSendException(
                         PartitionHandoffSendException.Reason.SEND_TIMEOUT, exception));
@@ -185,19 +222,21 @@ public final class PartitionHandoffSender {
                 } else {
                     complete(batch, null);
                 }
-            });
+            }, responseExecutor);
         }
 
-        private synchronized void complete(Batch batch, PartitionHandoffSendException exception) {
-            inflight = false;
-            batch.handoffs.forEach(handoff -> {
-                if (exception == null) {
-                    handoff.result.complete(null);
-                } else {
-                    handoff.result.completeExceptionally(exception);
-                }
+        private void complete(Batch batch, PartitionHandoffSendException exception) {
+            runInLock(lock, () -> {
+                inflight = false;
+                batch.handoffs.forEach(handoff -> {
+                    if (exception == null) {
+                        handoff.result.complete(null);
+                    } else {
+                        handoff.result.completeExceptionally(exception);
+                    }
+                });
+                sendNext();
             });
-            sendNext();
         }
     }
 

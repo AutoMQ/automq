@@ -17,18 +17,23 @@
 
 package kafka.server
 
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import kafka.cluster.BrokerEndPoint
 import kafka.utils.Implicits._
 import kafka.utils.Logging
 import org.apache.kafka.common.{TopicPartition, Uuid}
 import org.apache.kafka.common.utils.Utils
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.slf4j.LoggerFactory
 
 import scala.collection.{Map, Set, mutable}
 import scala.jdk.CollectionConverters._
 
 abstract class AbstractFetcherManager[T <: AbstractFetcherThread](val name: String, clientId: String, numFetchers: Int)
   extends Logging {
+  override protected lazy val logger: Logger =
+    Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
   // map of (source broker_id, fetcher_id per source broker) => fetcher.

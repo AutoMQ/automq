@@ -54,7 +54,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
@@ -106,8 +105,6 @@ public class S3StreamClient implements StreamClient {
     final Map<Long, CompletableFuture<Stream>> openingStreams = new ConcurrentHashMap<>();
     final Map<Long, StreamWrapper> closingStreams = new ConcurrentHashMap<>();
 
-    private final List<StreamLifeCycleListener> streamLifeCycleListeners = new CopyOnWriteArrayList<>();
-
     private boolean closed;
     private boolean forceCloseMark;
 
@@ -157,10 +154,6 @@ public class S3StreamClient implements StreamClient {
             checkState();
             return Optional.ofNullable(openedStreams.get(streamId));
         });
-    }
-
-    public void registerStreamLifeCycleListener(StreamLifeCycleListener listener) {
-        streamLifeCycleListeners.add(listener);
     }
 
     /**
@@ -366,19 +359,23 @@ public class S3StreamClient implements StreamClient {
             return close(false);
         }
 
+        @Override
+        public void beforeClose() {
+            stream.beforeClose();
+        }
+
         public CompletableFuture<Void> close(boolean force) {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
                 long streamId = streamId();
                 if (openedStreams.remove(streamId, this)) {
                     closingStreams.put(streamId, this);
-                    return stream.close(force).whenComplete((v, e) -> runInLock(() -> {
-                        cf.complete(StreamWrapper.this);
-                        closingStreams.remove(streamId, this);
-                        for (StreamLifeCycleListener listener : streamLifeCycleListeners) {
-                            listener.onStreamClose(streamId);
-                        }
-                    }));
+                    return stream.close(force).whenComplete((v, e) -> {
+                        runInLock(() -> {
+                            cf.complete(StreamWrapper.this);
+                            closingStreams.remove(streamId, this);
+                        });
+                    });
                 } else {
                     return stream.close(force);
                 }
@@ -518,7 +515,4 @@ public class S3StreamClient implements StreamClient {
 
     }
 
-    public interface StreamLifeCycleListener {
-        void onStreamClose(long streamId);
-    }
 }

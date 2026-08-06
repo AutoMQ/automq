@@ -16,6 +16,8 @@
  */
 package kafka.cluster
 
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
@@ -48,6 +50,7 @@ import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchIsolation, FetchParams, LeaderHwChange, LogAppendInfo, LogOffsetMetadata, LogOffsetSnapshot, LogOffsetsListener, LogReadInfo, LogStartOffsetIncrementReason, VerificationGuard}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.slf4j.LoggerFactory
 
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
@@ -320,6 +323,8 @@ class Partition(val topicPartition: TopicPartition,
                 alterIsrManager: AlterPartitionManager,
                 @volatile private var _topicId: Option[Uuid] = None // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
                ) extends Logging {
+  override protected lazy val logger: Logger =
+    Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
 
   import Partition.metricsGroup
   def topic: String = topicPartition.topic

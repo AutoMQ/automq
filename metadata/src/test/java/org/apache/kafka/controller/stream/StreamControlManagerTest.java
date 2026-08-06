@@ -673,8 +673,9 @@ public class StreamControlManagerTest {
     }
 
     /**
-     * Given failover establishes its node barrier before WAL upload, verify later normal commits
-     * are fenced while failover commits continue advancing historical responsibility.
+     * Given trim advances beyond historical WAL progress before failover establishes its node
+     * barrier, verify normal commits are fenced while failover recovery commits from the visible
+     * start returned by getOpeningStreams.
      */
     @Test
     public void testGetOpeningStreamsFailoverBarrierFencesNormalCommit() {
@@ -691,17 +692,19 @@ public class StreamControlManagerTest {
             BROKER0, BROKER_EPOCH0, 1L, 0L, 40L);
         assertEquals(Errors.NONE.code(), beforeBarrier.response().errorCode());
         replay(manager, beforeBarrier.records());
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(60L)).records());
 
         ControllerResult<GetOpeningStreamsResponseData> barrier = manager.getOpeningStreams(
             new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
                 .setFailoverMode(true));
         assertEquals(1, barrier.records().size());
         assertEquals(1, barrier.response().streamMetadataList().size());
-        assertEquals(40L, barrier.response().streamMetadataList().get(0).endOffset());
+        assertEquals(60L, barrier.response().streamMetadataList().get(0).endOffset());
         replay(manager, barrier.records());
 
         ControllerResult<CommitStreamSetObjectResponseData> normalCommit = commitRange(
-            BROKER0, BROKER_EPOCH0, 2L, 40L, 100L);
+            BROKER0, BROKER_EPOCH0, 2L, 60L, 100L);
         assertEquals(Errors.NODE_FENCED.code(), normalCommit.response().errorCode());
         assertTrue(normalCommit.records().isEmpty());
 
@@ -716,7 +719,7 @@ public class StreamControlManagerTest {
                 .setObjectStreamRanges(List.of(new ObjectStreamRange()
                     .setStreamId(STREAM0)
                     .setStreamEpoch(EPOCH0)
-                    .setStartOffset(40L)
+                    .setStartOffset(60L)
                     .setEndOffset(100L))));
         assertEquals(Errors.NONE.code(), failoverCommit.response().errorCode());
         replay(manager, failoverCommit.records());
@@ -1112,6 +1115,44 @@ public class StreamControlManagerTest {
         ControllerResult<CommitStreamSetObjectResponseData> continuous = commitRange(5L, 110L, 120L);
         assertEquals(Errors.NONE.code(), continuous.response().errorCode());
         replay(manager, continuous.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    /**
+     * Given trim reaches the current owner's logical end before broker failover, verify recovery and
+     * the first failover upload both start at the visible offset returned by getOpeningStreams.
+     */
+    @Test
+    public void testCurrentOwnerFailoverCommitStartsAtTrimmedEnd() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.trimStream(BROKER0, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L)).records());
+
+        ControllerResult<GetOpeningStreamsResponseData> openingStreams = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(Errors.NONE.code(), openingStreams.response().errorCode());
+        assertEquals(1, openingStreams.response().streamMetadataList().size());
+        assertEquals(100L, openingStreams.response().streamMetadataList().get(0).endOffset());
+        replay(manager, openingStreams.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> commit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(6L)
+                .setOrderId(6L)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM0)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(100L)
+                    .setEndOffset(120L))));
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
         assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
     }
 

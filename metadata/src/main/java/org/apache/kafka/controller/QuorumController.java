@@ -924,7 +924,8 @@ public final class QuorumController implements Controller {
             try {
                 result = op.generateRecordsAndResult();
             } finally {
-                long processTime = NANOSECONDS.toMicros(time.nanoseconds() - startProcessingTimeNs.getAsLong());
+                long generateEndNanos = time.nanoseconds();
+                long processTime = NANOSECONDS.toMicros(generateEndNanos - startProcessingTimeNs.getAsLong());
                 if (processTime > EventQueue.Event.EVENT_PROCESS_TIME_THRESHOLD_MICROSECOND) {
                     log.warn("Controller took {} µs to process write event: {}", processTime, name);
                 }
@@ -2759,34 +2760,56 @@ public final class QuorumController implements Controller {
     public CompletableFuture<OpenStreamsResponseData> openStreams(ControllerRequestContext context, OpenStreamsRequestData request) {
         int nodeId = request.nodeId();
         long nodeEpoch = request.nodeEpoch();
-        List<CompletableFuture<OpenStreamsResponseData.OpenStreamResponse>> batchCf = request.openStreamRequests()
-            .stream()
-            .map(req ->
-                appendWriteEvent("openStream", context.deadlineNs(), () -> streamControlManager.openStream(nodeId, nodeEpoch, req))
-                    .exceptionally(ex -> new OpenStreamsResponseData.OpenStreamResponse().setErrorCode(Errors.forException(ex).code()))
-            )
-            .collect(Collectors.toList());
-        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
-            new OpenStreamsResponseData().setOpenStreamResponses(
-                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
-        );
+        return appendWriteEvent("openStreams", context.deadlineNs(), () -> {
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            List<OpenStreamsResponseData.OpenStreamResponse> responses = new ArrayList<>();
+            request.openStreamRequests().forEach(req -> {
+                try {
+                    ControllerResult<OpenStreamsResponseData.OpenStreamResponse> result =
+                        streamControlManager.openStream(nodeId, nodeEpoch, req);
+                    records.addAll(result.records());
+                    responses.add(result.response());
+                } catch (Exception ex) {
+                    log.error("Unexpected error while opening stream {} for node {}", req.streamId(), nodeId, ex);
+                    responses.add(new OpenStreamsResponseData.OpenStreamResponse()
+                        .setErrorCode(Errors.forException(ex).code()));
+                }
+            });
+            return ControllerResult.atomicOf(records,
+                new OpenStreamsResponseData().setOpenStreamResponses(responses));
+        }).exceptionally(ex -> new OpenStreamsResponseData().setOpenStreamResponses(
+            request.openStreamRequests().stream()
+                .map(req -> new OpenStreamsResponseData.OpenStreamResponse()
+                    .setErrorCode(Errors.forException(ex).code()))
+                .collect(Collectors.toList())));
     }
 
     @Override
     public CompletableFuture<CloseStreamsResponseData> closeStreams(ControllerRequestContext context, CloseStreamsRequestData request) {
         int nodeId = request.nodeId();
         long nodeEpoch = request.nodeEpoch();
-        List<CompletableFuture<CloseStreamsResponseData.CloseStreamResponse>> batchCf = request.closeStreamRequests()
-            .stream()
-            .map(req ->
-                appendWriteEvent("closeStream", context.deadlineNs(), () -> streamControlManager.closeStream(nodeId, nodeEpoch, req))
-                    .exceptionally(ex -> new CloseStreamsResponseData.CloseStreamResponse().setErrorCode(Errors.forException(ex).code()))
-            )
-            .collect(Collectors.toList());
-        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
-            new CloseStreamsResponseData().setCloseStreamResponses(
-                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
-        );
+        return appendWriteEvent("closeStreams", context.deadlineNs(), () -> {
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            List<CloseStreamsResponseData.CloseStreamResponse> responses = new ArrayList<>();
+            request.closeStreamRequests().forEach(req -> {
+                try {
+                    ControllerResult<CloseStreamsResponseData.CloseStreamResponse> result =
+                        streamControlManager.closeStream(nodeId, nodeEpoch, req);
+                    records.addAll(result.records());
+                    responses.add(result.response());
+                } catch (Exception ex) {
+                    log.error("Unexpected error while closing stream {} for node {}", req.streamId(), nodeId, ex);
+                    responses.add(new CloseStreamsResponseData.CloseStreamResponse()
+                        .setErrorCode(Errors.forException(ex).code()));
+                }
+            });
+            return ControllerResult.atomicOf(records,
+                new CloseStreamsResponseData().setCloseStreamResponses(responses));
+        }).exceptionally(ex -> new CloseStreamsResponseData().setCloseStreamResponses(
+            request.closeStreamRequests().stream()
+                .map(req -> new CloseStreamsResponseData.CloseStreamResponse()
+                    .setErrorCode(Errors.forException(ex).code()))
+                .collect(Collectors.toList())));
     }
 
     @Override
@@ -2855,17 +2878,21 @@ public final class QuorumController implements Controller {
 
     @Override
     public CompletableFuture<GetKVsResponseData> getKVs(ControllerRequestContext context, GetKVsRequestData request) {
-        List<CompletableFuture<GetKVsResponseData.GetKVResponse>> batchCf = request.getKeyRequests()
-            .stream()
-            .map(req ->
-                appendReadEvent("getKV", context.deadlineNs(), () -> kvControlManager.getKV(req))
-                    .exceptionally(ex -> new GetKVsResponseData.GetKVResponse().setErrorCode(Errors.forException(ex).code()))
-            )
-            .collect(Collectors.toList());
-        return CompletableFuture.allOf(batchCf.toArray(new CompletableFuture[0])).thenApply(ignore ->
-            new GetKVsResponseData().setGetKVResponses(
-                batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
+        // AutoMQ for Kafka inject start
+        return appendReadEvent("getKVs", context.deadlineNs(), () ->
+            new GetKVsResponseData().setGetKVResponses(request.getKeyRequests().stream().map(req -> {
+                try {
+                    return kvControlManager.getKV(req);
+                } catch (Exception ex) {
+                    return new GetKVsResponseData.GetKVResponse().setErrorCode(Errors.forException(ex).code());
+                }
+            }).collect(Collectors.toList()))
+        ).exceptionally(ex ->
+            new GetKVsResponseData().setGetKVResponses(request.getKeyRequests().stream()
+                .map(req -> new GetKVsResponseData.GetKVResponse().setErrorCode(Errors.forException(ex).code()))
+                .collect(Collectors.toList()))
         );
+        // AutoMQ for Kafka inject end
     }
 
     @Override

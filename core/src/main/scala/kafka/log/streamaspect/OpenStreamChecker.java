@@ -20,17 +20,24 @@
 package kafka.log.streamaspect;
 
 import org.apache.kafka.common.Uuid;
-import org.apache.kafka.common.errors.s3.StreamFencedException;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Check whether a stream is ready for open.
  */
-public interface OpenStreamChecker {
-    OpenStreamChecker NOOP = (topicId, partition, streamId, epoch) -> true;
+public interface OpenStreamChecker extends AutoCloseable {
+    OpenStreamChecker NOOP = (topicId, partition, streamId, epoch) -> CompletableFuture.completedFuture(null);
 
     /**
-     * Check whether a stream is ready for open.
+     * Wait until a stream is ready for open.
+     *
+     * @return a future completed when the stream is ready, or exceptionally with StreamFencedException when the
+     *         requested ownership can no longer become ready
      */
-    boolean check(Uuid topicId, int partition, long streamId, long epoch) throws StreamFencedException;
+    CompletableFuture<Void> check(Uuid topicId, int partition, long streamId, long epoch);
 
+    @Override
+    default void close() {
+    }
 }

@@ -292,6 +292,11 @@ public class ClientWrapper implements Client {
         }
 
         @Override
+        public void beforeClose() {
+            stream.beforeClose();
+        }
+
+        @Override
         public CompletableFuture<Void> close() {
             return failureHandle(stream.close().thenApplyAsync(nil -> nil, streamManagerCallbackExecutors));
         }

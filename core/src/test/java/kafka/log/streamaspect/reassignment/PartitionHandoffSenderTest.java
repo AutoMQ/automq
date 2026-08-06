@@ -33,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -41,6 +42,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Verifies partition handoff batching, timeout, and one-attempt sender behavior. */
 @Tag("S3Unit")
 public class PartitionHandoffSenderTest {
+    private static final Executor DIRECT_EXECUTOR = Runnable::run;
 
     /**
      * Given an exactly valid encoded body and an oversized handoff, only the valid handoff is sent.
@@ -50,7 +52,7 @@ public class PartitionHandoffSenderTest {
         PartitionHandoff handoff = handoff(0, 32);
         int exactSize = PartitionHandoffSender.encodedRequestBodySize(List.of(handoff));
         CapturingNetwork network = new CapturingNetwork();
-        PartitionHandoffSender exactSender = new PartitionHandoffSender(network, exactSize, 100);
+        PartitionHandoffSender exactSender = new PartitionHandoffSender(network, exactSize, 100, DIRECT_EXECUTOR);
 
         CompletableFuture<Void> exact = exactSender.send(node(1), handoff);
         assertEquals(1, network.requests.size());
@@ -59,7 +61,7 @@ public class PartitionHandoffSenderTest {
 
         CapturingNetwork oversizedNetwork = new CapturingNetwork();
         PartitionHandoffSender oversizedSender = new PartitionHandoffSender(
-            oversizedNetwork, exactSize - 1, 100);
+            oversizedNetwork, exactSize - 1, 100, DIRECT_EXECUTOR);
         CompletableFuture<Void> oversized = oversizedSender.send(node(1), handoff);
 
         assertFailureReason(oversized, PartitionHandoffSendException.Reason.HANDOFF_TOO_LARGE);
@@ -76,7 +78,7 @@ public class PartitionHandoffSenderTest {
         PartitionHandoff second = handoff(1, 16);
         PartitionHandoff third = handoff(2, 16);
         int maximumSize = PartitionHandoffSender.encodedRequestBodySize(List.of(second, third));
-        PartitionHandoffSender sender = new PartitionHandoffSender(network, maximumSize, 100);
+        PartitionHandoffSender sender = new PartitionHandoffSender(network, maximumSize, 100, DIRECT_EXECUTOR);
 
         CompletableFuture<Void> firstResult = sender.send(node(1), first);
         CompletableFuture<Void> secondResult = sender.send(node(1), second);
@@ -105,7 +107,7 @@ public class PartitionHandoffSenderTest {
             handoffs.add(handoff(partitionId, 1));
         }
         int exactSize = PartitionHandoffSender.encodedRequestBodySize(handoffs);
-        PartitionHandoffSender sender = new PartitionHandoffSender(network, exactSize, 100);
+        PartitionHandoffSender sender = new PartitionHandoffSender(network, exactSize, 100, DIRECT_EXECUTOR);
         CompletableFuture<Void> blockerResult = sender.send(node(1), blocker);
         List<CompletableFuture<Void>> results = handoffs.stream()
             .map(handoff -> sender.send(node(1), handoff))
@@ -130,7 +132,7 @@ public class PartitionHandoffSenderTest {
         PartitionHandoff first = handoff(0, 16);
         PartitionHandoff second = handoff(1, 16);
         int oneHandoffSize = PartitionHandoffSender.encodedRequestBodySize(List.of(first));
-        PartitionHandoffSender sender = new PartitionHandoffSender(network, oneHandoffSize, 100);
+        PartitionHandoffSender sender = new PartitionHandoffSender(network, oneHandoffSize, 100, DIRECT_EXECUTOR);
 
         CompletableFuture<Void> firstResult = sender.send(node(1), first);
         CompletableFuture<Void> secondResult = sender.send(node(1), second);
@@ -152,7 +154,7 @@ public class PartitionHandoffSenderTest {
         CapturingNetwork network = new CapturingNetwork();
         PartitionHandoff handoff = handoff(0, 16);
         int exactSize = PartitionHandoffSender.encodedRequestBodySize(List.of(handoff));
-        PartitionHandoffSender sender = new PartitionHandoffSender(network, exactSize, 100);
+        PartitionHandoffSender sender = new PartitionHandoffSender(network, exactSize, 100, DIRECT_EXECUTOR);
 
         sender.send(node(1), handoff);
         sender.send(node(2), handoff(1, 16));
@@ -166,7 +168,7 @@ public class PartitionHandoffSenderTest {
     @Test
     public void testWholeRequestFailureCompletesEntireBatch() {
         CapturingNetwork network = new CapturingNetwork();
-        PartitionHandoffSender sender = new PartitionHandoffSender(network, 1024, 100);
+        PartitionHandoffSender sender = new PartitionHandoffSender(network, 1024, 100, DIRECT_EXECUTOR);
 
         CompletableFuture<Void> blocker = sender.send(node(1), handoff(-1, 16));
         CompletableFuture<Void> first = sender.send(node(1), handoff(0, 16));
@@ -185,7 +187,7 @@ public class PartitionHandoffSenderTest {
         CapturingNetwork network = new CapturingNetwork();
         PartitionHandoff handoff = handoff(0, 16);
         PartitionHandoffSender sender = new PartitionHandoffSender(
-            network, PartitionHandoffSender.encodedRequestBodySize(List.of(handoff)), 10);
+            network, PartitionHandoffSender.encodedRequestBodySize(List.of(handoff)), 10, DIRECT_EXECUTOR);
 
         CompletableFuture<Void> result = sender.send(node(1), handoff);
 
