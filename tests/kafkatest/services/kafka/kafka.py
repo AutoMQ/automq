@@ -184,15 +184,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         "kafka_operational_logs_debug": {
             "path": OPERATIONAL_LOG_DEBUG_DIR,
             "collect_default": False},
-        "kafka_data_1": {
-            "path": DATA_LOG_DIR_1,
-            "collect_default": False},
-        "kafka_data_2": {
-            "path": DATA_LOG_DIR_2,
-            "collect_default": False},
-        "kafka_cluster_metadata": {
-            "path": METADATA_LOG_DIR,
-            "collect_default": False},
+        # AutoMQ inject start
+        # Do not register broker data or metadata directories as artifacts. Ducktape collects all
+        # registered service artifacts on failure, and these directories can be prohibitively large.
+        # AutoMQ inject end
         "kafka_heap_dump_file": {
             "path": HEAP_DUMP_FILE,
             "collect_default": True}
