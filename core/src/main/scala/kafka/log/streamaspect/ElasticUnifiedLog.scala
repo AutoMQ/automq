@@ -20,6 +20,8 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import kafka.automq.runtime.{ElasticFailureHandler, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
@@ -34,6 +36,7 @@ import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -56,6 +59,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 )
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
         _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
+
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
 
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -208,14 +214,10 @@ class ElasticUnifiedLog(_logStartOffset: Long,
                 // We take a snapshot at the last written offset to hopefully avoid the need to scan the log
                 // after restarting and to ensure that we cannot inadvertently hit the upgrade optimization
                 // (the clean shutdown file is written after the logs are all closed).
-                producerStateManager.takeSnapshot()
+                producerStateManager.takeSnapshot(false)
             }
-            // flush all inflight data/index
-            flush(true)
             elasticLog.close()
         }
-        // graceful await append ack
-        elasticLog.lastAppendAckFuture.get()
         elasticLog.isMemoryMappedBufferClosed = true
         // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
         // The deletion here aims to clean the old directory.
@@ -226,7 +228,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
      * Only close streams.
      */
     def closeStreams(): CompletableFuture[Void] = {
-        elasticLog.closeStreams()
+        elasticLog.closeStreams(false)
     }
 
     override private[log] def delete(): Unit = {
@@ -308,6 +310,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+
     private val CheckpointExecutor = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("checkpoint-executor", true))
     private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000
@@ -347,8 +352,8 @@ object ElasticUnifiedLog extends Logging {
             val localLog = ElasticFailureHandlers.openWithRetry(topicPartition, forceCleanShutdownRecovery =>
                     ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
                         partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
-                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead,
-                        forceCleanShutdownRecovery),
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead = snapshotRead,
+                        forceCleanShutdownRecovery = forceCleanShutdownRecovery),
                 openFailureContext
             )
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint), scheduler)

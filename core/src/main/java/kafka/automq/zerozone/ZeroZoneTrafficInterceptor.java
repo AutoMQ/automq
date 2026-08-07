@@ -23,6 +23,7 @@ import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.automq.interceptor.TrafficInterceptor;
+import kafka.automq.utils.AsyncSender;
 import kafka.network.RequestChannel;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
@@ -113,7 +114,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         Time time = Time.SYSTEM;
 
-        this.asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
+        this.asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time,
+            ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext(), 30_000);
 
         this.config = kafkaConfig.automq().zoneRouterChannels().get();
 

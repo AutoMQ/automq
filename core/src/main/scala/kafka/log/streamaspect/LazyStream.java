@@ -22,12 +22,12 @@ package kafka.log.streamaspect;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.CreateStreamOptions;
 import com.automq.stream.api.FetchResult;
-import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
+import com.automq.stream.utils.AsyncLogger;
 import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
@@ -39,12 +39,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.locks.ReentrantLock;
+
+import static com.automq.stream.utils.LockUtils.runInLock;
 
 /**
  * Lazy stream, create stream when append record.
  */
 public class LazyStream implements Stream {
-    private static final Logger LOGGER = LoggerFactory.getLogger(LazyStream.class);
+    private static final Logger LOGGER = AsyncLogger.wrap(LoggerFactory.getLogger(LazyStream.class));
     public static final long NOOP_STREAM_ID = -1L;
     private static final Stream NOOP_STREAM = new NoopStream();
     private final String name;
@@ -52,46 +55,30 @@ public class LazyStream implements Stream {
     private final int replicaCount;
     private final long epoch;
     private final Map<String, String> tags;
+    private final ReentrantLock lock = new ReentrantLock();
     private volatile Stream inner = NOOP_STREAM;
     private ElasticStreamEventListener eventListener;
 
-    public LazyStream(String name, long streamId, StreamClient client, int replicaCount, long epoch, Map<String, String> tags, boolean snapshotRead) throws IOException {
+    public LazyStream(String name, StreamClient client, int replicaCount, long epoch, Map<String, String> tags) {
         this.name = name;
         this.client = client;
         this.replicaCount = replicaCount;
         this.epoch = epoch;
         this.tags = tags;
-        if (streamId != NOOP_STREAM_ID) {
-            try {
-                // open exist stream
-                OpenStreamOptions.Builder options = OpenStreamOptions.builder().epoch(epoch).tags(tags);
-                if (snapshotRead) {
-                    options.readWriteMode(OpenStreamOptions.ReadWriteMode.SNAPSHOT_READ);
-                }
-                inner = client.openStream(streamId, options.build()).get();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            } catch (ExecutionException e) {
-                if (e.getCause() instanceof IOException) {
-                    throw (IOException) (e.getCause());
-                } else {
-                    throw new RuntimeException(e.getCause());
-                }
-            }
-            LOGGER.info("opened existing stream: streamId={}, epoch={}, name={}", streamId, epoch, name);
-        }
     }
 
     public void warmUp() throws IOException {
-        if (this.inner == NOOP_STREAM) {
-            try {
-                this.inner = createStream();
-                LOGGER.info("warmup, created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
-                notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
-            } catch (Throwable e) {
-                throw new IOException(e);
+        runInLock(lock, () -> {
+            if (this.inner == NOOP_STREAM) {
+                try {
+                    this.inner = createStream();
+                    LOGGER.info("warmup, created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                    notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
+                } catch (Throwable e) {
+                    throw new IOException(e);
+                }
             }
-        }
+        });
     }
 
     @Override
@@ -126,17 +113,19 @@ public class LazyStream implements Stream {
 
 
     @Override
-    public synchronized CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
-        if (this.inner == NOOP_STREAM) {
-            try {
-                this.inner = createStream();
-                LOGGER.info("created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
-                notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
-            } catch (Throwable e) {
-                return FutureUtil.failedFuture(new IOException(e));
+    public CompletableFuture<AppendResult> append(AppendContext context, RecordBatch recordBatch) {
+        return runInLock(lock, () -> {
+            if (this.inner == NOOP_STREAM) {
+                try {
+                    this.inner = createStream();
+                    LOGGER.info("created and opened a new stream: streamId={}, epoch={}, name={}", this.inner.streamId(), epoch, name);
+                    notifyListener(ElasticStreamMetaEvent.STREAM_DO_CREATE);
+                } catch (Throwable e) {
+                    return FutureUtil.failedFuture(new IOException(e));
+                }
             }
-        }
-        return inner.append(context, recordBatch);
+            return inner.append(context, recordBatch);
+        });
     }
 
     @Override
@@ -147,6 +136,11 @@ public class LazyStream implements Stream {
     @Override
     public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
         return inner.fetch(context, startOffset, endOffset, maxBytesHint);
+    }
+
+    @Override
+    public void beforeClose() {
+        inner.beforeClose();
     }
 
     @Override

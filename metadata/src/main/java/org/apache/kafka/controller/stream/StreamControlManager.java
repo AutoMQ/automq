@@ -42,6 +42,7 @@ import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
@@ -63,6 +64,8 @@ import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
 import org.apache.kafka.image.DeltaList;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
@@ -85,6 +88,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
+import com.automq.stream.utils.AsyncLogger;
 import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
@@ -120,6 +124,33 @@ import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
  */
 @SuppressWarnings({"all", "this-escape"})
 public class StreamControlManager {
+    /*
+     * Offset and ownership model
+     *
+     * Persisted state:
+     * - StreamRuntimeMetadata.startOffset is the visible lower bound and advances through trim.
+     * - StreamRuntimeMetadata.endOffset is the logical end. It is the next current-owner commit
+     *   start and the next owner append start; it does not imply ObjectStorage durability.
+     * - RangeMetadata defines a node's ownership interval. The end of a closed range is its fixed
+     *   handoff boundary, while an opened range may temporarily lag the stream logical end.
+     * - NodeWALUncommittedOffset is a node-scoped historical WAL responsibility. Its raw start
+     *   advances through historical object commits, and its fixed end is the sealed range end.
+     *
+     * Derived state:
+     * - effectiveHistoricalStart = max(stream.startOffset, entry.startOffset).
+     * - An entry is active exactly when effectiveHistoricalStart < entry.endOffset.
+     * - Object metadata ranges, rather than any offset above, determine ObjectStorage read coverage.
+     *
+     * State transitions:
+     * - A current-owner commit advances stream.endOffset.
+     * - A historical commit advances or removes only that node's uncommitted entry.
+     * - A fast close seals the current range, advances the logical end, and records any historical
+     *   WAL interval between the pre-close logical end and the broker's close end offset.
+     * - Trim advances the visible start without scanning raw node entries; their effective starts
+     *   change lazily through the formula above.
+     * - getOpeningStreams returns stream.endOffset for a current owner and the effective historical
+     *   start for a node recovering an old ownership range.
+     */
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamControlManager.class);
     private static final Metrics.LongGaugeBundle STREAM_SET_OBJECT_NUM = Metrics.instance()
         .longGauge("kafka_stream_stream_set_object_num", "The total number of stream set objects", "");
@@ -166,7 +197,7 @@ public class StreamControlManager {
         FeatureControlManager featureControlManager,
         ReplicationControlManager replicationControlManager) {
         this.snapshotRegistry = snapshotRegistry;
-        this.log = logContext.logger(StreamControlManager.class);
+        this.log = AsyncLogger.wrap(logContext.logger(StreamControlManager.class));
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 100000);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
@@ -260,6 +291,7 @@ public class StreamControlManager {
      *         <code>STREAM_NOT_CLOSED</code>
      *         <ol>
      *             <li> request with higher epoch but stream's state is <code>OPENED</code> </li>
+     *             <li> request node has active historical WAL responsibility for the stream </li>
      *         </ol>
      *     </li>
      *     <li>
@@ -310,6 +342,12 @@ public class StreamControlManager {
             resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        if (hasActiveWALResponsibility(streamMetadata, nodeId)) {
+            resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
+            log.warn("[OpenStream] node has active historical WAL responsibility. streamId={}, nodeId={}, nodeEpoch={}",
+                streamId, nodeId, nodeEpoch);
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
         int currentRangeOwner = streamMetadata.currentRangeOwner();
         if (nodeId != currentRangeOwner && lockedNodes.contains(currentRangeOwner)) {
             // Forbidden other nodes to open the stream if the last range is owned by a locked node
@@ -339,8 +377,7 @@ public class StreamControlManager {
         }
         records.add(new ApiMessageAndVersion(s3StreamRecord, autoMQVersion.streamRecordVersion()));
         // get new range's start offset
-        // default regard this range is the first range in stream, use 0 as start offset
-        long nextRangeStartOffset = 0;
+        long nextRangeStartOffset = streamMetadata.endOffset();
         if (newRangeIndex > 0) {
             // means that the new range is not the first range in stream, get the last range's end offset
             RangeMetadata lastRangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
@@ -352,11 +389,7 @@ public class StreamControlManager {
                 .setEndOffset(streamMetadata.endOffset())
                 .setEpoch(lastRangeMetadata.epoch())
                 .setRangeIndex(lastRangeMetadata.rangeIndex()), (short) 0));
-            nextRangeStartOffset = streamMetadata.endOffset();
         }
-        // Fix https://github.com/AutoMQ/automq/issues/1222
-        // Handle the case: trim offset beyond the range end offset
-        nextRangeStartOffset = Math.max(streamMetadata.startOffset(), nextRangeStartOffset);
         // range create record
         records.add(new ApiMessageAndVersion(new RangeRecord()
             .setStreamId(streamId)
@@ -400,11 +433,15 @@ public class StreamControlManager {
             resp.setErrorCode(Errors.STREAM_FENCED.code());
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        if (hasActiveWALResponsibility(streamMetadata, (int) nodeId)) {
+            resp.setErrorCode(Errors.STREAM_NOT_CLOSED.code());
+            log.warn("[OpenStream] node has active historical WAL responsibility. streamId={}, nodeId={}, nodeEpoch={}",
+                streamId, nodeId, nodeEpoch);
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
         // epoch equals, node equals, regard it as redundant open operation, just return success
         resp.setStartOffset(streamMetadata.startOffset());
-        // Fix https://github.com/AutoMQ/automq/issues/1222
-        // Handle the case: trim offset beyond the end offset
-        resp.setNextOffset(Math.max(streamMetadata.startOffset(), streamMetadata.endOffset()));
+        resp.setNextOffset(streamMetadata.endOffset());
         List<ApiMessageAndVersion> records = new ArrayList<>();
         if (streamMetadata.currentState() == StreamState.CLOSED) {
             records.add(new ApiMessageAndVersion(new S3StreamRecord()
@@ -442,12 +479,25 @@ public class StreamControlManager {
      *             <li> close stream with higher epoch </li>
      *         </ol>
      *     </li>
+     *     <li>
+     *         <code>OFFSET_NOT_MATCHED</code>:
+     *         <ol>
+     *             <li> fast close end offset is below the stream logical end </li>
+     *             <li> fast close retries a closed range with a different end offset </li>
+     *         </ol>
+     *     </li>
      * </ul>
      */
     public ControllerResult<CloseStreamResponse> closeStream(int nodeId, long nodeEpoch, CloseStreamRequest request) {
         CloseStreamResponse resp = new CloseStreamResponse();
         long streamId = request.streamId();
         long epoch = request.streamEpoch();
+
+        if (request.endOffset() >= 0
+            && !featureControlManager.autoMQVersion().isFastPartitionReassignmentSupported()) {
+            resp.setErrorCode(Errors.UNSUPPORTED_VERSION.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
 
         // verify node epoch
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
@@ -466,22 +516,54 @@ public class StreamControlManager {
         }
         StreamRuntimeMetadata streamMetadata = this.streamsMetadata.get(streamId);
         if (streamMetadata.currentState() == StreamState.CLOSED) {
-            // regard it as a redundant close operation, just return success
+            if (request.endOffset() >= 0
+                && request.endOffset() != streamMetadata.currentRangeMetadata().endOffset()) {
+                resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
+            }
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        long closeEndOffset = request.endOffset();
+        if (closeEndOffset >= 0 && closeEndOffset < streamMetadata.endOffset()) {
+            resp.setErrorCode(Errors.OFFSET_NOT_MATCHED.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
         // now the request is valid, update the stream's state
-        // stream update record
-        List<ApiMessageAndVersion> records = List.of(
-            new ApiMessageAndVersion(new S3StreamRecord()
+        List<ApiMessageAndVersion> records = new ArrayList<>();
+        records.add(new ApiMessageAndVersion(new S3StreamRecord()
                 .setStreamId(streamId)
                 .setEpoch(epoch)
                 .setRangeIndex(streamMetadata.currentRangeIndex())
                 .setStartOffset(streamMetadata.startOffset())
                 .setStreamState(StreamState.CLOSED.toByte()),
                 featureControlManager.autoMQVersion().streamRecordVersion()));
+        /*
+         * A valid fast-close end offset is the broker's local append tail after writes are frozen.
+         * Atomically seal the current ownership range at that boundary. RangeRecord replay advances
+         * the stream logical end, while the node entry preserves responsibility for the part not
+         * covered by object commits before close.
+         */
+        RangeMetadata range = streamMetadata.currentRangeMetadata();
+        if (closeEndOffset >= 0 && range.endOffset() != closeEndOffset) {
+            records.add(new ApiMessageAndVersion(new RangeRecord()
+                .setStreamId(streamId)
+                .setNodeId(range.nodeId())
+                .setStartOffset(range.startOffset())
+                .setEndOffset(closeEndOffset)
+                .setEpoch(range.epoch())
+                .setRangeIndex(range.rangeIndex()), (short) 0));
+        }
+        if (closeEndOffset > streamMetadata.endOffset()) {
+            records.addAll(NodeWALUncommittedOffsetsRecords.create(nodeId, List.of(
+                new NodeWALUncommittedOffset(streamId, streamMetadata.endOffset(), closeEndOffset))));
+        }
         log.info("[CloseStream] successfully close the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
             streamId, epoch, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private boolean hasActiveWALResponsibility(StreamRuntimeMetadata streamMetadata, int nodeId) {
+        return historicalWALResponsibility(streamMetadata, nodeId) != null;
     }
 
     public ControllerResult<TrimStreamResponse> trimStream(int nodeId, long nodeEpoch, TrimStreamRequest request) {
@@ -522,6 +604,12 @@ public class StreamControlManager {
             // regard it as a redundant trim operation, just return success
             return ControllerResult.of(Collections.emptyList(), resp);
         }
+        /*
+         * Trim advances the visible lower bound and keeps the logical end and current range end at
+         * or above it. Raw NodeWALUncommittedOffset entries are intentionally not rewritten here.
+         * Commit, open, and recovery paths apply trim lazily with
+         * max(stream.startOffset, entry.startOffset).
+         */
         // now the request is valid
         // update the stream metadata start offset
         List<ApiMessageAndVersion> records = new ArrayList<>();
@@ -532,27 +620,24 @@ public class StreamControlManager {
             .setStartOffset(newStartOffset)
             .setStreamState(streamMetadata.currentState().toByte()), featureControlManager.autoMQVersion().streamRecordVersion()));
         // remove range or update range's start offset
-        for (Map.Entry<Integer, RangeMetadata> entry : streamMetadata.ranges().entrySet()) {
-            Integer rangeIndex = entry.getKey();
-            RangeMetadata range = entry.getValue();
+        List<RangeMetadata> ranges = streamMetadata.ranges().values().stream()
+            .sorted()
+            .toList();
+        for (RangeMetadata range : ranges) {
+            int rangeIndex = range.rangeIndex();
             if (newStartOffset <= range.startOffset()) {
-                continue;
+                break;
             }
             if (rangeIndex == streamMetadata.currentRangeIndex()) {
-                // current range, update start offset
-                // if current range is [50, 100)
-                // 1. try to trim to 60, then the current range will be [60, 100)
-                // 2. try to trim to 100, then the current range will be [100, 100)
-                // 3. try to trim to 110, then current range will be [100, 100)
-                long newRangeStartOffset = Math.min(newStartOffset, streamMetadata.endOffset());
+                long newEndOffset = Math.max(newStartOffset, streamMetadata.endOffset());
                 records.add(new ApiMessageAndVersion(new RangeRecord()
                     .setStreamId(streamId)
                     .setRangeIndex(rangeIndex)
                     .setNodeId(range.nodeId())
                     .setEpoch(range.epoch())
-                    .setStartOffset(newRangeStartOffset)
-                    .setEndOffset(streamMetadata.endOffset()), (short) 0));
-                continue;
+                    .setStartOffset(newStartOffset)
+                    .setEndOffset(newEndOffset), (short) 0));
+                break;
             }
             if (newStartOffset >= range.endOffset()) {
                 // remove range
@@ -569,13 +654,7 @@ public class StreamControlManager {
                 .setEndOffset(range.endOffset())
                 .setEpoch(range.epoch())
                 .setRangeIndex(rangeIndex), (short) 0));
-        }
-        if (resp.errorCode() != Errors.NONE.code()) {
-            return ControllerResult.of(Collections.emptyList(), resp);
-        }
-        // the data in stream set object will be removed by compaction
-        if (resp.errorCode() != Errors.NONE.code()) {
-            return ControllerResult.of(Collections.emptyList(), resp);
+            break;
         }
         return ControllerResult.atomicOf(records, resp);
     }
@@ -718,16 +797,15 @@ public class StreamControlManager {
             }
         }
         if (compactedObjectIds.isEmpty() && version.isHugeClusterSupported()) {
-            // generate S3StreamEndOffsetsRecord to move stream endOffset
-            S3StreamEndOffsetsRecord record = new S3StreamEndOffsetsRecord().setEndOffsets(
-                S3StreamEndOffsetsCodec.encode(
-                    Stream.concat(
-                            streamRanges.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset())),
-                            streamObjects.stream().map(s -> new StreamEndOffset(s.streamId(), s.endOffset()))
-                        )
-                        .collect(Collectors.toList()))
-            );
-            records.add(new ApiMessageAndVersion(record, (short) 0));
+            List<StreamEndOffset> endOffsets = streamOffsetRanges(streamRanges, streamObjects).stream()
+                .filter(range -> isCurrentOwnerCommit(range.streamId(), nodeId))
+                .map(range -> new StreamEndOffset(range.streamId(), range.endOffset()))
+                .collect(Collectors.toList());
+            if (!endOffsets.isEmpty()) {
+                S3StreamEndOffsetsRecord record = new S3StreamEndOffsetsRecord()
+                    .setEndOffsets(S3StreamEndOffsetsCodec.encode(endOffsets));
+                records.add(new ApiMessageAndVersion(record, (short) 0));
+            }
         }
         // commit stream objects
         if (!streamObjects.isEmpty()) {
@@ -743,11 +821,12 @@ public class StreamControlManager {
                 .setNodeId(nodeId)
                 .setObjectId(id), (short) 0)));
         } else {
-            // verify stream continuity
-            ControllerResult<CommitStreamSetObjectResponseData> ret = verifyStreamContinuous(streamRanges, streamObjects, data, resp);
+            ControllerResult<CommitStreamSetObjectResponseData> ret = verifyStreamContinuous(
+                streamRanges, streamObjects, data, resp);
             if (ret != null) {
                 return ret;
             }
+            records.addAll(generateNodeWALUncommittedOffsetsRecords(streamRanges, streamObjects, nodeId));
         }
         logCommitStreamSetObject(data);
         return ControllerResult.atomicOf(records, resp);
@@ -801,15 +880,87 @@ public class StreamControlManager {
     private ControllerResult<CommitStreamSetObjectResponseData> verifyStreamContinuous(
         List<ObjectStreamRange> streamRanges, List<StreamObject> streamObjects,
         CommitStreamSetObjectRequestData req, CommitStreamSetObjectResponseData resp) {
-        List<StreamOffsetRange> offsetRanges = Stream.concat(
-                streamRanges
-                    .stream()
-                    .map(range -> new StreamOffsetRange(range.streamId(), range.startOffset(), range.endOffset())),
-                streamObjects
-                    .stream()
-                    .map(obj -> new StreamOffsetRange(obj.streamId(), obj.startOffset(), obj.endOffset())))
-            .collect(Collectors.toList());
-        Errors continuityCheckResult = streamAdvanceCheck(offsetRanges, req.nodeId());
+        Errors continuityCheckResult = Errors.NONE;
+        for (StreamOffsetRange range : streamOffsetRanges(streamRanges, streamObjects)) {
+            StreamRuntimeMetadata streamMetadata = streamsMetadata.get(range.streamId());
+            if (streamMetadata == null) {
+                continue;
+            }
+            long streamStartOffset = streamMetadata.startOffset();
+            // An upload may finish after trim has removed all of its data. Keep its object metadata,
+            // but do not advance either current-owner or historical WAL progress.
+            if (range.endOffset() <= streamStartOffset) {
+                continue;
+            }
+            NodeWALUncommittedOffset uncommittedOffsetRange =
+                historicalWALResponsibility(streamMetadata, req.nodeId());
+            if (uncommittedOffsetRange != null) {
+                // The sealed end prevents an old owner from committing into the next owner's range.
+                if (range.endOffset() > uncommittedOffsetRange.endOffset()) {
+                    continuityCheckResult = Errors.OFFSET_NOT_MATCHED;
+                    break;
+                }
+
+                // Normal historical uploads continue from raw WAL progress. After source restart,
+                // getOpeningStreams instead starts WAL recovery at max(visible start, raw progress),
+                // so the first recovered upload also enters this branch.
+                long expectedStartOffset = Math.max(
+                    streamStartOffset, uncommittedOffsetRange.startOffset());
+                if (range.startOffset() == expectedStartOffset) {
+                    continue;
+                }
+
+                // Trim may advance the visible start while an old-owner object is already uploading.
+                // Accept that object crossing the trim point only before historical WAL progress
+                // itself moves past the new visible start.
+                if (uncommittedOffsetRange.startOffset() <= streamStartOffset
+                    && range.startOffset() < streamStartOffset) {
+                    continue;
+                }
+
+                continuityCheckResult = Errors.OFFSET_NOT_MATCHED;
+                break;
+            }
+            if (streamMetadata.currentState() != StreamState.OPENED) {
+                continuityCheckResult = Errors.STREAM_NOT_OPENED;
+                break;
+            }
+            RangeMetadata currentRange = streamMetadata.currentRangeMetadata();
+            if (currentRange == null) {
+                continuityCheckResult = Errors.STREAM_INNER_ERROR;
+                break;
+            }
+            if (currentRange.nodeId() != req.nodeId()) {
+                continuityCheckResult = Errors.STREAM_FENCED;
+                break;
+            }
+
+            if (streamMetadata.endOffset() > streamStartOffset) {
+                // Normal current-owner uploads, including uploads after a trim below WAL progress,
+                // continue exactly from the logical end without overlap.
+                if (range.startOffset() != streamMetadata.endOffset()) {
+                    continuityCheckResult = Errors.OFFSET_NOT_MATCHED;
+                    break;
+                }
+                continue;
+            }
+
+            // Trim has reached the logical end. A new upload, including one rebuilt after broker
+            // restart from the getOpeningStreams end offset, starts at the visible offset.
+            if (range.startOffset() == streamStartOffset) {
+                continue;
+            }
+
+            // A current-owner object formed before trim may contain data on both sides of the trim
+            // boundary. Its end is above the visible start because fully trimmed objects were
+            // handled earlier.
+            if (range.startOffset() < streamStartOffset) {
+                continue;
+            }
+
+            continuityCheckResult = Errors.OFFSET_NOT_MATCHED;
+            break;
+        }
         if (continuityCheckResult != Errors.NONE) {
             log.error("[CommitStreamSetObject] advance check failed. streamSetObjectId={}, nodeId={}, nodeEpoch={}, error={}",
                 req.objectId(), req.nodeId(), req.nodeEpoch(), continuityCheckResult);
@@ -817,6 +968,76 @@ public class StreamControlManager {
             return ControllerResult.of(Collections.emptyList(), resp);
         }
         return null;
+    }
+
+    private List<ApiMessageAndVersion> generateNodeWALUncommittedOffsetsRecords(
+        List<ObjectStreamRange> streamRanges, List<StreamObject> streamObjects, int nodeId
+    ) {
+        NodeRuntimeMetadata nodeMetadata = nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            return Collections.emptyList();
+        }
+        Map<Long, Long> committedEndOffsets = streamOffsetRanges(streamRanges, streamObjects).stream()
+            .collect(Collectors.toMap(StreamOffsetRange::streamId, StreamOffsetRange::endOffset, Math::max));
+        List<NodeWALUncommittedOffset> offsets = new ArrayList<>();
+        // Historical responsibilities are normally empty and remain non-empty only until the old
+        // owner's WAL is committed. Scan them all so any later normal WAL commit by this node also
+        // removes entries made inactive by trim or stream deletion.
+        for (NodeWALUncommittedOffset uncommittedOffsetRange : nodeMetadata.uncommittedOffsets().values()) {
+            StreamRuntimeMetadata streamMetadata = streamsMetadata.get(uncommittedOffsetRange.streamId());
+            if (streamMetadata == null || historicalWALResponsibility(streamMetadata, nodeId) == null) {
+                offsets.add(new NodeWALUncommittedOffset(uncommittedOffsetRange.streamId(),
+                    uncommittedOffsetRange.endOffset(), uncommittedOffsetRange.endOffset()));
+                continue;
+            }
+            Long committedEndOffset = committedEndOffsets.get(uncommittedOffsetRange.streamId());
+            if (committedEndOffset == null) {
+                continue;
+            }
+            if (committedEndOffset == uncommittedOffsetRange.endOffset()) {
+                offsets.add(new NodeWALUncommittedOffset(uncommittedOffsetRange.streamId(),
+                    uncommittedOffsetRange.endOffset(), uncommittedOffsetRange.endOffset()));
+            } else if (committedEndOffset > streamMetadata.startOffset()) {
+                offsets.add(new NodeWALUncommittedOffset(uncommittedOffsetRange.streamId(), committedEndOffset,
+                    uncommittedOffsetRange.endOffset()));
+            }
+        }
+        return NodeWALUncommittedOffsetsRecords.create(nodeId, offsets);
+    }
+
+    private boolean isCurrentOwnerCommit(long streamId, int nodeId) {
+        StreamRuntimeMetadata streamMetadata = streamsMetadata.get(streamId);
+        RangeMetadata currentRange = streamMetadata == null ? null : streamMetadata.currentRangeMetadata();
+        return currentRange != null && currentRange.nodeId() == nodeId
+            && historicalWALResponsibility(streamMetadata, nodeId) == null;
+    }
+
+    private NodeWALUncommittedOffset historicalWALResponsibility(
+        StreamRuntimeMetadata streamMetadata, int nodeId
+    ) {
+        NodeRuntimeMetadata nodeMetadata = nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            return null;
+        }
+        NodeWALUncommittedOffset uncommittedOffsetRange =
+            nodeMetadata.uncommittedOffsets().get(streamMetadata.streamId());
+        if (uncommittedOffsetRange == null
+            || Math.max(streamMetadata.startOffset(), uncommittedOffsetRange.startOffset())
+                >= uncommittedOffsetRange.endOffset()) {
+            return null;
+        }
+        return uncommittedOffsetRange;
+    }
+
+    private static List<StreamOffsetRange> streamOffsetRanges(
+        List<ObjectStreamRange> streamRanges, List<StreamObject> streamObjects
+    ) {
+        return Stream.concat(
+                streamRanges.stream().map(range -> new StreamOffsetRange(
+                    range.streamId(), range.startOffset(), range.endOffset())),
+                streamObjects.stream().map(object -> new StreamOffsetRange(
+                    object.streamId(), object.startOffset(), object.endOffset())))
+            .collect(Collectors.toList());
     }
 
     /**
@@ -1102,7 +1323,6 @@ public class StreamControlManager {
                 (short) 0));
         }
 
-        // The getOpeningStreams is invoked when node startup, so we just iterate all streams to get the node opening streams.
         List<StreamMetadata> streamStatusList = this.streamsMetadata.entrySet().stream().filter(entry -> {
             StreamRuntimeMetadata streamMetadata = entry.getValue();
             if (!StreamState.OPENED.equals(streamMetadata.currentState())) {
@@ -1119,11 +1339,19 @@ public class StreamControlManager {
             RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
             return new StreamMetadata()
                 .setStreamId(e.getKey())
-                .setEpoch(streamMetadata.currentEpoch())
+                .setEpoch(rangeMetadata.epoch())
                 .setStartOffset(streamMetadata.startOffset())
                 // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
                 .setEndOffset(Math.max(streamMetadata.endOffset(), streamMetadata.startOffset()));
         }).collect(Collectors.toList());
+
+        if (featureControlManager.autoMQVersion().isFastPartitionReassignmentSupported()) {
+            Errors historicalResult = appendHistoricalOpeningStreams(nodeId, streamStatusList);
+            if (historicalResult != Errors.NONE) {
+                resp.setErrorCode(historicalResult.code());
+                return ControllerResult.of(Collections.emptyList(), resp);
+            }
+        }
         // TODO: replace scan with the #getOpeningStreams(nodeId)
         doubleCheckOpeningStreams(streamStatusList, nodeId);
         resp.setStreamMetadataList(streamStatusList);
@@ -1152,13 +1380,21 @@ public class StreamControlManager {
                 streams.add(streamRuntimeMetadata);
             }
         }
+        Set<Long> openingStreamIds = streams.stream()
+            .map(StreamRuntimeMetadata::streamId)
+            .collect(Collectors.toSet());
+        for (StreamRuntimeMetadata historicalStream : getActiveHistoricalStreams(nodeId)) {
+            if (openingStreamIds.add(historicalStream.streamId())) {
+                streams.add(historicalStream);
+            }
+        }
         return streams;
     }
 
     public boolean hasOpeningStreams(int nodeId) {
         DeltaList<Long> streamIdList = node2streams.get(nodeId);
         if (streamIdList == null) {
-            return false;
+            return !getActiveHistoricalStreams(nodeId).isEmpty();
         }
         AtomicBoolean hasOpeningStreams = new AtomicBoolean(false);
         streamIdList.reverseForEachWithBreak(new Function<Long, Boolean>() {
@@ -1175,7 +1411,72 @@ public class StreamControlManager {
                 return false;
             }
         });
-        return hasOpeningStreams.get();
+        if (hasOpeningStreams.get()) {
+            return true;
+        }
+        return !getActiveHistoricalStreams(nodeId).isEmpty();
+    }
+
+    private List<StreamRuntimeMetadata> getActiveHistoricalStreams(int nodeId) {
+        NodeRuntimeMetadata nodeMetadata = nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            return Collections.emptyList();
+        }
+        List<StreamRuntimeMetadata> activeStreams = new ArrayList<>();
+        for (Long streamId : nodeMetadata.uncommittedOffsets().keySet()) {
+            StreamRuntimeMetadata streamMetadata = streamsMetadata.get(streamId);
+            if (streamMetadata != null && hasActiveWALResponsibility(streamMetadata, nodeId)) {
+                activeStreams.add(streamMetadata);
+            }
+        }
+        return activeStreams;
+    }
+
+    private Errors appendHistoricalOpeningStreams(int nodeId, List<StreamMetadata> streamStatusList) {
+        NodeRuntimeMetadata nodeMetadata = nodesMetadata.get(nodeId);
+        if (nodeMetadata == null) {
+            return Errors.NONE;
+        }
+        /*
+         * Historical entries make a closed old ownership range recoverable by its former node.
+         * For these response items, StreamMetadata.endOffset is the WAL recovery/next commit start,
+         * not the stream logical end. The raw entry may lag a trim, so derive that start from both
+         * pieces of state and require one uniquely matching sealed ownership range.
+         */
+        Set<Long> returnedStreamIds = streamStatusList.stream()
+            .map(StreamMetadata::streamId)
+            .collect(Collectors.toSet());
+        for (NodeWALUncommittedOffset uncommittedOffsetRange : nodeMetadata.uncommittedOffsets().values()) {
+            StreamRuntimeMetadata streamMetadata = streamsMetadata.get(uncommittedOffsetRange.streamId());
+            if (streamMetadata == null) {
+                continue;
+            }
+            long recoveryStartOffset = Math.max(streamMetadata.startOffset(), uncommittedOffsetRange.startOffset());
+            if (recoveryStartOffset >= uncommittedOffsetRange.endOffset()) {
+                continue;
+            }
+            List<RangeMetadata> matchingRanges = streamMetadata.ranges().values().stream()
+                .filter(range -> range.nodeId() == nodeId)
+                .filter(range -> range.startOffset() <= recoveryStartOffset
+                    && recoveryStartOffset < range.endOffset())
+                .filter(range -> range.endOffset() == uncommittedOffsetRange.endOffset())
+                .collect(Collectors.toList());
+            if (matchingRanges.size() != 1 || !returnedStreamIds.add(uncommittedOffsetRange.streamId())) {
+                log.error("[GetOpeningStreams] historical WAL responsibility has no unique range. "
+                        + "nodeId={}, streamId={}, recoveryStartOffset={}, entryEndOffset={}, matches={}",
+                    nodeId, uncommittedOffsetRange.streamId(), recoveryStartOffset,
+                    uncommittedOffsetRange.endOffset(), matchingRanges);
+                streamStatusList.clear();
+                return Errors.STREAM_INNER_ERROR;
+            }
+            RangeMetadata range = matchingRanges.get(0);
+            streamStatusList.add(new StreamMetadata()
+                .setStreamId(uncommittedOffsetRange.streamId())
+                .setEpoch(range.epoch())
+                .setStartOffset(streamMetadata.startOffset())
+                .setEndOffset(recoveryStartOffset));
+        }
+        return Errors.NONE;
     }
 
     /**
@@ -1210,61 +1511,6 @@ public class StreamControlManager {
             log.warn("[{}]: streamId={}'s current range={}'s nodeId={} is not equal to request nodeId={}", operationName,
                 streamId, streamMetadata.currentRangeIndex(), rangeMetadata.nodeId(), nodeId);
             return Errors.STREAM_FENCED;
-        }
-        return Errors.NONE;
-    }
-
-    /**
-     * Check whether these stream-offset-ranges can be committed to advance the streams' offset
-     * <p>
-     * <b>Check List:</b>
-     * <ul>
-     *      <li>
-     *          <code>Stream Exist Check</code>
-     *      </li>
-     *      <li>
-     *          <code>Stream Open Check</code>
-     *      </li>
-     *      <li>
-     *          <code>Stream Continuity Check</code>
-     *      </li>
-     * <ul/>
-     */
-    private Errors streamAdvanceCheck(List<StreamOffsetRange> ranges, int nodeId) {
-        if (ranges == null || ranges.isEmpty()) {
-            return Errors.NONE;
-        }
-        for (StreamOffsetRange range : ranges) {
-            // verify stream exist
-            StreamRuntimeMetadata streamMetadata = this.streamsMetadata.get(range.streamId());
-            if (streamMetadata == null) {
-                log.warn("[streamAdvanceCheck]: streamId={} not exist", range.streamId());
-                return Errors.STREAM_NOT_EXIST;
-            }
-            // check if this stream open
-            if (streamMetadata.currentState() != StreamState.OPENED) {
-                log.warn("[streamAdvanceCheck]: streamId={} not opened", range.streamId());
-                return Errors.STREAM_NOT_OPENED;
-            }
-            RangeMetadata rangeMetadata = streamMetadata.currentRangeMetadata();
-            if (rangeMetadata == null) {
-                // should not happen
-                log.error("[streamAdvanceCheck]: streamId={}'s current range={} not exist when stream has been ",
-                    range.streamId(), this.streamsMetadata.get(range.streamId()).currentRangeIndex());
-                return Errors.STREAM_INNER_ERROR;
-            } else if (rangeMetadata.nodeId() != nodeId) {
-                // should not happen
-                log.error("[streamAdvanceCheck]: streamId={}'s current range node id not match expected nodeId={} but nodeId={}",
-                    range.streamId(), rangeMetadata.nodeId(), nodeId);
-                return Errors.STREAM_INNER_ERROR;
-            }
-            long streamEndOffset = streamMetadata.endOffset();
-            if (!(streamEndOffset == range.startOffset() || range.startOffset() <= streamMetadata.startOffset())) {
-                // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
-                log.warn("[streamAdvanceCheck]: streamId={}'s end offset {} is not equal to request start offset {}, stream's startOffset={}",
-                    range.streamId(), streamEndOffset, range.startOffset(), streamMetadata.startOffset());
-                return Errors.OFFSET_NOT_MATCHED;
-            }
         }
         return Errors.NONE;
     }
@@ -1350,6 +1596,7 @@ public class StreamControlManager {
             StreamRuntimeMetadata streamMetadata = this.streamsMetadata.get(streamId);
             StreamState newState = StreamState.fromByte(record.streamState());
             streamMetadata.startOffset(record.startOffset());
+            streamMetadata.endOffset(record.startOffset());
             streamMetadata.currentEpoch(record.epoch());
             streamMetadata.currentRangeIndex(record.rangeIndex());
             streamMetadata.currentState(newState);
@@ -1395,6 +1642,7 @@ public class StreamControlManager {
         RangeMetadata rangeMetadata = RangeMetadata.of(record);
 
         streamMetadata.ranges().put(record.rangeIndex(), rangeMetadata);
+        streamMetadata.endOffset(record.endOffset());
 
         // When load from image the ranges are not orderly replayed.
         boolean islastRange = rangeMetadata.rangeIndex() == streamMetadata.currentRangeIndex();
@@ -1535,6 +1783,26 @@ public class StreamControlManager {
                 continue;
             }
             streamMetadata.endOffset(streamEndOffset.endOffset());
+        }
+    }
+
+    /**
+     * Replay node WAL responsibility entry upserts and equal-boundary tombstones. This method is
+     * invoked on the Controller event thread, and mutations participate in timeline snapshots.
+     */
+    public void replay(NodeWALUncommittedOffsetsRecord record) {
+        NodeRuntimeMetadata nodeMetadata = nodesMetadata.get(record.nodeId());
+        if (nodeMetadata == null) {
+            log.error("nodeId={} not exist when replay NodeWALUncommittedOffsetsRecord", record.nodeId());
+            return;
+        }
+        for (NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset entry : record.entries()) {
+            if (entry.startOffset() < entry.endOffset()) {
+                nodeMetadata.uncommittedOffsets().put(entry.streamId(), new NodeWALUncommittedOffset(
+                    entry.streamId(), entry.startOffset(), entry.endOffset()));
+            } else if (entry.startOffset() == entry.endOffset()) {
+                nodeMetadata.uncommittedOffsets().remove(entry.streamId());
+            }
         }
     }
 

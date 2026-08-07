@@ -65,7 +65,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
-import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
@@ -254,9 +253,12 @@ public class ElasticLogFileRecords implements AutoCloseable {
         streamSlice.seal();
     }
 
+    /**
+     * Prevents new operations without waiting for the last append. The owning log performs its explicit final flush
+     * after segment metadata has been finalized.
+     */
     public void close() {
         status = ElasticResourceStatus.CLOSED;
-        suppress(this::flush, LOGGER);
     }
 
     public void closeHandlers() {

@@ -20,6 +20,8 @@ import kafka.server._
 import kafka.server.checkpoints.{LazyOffsetCheckpoints, OffsetCheckpoints}
 import kafka.utils.Implicits.MapExtensionMethods
 import kafka.utils.{CoreUtils, Exit}
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import kafka.zk.KafkaZkClient
 import org.apache.commons.lang3.StringUtils
 import org.apache.kafka.common.errors._
@@ -133,6 +135,9 @@ class ElasticReplicaManager(
   directoryEventHandler) {
   import ElasticReplicaManager.{fetchExecutorAttributes, fetchLimiterAttributes, FETCH_EXECUTOR_DELAYED_NAME, FETCH_EXECUTOR_FAST_NAME, FETCH_EXECUTOR_SLOW_NAME, FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_PERMIT_NUM, FETCH_LIMITER_SLOW_NAME, FETCH_LIMITER_TIME, FETCH_LIMITER_TIMEOUT_COUNT, FETCH_LIMITER_WAITING_TASK_NUM, FETCH_PENDING_TASK_NUM, LABEL_NODE_ID, LABEL_RACK_ID, LABEL_TOPIC_NAME, TOPIC_PARTITION_COUNT}
 
+  override protected lazy val logger: Logger =
+    Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+
   partitionMetricsCleanerExecutor.scheduleAtFixedRate(() => {
     brokerTopicStats.removeRedundantMetrics(allPartitions.keys ++ snapshotReadPartitions.keys.asScala)
   }, 1, 1, TimeUnit.HOURS)
@@ -219,8 +224,12 @@ class ElasticReplicaManager(
   /**
    * Partition operation executor, used to execute partition operations in parallel.
    */
-  private val partitionOpenOpExecutor = ThreadUtils.newCachedThread(128, "partition_open_op_%d", true)
-  private val partitionCloseOpExecutor = ThreadUtils.newCachedThread(128, "partition_close_op_%d", true)
+  // AutoMQ inject start
+  private val partitionOpenOpExecutor = Threads.newVirtualThreadOrCachedThreadPool(512, "partition_open_op_%d", true,
+    logger.underlying)
+  private val partitionCloseOpExecutor = Threads.newCachedThreadPool(512, "partition_close_op_%d", true,
+    logger.underlying)
+  // AutoMQ inject end
   /**
    * Partition operation map, used to make sure that only one operation is executed for a partition at the same time.
    * It should be modified with [[replicaStateChangeLock]] held.

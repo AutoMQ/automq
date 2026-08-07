@@ -17,7 +17,7 @@
  * limitations under the License.
  */
 
-package kafka.automq.zerozone;
+package kafka.automq.utils;
 
 import kafka.server.KafkaConfig;
 
@@ -54,8 +54,6 @@ public interface AsyncSender {
     void close();
 
     class BrokersAsyncSender implements AsyncSender {
-        private static final int REQUEST_TIMEOUT_MS = 30_000;
-
         private final NetworkClient networkClient;
         private final org.apache.kafka.server.util.AsyncSender delegate;
 
@@ -65,7 +63,8 @@ public interface AsyncSender {
             String metricGroupPrefix,
             Time time,
             String clientId,
-            LogContext logContext
+            LogContext logContext,
+            int requestTimeoutMs
         ) {
 
             ChannelBuilder channelBuilder = ChannelBuilders.clientChannelBuilder(
@@ -110,7 +109,7 @@ public interface AsyncSender {
             this.delegate = InterBrokerAsyncSender.create(
                 metricGroupPrefix,
                 networkClient,
-                REQUEST_TIMEOUT_MS,
+                requestTimeoutMs,
                 time
             );
         }
