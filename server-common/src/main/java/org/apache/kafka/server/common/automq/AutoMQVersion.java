@@ -37,10 +37,12 @@ public enum AutoMQVersion {
     // Support proxy-main dual mapping
     V4((short) 5),
     // Support KV namespace
-    V5((short) 6);
+    V5((short) 6),
+    // Support fast partition reassignment
+    V6((short) 7);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V5;
+    public static final AutoMQVersion LATEST = V6;
 
     private final short level;
     private final Version s3streamVersion;
@@ -111,6 +113,13 @@ public enum AutoMQVersion {
         return isAtLeast(V5);
     }
 
+    /**
+     * Returns whether the finalized feature level supports fast partition reassignment metadata.
+     */
+    public boolean isFastPartitionReassignmentSupported() {
+        return isAtLeast(V6);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -158,7 +167,7 @@ public enum AutoMQVersion {
     private Version mapS3StreamVersion(short automqVersion) {
         return switch (automqVersion) {
             case 1, 2 -> Version.V0;
-            case 3, 4, 5, 6 -> Version.V1;
+            case 3, 4, 5, 6, 7 -> Version.V1;
             default -> throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
         };
     }

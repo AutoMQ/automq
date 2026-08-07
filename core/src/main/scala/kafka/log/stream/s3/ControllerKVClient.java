@@ -51,6 +51,7 @@ import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class ControllerKVClient implements KVClient {
 
@@ -172,6 +173,11 @@ public class ControllerKVClient implements KVClient {
             @Override
             public ApiKeys apiKey() {
                 return ApiKeys.GET_KVS;
+            }
+
+            @Override
+            public long lingerNanos() {
+                return TimeUnit.MILLISECONDS.toNanos(1);
             }
 
             @Override

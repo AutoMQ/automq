@@ -55,12 +55,12 @@ import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.streams.StreamCloseHook;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
-import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -69,10 +69,12 @@ import org.slf4j.Logger;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class ControllerStreamManager implements StreamManager {
+    private static final long STREAM_BATCH_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
     private final Logger logger;
     private final StreamMetadataManager streamMetadataManager;
     private final int nodeId;
@@ -81,7 +83,6 @@ public class ControllerStreamManager implements StreamManager {
     private final ControllerRequestSender requestSender;
     private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
-    private StreamCloseHook streamCloseHook;
 
     public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender,
         int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
@@ -92,7 +93,14 @@ public class ControllerStreamManager implements StreamManager {
         this.requestSender = requestSender;
         this.version = version;
         this.failoverMode = failoverMode;
-        this.streamCloseHook = id -> CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns whether the finalized cluster version supports ownership transfer before force upload completes.
+     */
+    @Override
+    public boolean isFastCloseSupported() {
+        return version.get().isFastPartitionReassignmentSupported();
     }
 
     @Override
@@ -228,6 +236,11 @@ public class ControllerStreamManager implements StreamManager {
             }
 
             @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
+            }
+
+            @Override
             public Object batchKey() {
                 return Pair.of(nodeId, apiKey());
             }
@@ -345,24 +358,44 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
-        return closeStream(streamId, epoch, nodeId, nodeEpoch);
+        return closeStream(streamId, epoch, -1L);
+    }
+
+    /**
+     * Closes a stream with an optional fast-close boundary when the finalized version supports it.
+     */
+    @Override
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, long endOffset) {
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, endOffset);
     }
 
     public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch) {
-        try {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
-            this.streamCloseHook.beforeStreamClose(streamId)
-                .whenComplete((nil, ex) -> FutureUtil.propagate(closeStream0(streamId, epoch, nodeId, nodeEpoch), cf));
-            return cf;
-        } catch (Throwable ex) {
-            return closeStream0(streamId, epoch, nodeId, nodeEpoch);
-        }
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Closes a stream for the supplied node identity and optional fast-close boundary.
+     */
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
+        return closeStream0(streamId, epoch, nodeId, nodeEpoch, endOffset);
     }
 
     public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch) {
+        return closeStream0(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Sends the close request without invoking the stream-close hook.
+     */
+    public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
         CloseStreamRequest request = new CloseStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch);
+        if (endOffset >= 0 && version.get().isFastPartitionReassignmentSupported()) {
+            request.setEndOffset(endOffset);
+        }
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -374,6 +407,11 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public ApiKeys apiKey() {
                 return ApiKeys.CLOSE_STREAMS;
+            }
+
+            @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
             }
 
             @Override
@@ -400,10 +438,13 @@ public class ControllerStreamManager implements StreamManager {
                     logger.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
-                case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
                     logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_FENCED:
+                    logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH,
+                        Errors.forCode(resp.errorCode()).message());
                 default:
                     logger.warn("Error while closing stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -468,8 +509,4 @@ public class ControllerStreamManager implements StreamManager {
         return future;
     }
 
-    @Override
-    public void setStreamCloseHook(StreamCloseHook hook) {
-        this.streamCloseHook = hook;
-    }
 }

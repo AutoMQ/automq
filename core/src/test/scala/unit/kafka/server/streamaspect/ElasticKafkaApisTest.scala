@@ -2,6 +2,7 @@ package unit.kafka.server.streamaspect
 
 import com.google.common.util.concurrent.MoreExecutors
 import kafka.network.RequestChannel
+import kafka.log.streamaspect.reassignment.PartitionHandoff
 import kafka.server._
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache, MockConfigRepository, ZkMetadataCache}
 import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
@@ -9,10 +10,10 @@ import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, Fetch
 import kafka.utils.TestUtils
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
-import org.apache.kafka.common.message.{AutomqGetPartitionSnapshotRequestData, AutomqUpdateGroupRequestData, AutomqZoneRouterRequestData, FetchRequestData, UpdateLicenseRequestData}
+import org.apache.kafka.common.message.{AutomqGetPartitionSnapshotRequestData, AutomqPreparePartitionHandoffRequestData, AutomqUpdateGroupRequestData, AutomqZoneRouterRequestData, FetchRequestData, UpdateLicenseRequestData}
 import org.apache.kafka.common.network.{ClientInformation, ListenerName}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, MessageUtil}
-import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest, AutomqZoneRouterResponse, UpdateLicenseRequest}
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse, AutomqPreparePartitionHandoffRequest, AutomqPreparePartitionHandoffResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest, AutomqZoneRouterResponse, UpdateLicenseRequest}
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, FetchRequest, FetchResponse, RequestContext, RequestHeader}
 import org.apache.kafka.common.resource.Resource
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -39,6 +40,7 @@ class ElasticKafkaApisTest extends KafkaApisTest {
   override protected val replicaManager: ElasticReplicaManager = mock(classOf[ElasticReplicaManager])
   private var extensionApiMatcherOverride: Option[ApiKeys => Boolean] = None
   private var brokerDispatcherFactoryOverride: Option[BrokerExtensionContext => BrokerExtensionHandleDispatcher] = None
+  private var partitionHandoffStagerOverride: Option[util.Collection[PartitionHandoff] => Unit] = None
 
   @Test
   def shouldDelegateExtensionApiToBrokerDispatcher(): Unit = {
@@ -208,6 +210,65 @@ class ElasticKafkaApisTest extends KafkaApisTest {
       org.apache.kafka.common.resource.ResourceType.CLUSTER, Resource.CLUSTER_NAME)
   }
 
+  /**
+   * Given a valid prepare batch, the broker stages every handoff and returns one top-level success.
+   */
+  @Test
+  def shouldStageWholePreparePartitionHandoffRequest(): Unit = {
+    val topicId = Uuid.randomUuid()
+    val first = prepareHandoff(topicId, 0, 10)
+    val second = prepareHandoff(topicId, 1, 20)
+    val request = buildRequest(new AutomqPreparePartitionHandoffRequest.Builder(
+      new AutomqPreparePartitionHandoffRequestData().setHandoffs(util.List.of(first, second))).build())
+    metadataCache = MetadataCache.kRaftMetadataCache(brokerId, () => KRaftVersion.KRAFT_VERSION_0)
+    partitionHandoffStagerOverride = Some(handoffs => assertEquals(2, handoffs.size()))
+    kafkaApis = createKafkaApis(raftSupport = true)
+
+    kafkaApis.handle(request, RequestLocal.NoCaching)
+
+    val response = captureResponse[AutomqPreparePartitionHandoffResponse](request)
+    assertEquals(Errors.NONE.code, response.data.errorCode)
+    partitionHandoffStagerOverride = None
+  }
+
+  /**
+   * Given ClusterAction is denied, prepare stages nothing and returns one authorization failure.
+   */
+  @Test
+  def shouldRejectPreparePartitionHandoffWhenClusterActionIsDenied(): Unit = {
+    val handoff = prepareHandoff(Uuid.randomUuid(), 0, 10)
+    val request = buildRequest(new AutomqPreparePartitionHandoffRequest.Builder(
+      new AutomqPreparePartitionHandoffRequestData().setHandoffs(util.List.of(handoff))).build())
+    val authorizer = denyAllAuthorizer()
+    var stagingCalled = false
+    partitionHandoffStagerOverride = Some(_ => {
+      stagingCalled = true
+    })
+    metadataCache = MetadataCache.kRaftMetadataCache(brokerId, () => KRaftVersion.KRAFT_VERSION_0)
+    kafkaApis = createKafkaApis(authorizer = Some(authorizer), raftSupport = true)
+
+    kafkaApis.handle(request, RequestLocal.NoCaching)
+
+    val response = captureResponse[AutomqPreparePartitionHandoffResponse](request)
+    assertEquals(Errors.CLUSTER_AUTHORIZATION_FAILED.code, response.data.errorCode)
+    assertTrue(!stagingCalled)
+    partitionHandoffStagerOverride = None
+  }
+
+  private def prepareHandoff(
+    topicId: Uuid,
+    partitionId: Int,
+    endOffset: Long
+  ): AutomqPreparePartitionHandoffRequestData.Handoff = {
+    new AutomqPreparePartitionHandoffRequestData.Handoff()
+      .setTopicId(topicId)
+      .setPartitionIndex(partitionId)
+      .setMetaStreamHandoffEndOffset(endOffset)
+      .setRecords(util.List.of(new AutomqPreparePartitionHandoffRequestData.HandoffRecord()
+        .setBaseOffset(3)
+        .setMetaKeyValue(Array[Byte](1, 2, 3))))
+  }
+
   override def createKafkaApis(interBrokerProtocolVersion: MetadataVersion = MetadataVersion.latestTesting,
     authorizer: Option[Authorizer] = None,
     enableForwarding: Boolean = false,
@@ -293,6 +354,9 @@ class ElasticKafkaApisTest extends KafkaApisTest {
 
       override protected def createBrokerExtensionHandleDispatcher(ops: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
         brokerDispatcherFactoryOverride.map(_(ops)).getOrElse(super.createBrokerExtensionHandleDispatcher(ops))
+
+      override protected def receivePartitionHandoffs(handoffs: util.Collection[PartitionHandoff]): Unit =
+        partitionHandoffStagerOverride.map(_(handoffs)).getOrElse(super.receivePartitionHandoffs(handoffs))
     }
     kafkaApis.setFetchListener(fetchListener)
     kafkaApis

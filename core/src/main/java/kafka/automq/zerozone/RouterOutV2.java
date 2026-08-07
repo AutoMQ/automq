@@ -20,6 +20,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ProduceRequestArgs;
+import kafka.automq.utils.AsyncSender;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;

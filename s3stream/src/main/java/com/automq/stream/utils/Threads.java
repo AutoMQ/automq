@@ -22,7 +22,9 @@ package com.automq.stream.utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -30,6 +32,7 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class Threads {
     private static final Logger LOGGER = LoggerFactory.getLogger(Threads.class);
@@ -67,7 +70,7 @@ public class Threads {
             ThreadUtils.createFastThreadLocalThreadFactory(namePrefix + "-%d", isDaemon), Integer.MAX_VALUE, logger);
     }
 
-    private static ExecutorService createFixedThreadPool(int nThreads, ThreadFactory threadFactory, int queueCapacity,
+    private static ThreadPoolExecutor createFixedThreadPool(int nThreads, ThreadFactory threadFactory, int queueCapacity,
         Logger logger) {
         return new ThreadPoolExecutor(nThreads, nThreads, 0L, TimeUnit.MILLISECONDS,
             new LinkedBlockingQueue<>(queueCapacity), threadFactory, new ThreadPoolExecutor.CallerRunsPolicy()) {
@@ -79,6 +82,59 @@ public class Threads {
                 }
             }
         };
+    }
+
+    /**
+     * Creates a bounded cached thread pool whose workers expire after 60 seconds of inactivity.
+     */
+    public static ThreadPoolExecutor newCachedThreadPool(int maximumPoolSize, String pattern, boolean daemon,
+        Logger logger) {
+        ThreadPoolExecutor executor = createFixedThreadPool(maximumPoolSize,
+            ThreadUtils.createThreadFactory(pattern, daemon), Integer.MAX_VALUE, logger);
+        executor.setKeepAliveTime(60L, TimeUnit.SECONDS);
+        executor.allowCoreThreadTimeOut(true);
+        return executor;
+    }
+
+    /**
+     * Creates a virtual-thread-per-task executor on JDK 21 or a bounded cached platform-thread executor on JDK 17.
+     * Reflection preserves the Java 17 compile-time and runtime baseline.
+     */
+    public static ExecutorService newVirtualThreadOrCachedThreadPool(int maximumPoolSize, String pattern,
+        boolean daemon, Logger logger) {
+        if (Runtime.version().feature() < 21) {
+            return newCachedThreadPool(maximumPoolSize, pattern, daemon, logger);
+        }
+        try {
+            Object virtualThreadBuilder = Thread.class.getMethod("ofVirtual").invoke(null);
+            Class<?> threadBuilderClass = Class.forName("java.lang.Thread$Builder");
+            ThreadFactory virtualThreadFactory = (ThreadFactory) threadBuilderClass.getMethod("factory")
+                .invoke(virtualThreadBuilder);
+            AtomicLong threadEpoch = new AtomicLong();
+            ThreadFactory namedVirtualThreadFactory = runnable -> {
+                Thread thread = virtualThreadFactory.newThread(runnable);
+                thread.setName(threadName(pattern, threadEpoch.incrementAndGet()));
+                return thread;
+            };
+            return (ExecutorService) Executors.class
+                .getMethod("newThreadPerTaskExecutor", ThreadFactory.class)
+                .invoke(null, namedVirtualThreadFactory);
+        } catch (ClassNotFoundException | NoSuchMethodException e) {
+            return newCachedThreadPool(maximumPoolSize, pattern, daemon, logger);
+        } catch (IllegalAccessException e) {
+            throw new IllegalStateException("Unable to access virtual-thread APIs", e);
+        } catch (InvocationTargetException e) {
+            throw new IllegalStateException("Unable to create virtual-thread executor", e.getCause());
+        }
+    }
+
+    private static String threadName(String pattern, long epoch) {
+        return pattern.contains("%d") ? String.format(pattern, epoch) : pattern;
+    }
+
+    /** Creates a single-worker executor using a named daemon or non-daemon thread. */
+    public static ThreadPoolExecutor newSingleThreadExecutor(String pattern, boolean daemon, Logger logger) {
+        return createFixedThreadPool(1, ThreadUtils.createThreadFactory(pattern, daemon), Integer.MAX_VALUE, logger);
     }
 
     public static ScheduledExecutorService newSingleThreadScheduledExecutor(String name, boolean daemon,

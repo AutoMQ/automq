@@ -31,6 +31,7 @@ import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.reassignment.FastPartitionReassignmentManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
@@ -616,6 +617,7 @@ class BrokerServer(
       if (routerChannelProvider != null) {
         S3Storage.setLinkRecordDecoder(new DefaultLinkRecordDecoder(routerChannelProvider))
       }
+      FastPartitionReassignmentManager.initialize(config, metrics, metadataCache)
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
       val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
@@ -772,6 +774,7 @@ class BrokerServer(
         if (routerChannelProvider != null) {
           CoreUtils.swallow(routerChannelProvider.close(), this)
         }
+        CoreUtils.swallow(FastPartitionReassignmentManager.shutdown(), this)
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end

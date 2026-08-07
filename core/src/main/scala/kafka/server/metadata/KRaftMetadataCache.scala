@@ -43,7 +43,7 @@ import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, Metadata
 
 import java.nio.ByteBuffer
 import java.util
-import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.{CopyOnWriteArrayList, ThreadLocalRandom}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.function.Supplier
 import java.util.{Collections, OptionalLong, Properties}
@@ -68,6 +68,15 @@ class KRaftMetadataCache(
   @volatile private var _currentImage: MetadataImage = MetadataImage.EMPTY
 
   private final val imageLock = new ReentrantLock();
+
+  // AutoMQ inject start
+  private val newImageListeners = new CopyOnWriteArrayList[Runnable]()
+
+  def addNewImageListener(listener: Runnable): AutoCloseable = {
+    newImageListeners.add(listener)
+    () => newImageListeners.remove(listener)
+  }
+  // AutoMQ inject end
 
   // This method is the main hotspot when it comes to the performance of metadata requests,
   // we should be careful about adding additional logic here.
@@ -593,6 +602,15 @@ class KRaftMetadataCache(
     } finally {
       lock.unlock()
     }
+    // AutoMQ inject start
+    newImageListeners.forEach(listener => {
+      try {
+        listener.run()
+      } catch {
+        case e: Throwable => error("Failed to notify new metadata image listener", e)
+      }
+    })
+    // AutoMQ inject end
   }
 
   override def config(configResource: ConfigResource): Properties =
