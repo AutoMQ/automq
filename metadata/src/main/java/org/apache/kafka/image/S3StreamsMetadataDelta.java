@@ -272,6 +272,8 @@ public final class S3StreamsMetadataDelta {
             deletedNodes.forEach(newNodeMetadataMap::remove);
 
             if (snapshotReplay) {
+                // The image writer intentionally snapshots raw WAL responsibility. Remove only entries absent from
+                // the complete snapshot; Controller commit cleanup and lazy activity checks handle inactive entries.
                 List<NodeWALUncommittedOffsetKey> absentSnapshotOffsets = new ArrayList<>();
                 newUncommittedOffsets.keySet().forEach(key -> {
                     if (!changedUncommittedOffsets.containsKey(key)) {

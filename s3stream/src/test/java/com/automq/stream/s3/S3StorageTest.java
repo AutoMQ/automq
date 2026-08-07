@@ -249,6 +249,10 @@ public class S3StorageTest {
         assertEquals(101, streamRanges.get(1).getEndOffset());
     }
 
+    /**
+     * Given an upload pending object commit, when its stream upload barrier is queried,
+     * then that stream waits for the commit while unrelated streams remain ready.
+     */
     @Test
     public void testAwaitStreamUpload() throws Exception {
         CompletableFuture<CommitStreamSetObjectResponse> commitFuture = new CompletableFuture<>();

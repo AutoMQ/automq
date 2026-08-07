@@ -1293,6 +1293,10 @@ public class StreamControlManagerTest {
         assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
     }
 
+    /**
+     * Given a sealed historical range and a later owner, when the later owner trims within that range,
+     * then trim advances its own range without expanding it beyond the existing logical end.
+     */
     @Test
     public void testTrimDoesNotExpandLaterOwnershipRange() {
         registerAlwaysSuccessEpoch(BROKER0);

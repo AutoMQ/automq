@@ -32,8 +32,10 @@ import scala.jdk.CollectionConverters._
 
 abstract class AbstractFetcherManager[T <: AbstractFetcherThread](val name: String, clientId: String, numFetchers: Int)
   extends Logging {
+  // AutoMQ inject start
   override protected lazy val logger: Logger =
     Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+  // AutoMQ inject end
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 
   // map of (source broker_id, fetcher_id per source broker) => fetcher.

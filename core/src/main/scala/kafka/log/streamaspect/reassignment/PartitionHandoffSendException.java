@@ -26,19 +26,41 @@ import java.util.concurrent.ExecutionException;
 public final class PartitionHandoffSendException extends RuntimeException {
     private final Reason reason;
 
+    /**
+     * Creates a handoff send exception without an underlying cause.
+     *
+     * @param reason stable reason used to select and log the fallback path
+     */
     public PartitionHandoffSendException(Reason reason) {
         this(reason, null);
     }
 
+    /**
+     * Creates a handoff send exception with the failure that prevented delivery.
+     *
+     * @param reason stable reason used to select and log the fallback path
+     * @param cause underlying send or timeout failure, or {@code null}
+     */
     public PartitionHandoffSendException(Reason reason, Throwable cause) {
         super(reason.logValue(), cause);
         this.reason = reason;
     }
 
+    /**
+     * Returns the stable fallback reason.
+     *
+     * @return handoff failure reason
+     */
     public Reason reason() {
         return reason;
     }
 
+    /**
+     * Unwraps asynchronous wrappers and normalizes an arbitrary failure as a handoff send exception.
+     *
+     * @param exception asynchronous or direct send failure
+     * @return existing handoff send exception, or a send-failure wrapper
+     */
     public static PartitionHandoffSendException from(Throwable exception) {
         Throwable cause = exception;
         while ((cause instanceof CompletionException || cause instanceof ExecutionException)
@@ -56,6 +78,11 @@ public final class PartitionHandoffSendException extends RuntimeException {
         SEND_TIMEOUT,
         HANDOFF_TOO_LARGE;
 
+        /**
+         * Returns the stable lowercase value used in reassignment logs.
+         *
+         * @return log field value
+         */
         public String logValue() {
             return name().toLowerCase(Locale.ROOT);
         }

@@ -104,6 +104,10 @@ public class S3StreamClientTest {
         assertEquals(0, client.closingStreams.size());
     }
 
+    /**
+     * Given a local historical upload in progress, when the same stream is reopened,
+     * then Controller open starts only after the upload barrier completes.
+     */
     @Test
     public void testOpenWaitsForLocalUpload() {
         CompletableFuture<Void> upload = new CompletableFuture<>();
@@ -122,6 +126,10 @@ public class S3StreamClientTest {
         verify(streamManager).openStream(1L, 2L, Map.of());
     }
 
+    /**
+     * Given a failed local historical upload, when the same stream is reopened,
+     * then the failure reaches the caller and Controller open is not attempted.
+     */
     @Test
     public void testUploadFailurePreventsOpen() {
         RuntimeException uploadFailure = new RuntimeException("upload failed");

@@ -91,8 +91,10 @@ class LogManager(logDirs: Seq[File],
 
   import LogManager._
 
+  // AutoMQ inject start
   override protected lazy val logger: Logger =
     Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+  // AutoMQ inject end
 
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 

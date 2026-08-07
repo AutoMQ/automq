@@ -170,6 +170,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             return Collections.emptyMap();
         }
         return registryRef.inLock(() -> {
+            // Preserve raw upload progress in snapshots. Stream-relative activity is evaluated lazily by Controller
+            // consumers, and the next successful commit from a node emits tombstones for its inactive entries.
             Map<Integer, List<NodeWALUncommittedOffset>> offsetsByNode = new HashMap<>();
             uncommittedOffsets.entrySet(registryRef.epoch()).forEach(entry -> offsetsByNode
                 .computeIfAbsent(entry.getKey().nodeId(), ignored -> new ArrayList<>())

@@ -537,12 +537,13 @@ class ElasticLog(val metaStream: MetaStream,
                         FutureUtil.cause(exception))
                 }
                 exception == null
-            }).thenCompose(fastClose => closeStreams(fastClose)).whenComplete((_, exception) => {
+            }).thenCompose(fastClose => closeStreams(fastClose)).handle[Void]((_, exception) => {
                 if (exception != null) {
                     warn(s"${logIdent}failed to close streams", FutureUtil.cause(exception))
                 }
                 info("log closed")
-            })
+                null
+            }).join()
             // AutoMQ inject end
         }
     }

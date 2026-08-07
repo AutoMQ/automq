@@ -144,6 +144,10 @@ object MetadataCacheTest {
 
 class MetadataCacheTest {
 
+  /**
+   * Given a registered image listener, when images are published before and after its handle closes,
+   * then only publications made while registered notify the listener.
+   */
   @Test
   def testKRaftNewImageListener(): Unit = {
     val cache = MetadataCache.kRaftMetadataCache(1, () => KRaftVersion.KRAFT_VERSION_0)

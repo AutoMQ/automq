@@ -227,8 +227,7 @@ class ElasticReplicaManager(
   // AutoMQ inject start
   private val partitionOpenOpExecutor = Threads.newVirtualThreadOrCachedThreadPool(512, "partition_open_op_%d", true,
     logger.underlying)
-  private val partitionCloseOpExecutor = Threads.newFixedThreadPool(math.max(Systems.CPU_CORES / 2, 1),
-    "partition_close_op", true,
+  private val partitionCloseOpExecutor = Threads.newCachedThreadPool(512, "partition_close_op_%d", true,
     logger.underlying)
   // AutoMQ inject end
   /**
