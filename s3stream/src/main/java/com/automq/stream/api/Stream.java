@@ -100,6 +100,12 @@ public interface Stream {
     CompletableFuture<Void> trim(long newStartOffset);
 
     /**
+     * Hints that this stream may be closed soon. Callers may omit this hint.
+     */
+    default void beforeClose() {
+    }
+
+    /**
      * Close the stream.
      */
     CompletableFuture<Void> close();

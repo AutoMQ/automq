@@ -18,6 +18,7 @@
 package kafka.server.metadata
 
 import java.util.{OptionalInt, Properties}
+import com.automq.stream.utils.Threads
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.LogManager
 import kafka.server.streamaspect.ElasticReplicaManager
@@ -26,12 +27,12 @@ import kafka.utils.Logging
 import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.errors.TimeoutException
 import org.apache.kafka.common.internals.Topic
-import org.apache.kafka.common.utils.ThreadUtils
 import org.apache.kafka.coordinator.group.GroupCoordinator
 import org.apache.kafka.image.loader.LoaderManifest
 import org.apache.kafka.image.publisher.MetadataPublisher
 import org.apache.kafka.image.{MetadataDelta, MetadataImage, TopicDelta, TopicsDelta}
 import org.apache.kafka.server.fault.FaultHandler
+import org.slf4j.LoggerFactory
 
 import java.util.concurrent.{CompletableFuture, ExecutorService}
 import scala.collection.mutable
@@ -75,7 +76,10 @@ class BrokerMetadataPublisher(
   aclPublisher: AclPublisher,
   fatalFaultHandler: FaultHandler,
   metadataPublishingFaultHandler: FaultHandler,
-  var partitionOpCallbackExecutor: ExecutorService = ThreadUtils.newSingleThreadExecutor("partition_op_callback", true)
+  // AutoMQ inject start
+  var partitionOpCallbackExecutor: ExecutorService = Threads.newSingleThreadExecutor(
+    "partition_op_callback", true, LoggerFactory.getLogger(classOf[BrokerMetadataPublisher]))
+  // AutoMQ inject end
 ) extends MetadataPublisher with Logging {
   logIdent = s"[BrokerMetadataPublisher id=${config.nodeId}] "
 

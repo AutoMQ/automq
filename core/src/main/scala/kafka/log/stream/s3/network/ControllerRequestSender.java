@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -53,7 +54,8 @@ public class ControllerRequestSender {
     private static final Logger LOGGER = LoggerFactory.getLogger(ControllerRequestSender.class);
 
     private static final long MAX_RETRY_DELAY_MS = Systems.getEnvLong("AUTOMQ_CONTROLLER_REQUEST_MAX_RETRY_DELAY_MS", 10L * 1000); // 10s
-
+    private static final ExecutorService CALLBACK_EXECUTOR = Threads.newSingleThreadExecutor(
+        "controller-request-callback", true, LOGGER);
     private final RetryPolicyContext retryPolicyContext;
 
     private final NodeToControllerChannelManager channelManager;
@@ -175,11 +177,16 @@ public class ControllerRequestSender {
                 requestQueue.add(task);
             }
             if (!requestQueue.isEmpty() && inflight.compareAndSet(false, true)) {
-                send0();
+                long lingerNanos = ((BatchRequest) requestQueue.peek().request).lingerNanos();
+                if (lingerNanos == 0) {
+                    send0();
+                } else {
+                    retryService.schedule(this::send0, lingerNanos, TimeUnit.NANOSECONDS);
+                }
             }
         }
 
-        void send0() {
+        synchronized void send0() {
             List<RequestTask> inflight = new ArrayList<>();
             requestQueue.drainTo(inflight);
             Builder builder = inflight.get(0).request.toRequestBuilder();
@@ -208,19 +215,22 @@ public class ControllerRequestSender {
                         onError(new RuntimeException("Response size not match request size"));
                         return;
                     }
-                    for (int index = 0; index < subResponses.size(); index++) {
-                        RequestTask task = inflight.get(index);
-                        try {
-                            ResponseHandleResult result = (ResponseHandleResult) task.responseHandler.apply(subResponses.get(index));
-                            if (result.retry()) {
-                                retryTask(task);
-                                continue;
+                    CALLBACK_EXECUTOR.execute(() -> {
+                        for (int index = 0; index < subResponses.size(); index++) {
+                            RequestTask task = inflight.get(index);
+                            try {
+                                ResponseHandleResult result =
+                                    (ResponseHandleResult) task.responseHandler.apply(subResponses.get(index));
+                                if (result.retry()) {
+                                    retryTask(task);
+                                    continue;
+                                }
+                                task.complete(result.getResponse());
+                            } catch (Exception e) {
+                                task.completeExceptionally(e);
                             }
-                            task.complete(result.getResponse());
-                        } catch (Exception e) {
-                            task.completeExceptionally(e);
                         }
-                    }
+                    });
                     if (RequestAccumulator.this.inflight.compareAndSet(true, false)) {
                         send(null);
                     }

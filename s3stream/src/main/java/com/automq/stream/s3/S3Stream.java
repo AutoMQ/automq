@@ -46,6 +46,7 @@ import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
+import com.automq.stream.utils.AsyncLogger;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.GlobalSwitch;
 import com.automq.stream.utils.LogContext;
@@ -138,7 +139,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
         this.epoch = epoch;
         this.startOffset = startOffset;
         this.logIdent = "[streamId=" + streamId + " epoch=" + epoch + "] ";
-        this.logger = new LogContext(logIdent).logger(S3Stream.class);
+        this.logger = AsyncLogger.wrap(new LogContext(logIdent).logger(S3Stream.class));
         this.nextOffset = new AtomicLong(nextOffset);
         this.confirmOffset = new AtomicLong(nextOffset);
         this.status = new Status();
@@ -413,6 +414,11 @@ public class S3Stream implements Stream, StreamMetadataListener {
         return close(false);
     }
 
+    @Override
+    public void beforeClose() {
+        storage.beforeStreamClose(streamId);
+    }
+
     public CompletableFuture<Void> close(boolean force) {
         if (snapshotRead()) {
             listenerHandle.close();
@@ -467,7 +473,16 @@ public class S3Stream implements Stream, StreamMetadataListener {
     }
 
     private CompletableFuture<Void> close0() {
-        return storage.forceUpload(streamId)
+        CompletableFuture<Void> forceUploadCf = storage.forceUpload(streamId);
+        if (streamManager.isFastCloseSupported()) {
+            forceUploadCf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    logger.error("background force upload after fast close failed", ex);
+                }
+            });
+            return streamManager.closeStream(streamId, epoch, nextOffset.get());
+        }
+        return forceUploadCf
             .thenCompose(nil -> streamManager.closeStream(streamId, epoch));
     }
 

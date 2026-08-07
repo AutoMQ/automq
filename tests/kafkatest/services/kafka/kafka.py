@@ -17,6 +17,7 @@ import json
 import math
 import os.path
 import re
+import shlex
 import signal
 import time
 import subprocess
@@ -183,15 +184,10 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         "kafka_operational_logs_debug": {
             "path": OPERATIONAL_LOG_DEBUG_DIR,
             "collect_default": False},
-        "kafka_data_1": {
-            "path": DATA_LOG_DIR_1,
-            "collect_default": False},
-        "kafka_data_2": {
-            "path": DATA_LOG_DIR_2,
-            "collect_default": False},
-        "kafka_cluster_metadata": {
-            "path": METADATA_LOG_DIR,
-            "collect_default": False},
+        # AutoMQ inject start
+        # Do not register broker data or metadata directories as artifacts. Ducktape collects all
+        # registered service artifacts on failure, and these directories can be prohibitively large.
+        # AutoMQ inject end
         "kafka_heap_dump_file": {
             "path": HEAP_DUMP_FILE,
             "collect_default": True}
@@ -221,6 +217,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                  project_name=None,# AutoMQ inject
                  # // AutoMQ inject start
                  cluster_id=None,
+                 format_feature_levels=None,
                  # // AutoMQ inject end
                  ):
         """
@@ -283,6 +280,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         :param bool allow_zk_with_kraft: if True, then allow a KRaft broker or controller to also use ZooKeeper
         :param list[str] extra_env: In addition to JVM parameters, additional environment variables added at startup.
             e.g: extra_env=['AUTOMQ_MEMORY_USAGE_DETECT=\"true\"']
+        # // AutoMQ inject start
+        :param dict[str, int] format_feature_levels: feature levels passed to kafka-storage format for a new KRaft cluster
+        # // AutoMQ inject end
         :param quorum_info_provider: A function that takes this KafkaService as an argument and returns a ServiceQuorumInfo. If this is None, then the ServiceQuorumInfo is generated from the test context
         :param use_new_coordinator: When true, use the new implementation of the group coordinator as per KIP-848. If this is None, the default existing group coordinator is used.
         """
@@ -366,6 +366,7 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
                     isolated_kafka=self, allow_zk_with_kraft=self.allow_zk_with_kraft,
                     # // AutoMQ inject start
                     cluster_id=self._cluster_id,
+                    format_feature_levels=format_feature_levels,
                     # // AutoMQ inject end
                     server_prop_overrides=server_prop_overrides
                 )
@@ -398,6 +399,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
         self.extra_kafka_opts = extra_kafka_opts
         self.extra_env = extra_env  # AutoMQ inject
         self.kafka_heap_opts = kafka_heap_opts  # AutoMQ inject
+        # // AutoMQ inject start
+        self.format_feature_levels = dict(format_feature_levels or {})
+        # // AutoMQ inject end
         #
         # In a heavily loaded and not very fast machine, it is
         # sometimes necessary to give more time for the zk client
@@ -940,6 +944,9 @@ class KafkaService(KafkaPathResolverMixin, JmxMixin, Service):
             kafka_storage_script = self.path.script("kafka-storage.sh", node)
             # // AutoMQ inject start
             cmd = "%s format --ignore-formatted --config %s --cluster-id %s" % (kafka_storage_script, KafkaService.CONFIG_FILE, self._cluster_id)
+            for feature_name, feature_level in self.format_feature_levels.items():
+                feature = "%s=%d" % (feature_name, feature_level)
+                cmd += " --feature %s" % shlex.quote(feature)
             # // AutoMQ inject end
             self.logger.info("Running log directory format command...\n%s" % cmd)
             node.account.ssh(cmd)

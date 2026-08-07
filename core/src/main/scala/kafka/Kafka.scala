@@ -33,7 +33,10 @@ import org.apache.kafka.server.ProcessRole
 import org.apache.kafka.server.config.KRaftConfigs
 import org.apache.kafka.server.util.CommandLineUtils
 
+import java.lang.management.ManagementFactory
+import java.time.Duration
 import java.util.Properties
+import java.util.concurrent.{Executors, TimeUnit}
 
 object Kafka extends Logging {
 
@@ -147,8 +150,9 @@ object Kafka extends Logging {
       // attach shutdown handler to catch terminating signals as well as normal termination
       Exit.addShutdownHook("kafka-shutdown-hook", {
         try {
-          server.shutdown()
-          S3RollingFileAppender.shutdown()
+          // AutoMQ inject start
+          shutdown(server, BrokerShutdownTimeout)
+          // AutoMQ inject end
         } catch {
           case _: Throwable =>
             fatal("Halting Kafka.")
@@ -173,4 +177,27 @@ object Kafka extends Logging {
     }
     Exit.exit(0)
   }
+
+  // AutoMQ inject start
+  private val BrokerShutdownTimeout = Duration.ofMinutes(5)
+
+  private[kafka] def shutdown(server: Server, timeout: Duration): Unit = {
+    val watchdogExecutor = Executors.newSingleThreadScheduledExecutor(
+      ThreadUtils.createThreadFactory("broker-shutdown-watchdog", true))
+    val watchdog = watchdogExecutor.schedule(new Runnable {
+      override def run(): Unit = {
+        val threadDump = ManagementFactory.getThreadMXBean.dumpAllThreads(true, true).mkString("\n")
+        fatal(s"Broker shutdown timed out after $timeout. Halting Kafka.\n$threadDump")
+        Exit.halt(1)
+      }
+    }, timeout.toNanos, TimeUnit.NANOSECONDS)
+    try {
+      server.shutdown()
+      S3RollingFileAppender.shutdown()
+    } finally {
+      watchdog.cancel(false)
+      watchdogExecutor.shutdownNow()
+    }
+  }
+  // AutoMQ inject end
 }

@@ -20,6 +20,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.partition.snapshot.SnapshotOperation;
+import kafka.automq.utils.AsyncSender;
 import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.ElasticLogMeta;
 import kafka.log.streamaspect.ElasticStreamSegmentMeta;

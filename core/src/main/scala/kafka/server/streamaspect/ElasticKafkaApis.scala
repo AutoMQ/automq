@@ -7,6 +7,7 @@ import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
+import kafka.log.streamaspect.reassignment.{FastPartitionReassignmentManager, PartitionHandoff}
 import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
@@ -19,7 +20,7 @@ import org.apache.kafka.admin.AdminUtils
 import org.apache.kafka.common.acl.AclOperation.{CLUSTER_ACTION, READ, WRITE}
 import org.apache.kafka.common.errors.{ApiException, UnsupportedCompressionTypeException}
 import org.apache.kafka.common.internals.FatalExitError
-import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseData, MetadataResponseData}
+import org.apache.kafka.common.message.{AutomqPreparePartitionHandoffResponseData, DeleteTopicsRequestData, FetchResponseData, MetadataResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.{ListenerName, NetworkSend, Send}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
@@ -27,7 +28,7 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
-import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqPreparePartitionHandoffRequest, AutomqPreparePartitionHandoffResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
 import org.apache.kafka.common.resource.ResourceType.{CLUSTER, GROUP, TOPIC, TRANSACTIONAL_ID}
@@ -99,6 +100,10 @@ class ElasticKafkaApis(
     BrokerExtensionHandleDispatcher.load(context)
 
   protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+
+  /** Receives one authorized handoff request through the broker-lifecycle manager. */
+  protected def receivePartitionHandoffs(handoffs: util.Collection[PartitionHandoff]): Unit =
+    FastPartitionReassignmentManager.instance().receive(handoffs)
   @volatile private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
@@ -185,6 +190,7 @@ class ElasticKafkaApis(
       request.header.apiKey match {
         case ApiKeys.AUTOMQ_ZONE_ROUTER => handleZoneRouterRequest(request, requestLocal)
         case ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleGetPartitionSnapshotRequest(request, requestLocal)
+        case ApiKeys.AUTOMQ_PREPARE_PARTITION_HANDOFF => handlePreparePartitionHandoffRequest(request)
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_UPDATE_GROUP => handleUpdateGroupRequest(request, requestLocal)
@@ -227,6 +233,7 @@ class ElasticKafkaApis(
            | ApiKeys.AUTOMQ_ZONE_ROUTER
            | ApiKeys.AUTOMQ_UPDATE_GROUP
            | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT
+           | ApiKeys.AUTOMQ_PREPARE_PARTITION_HANDOFF
            | ApiKeys.UPDATE_LICENSE
            | ApiKeys.DESCRIBE_LICENSE
            | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
@@ -919,6 +926,20 @@ class ElasticKafkaApis(
         handleError(request, ex)
         null
       })
+  }
+
+  /**
+   * Receives decoded partition handoffs as optional target-side recovery hints.
+   */
+  def handlePreparePartitionHandoffRequest(request: RequestChannel.Request): Unit = {
+    val prepareRequest = request.body[AutomqPreparePartitionHandoffRequest]
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    val handoffs = prepareRequest.data.handoffs.asScala.map(PartitionHandoff.fromProtocol).toList.asJava
+    receivePartitionHandoffs(handoffs)
+    requestHelper.sendMaybeThrottle(request, new AutomqPreparePartitionHandoffResponse(
+      new AutomqPreparePartitionHandoffResponseData().setErrorCode(Errors.NONE.code)))
   }
 
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {

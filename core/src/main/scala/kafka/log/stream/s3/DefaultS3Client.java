@@ -135,18 +135,17 @@ public class DefaultS3Client implements Client {
         this.backgroundObjectStorage = newBackgroundObjectStorage();
         localIndexCache.init(config.nodeId(), backgroundObjectStorage);
         localIndexCache.start();
-        this.streamManager.setStreamCloseHook(streamId -> localIndexCache.uploadOnStreamClose());
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, mainObjectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, backgroundObjectStorage);
         this.writeAheadLog = buildWAL();
         this.storageFailureHandlerChain = new StorageFailureHandlerChain();
         this.storage = newS3Storage();
+        this.storage.setLocalStreamRangeIndexCache(localIndexCache);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, backgroundObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
         storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
         storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
-        this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         Context.instance().kvClient(this.kvClient);
         this.failover = failover();

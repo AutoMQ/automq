@@ -21,7 +21,9 @@ package com.automq.stream.s3;
 
 import com.automq.stream.Context;
 import com.automq.stream.api.LinkRecordDecoder;
+import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -31,6 +33,7 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.StorageFailureHandler;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
@@ -70,8 +73,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -83,6 +89,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -94,6 +101,7 @@ import io.opentelemetry.instrumentation.annotations.WithSpan;
 import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
 import static com.automq.stream.utils.FutureUtil.suppress;
 
+/** Owns the broker-local WAL, upload pipeline, and read caches for shared stream storage. */
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
     private static final Metrics.LongGaugeBundle.LongGauge DELTA_WAL_CACHE_SIZE = Metrics.instance()
@@ -165,7 +173,7 @@ public class S3Storage implements Storage {
      * @see #forceUpload
      */
     private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
-    private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
+    private final BlockingQueue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     protected final StreamManager streamManager;
     protected final ObjectManager objectManager;
@@ -185,6 +193,13 @@ public class S3Storage implements Storage {
     private volatile double maxDataWriteRate = 0.0;
 
     private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
+    private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
+    private final Lock lifecycleReadLock = lifecycleLock.readLock();
+    private final Lock lifecycleWriteLock = lifecycleLock.writeLock();
+    private boolean shutdownStarted = false;
+    private final Set<CompletableFuture<Void>> inflightAppends = ConcurrentHashMap.newKeySet();
+    private final Map<Long, CompletableFuture<Void>> pendingStreamUploads = new ConcurrentHashMap<>();
+    private LocalStreamRangeIndexCache localStreamRangeIndexCache;
 
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
@@ -224,6 +239,23 @@ public class S3Storage implements Storage {
             this.backgroundExecutor.scheduleWithFixedDelay(() ->
                     lazyUpload(new LazyCommit(walUploadIntervalMs, false)),
                 walUploadIntervalMs, walUploadIntervalMs, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    /**
+     * Sets the broker-local sparse stream range index cache.
+     *
+     * @param localStreamRangeIndexCache local sparse stream range index cache
+     */
+    public void setLocalStreamRangeIndexCache(LocalStreamRangeIndexCache localStreamRangeIndexCache) {
+        this.localStreamRangeIndexCache = localStreamRangeIndexCache;
+    }
+
+    @Override
+    public void beforeStreamClose(long streamId) {
+        LocalStreamRangeIndexCache indexCache = localStreamRangeIndexCache;
+        if (indexCache != null) {
+            indexCache.uploadOnStreamClose();
         }
     }
 
@@ -306,19 +338,50 @@ public class S3Storage implements Storage {
         }
         CompletableFuture.allOf(
             streams.stream()
-                .map(s -> streamManager.closeStream(s.streamId(), s.epoch()))
+                .map(s -> closeRecoveredStream(streamManager, s, logger))
                 .toArray(CompletableFuture[]::new)
         ).get();
     }
 
+    private static CompletableFuture<Void> closeRecoveredStream(
+        StreamManager streamManager,
+        StreamMetadata stream,
+        Logger logger
+    ) {
+        return streamManager.closeStream(stream.streamId(), stream.epoch()).handle((nil, exception) -> {
+            if (exception == null) {
+                return null;
+            }
+            Throwable cause = FutureUtil.cause(exception);
+            if (cause instanceof StreamClientException
+                && ((StreamClientException) cause).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
+                logger.info("recover close reached terminal fenced state for stream {}", stream);
+                return null;
+            }
+            throw new CompletionException(cause);
+        });
+    }
+
+    /**
+     * Rejects new appends and drains accepted WAL work without a storage-local timeout.
+     *
+     * <p>Shutdown establishes the append admission boundary and drains every append accepted before that boundary
+     * through object commit. WAL trim is best-effort because an untrimmed committed record is safe to replay.
+     */
     @Override
     public void shutdown() {
-        drainBackoffTask.cancel(false);
-        for (WalWriteRequest request : backoffRecords) {
-            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
+        lifecycleWriteLock.lock();
+        try {
+            shutdownStarted = true;
+        } finally {
+            lifecycleWriteLock.unlock();
         }
+        CompletableFuture.allOf(inflightAppends.toArray(new CompletableFuture[0])).join();
+        drainBackoffTask.cancel(false);
+        forceUpload().join();
         suppress(() -> delayTrim.close(), LOGGER);
         deltaWAL.shutdownGracefully();
+        uploadWALExecutor.shutdown();
         ThreadUtils.shutdownExecutor(backgroundExecutor, 10, TimeUnit.SECONDS, LOGGER);
         for (EventLoop executor : callbackExecutors) {
             executor.shutdownGracefully();
@@ -331,8 +394,19 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, null, cf, context);
-        append0(context, writeRequest, false);
+        lifecycleReadLock.lock();
+        try {
+            if (shutdownStarted) {
+                cf.completeExceptionally(new IOException("S3Storage is shutdown"));
+            } else {
+                inflightAppends.add(cf);
+                append0(context, writeRequest, false);
+            }
+        } finally {
+            lifecycleReadLock.unlock();
+        }
         return cf.whenComplete((nil, ex) -> {
+            inflightAppends.remove(cf);
             streamRecord.release();
             APPEND_STORAGE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         });
@@ -617,6 +691,9 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> forceUpload(long streamId) {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        if (streamId != LogCache.MATCH_ALL_STREAMS) {
+            pendingStreamUploads.put(streamId, cf);
+        }
         // Wait for a while to group force upload tasks.
         forceUploadTicker.tick().whenComplete((nil, ex) -> {
             FORCE_UPLOAD_WAL_AWAIT_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
@@ -626,9 +703,18 @@ public class S3Storage implements Storage {
                 .filter(it -> it.cache.containsStream(streamId))
                 .map(it -> it.cf).toArray(CompletableFuture[]::new)), cf);
         });
-        cf.whenComplete((nil, ex) -> FORCE_UPLOAD_WAL_COMPLETE_LATENCY.record(
-            TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> {
+            FORCE_UPLOAD_WAL_COMPLETE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+            if (ex == null && streamId != LogCache.MATCH_ALL_STREAMS) {
+                pendingStreamUploads.remove(streamId, cf);
+            }
+        });
         return cf;
+    }
+
+    @Override
+    public CompletableFuture<Void> awaitUpload(long streamId) {
+        return pendingStreamUploads.getOrDefault(streamId, CompletableFuture.completedFuture(null));
     }
 
     private void handleAppendCallback(WalWriteRequest request) {
@@ -827,12 +913,15 @@ public class S3Storage implements Storage {
     class DelayTrim {
         private final long delayMillis;
         private final BlockingQueue<Pair<RecordOffset, CompletableFuture<Void>>> offsets = new LinkedBlockingQueue<>();
+        private final Set<CompletableFuture<Void>> inflightTrims = ConcurrentHashMap.newKeySet();
 
         public DelayTrim(long delayMillis) {
             this.delayMillis = delayMillis;
         }
 
         public void trim(RecordOffset recordOffset, CompletableFuture<Void> cf) {
+            inflightTrims.add(cf);
+            cf.whenComplete((nil, ex) -> inflightTrims.remove(cf));
             if (delayMillis == 0) {
                 LOGGER.info("try trim WAL to {}", recordOffset);
                 FutureUtil.propagate(deltaWAL.trim(recordOffset), cf);
@@ -854,14 +943,12 @@ public class S3Storage implements Storage {
         }
 
         public void close() {
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
             List<Pair<RecordOffset, CompletableFuture<Void>>> pending = new ArrayList<>();
             offsets.drainTo(pending);
             for (Pair<RecordOffset, CompletableFuture<Void>> pair : pending) {
                 FutureUtil.propagate(deltaWAL.trim(pair.getKey()), pair.getValue());
-                futures.add(pair.getValue());
             }
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            CompletableFuture.allOf(inflightTrims.toArray(new CompletableFuture[0])).join();
         }
     }
 
