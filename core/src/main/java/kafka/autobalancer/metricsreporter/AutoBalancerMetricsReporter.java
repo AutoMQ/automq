@@ -39,6 +39,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.internals.Topic;
@@ -98,43 +99,15 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private long lastErrorReportTime = 0;
     private boolean enabled = true;
 
-    private boolean isControllerOnly(Object processRoles) {
+    static boolean isControllerOnly(Object processRoles) {
         if (processRoles == null) {
             return false;
         }
-
-        if (processRoles instanceof Iterable<?>) {
-            boolean hasRole = false;
-            for (Object role : (Iterable<?>) processRoles) {
-                String roleName = String.valueOf(role).trim();
-                if (roleName.isEmpty()) {
-                    continue;
-                }
-                hasRole = true;
-                if ("broker".equalsIgnoreCase(roleName)) {
-                    return false;
-                }
-            }
-            return hasRole;
-        }
-
-        String roles = String.valueOf(processRoles).trim();
-        if (roles.isEmpty()) {
-            return false;
-        }
-
-        boolean hasRole = false;
-        for (String role : roles.split(",")) {
-            String roleName = role.trim();
-            if (roleName.isEmpty()) {
-                continue;
-            }
-            hasRole = true;
-            if ("broker".equalsIgnoreCase(roleName)) {
-                return false;
-            }
-        }
-        return hasRole;
+        List<?> roles = (List<?>) ConfigDef.parseType(
+            KRaftConfigs.PROCESS_ROLES_CONFIG,
+            processRoles,
+            ConfigDef.Type.LIST);
+        return roles.equals(List.of("controller"));
     }
 
     String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {

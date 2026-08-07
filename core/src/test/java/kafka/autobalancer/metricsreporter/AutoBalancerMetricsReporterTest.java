@@ -27,11 +27,15 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @Timeout(60)
 @Tag("S3Unit")
@@ -106,45 +110,21 @@ public class AutoBalancerMetricsReporterTest {
         Assertions.assertNull(reporter.yammerMetricProcessor);
     }
 
-    @Test
-    public void testBrokerOnlyNodeContinuesMetricsReporterConfiguration() {
-        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
-        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
-
-        reporter.configure(Map.of(
-            KRaftConfigs.PROCESS_ROLES_CONFIG, "broker",
-            KRaftConfigs.NODE_ID_CONFIG, "1",
-            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
-        ));
-
-        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+    @ParameterizedTest
+    @MethodSource("processRoles")
+    public void testIsControllerOnly(Object processRoles, boolean expected) {
+        Assertions.assertEquals(expected, AutoBalancerMetricsReporter.isControllerOnly(processRoles));
     }
 
-    @Test
-    public void testCombinedNodeContinuesMetricsReporterConfiguration() {
-        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
-        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
-
-        reporter.configure(Map.of(
-            KRaftConfigs.PROCESS_ROLES_CONFIG, List.of("broker", "controller"),
-            KRaftConfigs.NODE_ID_CONFIG, "1",
-            SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093,PLAINTEXT://127.0.0.1:9092"
-        ));
-
-        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
-    }
-
-    @Test
-    public void testMissingProcessRolesPreservesExistingBehavior() {
-        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
-        Mockito.doNothing().when(reporter).createAutoBalancerMetricsProducer(Mockito.any());
-
-        reporter.configure(Map.of(
-            KRaftConfigs.NODE_ID_CONFIG, "1",
-            SocketServerConfigs.LISTENERS_CONFIG, "PLAINTEXT://127.0.0.1:9092"
-        ));
-
-        Mockito.verify(reporter).createAutoBalancerMetricsProducer(Mockito.any());
+    private static Stream<Arguments> processRoles() {
+        return Stream.of(
+            Arguments.of("controller", true),
+            Arguments.of("broker", false),
+            Arguments.of("broker,controller", false),
+            Arguments.of(List.of("controller"), true),
+            Arguments.of(List.of("broker", "controller"), false),
+            Arguments.of(null, false)
+        );
     }
 
 }
