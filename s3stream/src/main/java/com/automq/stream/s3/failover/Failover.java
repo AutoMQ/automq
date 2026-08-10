@@ -106,7 +106,7 @@ public class Failover {
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
             } finally {
-                wal.shutdownGracefully();
+                FutureUtil.suppress(wal::shutdownGracefully, LOGGER);
             }
             LOGGER.info("failover done {}", request);
             return resp;
