@@ -64,23 +64,14 @@ public class DefaultWalFactory implements WalFactory {
                     .outboundLimiter(networkOutboundLimiter)
                     .build();
 
-                try {
-                    ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
-                        .withClusterId(AutoMQApplication.getClusterId())
-                        .withNodeId(nodeId)
-                        .withEpoch(options.nodeEpoch())
-                        .withOpenMode(options.openMode());
-                    ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
-                    configBuilder.withReservationService(reservationService);
-                    return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), options.openMode() == OpenMode.FAILOVER);
-                } catch (RuntimeException | Error e) {
-                    try {
-                        walObjectStorage.close();
-                    } catch (Throwable closeException) {
-                        e.addSuppressed(closeException);
-                    }
-                    throw e;
-                }
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                    .withClusterId(AutoMQApplication.getClusterId())
+                    .withNodeId(nodeId)
+                    .withEpoch(options.nodeEpoch())
+                    .withOpenMode(options.openMode());
+                ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
+                configBuilder.withReservationService(reservationService);
+                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), options.openMode() == OpenMode.FAILOVER);
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());
         }
