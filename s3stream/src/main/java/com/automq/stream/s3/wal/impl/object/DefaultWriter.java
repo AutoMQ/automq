@@ -189,7 +189,7 @@ public class DefaultWriter implements Writer {
         uploadActiveBulk();
         if (lastInActiveBulk != null) {
             try {
-                lastInActiveBulk.completeCf.get(5, TimeUnit.SECONDS);
+                lastInActiveBulk.completeCf.get();
             } catch (Throwable ex) {
                 LOGGER.error("Failed to flush records when close.", ex);
             }
