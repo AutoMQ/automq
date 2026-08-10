@@ -56,6 +56,14 @@ public class ObjectWALService implements WriteAheadLog {
         this(time, objectStorage, config, false);
     }
 
+    /**
+     * Creates a WAL with an optional shutdown-owned object storage.
+     *
+     * @param time the time source
+     * @param objectStorage the storage used by this WAL
+     * @param config the WAL configuration
+     * @param closeObjectStorageOnShutdown whether this WAL owns storage shutdown
+     */
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config,
         boolean closeObjectStorageOnShutdown) {
         this.objectStorage = objectStorage;
@@ -84,10 +92,16 @@ public class ObjectWALService implements WriteAheadLog {
         log.info("Shutdown S3 WAL.");
         try {
             writer.close();
-        } finally {
-            if (closeObjectStorageOnShutdown) {
-                FutureUtil.suppress(objectStorage::close, log);
-            }
+        } catch (RuntimeException | Error e) {
+            closeObjectStorage();
+            throw e;
+        }
+        closeObjectStorage();
+    }
+
+    private void closeObjectStorage() {
+        if (closeObjectStorageOnShutdown) {
+            FutureUtil.suppress(objectStorage::close, log);
         }
     }
 
