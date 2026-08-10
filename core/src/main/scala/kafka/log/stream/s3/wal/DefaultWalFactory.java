@@ -24,6 +24,7 @@ import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WriteAheadLog;
@@ -63,14 +64,23 @@ public class DefaultWalFactory implements WalFactory {
                     .outboundLimiter(networkOutboundLimiter)
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
-                    .withClusterId(AutoMQApplication.getClusterId())
-                    .withNodeId(nodeId)
-                    .withEpoch(options.nodeEpoch())
-                    .withOpenMode(options.openMode());
-                ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
-                configBuilder.withReservationService(reservationService);
-                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
+                try {
+                    ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                        .withClusterId(AutoMQApplication.getClusterId())
+                        .withNodeId(nodeId)
+                        .withEpoch(options.nodeEpoch())
+                        .withOpenMode(options.openMode());
+                    ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
+                    configBuilder.withReservationService(reservationService);
+                    return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), options.openMode() == OpenMode.FAILOVER);
+                } catch (RuntimeException | Error e) {
+                    try {
+                        walObjectStorage.close();
+                    } catch (Throwable closeException) {
+                        e.addSuppressed(closeException);
+                    }
+                    throw e;
+                }
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());
         }

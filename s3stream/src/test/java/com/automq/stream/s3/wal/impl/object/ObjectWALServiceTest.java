@@ -6,6 +6,7 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.common.Record;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import io.netty.buffer.ByteBuf;
@@ -37,6 +39,8 @@ import io.netty.buffer.Unpooled;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.RecoverIterator.getContinuousFromTrimOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(120)
 public class ObjectWALServiceTest {
@@ -55,6 +59,41 @@ public class ObjectWALServiceTest {
     public void tearDown() {
         objectStorage.triggerAll();
         objectStorage.close();
+    }
+
+    @Test
+    public void testShutdownClosesOwnedObjectStorageOnce() {
+        TrackingObjectStorage storage = new TrackingObjectStorage();
+        ObjectWALConfig config = ObjectWALConfig.builder().withOpenMode(OpenMode.FAILOVER).build();
+        ObjectWALService wal = new ObjectWALService(time, storage, config, true);
+
+        wal.shutdownGracefully();
+        wal.shutdownGracefully();
+
+        assertEquals(1, storage.closeCount.get());
+    }
+
+    @Test
+    public void testShutdownDoesNotCloseBorrowedObjectStorage() {
+        TrackingObjectStorage storage = new TrackingObjectStorage();
+        ObjectWALConfig config = ObjectWALConfig.builder().withOpenMode(OpenMode.READ_ONLY).build();
+        ObjectWALService wal = new ObjectWALService(time, storage, config);
+
+        wal.shutdownGracefully();
+
+        assertFalse(storage.closeCount.get() > 0);
+        storage.close();
+        assertTrue(storage.closeCount.get() > 0);
+    }
+
+    private static class TrackingObjectStorage extends MockObjectStorage {
+        private final AtomicInteger closeCount = new AtomicInteger();
+
+        @Override
+        public void close() {
+            closeCount.incrementAndGet();
+            super.close();
+        }
     }
 
     @Test
