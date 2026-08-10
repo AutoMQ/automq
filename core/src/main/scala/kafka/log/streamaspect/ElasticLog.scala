@@ -120,7 +120,7 @@ class ElasticLog(val metaStream: MetaStream,
 
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
-    @volatile private[log] var lastAppendAckFuture: Future[?] = CompletableFuture.completedFuture(null)
+    @volatile private[log] var lastAppendAckFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
 
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
@@ -238,7 +238,7 @@ class ElasticLog(val metaStream: MetaStream,
                 recordLogWriteFailedIfUnexpected(FutureUtil.cause(throwable))
             }
         })
-        cf.thenAccept(_ => {
+        lastAppendAckFuture = cf.thenCompose[Void](_ => {
             APPEND_CALLBACK_TIME_HIST.update(System.nanoTime() - startTimestamp)
             // run callback async by executors to avoid deadlock when asyncLogFlush is called by append thread.
             // append callback executor is single thread executor, so the callback will be executed in order.
@@ -257,7 +257,7 @@ class ElasticLog(val metaStream: MetaStream,
             }
             if (notify) {
                 appendAckQueue.offer(endOffset)
-                lastAppendAckFuture = appendAckThread.submit(new Runnable {
+                CompletableFuture.runAsync(new Runnable {
                     override def run(): Unit = {
                         try {
                             appendCallback(startNanos)
@@ -266,7 +266,9 @@ class ElasticLog(val metaStream: MetaStream,
                                 error(s"append callback error", e)
                         }
                     }
-                })
+                }, appendAckThread)
+            } else {
+                CompletableFuture.completedFuture(null)
             }
         })
     }
