@@ -32,11 +32,16 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.mockito.Mockito;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.stream.Stream;
 
 @Timeout(60)
 @Tag("S3Unit")
@@ -173,4 +178,44 @@ public class AutoBalancerMetricsReporterTest {
 
         Assertions.assertEquals("TLSv1.3", reporter.producerProps.getProperty(SslConfigs.SSL_PROTOCOL_CONFIG));
     }
+
+    /**
+     * Given a controller-only node, configuration and initialization skip producer and reporter startup.
+     */
+    @Test
+    public void testControllerOnlyNodeDisablesMetricsReporter() {
+        AutoBalancerMetricsReporter reporter = Mockito.spy(new AutoBalancerMetricsReporter());
+
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(KRaftConfigs.PROCESS_ROLES_CONFIG, "controller");
+        configs.put(SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093");
+
+        Assertions.assertDoesNotThrow(() -> reporter.configure(configs));
+        Mockito.verify(reporter, Mockito.never()).getBootstrapServers(Mockito.anyMap(), Mockito.anyString());
+        Mockito.verify(reporter, Mockito.never()).createAutoBalancerMetricsProducer(Mockito.any());
+
+        reporter.init(List.of());
+        Assertions.assertNull(reporter.yammerMetricProcessor);
+    }
+
+    /**
+     * Given string, list, or missing process roles, only controller-only configurations disable reporting.
+     */
+    @ParameterizedTest
+    @MethodSource("processRoles")
+    public void testIsControllerOnly(Object processRoles, boolean expected) {
+        Assertions.assertEquals(expected, AutoBalancerMetricsReporter.isControllerOnly(processRoles));
+    }
+
+    private static Stream<Arguments> processRoles() {
+        return Stream.of(
+            Arguments.of("controller", true),
+            Arguments.of("broker", false),
+            Arguments.of("broker,controller", false),
+            Arguments.of(List.of("controller"), true),
+            Arguments.of(List.of("broker", "controller"), false),
+            Arguments.of(null, false)
+        );
+    }
+
 }
