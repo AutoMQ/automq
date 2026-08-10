@@ -90,12 +90,7 @@ public class ObjectWALService implements WriteAheadLog {
             return;
         }
         log.info("Shutdown S3 WAL.");
-        try {
-            writer.close();
-        } catch (RuntimeException | Error e) {
-            closeObjectStorage();
-            throw e;
-        }
+        writer.close();
         closeObjectStorage();
     }
 
