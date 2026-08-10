@@ -86,12 +86,7 @@ public class Failover {
             // recover WAL data and upload to S3
             WriteAheadLog wal = factory.getWal(request);
             try {
-                try {
-                    wal.start();
-                } catch (WALNotInitializedException ex) {
-                    LOGGER.info("fail over empty wal {}", request);
-                    return resp;
-                }
+                wal.start();
                 WALMetadata metadata = wal.metadata();
                 if (nodeId != metadata.nodeId()) {
                     throw new IllegalArgumentException(String.format("nodeId mismatch, request=%s, wal=%s", request, metadata));
@@ -105,6 +100,9 @@ public class Failover {
                 ObjectManager objectManager = factory.getObjectManager(nodeId, nodeEpoch);
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
+            } catch (WALNotInitializedException ex) {
+                LOGGER.info("fail over empty wal {}", request);
+                return resp;
             } finally {
                 FutureUtil.suppress(wal::shutdownGracefully, LOGGER);
             }
