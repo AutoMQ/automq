@@ -58,7 +58,9 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
@@ -111,6 +113,8 @@ public class DefaultWriter implements Writer {
 
     private CompletableFuture<Void> callbackCf = CompletableFuture.completedFuture(null);
     private final EventLoop callbackExecutor = new EventLoop("S3_WAL_CALLBACK");
+    private final AtomicBoolean resourcesClosed = new AtomicBoolean();
+    private volatile ScheduledFuture<?> monitorTask;
 
     private final AtomicLong nextOffset = new AtomicLong();
     private final AtomicLong flushedOffset = new AtomicLong();
@@ -174,14 +178,25 @@ public class DefaultWriter implements Writer {
 
     @Override
     public void close() {
+        if (!resourcesClosed.compareAndSet(false, true)) {
+            return;
+        }
         closed = true;
-        uploadActiveBulk();
-        if (lastInActiveBulk != null) {
-            try {
-                lastInActiveBulk.completeCf.get();
-            } catch (Throwable ex) {
-                LOGGER.error("Failed to flush records when close.", ex);
+        ScheduledFuture<?> monitorTask = this.monitorTask;
+        if (monitorTask != null) {
+            monitorTask.cancel(false);
+        }
+        try {
+            uploadActiveBulk();
+            if (lastInActiveBulk != null) {
+                try {
+                    lastInActiveBulk.completeCf.get();
+                } catch (Throwable ex) {
+                    LOGGER.error("Failed to flush records when close.", ex);
+                }
             }
+        } finally {
+            FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
         }
 
         LOGGER.info("S3WAL Writer is closed.");
@@ -538,7 +553,7 @@ public class DefaultWriter implements Writer {
     }
 
     private void startMonitor() {
-        SCHEDULE.scheduleWithFixedDelay(() -> {
+        monitorTask = SCHEDULE.scheduleWithFixedDelay(() -> {
             try {
                 long count = uploadingBulks.stream()
                     .filter(bulk -> time.nanoseconds() - bulk.startNanos > DEFAULT_UPLOAD_WARNING_TIMEOUT)

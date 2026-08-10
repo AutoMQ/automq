@@ -29,6 +29,7 @@ import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.common.WALMetadata;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 
 import org.slf4j.Logger;
@@ -38,19 +39,28 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ObjectWALService implements WriteAheadLog {
     private static final Logger log = LoggerFactory.getLogger(ObjectWALService.class);
 
     protected ObjectStorage objectStorage;
     protected ObjectWALConfig config;
+    private final boolean closeObjectStorageOnShutdown;
+    private final AtomicBoolean shutdown = new AtomicBoolean();
 
     protected final Writer writer;
     protected final DefaultReader reader;
 
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
+        this(time, objectStorage, config, false);
+    }
+
+    public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config,
+        boolean closeObjectStorageOnShutdown) {
         this.objectStorage = objectStorage;
         this.config = config;
+        this.closeObjectStorageOnShutdown = closeObjectStorageOnShutdown;
         if (config.openMode() == OpenMode.READ_WRITE || config.openMode() == OpenMode.FAILOVER) {
             this.writer = new DefaultWriter(time, objectStorage, config);
         } else {
@@ -68,8 +78,17 @@ public class ObjectWALService implements WriteAheadLog {
 
     @Override
     public void shutdownGracefully() {
+        if (!shutdown.compareAndSet(false, true)) {
+            return;
+        }
         log.info("Shutdown S3 WAL.");
-        writer.close();
+        try {
+            writer.close();
+        } finally {
+            if (closeObjectStorageOnShutdown) {
+                FutureUtil.suppress(objectStorage::close, log);
+            }
+        }
     }
 
     @Override
