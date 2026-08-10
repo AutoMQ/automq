@@ -219,6 +219,8 @@ class ElasticUnifiedLog(_logStartOffset: Long,
             }
             elasticLog.close()
         }
+        // Await the callback outside the UnifiedLog lock because it may advance the high watermark under the same lock.
+        elasticLog.lastAppendAckFuture.handle[Void]((_, _) => null).join()
         elasticLog.isMemoryMappedBufferClosed = true
         // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
         // The deletion here aims to clean the old directory.

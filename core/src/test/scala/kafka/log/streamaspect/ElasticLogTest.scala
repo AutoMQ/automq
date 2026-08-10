@@ -20,8 +20,8 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.DefaultRecordBatch
-import com.automq.stream.api.{CreateStreamOptions, FetchResult, OpenStreamOptions, Stream, StreamClient}
-import com.automq.stream.s3.context.FetchContext
+import com.automq.stream.api.{AppendResult, CreateStreamOptions, FetchResult, OpenStreamOptions, RecordBatch, Stream, StreamClient}
+import com.automq.stream.s3.context.{AppendContext, FetchContext}
 import kafka.log._
 import kafka.log.streamaspect.reassignment._
 import kafka.server.KafkaConfig
@@ -212,6 +212,32 @@ class ElasticLogTest {
         val fetchDataInfo = readRecords()
         assertEquals(2L, fetchDataInfo.records.records.asScala.size)
         assertEquals(keyValues, recordsToKvs(fetchDataInfo.records.records.asScala))
+    }
+
+    /** An admitted append publishes its callback completion before the underlying stream append completes. */
+    @Test
+    def testAppendPublishesAckFutureBeforeStreamCompletion(): Unit = {
+        val client = new DelayedDataAppendClient()
+        val dir = TestUtils.randomPartitionLogDir(tmpDir)
+        val delayedLog = createElasticLogWithActiveSegment(
+            dir = dir,
+            config = LogTestUtils.createLogConfig(),
+            topicPartition = LocalLog.parseTopicPartitionName(dir),
+            client = client)
+        val callbackCount = new AtomicInteger()
+        delayedLog.confirmOffsetChangeListener = Some(() => callbackCount.incrementAndGet())
+
+        try {
+            appendRecords(Seq(new SimpleRecord(mockTime.milliseconds(), "value".getBytes)), delayedLog)
+
+            assertFalse(delayedLog.lastAppendAckFuture.isDone)
+            client.completeDataAppend()
+            delayedLog.lastAppendAckFuture.get(10, TimeUnit.SECONDS)
+            assertEquals(1, callbackCount.get())
+        } finally {
+            client.completeDataAppend()
+            delayedLog.close()
+        }
     }
 
     @Test
@@ -1267,6 +1293,38 @@ class ElasticLogTest {
                 super.fetch(context, startOffset, endOffset, maxSizeHint)
             }
         }
+    }
+
+    private class DelayedDataAppendClient extends MemoryClient {
+        private val streamId = new AtomicLong()
+        private val dataAppendCompletion = new CompletableFuture[Void]()
+        private val delayedStreamClient = new StreamClient {
+            override def createAndOpenStream(options: CreateStreamOptions): CompletableFuture[Stream] = {
+                val id = streamId.incrementAndGet()
+                val stream = if (id == 1) {
+                    new MemoryClient.StreamImpl(id)
+                } else {
+                    new MemoryClient.StreamImpl(id) {
+                        override def append(context: AppendContext, recordBatch: RecordBatch): CompletableFuture[AppendResult] = {
+                            val result = super.append(context, recordBatch).join()
+                            dataAppendCompletion.thenApply(_ => result)
+                        }
+                    }
+                }
+                CompletableFuture.completedFuture(stream)
+            }
+
+            override def openStream(id: Long, options: OpenStreamOptions): CompletableFuture[Stream] =
+                CompletableFuture.completedFuture(new MemoryClient.StreamImpl(id))
+
+            override def getStream(id: Long): Optional[Stream] = Optional.empty()
+
+            override def shutdown(): Unit = {}
+        }
+
+        override def streamClient(): StreamClient = delayedStreamClient
+
+        def completeDataAppend(): Unit = dataAppendCompletion.complete(null)
     }
 
     private class CloseTrackingStream(streamId: Long, failCloseOnce: AtomicBoolean, failAppendOnce: AtomicBoolean,
