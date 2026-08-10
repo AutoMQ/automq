@@ -186,18 +186,15 @@ public class DefaultWriter implements Writer {
         if (monitorTask != null) {
             monitorTask.cancel(false);
         }
-        try {
-            uploadActiveBulk();
-            if (lastInActiveBulk != null) {
-                try {
-                    lastInActiveBulk.completeCf.get();
-                } catch (Throwable ex) {
-                    LOGGER.error("Failed to flush records when close.", ex);
-                }
+        uploadActiveBulk();
+        if (lastInActiveBulk != null) {
+            try {
+                lastInActiveBulk.completeCf.get(5, TimeUnit.SECONDS);
+            } catch (Throwable ex) {
+                LOGGER.error("Failed to flush records when close.", ex);
             }
-        } finally {
-            FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
         }
+        FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
 
         LOGGER.info("S3WAL Writer is closed.");
     }
@@ -538,10 +535,7 @@ public class DefaultWriter implements Writer {
                     if (throwable != null) {
                         LOGGER.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                     }
-                    SCHEDULE.schedule(() -> {
-                        // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                        objectStorage.delete(deleteObjectList);
-                    }, 10, TimeUnit.SECONDS);
+                    SCHEDULE.schedule(() -> retryDelete(deleteObjectList), 10, TimeUnit.SECONDS);
                 });
             });
             return lastTrimCf;
@@ -549,6 +543,13 @@ public class DefaultWriter implements Writer {
             return CompletableFuture.failedFuture(e);
         } finally {
             lock.writeLock().unlock();
+        }
+    }
+
+    private void retryDelete(List<ObjectStorage.ObjectPath> objectPaths) {
+        if (!closed) {
+            // Try to delete the objects again to avoid an object leak after a fast retry failure.
+            objectStorage.delete(objectPaths);
         }
     }
 

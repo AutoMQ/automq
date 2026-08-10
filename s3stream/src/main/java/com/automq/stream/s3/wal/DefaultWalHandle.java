@@ -70,8 +70,8 @@ public class DefaultWalHandle implements WalHandle {
     private CompletableFuture<Void> acquireObjectWALPermission(int nodeId, long nodeEpoch, IdURI walConfig,
         AcquirePermissionOptions options) {
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(walConfig)).build();
-        ObjectReservationService reservationService = new ObjectReservationService(clusterId, objectStorage, walConfig.id());
         try {
+            ObjectReservationService reservationService = new ObjectReservationService(clusterId, objectStorage, walConfig.id());
             return reservationService.acquire(nodeId, nodeEpoch, options.failoverMode())
                 .whenComplete((result, exception) -> closeObjectStorage(objectStorage));
         } catch (RuntimeException | Error e) {
