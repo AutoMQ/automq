@@ -30,6 +30,7 @@ import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.ReservationService;
+import com.automq.stream.s3.wal.State;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.RuntimeIOException;
@@ -58,6 +59,7 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -97,8 +99,8 @@ public class DefaultWriter implements Writer {
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
 
-    protected volatile boolean closed = true;
     protected volatile boolean fenced;
+    private volatile State state = State.NOT_STARTED;
 
     private Bulk activeBulk = null;
     private Bulk lastInActiveBulk = null;
@@ -111,6 +113,7 @@ public class DefaultWriter implements Writer {
 
     private CompletableFuture<Void> callbackCf = CompletableFuture.completedFuture(null);
     private final EventLoop callbackExecutor = new EventLoop("S3_WAL_CALLBACK");
+    private volatile ScheduledFuture<?> monitorTask;
 
     private final AtomicLong nextOffset = new AtomicLong();
     private final AtomicLong flushedOffset = new AtomicLong();
@@ -132,7 +135,11 @@ public class DefaultWriter implements Writer {
         }
     }
 
-    public void start() {
+    public synchronized void start() {
+        if (state != State.NOT_STARTED) {
+            LOGGER.warn("Skip starting the WAL because its state is {}.", state);
+            return;
+        }
         // Verify the permission.
         reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
             .thenAccept(result -> {
@@ -169,12 +176,19 @@ public class DefaultWriter implements Writer {
 
         startMonitor();
 
-        closed = false;
+        state = State.STARTED;
     }
 
     @Override
-    public void close() {
-        closed = true;
+    public synchronized void close() {
+        if (state != State.NOT_STARTED && state != State.STARTED) {
+            return;
+        }
+        state = State.CLOSING;
+        ScheduledFuture<?> monitorTask = this.monitorTask;
+        if (monitorTask != null) {
+            monitorTask.cancel(false);
+        }
         uploadActiveBulk();
         if (lastInActiveBulk != null) {
             try {
@@ -183,6 +197,8 @@ public class DefaultWriter implements Writer {
                 LOGGER.error("Failed to flush records when close.", ex);
             }
         }
+        FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
+        state = State.CLOSED;
 
         LOGGER.info("S3WAL Writer is closed.");
     }
@@ -196,7 +212,7 @@ public class DefaultWriter implements Writer {
     }
 
     protected void checkStatus() throws WALFencedException {
-        if (closed) {
+        if (state != State.STARTED) {
             throw new IllegalStateException("WAL is closed.");
         }
 
@@ -243,6 +259,7 @@ public class DefaultWriter implements Writer {
         Record record = new Record(streamRecordBatch, new CompletableFuture<>());
         lock.writeLock().lock();
         try {
+            checkWriteStatus();
             if (activeBulk == null) {
                 activeBulk = new Bulk(nextOffset.get());
             }
@@ -523,10 +540,7 @@ public class DefaultWriter implements Writer {
                     if (throwable != null) {
                         LOGGER.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                     }
-                    SCHEDULE.schedule(() -> {
-                        // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                        objectStorage.delete(deleteObjectList);
-                    }, 10, TimeUnit.SECONDS);
+                    SCHEDULE.schedule(() -> retryDelete(deleteObjectList), 10, TimeUnit.SECONDS);
                 });
             });
             return lastTrimCf;
@@ -537,8 +551,15 @@ public class DefaultWriter implements Writer {
         }
     }
 
+    private void retryDelete(List<ObjectStorage.ObjectPath> objectPaths) {
+        if (state == State.STARTED) {
+            // Try to delete the objects again to avoid an object leak after a fast retry failure.
+            objectStorage.delete(objectPaths);
+        }
+    }
+
     private void startMonitor() {
-        SCHEDULE.scheduleWithFixedDelay(() -> {
+        monitorTask = SCHEDULE.scheduleWithFixedDelay(() -> {
             try {
                 long count = uploadingBulks.stream()
                     .filter(bulk -> time.nanoseconds() - bulk.startNanos > DEFAULT_UPLOAD_WARNING_TIMEOUT)
