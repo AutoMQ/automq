@@ -23,6 +23,7 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.impl.object.ObjectReservationService;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.IdURI;
 
 import org.slf4j.Logger;
@@ -76,10 +77,6 @@ public class DefaultWalHandle implements WalHandle {
     }
 
     private void closeObjectStorage(ObjectStorage objectStorage) {
-        try {
-            objectStorage.close();
-        } catch (Throwable e) {
-            LOGGER.error("Failed to close reservation object storage", e);
-        }
+        FutureUtil.suppress(objectStorage::close, LOGGER);
     }
 }
