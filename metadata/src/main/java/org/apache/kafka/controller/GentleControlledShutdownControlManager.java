@@ -19,12 +19,12 @@
 
 package org.apache.kafka.controller;
 
-import com.automq.stream.utils.Threads;
-
 import org.apache.kafka.common.es.ElasticStreamSwitch;
 import org.apache.kafka.controller.errors.ControllerExceptions;
 import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+
+import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
