@@ -73,10 +73,6 @@ public class DefaultWalHandle implements WalHandle {
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(walConfig)).build();
         ObjectReservationService reservationService = new ObjectReservationService(clusterId, objectStorage, walConfig.id());
         return reservationService.acquire(nodeId, nodeEpoch, options.failoverMode())
-            .whenComplete((result, exception) -> closeObjectStorage(objectStorage));
-    }
-
-    private void closeObjectStorage(ObjectStorage objectStorage) {
-        FutureUtil.suppress(objectStorage::close, LOGGER);
+            .whenComplete((result, exception) -> FutureUtil.suppress(objectStorage::close, LOGGER));
     }
 }

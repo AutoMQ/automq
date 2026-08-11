@@ -91,10 +91,6 @@ public class ObjectWALService implements WriteAheadLog {
         }
         log.info("Shutdown S3 WAL.");
         writer.close();
-        closeObjectStorage();
-    }
-
-    private void closeObjectStorage() {
         if (closeObjectStorageOnShutdown) {
             FutureUtil.suppress(objectStorage::close, log);
         }
