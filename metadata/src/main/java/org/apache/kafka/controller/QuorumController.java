@@ -1353,6 +1353,9 @@ public final class QuorumController implements Controller {
             curClaimEpoch = epoch;
             offsetControl.activate(newNextWriteOffset);
             clusterControl.activate();
+            // AutoMQ inject start
+            gentleControlledShutdownControl.activate();
+            // AutoMQ inject end
             extension.activate();
 
             // Prepend the activate event. It is important that this event go at the beginning
@@ -1412,6 +1415,9 @@ public final class QuorumController implements Controller {
                     newWrongControllerException(OptionalInt.empty()));
             offsetControl.deactivate();
             clusterControl.deactivate();
+            // AutoMQ inject start
+            gentleControlledShutdownControl.deactivate();
+            // AutoMQ inject end
             extension.deactivate();
             cancelMaybeFenceReplicas();
             cancelMaybeBalancePartitionLeaders();
@@ -2024,6 +2030,10 @@ public final class QuorumController implements Controller {
      */
     private final RouterChannelEpochControlManager routerChannelEpochControlManager;
 
+    // AutoMQ inject start
+    private final GentleControlledShutdownControlManager gentleControlledShutdownControl;
+    // AutoMQ inject end
+
     private final QuorumControllerExtension extension;
     // AutoMQ for Kafka inject end
 
@@ -2193,6 +2203,10 @@ public final class QuorumController implements Controller {
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
+        // AutoMQ inject start
+        this.gentleControlledShutdownControl =
+            new GentleControlledShutdownControlManager(this, clusterControl, replicationControl);
+        // AutoMQ inject end
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency
@@ -2635,6 +2649,9 @@ public final class QuorumController implements Controller {
 
     @Override
     public void close() throws InterruptedException {
+        // AutoMQ inject start
+        gentleControlledShutdownControl.close();
+        // AutoMQ inject end
         queue.close();
         controllerMetrics.close();
     }
