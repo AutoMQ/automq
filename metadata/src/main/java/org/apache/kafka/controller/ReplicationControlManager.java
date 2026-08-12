@@ -387,6 +387,7 @@ public class ReplicationControlManager {
     private final Controller quorumController;
 
     private NodeControlManager nodeControlManager;
+
     // AutoMQ for Kafka inject end
 
 
@@ -1578,9 +1579,48 @@ public class ReplicationControlManager {
                 setInControlledShutdown(BrokerRegistrationInControlledShutdownChange.IN_CONTROLLED_SHUTDOWN.value()),
                 (short) 1));
         }
-        generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId));
+        // AutoMQ inject start
+        if (!ElasticStreamSwitch.isEnabled()) {
+            generateLeaderAndIsrUpdates("enterControlledShutdown[" + brokerId + "]",
+                brokerId, NO_LEADER, NO_LEADER, records, brokersToIsrs.partitionsWithBrokerInIsr(brokerId));
+        }
+        // AutoMQ inject end
     }
+
+    // AutoMQ inject start
+    /**
+     * Generate one bounded migration batch for an Elastic Broker in controlled shutdown.
+     * The caller owns the fixed batch target for the active Controller lifecycle.
+     */
+    ControllerResult<Void> maybeDrainControlledShutdownBroker(int brokerId, int batchTarget) {
+        if (!ElasticStreamSwitch.isEnabled() || !clusterControl.inControlledShutdown(brokerId)) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+        List<TopicIdPartition> batch = new ArrayList<>(batchTarget);
+        Iterator<TopicIdPartition> leaders = brokersToIsrs.partitionsLedByBroker(brokerId);
+        while (leaders.hasNext() && batch.size() < batchTarget) {
+            batch.add(leaders.next());
+        }
+        List<ApiMessageAndVersion> records = new ArrayList<>(batch.size());
+        generateLeaderAndIsrUpdates("gentleControlledShutdown[" + brokerId + "]",
+            brokerId, NO_LEADER, NO_LEADER, records, batch.iterator());
+        return ControllerResult.of(records, null);
+    }
+
+    int controlledShutdownLeaderCount(int brokerId) {
+        int leaderCount = 0;
+        Iterator<TopicIdPartition> leaders = brokersToIsrs.partitionsLedByBroker(brokerId);
+        while (leaders.hasNext()) {
+            leaders.next();
+            leaderCount++;
+        }
+        return leaderCount;
+    }
+
+    boolean hasControlledShutdownLeaders(int brokerId) {
+        return brokersToIsrs.partitionsLedByBroker(brokerId).hasNext();
+    }
+    // AutoMQ inject end
 
     /**
      * Create partition change records to remove replicas from any ISR or ELR for brokers doing unclean shutdown.
@@ -2172,7 +2212,8 @@ public class ReplicationControlManager {
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
-        generateLeaderAndIsrUpdates0(context, brokerToRemove, brokerToAdd, brokerWithUncleanShutdown, records, iterator);
+        generateLeaderAndIsrUpdates0(context, brokerToRemove, brokerToAdd,
+            brokerWithUncleanShutdown, records, iterator);
     }
 
     void generateLeaderAndIsrUpdates0(String context,
@@ -2217,6 +2258,12 @@ public class ReplicationControlManager {
                 throw new RuntimeException("Partition " + topicIdPart +
                     " existed in isrMembers, but not in the partitions map.");
             }
+            // AutoMQ inject start
+            if (ElasticStreamSwitch.isEnabled() && brokerToAdd != NO_LEADER &&
+                    Arrays.stream(partition.replicas).anyMatch(clusterControl::isActive)) {
+                continue;
+            }
+            // AutoMQ inject end
             PartitionChangeBuilder builder = new PartitionChangeBuilder(
                 partition,
                 topicIdPart.topicId(),
