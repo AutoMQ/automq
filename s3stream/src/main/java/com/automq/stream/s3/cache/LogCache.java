@@ -73,6 +73,8 @@ public class LogCache {
         .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
     private static final DeltaHistogram READ_STORAGE_LOG_CACHE_MISS_LATENCY = OperationLatencyMetrics
         .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+    // Controlling the overhead of each cached record can prevent excessive heap memory usage for small-sized records
+    private static final int RECORD_OVERHEAD = 1024;
     static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
@@ -123,7 +125,7 @@ public class LogCache {
             readLock.unlock();
         }
         if (added) {
-            size.addAndGet(recordBatch.occupiedSize());
+            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
         }
         APPEND_STORAGE_LOG_CACHE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return added;
@@ -484,7 +486,7 @@ public class LogCache {
                 overflow = true;
                 return false;
             }
-            size.addAndGet(recordBatch.occupiedSize());
+            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
             return true;
         }
 
