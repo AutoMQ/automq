@@ -159,7 +159,7 @@ public class S3Storage implements Storage {
      */
     private final AtomicBoolean forceUploadScheduled = new AtomicBoolean();
     /**
-     * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #forceUploadCallback()}
+     * A flag to trigger another force upload after the scheduled one completes.
      */
     private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
@@ -425,6 +425,7 @@ public class S3Storage implements Storage {
             return true;
         }
         if (!tryAcquirePermit()) {
+            maybeForceUpload();
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
@@ -608,21 +609,16 @@ public class S3Storage implements Storage {
      * Limit the number of inflight force upload tasks to 1 to avoid too many S3 objects.
      */
     private void maybeForceUpload() {
-        if (hasInflightForceUploadTask()) {
-            // There is already an inflight force upload task, trigger another one later after it completes.
+        if (!forceUploadScheduled.compareAndSet(false, true)) {
             needForceUpload.set(true);
             return;
         }
-        if (forceUploadScheduled.compareAndSet(false, true)) {
-            forceUpload();
-        } else {
-            // There is already a force upload task scheduled, do nothing.
-            needForceUpload.set(true);
-        }
-    }
-
-    private boolean hasInflightForceUploadTask() {
-        return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
+        forceUpload().whenComplete((nil, ignored) -> {
+            forceUploadScheduled.set(false);
+            if (needForceUpload.compareAndSet(true, false)) {
+                maybeForceUpload();
+            }
+        });
     }
 
     /**
@@ -644,8 +640,8 @@ public class S3Storage implements Storage {
         return lazyCommit.awaitTrim ? lazyCommit.trimCf : lazyCommit.commitCf;
     }
 
-    private void notifyLazyUpload(List<LazyCommit> tasks) {
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.cf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
+    private void notifyLazyUpload(List<LazyCommit> tasks, List<DeltaWALUploadTaskContext> uploadTasks) {
+        CompletableFuture.allOf(uploadTasks.stream().map(t -> t.cf).toArray(CompletableFuture[]::new))
             .whenComplete((nil, ex) -> {
                 for (LazyCommit task : tasks) {
                     if (ex != null) {
@@ -656,7 +652,7 @@ public class S3Storage implements Storage {
                 }
             });
 
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.trimCf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
+        CompletableFuture.allOf(uploadTasks.stream().map(t -> t.trimCf).toArray(CompletableFuture[]::new))
             .whenComplete((nil, ex) -> {
                 for (LazyCommit task : tasks) {
                     if (ex != null) {
@@ -669,18 +665,7 @@ public class S3Storage implements Storage {
     }
 
     private CompletableFuture<Void> forceUpload() {
-        CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
-        cf.whenComplete((nil, ignored) -> forceUploadCallback());
-        return cf;
-    }
-
-    private void forceUploadCallback() {
-        // Reset the force upload flag after the task completes.
-        forceUploadScheduled.set(false);
-        if (needForceUpload.compareAndSet(true, false)) {
-            // Force upload needs to be triggered again.
-            forceUpload();
-        }
+        return forceUpload(LogCache.MATCH_ALL_STREAMS);
     }
 
     /**
@@ -710,6 +695,17 @@ public class S3Storage implements Storage {
             }
         });
         return cf;
+    }
+
+    private void burstInflightUploadTasks() {
+        inflightWALUploadTasks.forEach(context -> {
+            synchronized (context) {
+                context.force = true;
+                if (context.task != null) {
+                    context.task.burst();
+                }
+            }
+        });
     }
 
     @Override
@@ -761,8 +757,6 @@ public class S3Storage implements Storage {
 
     CompletableFuture<Void> uploadDeltaWAL(long streamId, boolean force) {
         CompletableFuture<Void> cf;
-        List<LazyCommit> lazyUploadTasks = new ArrayList<>();
-        lazyUploadQueue.drainTo(lazyUploadTasks);
 
         synchronized (deltaWALCache) {
             Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
@@ -775,10 +769,10 @@ public class S3Storage implements Storage {
             } else {
                 cf = CompletableFuture.completedFuture(null);
             }
+            if (force) {
+                burstInflightUploadTasks();
+            }
         }
-
-        // notify lazy upload tasks
-        notifyLazyUpload(lazyUploadTasks);
         return cf;
     }
 
@@ -798,18 +792,12 @@ public class S3Storage implements Storage {
         context.cf = cf;
         inflightWALUploadTasks.add(context);
 
+        List<LazyCommit> lazyUploadTasks = new ArrayList<>();
+        lazyUploadQueue.drainTo(lazyUploadTasks);
+        notifyLazyUpload(lazyUploadTasks, new ArrayList<>(inflightWALUploadTasks));
+
         long size = context.cache.size();
         pendingUploadBytes.addAndGet(size);
-
-        if (context.force) {
-            // trigger previous task burst.
-            inflightWALUploadTasks.forEach(ctx -> {
-                ctx.force = true;
-                if (ctx.task != null) {
-                    ctx.task.burst();
-                }
-            });
-        }
 
         backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         cf.whenComplete((nil, ex) -> {
@@ -824,19 +812,21 @@ public class S3Storage implements Storage {
     }
 
     private void uploadDeltaWAL0(DeltaWALUploadTaskContext context) {
-        // calculate upload rate
-        long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
-        double rate;
-        if (context.force || elapsed <= 100L) {
-            rate = Long.MAX_VALUE;
-        } else {
-            rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
-            if (rate > maxDataWriteRate) {
-                maxDataWriteRate = rate;
+        synchronized (context) {
+            // calculate upload rate
+            long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
+            double rate;
+            if (context.force || elapsed <= 100L) {
+                rate = Long.MAX_VALUE;
+            } else {
+                rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
+                if (rate > maxDataWriteRate) {
+                    maxDataWriteRate = rate;
+                }
+                rate = maxDataWriteRate;
             }
-            rate = maxDataWriteRate;
+            context.task = newUploadWriteAheadLogTask(context.cache.records(), objectManager, rate);
         }
-        context.task = newUploadWriteAheadLogTask(context.cache.records(), objectManager, rate);
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {
