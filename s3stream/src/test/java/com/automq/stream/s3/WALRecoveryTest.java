@@ -117,8 +117,8 @@ public class WALRecoveryTest {
 
     @Test
     public void testSegmentedRecovery() {
-        // Each record occupies ~145 bytes (1 byte payload + 144 overhead).
-        // With maxCacheSize=200, a block becomes full after 2 records (290 bytes >= 200).
+        // Each record occupies 1025 bytes (1 byte payload + 1 KiB cache overhead).
+        // With maxCacheSize=2000, a block becomes full after 2 records (2050 bytes >= 2000).
         List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(newRecord(42L, 10L)),
             new TestRecoverResult(newRecord(42L, 11L)),
@@ -129,7 +129,7 @@ public class WALRecoveryTest {
 
         Map<Long, Long> streamEndOffsets = new HashMap<>(Map.of(42L, 10L));
         List<LogCache.LogCacheBlock> results = new ArrayList<>();
-        WALRecovery.recover(recoverResults.iterator(), streamEndOffsets, 200L, LOGGER, results::add);
+        WALRecovery.recover(recoverResults.iterator(), streamEndOffsets, 2_000L, LOGGER, results::add);
         assertEquals(3, results.size());
 
         // block 0: [10, 11] — full
