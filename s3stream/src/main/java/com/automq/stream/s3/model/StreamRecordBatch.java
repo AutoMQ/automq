@@ -39,7 +39,6 @@ import static com.automq.stream.s3.StreamRecordBatchCodec.PAYLOAD_POS;
 import static com.automq.stream.s3.StreamRecordBatchCodec.STREAM_ID_POS;
 
 public class StreamRecordBatch implements Comparable<StreamRecordBatch>, ComparableItem<Long> {
-    private static final int OBJECT_OVERHEAD = 48 /* fields */ + 48 /* ByteBuf payload */ + 48 /* ByteBuf encoded */;
     // Cache the frequently used fields
     private final long baseOffset;
     private final int count;
@@ -89,10 +88,6 @@ public class StreamRecordBatch implements Comparable<StreamRecordBatch>, Compara
 
     public int size() {
         return encoded.getInt(encoded.readerIndex() + PAYLOAD_LENGTH_POS);
-    }
-
-    public int occupiedSize() {
-        return size() + OBJECT_OVERHEAD;
     }
 
     public void retain() {
