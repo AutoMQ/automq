@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.Context;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.StreamClientException;
@@ -56,6 +57,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -488,6 +490,72 @@ public class S3StorageTest {
         assertEquals(233L, range.getStreamId());
         assertEquals(10L, range.getStartOffset());
         assertEquals(12L, range.getEndOffset());
+    }
+
+    /**
+     * Given archived uploads consume the full WAL cache and the active block is empty, when another append backs off,
+     * then the existing upload bursts without creating an empty upload task.
+     */
+    @Test
+    public void testCacheFullBurstsInflightUploadWhenActiveBlockIsEmpty() throws Exception {
+        Config smallCacheConfig = new Config();
+        smallCacheConfig.blockCacheSize(0);
+        smallCacheConfig.walCacheSize(128);
+        smallCacheConfig.walUploadThreshold(64);
+        UploadWriteAheadLogTask uploadTask = mock(UploadWriteAheadLogTask.class);
+        CompletableFuture<Long> prepareFuture = new CompletableFuture<>();
+        Mockito.when(uploadTask.prepare()).thenReturn(prepareFuture);
+        Mockito.when(uploadTask.upload()).thenReturn(CompletableFuture.completedFuture(
+            new CommitStreamSetObjectRequest()));
+        Mockito.when(uploadTask.commit()).thenReturn(CompletableFuture.completedFuture(null));
+        AtomicInteger createdUploadTaskCount = new AtomicInteger();
+        S3Storage smallCacheStorage = new S3Storage(smallCacheConfig, wal, streamManager, objectManager, blockCache,
+            objectStorage, storageFailureHandler) {
+            @Override
+            protected UploadWriteAheadLogTask newUploadWriteAheadLogTask(
+                Map<Long, List<StreamRecordBatch>> streamRecordsMap,
+                ObjectManager objectManager, double rate) {
+                createdUploadTaskCount.incrementAndGet();
+                return uploadTask;
+            }
+        };
+        smallCacheStorage.append(StreamRecordBatch.of(233L, 0, 10L, 1, random(256),
+            DefaultByteBufSupplier.INSTANCE)).get(1, TimeUnit.SECONDS);
+        smallCacheStorage.uploadDeltaWAL();
+        verify(uploadTask, timeout(1000)).prepare();
+
+        CompletableFuture<Void> backedOffAppend = smallCacheStorage.append(newRecord(233L, 11L));
+
+        assertFalse(backedOffAppend.isDone());
+        verify(uploadTask, timeout(1000)).burst();
+        assertEquals(1, createdUploadTaskCount.get());
+
+        prepareFuture.complete(1L);
+
+        backedOffAppend.get(1, TimeUnit.SECONDS);
+        verify(uploadTask).burst();
+        smallCacheStorage.shutdown();
+    }
+
+    /**
+     * Given a lazy commit and an active block that does not contain the forced stream, when that stream is force
+     * uploaded, then the lazy commit remains pending until an upload archives the active block.
+     */
+    @Test
+    public void testStreamForceUploadDoesNotNotifyLazyCommitWithoutMatchingActiveData() throws Exception {
+        Mockito.when(objectManager.prepareObject(eq(1), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(16L));
+        Mockito.when(objectManager.commitStreamSetObject(any()))
+            .thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+        storage.append(newRecord(234L, 10L)).get(1, TimeUnit.SECONDS);
+        CompletableFuture<Void> lazyCommit = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1),
+            false);
+
+        storage.forceUpload(233L).get(1, TimeUnit.SECONDS);
+
+        assertFalse(lazyCommit.isDone());
+        storage.uploadDeltaWAL().get(1, TimeUnit.SECONDS);
+        lazyCommit.get(1, TimeUnit.SECONDS);
     }
 
 }
