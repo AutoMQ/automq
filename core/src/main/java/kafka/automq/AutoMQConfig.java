@@ -35,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -430,13 +431,17 @@ public class AutoMQConfig {
         return walConfig;
     }
 
-    private static String genMetricsExporterURI(KafkaConfig config) {
+    static String genMetricsExporterURI(KafkaConfig config) {
         Password pwd = config.getPassword(S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG);
         String uri = pwd == null ? null : pwd.value();
         if (uri == null) {
             uri = buildMetrixExporterURIWithOldConfigs(config);
         }
-        if (!uri.contains(TELEMETRY_EXPORTER_TYPE_OPS)) {
+        String opsSchemePrefix = TELEMETRY_EXPORTER_TYPE_OPS + "://";
+        boolean hasOpsExporter = Arrays.stream(uri.split(","))
+            .map(String::trim)
+            .anyMatch(exporter -> exporter.regionMatches(true, 0, opsSchemePrefix, 0, opsSchemePrefix.length()));
+        if (!hasOpsExporter) {
             uri += "," + buildOpsExporterURI();
         }
         return uri;
