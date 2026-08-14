@@ -37,6 +37,7 @@ import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
+import org.apache.kafka.test.TestUtils;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
 import com.automq.stream.s3.Config;
@@ -139,6 +140,20 @@ public class S3ObjectControlManagerTest {
             assertEquals(time.milliseconds() + 60 * 1000, s3Object.getTimestamp());
         });
         assertEquals(8, manager.nextAssignedObjectId());
+    }
+
+    /**
+     * Given a prepared object with a short TTL, the timeout should be delivered near its deadline.
+     */
+    @Test
+    public void testPreparedObjectTimeoutUsesDeadline() throws InterruptedException {
+        long objectId = prepareOneObject(100L);
+
+        TestUtils.waitForCondition(
+            () -> manager.waitingDeadlineCheckPreparedObjects.contains(objectId),
+            5_000L,
+            "Prepared object timeout was not delivered near its deadline"
+        );
     }
 
     private synchronized void replay(S3ObjectControlManager manager, List<ApiMessageAndVersion> records) {
