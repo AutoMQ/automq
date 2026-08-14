@@ -82,6 +82,7 @@ public class LogCache {
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
     private final AtomicLong size = new AtomicLong();
+    private final AtomicLong evictableSize = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -276,7 +277,13 @@ public class LogCache {
     }
 
     public CompletableFuture<Void> markFree(LogCacheBlock block) {
-        block.free = true;
+        writeLock.lock();
+        try {
+            block.free = true;
+            updateEvictableSize();
+        } finally {
+            writeLock.unlock();
+        }
         tryRealFree();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> {
@@ -288,6 +295,17 @@ public class LogCache {
             }
         });
         return cf;
+    }
+
+    private void updateEvictableSize() {
+        long size = 0L;
+        for (LogCacheBlock block : blocks) {
+            if (!block.free) {
+                break;
+            }
+            size += block.size();
+        }
+        evictableSize.set(size);
     }
 
     private void tryRealFree() {
@@ -316,10 +334,11 @@ public class LogCache {
                     break;
                 }
             }
+            size.addAndGet(-freeSize);
+            updateEvictableSize();
         } finally {
             writeLock.unlock();
         }
-        size.addAndGet(-freeSize);
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();
@@ -394,6 +413,13 @@ public class LogCache {
 
     public long capacity() {
         return capacity;
+    }
+
+    /**
+     * Returns the size of the contiguous free blocks at the head of the FIFO cache that can be evicted immediately.
+     */
+    public long evictableSize() {
+        return evictableSize.get();
     }
 
     public void clearStreamRecords(long streamId) {
