@@ -201,12 +201,13 @@ public class S3Storage implements Storage {
         } else {
             delayTrim = new DelayTrim(0);
         }
-        // Adjust the walUploadThreshold to be less than 2/5 of deltaWALCacheSize to avoid the upload speed being slower than the append speed.
-        long walUploadThreadhold = Math.min(deltaWALCacheSize * 2 / 5, config.walUploadThreshold());
-        if (walUploadThreadhold != config.walUploadThreshold()) {
-            LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreadhold);
+        // Adjust the walUploadThreshold to be less than 1/3 of deltaWALCacheSize to leave enough cache capacity
+        // for inflight uploads and new appends.
+        long walUploadThreshold = Math.min(deltaWALCacheSize / 3, config.walUploadThreshold());
+        if (walUploadThreshold != config.walUploadThreshold()) {
+            LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreshold);
         }
-        this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreadhold, config.maxStreamNumPerStreamSetObject());
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreshold, config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
         DELTA_WAL_CACHE_SIZE.record(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
@@ -359,7 +360,6 @@ public class S3Storage implements Storage {
             return true;
         }
         if (!tryAcquirePermit()) {
-            maybeForceUpload();
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
@@ -430,7 +430,26 @@ public class S3Storage implements Storage {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean tryAcquirePermit() {
-        return deltaWALCache.size() < deltaWALCache.capacity();
+        long cacheSize = deltaWALCache.size();
+        long cacheCapacity = deltaWALCache.capacity();
+        long forceUploadThreshold = cacheCapacity * 4 / 5;
+        boolean acquired = cacheSize < cacheCapacity;
+        if (!acquired) {
+            // Keep cache-full escalation as a fallback because concurrent callbacks or a large record may cause the
+            // cache to cross the pressure threshold before the next append checks it.
+            maybeForceUpload();
+            return false;
+        }
+        if (cacheSize >= forceUploadThreshold) {
+            long uploadPressureSize = cacheSize - deltaWALCache.evictableSize();
+            if (uploadPressureSize >= forceUploadThreshold) {
+                // Two upload blocks may occupy about 2/3 of the cache while being rate limited. Force them to burst
+                // when the non-evictable data reaches 80%, leaving 20% capacity for new appends while uploads drain
+                // instead of waiting for the cache to fill and putting foreground appends into backoff.
+                maybeForceUpload();
+            }
+        }
+        return true;
     }
 
     private void tryDrainBackoffRecords() {
