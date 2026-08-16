@@ -101,4 +101,29 @@ public class ProxyWriterTest {
         verify(operator, times(1)).uploadPartCopy(any(), any(), any(), anyLong(), anyLong(), any(), anyInt());
     }
 
+    @Test
+    public void testCopyWrite_smallObjectsUseSinglePut() {
+        // Below minPartSize (5MiB default): should buffer via rangeRead and issue a single PutObject,
+        // never touching the multipart APIs (createMultipartUpload/uploadPart/completeMultipartUpload).
+        when(operator.write(any(), eq("testpath"), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(operator.rangeRead(any(), any(), eq(0L), eq(2L * 1024 * 1024)))
+            .thenReturn(CompletableFuture.completedFuture(TestUtils.random(2 * 1024 * 1024)));
+        when(operator.rangeRead(any(), any(), eq(0L), eq(3L * 1024 * 1024)))
+            .thenReturn(CompletableFuture.completedFuture(TestUtils.random(3 * 1024 * 1024)));
+
+        S3ObjectMetadata object1 = new S3ObjectMetadata(1, 2 * 1024 * 1024, S3ObjectType.STREAM);
+        S3ObjectMetadata object2 = new S3ObjectMetadata(2, 3 * 1024 * 1024, S3ObjectType.STREAM);
+        writer.copyWrite(object1, 0, 2 * 1024 * 1024);
+        writer.copyWrite(object2, 0, 3 * 1024 * 1024);
+        assertNull(writer.largeObjectWriter);
+        Assertions.assertTrue(writer.close().isDone());
+
+        ArgumentCaptor<ByteBuf> captor = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(operator, times(1)).write(any(), eq("testpath"), captor.capture());
+        Assertions.assertEquals(5 * 1024 * 1024, captor.getValue().readableBytes());
+        verify(operator, times(0)).createMultipartUpload(any(), any());
+        verify(operator, times(0)).uploadPart(any(), any(), any(), anyInt(), any());
+        verify(operator, times(0)).completeMultipartUpload(any(), any(), any(), any());
+    }
+
 }

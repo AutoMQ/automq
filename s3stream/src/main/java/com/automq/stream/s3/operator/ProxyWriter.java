@@ -79,10 +79,23 @@ public class ProxyWriter implements Writer {
 
     @Override
     public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-        if (largeObjectWriter == null) {
+        if (largeObjectWriter != null) {
+            largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+            return;
+        }
+        if (end - start >= minPartSize) {
+            // Large enough to benefit from a zero-download server-side UploadPartCopy, so it's worth paying
+            // the multipart upload overhead (createMultipartUpload/completeMultipartUpload).
+            newLargeObjectWriter(writeOptions, objectStorage, path);
+            largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+            return;
+        }
+        // Below minPartSize, S3 can't do a server-side UploadPartCopy for it anyway, so just buffer the range
+        // read like write() does and let it ride the single PutObject path instead of forcing multipart.
+        objectWriter.copyWrite(s3ObjectMetadata, start, end);
+        if (objectWriter.isFull()) {
             newLargeObjectWriter(writeOptions, objectStorage, path);
         }
-        largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
     }
 
     @Override
@@ -119,12 +132,17 @@ public class ProxyWriter implements Writer {
 
     protected void newLargeObjectWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path) {
         this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
-        if (objectWriter.data.readableBytes() > 0) {
-            FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);
-        } else {
-            objectWriter.data.release();
-            objectWriter.cf.complete(null);
-        }
+        // wait for any in-flight copyWrite range reads to land in objectWriter.data before handing it off.
+        objectWriter.lastOpCf.whenComplete((nil, ex) -> {
+            if (ex != null) {
+                objectWriter.cf.completeExceptionally(ex);
+            } else if (objectWriter.data.readableBytes() > 0) {
+                FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);
+            } else {
+                objectWriter.data.release();
+                objectWriter.cf.complete(null);
+            }
+        });
     }
 
     class ObjectWriter implements Writer {
@@ -133,10 +151,14 @@ public class ProxyWriter implements Writer {
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
         TimerUtil timerUtil = new TimerUtil();
+        // tracks the size synchronously so isFull() is accurate even while copyWrite's range reads are in flight.
+        private long size = 0;
+        private CompletableFuture<Void> lastOpCf = CompletableFuture.completedFuture(null);
 
         @Override
         public CompletableFuture<Void> write(ByteBuf part) {
-            data.addComponent(true, part);
+            size += part.readableBytes();
+            lastOpCf = lastOpCf.thenAccept(nil -> data.addComponent(true, part));
             return cf;
         }
 
@@ -154,7 +176,12 @@ public class ProxyWriter implements Writer {
 
         @Override
         public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-            throw new UnsupportedOperationException();
+            size += end - start;
+            lastOpCf = lastOpCf
+                .thenCompose(nil -> objectStorage.rangeRead(
+                    new ObjectStorage.ReadOptions().throttleStrategy(writeOptions.throttleStrategy()).bucket(s3ObjectMetadata.bucket()),
+                    s3ObjectMetadata.key(), start, end))
+                .thenAccept(buf -> data.addComponent(true, buf));
         }
 
         @Override
@@ -165,7 +192,14 @@ public class ProxyWriter implements Writer {
         @Override
         public CompletableFuture<Void> close() {
             S3ObjectMetrics.recordReadyCloseStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
+            // wait for any in-flight copyWrite range reads to land in data before issuing the single PutObject.
+            lastOpCf.whenComplete((nil, ex) -> {
+                if (ex != null) {
+                    cf.completeExceptionally(ex);
+                } else {
+                    FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
+                }
+            });
             cf.whenComplete((nil, e) -> {
                 S3ObjectMetrics.recordTotalStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 S3ObjectMetrics.recordObject();
@@ -180,7 +214,7 @@ public class ProxyWriter implements Writer {
         }
 
         public boolean isFull() {
-            return data.readableBytes() > MAX_UPLOAD_SIZE;
+            return size > MAX_UPLOAD_SIZE;
         }
 
         @Override
