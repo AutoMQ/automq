@@ -28,10 +28,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -124,6 +127,72 @@ public class ProxyWriterTest {
         verify(operator, times(0)).createMultipartUpload(any(), any());
         verify(operator, times(0)).uploadPart(any(), any(), any(), anyInt(), any());
         verify(operator, times(0)).completeMultipartUpload(any(), any(), any(), any());
+    }
+
+    @Test
+    public void testCopyWrite_escalationPreservesOrder() {
+        // Buffer many small copyWrites until the accumulated size crosses MAX_UPLOAD_SIZE (32MiB) and forces an
+        // escalation to multipart mid-stream. The range reads only complete AFTER close() is called, so this
+        // exercises the deferred-handoff path: the buffered data must be flushed to the MultiPartWriter as the
+        // first part, before the copyWrite/write issued after escalation, and none of it may be dropped even
+        // though close() has already been invoked. This is the scenario a MINOR/MAJOR group (up to 128MiB) hits.
+        int mib = 1024 * 1024;
+        when(operator.createMultipartUpload(any(), eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
+        when(operator.uploadPart(any(), eq("testpath"), eq("test_upload_id"), anyInt(), any()))
+            .thenAnswer(inv -> CompletableFuture.completedFuture(
+                new AbstractObjectStorage.ObjectStorageCompletedPart(inv.getArgument(3), "etag", "checksum")));
+        when(operator.completeMultipartUpload(any(), eq("testpath"), eq("test_upload_id"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        // rangeRead hands back a not-yet-completed future per call so we can drive completion order by hand. The
+        // ObjectWriter chains reads sequentially, so each read is only issued once the previous one completes.
+        List<CompletableFuture<ByteBuf>> reads = new ArrayList<>();
+        List<Integer> readSizes = new ArrayList<>();
+        when(operator.rangeRead(any(), any(), anyLong(), anyLong())).thenAnswer(inv -> {
+            long start = inv.getArgument(2);
+            long end = inv.getArgument(3);
+            CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+            reads.add(cf);
+            readSizes.add((int) (end - start));
+            return cf;
+        });
+
+        // 9 * 4MiB = 36MiB > 32MiB, so the writer escalates after the 9th buffered copyWrite; the 10th copyWrite
+        // is then issued directly to the multipart writer.
+        int smallObjectCount = 10;
+        for (int i = 1; i <= smallObjectCount; i++) {
+            S3ObjectMetadata object = new S3ObjectMetadata(i, 4L * mib, S3ObjectType.STREAM);
+            writer.copyWrite(object, 0, 4L * mib);
+        }
+        assertNotNull(writer.largeObjectWriter);
+        // Index block written last, exactly like StreamObjectCompactor does after the per-object copyWrites.
+        writer.write(TestUtils.random(mib));
+        CompletableFuture<Void> closeCf = writer.close();
+        assertFalse(closeCf.isDone(), "close must wait for the buffered range reads to be flushed");
+
+        // Drive the reads to completion in issue order; completing one may lazily trigger the next.
+        for (int i = 0; i < reads.size(); i++) {
+            reads.get(i).complete(TestUtils.random(readSizes.get(i)));
+        }
+
+        assertTrue(closeCf.isDone());
+        assertFalse(closeCf.isCompletedExceptionally());
+        assertEquals(smallObjectCount, reads.size(), "one range read per small copyWrite");
+
+        // Single-PUT path must not be used; the multipart upload must be completed exactly once.
+        verify(operator, times(0)).write(any(), eq("testpath"), any());
+        verify(operator, times(1)).completeMultipartUpload(any(), any(), any(), any());
+        verify(operator, times(2)).uploadPart(any(), eq("testpath"), eq("test_upload_id"), anyInt(), any());
+
+        // Part 1 must be the handoff of the 9 buffered objects (36MiB), in order - NOT the object copyWritten
+        // after escalation. Part 2 is the 10th object (4MiB) plus the index block (1MiB). A reorder/drop would
+        // make part 1 the 4MiB object and lose the 36MiB, so this pins down both ordering and no-data-loss.
+        ArgumentCaptor<ByteBuf> part1 = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(operator).uploadPart(any(), eq("testpath"), eq("test_upload_id"), eq(1), part1.capture());
+        assertEquals(9 * 4 * mib, part1.getValue().readableBytes());
+        ArgumentCaptor<ByteBuf> part2 = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(operator).uploadPart(any(), eq("testpath"), eq("test_upload_id"), eq(2), part2.capture());
+        assertEquals(4 * mib + mib, part2.getValue().readableBytes());
     }
 
 }

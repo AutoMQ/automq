@@ -43,6 +43,9 @@ public class ProxyWriter implements Writer {
     private final String path;
     private final long minPartSize;
     Writer largeObjectWriter = null;
+    // Ordered chain that serializes every operation issued to largeObjectWriter once we escalate. It is
+    // only touched by the (single) calling thread; see newLargeObjectWriter for why it exists.
+    private CompletableFuture<Void> mpwChain = null;
 
     public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path, long minPartSize) {
         this.writeOptions = writeOptions;
@@ -58,7 +61,7 @@ public class ProxyWriter implements Writer {
     @Override
     public CompletableFuture<Void> write(ByteBuf part) {
         if (largeObjectWriter != null) {
-            return largeObjectWriter.write(part);
+            return writeToLargeObject(part);
         } else {
             objectWriter.write(part);
             if (objectWriter.isFull()) {
@@ -80,14 +83,14 @@ public class ProxyWriter implements Writer {
     @Override
     public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
         if (largeObjectWriter != null) {
-            largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+            copyWriteToLargeObject(s3ObjectMetadata, start, end);
             return;
         }
         if (end - start >= minPartSize) {
             // Large enough to benefit from a zero-download server-side UploadPartCopy, so it's worth paying
             // the multipart upload overhead (createMultipartUpload/completeMultipartUpload).
             newLargeObjectWriter(writeOptions, objectStorage, path);
-            largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+            copyWriteToLargeObject(s3ObjectMetadata, start, end);
             return;
         }
         // Below minPartSize, S3 can't do a server-side UploadPartCopy for it anyway, so just buffer the range
@@ -96,6 +99,32 @@ public class ProxyWriter implements Writer {
         if (objectWriter.isFull()) {
             newLargeObjectWriter(writeOptions, objectStorage, path);
         }
+    }
+
+    /**
+     * Issue a copyWrite to largeObjectWriter in order, after the buffered-data handoff and any previously
+     * issued operations. Never call largeObjectWriter.copyWrite directly - it must go through mpwChain so
+     * parts are appended in call order and MultiPartWriter is only ever touched by a single thread.
+     */
+    private void copyWriteToLargeObject(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
+        mpwChain = mpwChain.thenRun(() -> largeObjectWriter.copyWrite(s3ObjectMetadata, start, end));
+    }
+
+    /**
+     * Issue a write to largeObjectWriter in order (see {@link #copyWriteToLargeObject}). The returned future
+     * tracks the actual part upload; if an earlier operation in the chain failed we surface that failure and
+     * release the part so it is not leaked.
+     */
+    private CompletableFuture<Void> writeToLargeObject(ByteBuf part) {
+        CompletableFuture<Void> writeCf = new CompletableFuture<>();
+        mpwChain = mpwChain.thenRun(() -> FutureUtil.propagate(largeObjectWriter.write(part), writeCf));
+        mpwChain.whenComplete((nil, ex) -> {
+            if (ex != null && !writeCf.isDone()) {
+                part.release();
+                writeCf.completeExceptionally(ex);
+            }
+        });
+        return writeCf;
     }
 
     @Override
@@ -110,7 +139,10 @@ public class ProxyWriter implements Writer {
     @Override
     public CompletableFuture<Void> close() {
         if (largeObjectWriter != null) {
-            return largeObjectWriter.close();
+            // Wait until the handoff and every issued copyWrite/write has actually been submitted to
+            // largeObjectWriter (registered as a part) before closing, otherwise close could complete the
+            // multipart upload before the buffered data lands - dropping it.
+            return mpwChain.thenCompose(nil -> largeObjectWriter.close());
         } else {
             return objectWriter.close();
         }
@@ -132,9 +164,17 @@ public class ProxyWriter implements Writer {
 
     protected void newLargeObjectWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path) {
         this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
-        // wait for any in-flight copyWrite range reads to land in objectWriter.data before handing it off.
-        objectWriter.lastOpCf.whenComplete((nil, ex) -> {
+        // Hand off everything already buffered in objectWriter as the first multipart operation, then serialize
+        // every subsequent largeObjectWriter call onto this chain (see copyWriteToLargeObject/writeToLargeObject).
+        // This guarantees two things:
+        //   (a) parts are issued in the exact order copyWrite/write were called. Byte order in the final object
+        //       must match, since the compaction index block encodes absolute byte offsets into the object.
+        //   (b) MultiPartWriter, which assumes a single-threaded caller, is only ever touched by one thread at a
+        //       time - even though the handoff below waits on range reads that complete on a different thread.
+        // whenComplete keeps mpwChain mirroring lastOpCf, so a failed range read short-circuits the whole chain.
+        this.mpwChain = objectWriter.lastOpCf.whenComplete((nil, ex) -> {
             if (ex != null) {
+                objectWriter.data.release();
                 objectWriter.cf.completeExceptionally(ex);
             } else if (objectWriter.data.readableBytes() > 0) {
                 FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);
@@ -164,9 +204,9 @@ public class ProxyWriter implements Writer {
 
         @Override
         public void copyOnWrite() {
-            int size = data.readableBytes();
-            if (size > 0) {
-                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.allocType());
+            int readable = data.readableBytes();
+            if (readable > 0) {
+                ByteBuf buf = ByteBufAlloc.byteBuffer(readable, writeOptions.allocType());
                 buf.writeBytes(data.duplicate());
                 CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
                 this.data.release();
@@ -195,6 +235,9 @@ public class ProxyWriter implements Writer {
             // wait for any in-flight copyWrite range reads to land in data before issuing the single PutObject.
             lastOpCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
+                    // A range read failed, so we'll never issue the PutObject that would consume data - release
+                    // the partially accumulated buffer instead of leaking it.
+                    data.release();
                     cf.completeExceptionally(ex);
                 } else {
                     FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
