@@ -19,6 +19,7 @@
 
 package kafka.automq;
 
+import kafka.automq.zerozone.LocalWriteMode;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.config.ConfigDef;
@@ -221,6 +222,10 @@ public class AutoMQConfig {
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
         + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
+    public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
+        + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
+        + "In direct mode, local records are written directly to the Partition. Forwarded records always use RouterChannel.";
 
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
@@ -322,6 +327,8 @@ public class AutoMQConfig {
             .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, between(0, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
             .define(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG, STRING, LocalWriteMode.ROUTER_CHANNEL.configName(),
+                ConfigDef.CaseInsensitiveValidString.in(LocalWriteMode.configNames()), MEDIUM, AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
@@ -350,6 +357,7 @@ public class AutoMQConfig {
     private List<Pair<String, String>> baseLabels;
     @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     private Optional<List<BucketURI>> zoneRouterChannels;
+    private LocalWriteMode zoneRouterLocalWriteMode;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -358,6 +366,7 @@ public class AutoMQConfig {
         metricsExporterURI = genMetricsExporterURI(config);
         baseLabels = parseBaseLabels(config);
         zoneRouterChannels = genZoneRouterChannels(config);
+        zoneRouterLocalWriteMode = LocalWriteMode.fromName(config.getString(ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG));
         return this;
     }
 
@@ -387,6 +396,13 @@ public class AutoMQConfig {
 
     public Optional<List<BucketURI>> zoneRouterChannels() {
         return zoneRouterChannels;
+    }
+
+    /**
+     * Returns the configured persistence path for ZeroZone writes targeting a local Partition.
+     */
+    public LocalWriteMode zoneRouterLocalWriteMode() {
+        return zoneRouterLocalWriteMode;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {
