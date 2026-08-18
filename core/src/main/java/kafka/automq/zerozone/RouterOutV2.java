@@ -67,16 +67,19 @@ public class RouterOutV2 {
     private final Map<Node, Proxy> proxies = new ConcurrentHashMap<>();
 
     private final LocalProxy localProxy;
+    private final LocalWriteMode localWriteMode;
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
-        NonBlockingLocalRouterHandler localRouterHandler, AsyncSender asyncSender, Time time) {
+        NonBlockingLocalRouterHandler localRouterHandler, LocalWriteMode localWriteMode, AsyncSender asyncSender,
+        Time time) {
         this.currentNode = currentNode;
         this.routerChannel = routerChannel;
         this.mapping = mapping;
         this.localProxy = new LocalProxy(localRouterHandler);
+        this.localWriteMode = localWriteMode;
         this.asyncSender = asyncSender;
         this.time = time;
     }
@@ -90,26 +93,37 @@ public class RouterOutV2 {
         boolean acks0 = args.requiredAcks() == (short) 0;
         for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
             TopicPartition tp = entry.getKey();
-            MemoryRecords records = LegacyRecordConverter.maybeConvert(entry.getValue());
             Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
             if (node.id() == Node.noNode().id()) {
                 responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
                 continue;
             }
             short orderHint = orderHint(tp, args.clientId().connectionId());
+            boolean directLocal = node.id() == currentNode.id() && localWriteMode == LocalWriteMode.DIRECT;
+            MemoryRecords records = directLocal ? entry.getValue() : LegacyRecordConverter.maybeConvert(entry.getValue());
             int recordSize = records.sizeInBytes();
             ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
-            CompletableFuture<RouterChannel.AppendResult> channelCf = routerChannel.append(node.id(), orderHint, ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest)));
-            CompletableFuture<Void> proxyCf = channelCf.thenCompose(channelRst -> {
-                long timeNanos = time.nanoseconds();
-                ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(timeNanos - startNanos);
-                ProxyRequest proxyRequest = new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(), zoneRouterProduceRequest, recordSize, timeoutMillis);
+            CompletableFuture<ProxyRequest> requestCf;
+            if (directLocal) {
+                requestCf = CompletableFuture.completedFuture(new ProxyRequest(tp, -1L, null,
+                    zoneRouterProduceRequest, recordSize, timeoutMillis));
+            } else {
+                requestCf = routerChannel.append(node.id(), orderHint,
+                    ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest))).thenApply(channelRst -> {
+                        ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                        return new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(),
+                            zoneRouterProduceRequest, recordSize, timeoutMillis);
+                    });
+            }
+            CompletableFuture<Void> proxyCf = requestCf.thenCompose(proxyRequest -> {
                 sendProxyRequest(node, proxyRequest);
                 return proxyRequest.cf.thenAccept(response -> {
                     if (!acks0) {
                         responseMap.put(tp, response);
                     }
-                    ZeroZoneMetricsManager.OUT_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
+                    if (!directLocal) {
+                        ZeroZoneMetricsManager.OUT_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
+                    }
                 });
             }).exceptionally(ex -> {
                 LOGGER.error("Exception in processing append proxies", ex);
@@ -164,7 +178,8 @@ public class RouterOutV2 {
 
         @Override
         public void send(ProxyRequest request) {
-            localRouterHandler.append(ChannelOffset.of(request.channelOffset), request.zoneRouterProduceRequest)
+            ChannelOffset channelOffset = request.channelOffset == null ? null : ChannelOffset.of(request.channelOffset);
+            localRouterHandler.append(channelOffset, request.zoneRouterProduceRequest)
                 .whenComplete((resp, ex) -> {
                     if (ex != null) {
                         request.completeWithError(Errors.forException(ex));
