@@ -48,6 +48,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
@@ -181,9 +182,16 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         ZoneRouterProduceRequest zoneRouterProduceRequest
     ) {
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        appendEventLoop(channelOffset.orderHint()).execute(() ->
+        short orderHint = channelOffset == null ? orderHint(zoneRouterProduceRequest) : channelOffset.orderHint();
+        appendEventLoop(orderHint).execute(() ->
             FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
         return cf;
+    }
+
+    private static short orderHint(ZoneRouterProduceRequest request) {
+        ProduceRequestData.TopicProduceData topic = request.data().topicData().iterator().next();
+        int partition = topic.partitionData().get(0).index();
+        return (short) (Objects.hash(topic.name(), partition) % Short.MAX_VALUE);
     }
 
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append0(
