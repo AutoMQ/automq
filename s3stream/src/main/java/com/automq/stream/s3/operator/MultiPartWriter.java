@@ -30,6 +30,7 @@ import com.automq.stream.utils.FutureUtil;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -242,7 +243,14 @@ public class MultiPartWriter implements Writer {
         public void write(ByteBuf data) {
             size += data.readableBytes();
             // ensure addComponent happen before following write or copyWrite.
-            this.lastRangeReadCf = lastRangeReadCf.thenAccept(nil -> partBuf.addComponent(true, data));
+            this.lastRangeReadCf = lastRangeReadCf.handle((nil, ex) -> {
+                if (ex != null) {
+                    data.release();
+                    throw new CompletionException(ex);
+                }
+                partBuf.addComponent(true, data);
+                return null;
+            });
         }
 
         public void copyOnWrite() {
@@ -271,6 +279,7 @@ public class MultiPartWriter implements Writer {
         public void upload() {
             this.lastRangeReadCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
+                    partBuf.release();
                     partCf.completeExceptionally(ex);
                 } else {
                     upload0();
