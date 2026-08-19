@@ -230,6 +230,7 @@ class ElasticLog(val metaStream: MetaStream,
         APPEND_TIME_HIST.update(System.nanoTime() - startTimestamp)
         val endOffset = lastOffset + 1
         updateLogEndOffset(endOffset)
+        val newConfirmOffset = logEndOffsetMetadata
         val cf = activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush()
         DataPathMonitor.recordAppendPending(cf, startTimestamp)
         cf.whenComplete((_, throwable) => {
@@ -248,7 +249,7 @@ class ElasticLog(val metaStream: MetaStream,
                 while (true) {
                     val offset = _confirmOffset.get()
                     if (offset.messageOffset < endOffset) {
-                        _confirmOffset.compareAndSet(offset, new LogOffsetMetadata(endOffset, activeSegment.baseOffset, activeSegment.size))
+                        _confirmOffset.compareAndSet(offset, newConfirmOffset)
                         notify = true
                     } else {
                         break()

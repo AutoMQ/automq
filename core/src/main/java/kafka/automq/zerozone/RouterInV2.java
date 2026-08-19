@@ -241,6 +241,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
                 .requestLocal(requestLocals.get())
                 .build()
         );
+        kafkaApis.tryCompleteActions();
         return cf;
     }
 
