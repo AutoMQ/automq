@@ -31,9 +31,9 @@ import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
-import org.apache.kafka.common.serialization.StringDeserializer;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
