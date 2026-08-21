@@ -245,7 +245,8 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         }
 
         StaticAutoBalancerConfig staticAutoBalancerConfig = new StaticAutoBalancerConfig(configs, false);
-        Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
+        Properties producerProps = StaticAutoBalancerConfigUtils.parseClientConfigs(configs);
+        producerProps.putAll(AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs));
 
         // Add BootstrapServers if not set
         if (!producerProps.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
@@ -269,8 +270,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
-        StaticAutoBalancerConfigUtils.addSslConfigs(producerProps, staticAutoBalancerConfig);
-
         metricsReporterCreateRetries = reporterConfig.getInt(
                 AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG);
 

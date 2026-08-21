@@ -19,19 +19,22 @@
 
 package kafka.autobalancer.config;
 
-import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.kafka.common.config.SslConfigs;
 import org.apache.kafka.common.config.types.Password;
-import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.serialization.StringDeserializer;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
+@Tag("S3Unit")
 public class AutoBalancerConfigTest {
 
     @Test
@@ -45,21 +48,26 @@ public class AutoBalancerConfigTest {
     }
 
     @Test
-    public void testSSLConfig() {
+    public void testClientConfigPassthrough() {
         Map<String, Object> props = new HashMap<>();
-        props.put(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL, SecurityProtocol.SASL_PLAINTEXT.name);
-        props.put(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM, "PLAIN");
-        Password pwd = new Password("jaas-config");
-        props.put(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG, pwd);
-        props.put(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_CONFIG, "20");
-        AutoBalancerMetricsReporterConfig reporterConfig = new AutoBalancerMetricsReporterConfig(props, false);
-        Assertions.assertEquals(20L, reporterConfig.getLong(AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_LINGER_MS_CONFIG));
+        props.put(StaticAutoBalancerConfig.clientAuthConfig(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG), "SSL");
+        props.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG), "TLSv1.2,TLSv1.3");
+        props.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG), "trust-store-password");
+        props.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG), StringDeserializer.class.getName());
+        props.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG), StringDeserializer.class.getName());
+        props.put(StaticAutoBalancerConfig.clientAuthConfig("future.kafka.config"), "future-value");
+        props.put(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG, "INTERNAL_SSL");
 
-        StaticAutoBalancerConfig config = new StaticAutoBalancerConfig(reporterConfig.originals(), false);
-        Properties clientConfig = new Properties();
-        StaticAutoBalancerConfigUtils.addSslConfigs(clientConfig, config);
-        Assertions.assertEquals(SecurityProtocol.SASL_PLAINTEXT.name, clientConfig.getProperty(AdminClientConfig.SECURITY_PROTOCOL_CONFIG));
-        Assertions.assertEquals("PLAIN", clientConfig.getProperty(SaslConfigs.SASL_MECHANISM));
-        Assertions.assertEquals(pwd, clientConfig.get(SaslConfigs.SASL_JAAS_CONFIG));
+        Properties clientConfigs = StaticAutoBalancerConfigUtils.parseClientConfigs(props);
+
+        Assertions.assertEquals("SSL", clientConfigs.getProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        Assertions.assertEquals("TLSv1.2,TLSv1.3", clientConfigs.getProperty(SslConfigs.SSL_ENABLED_PROTOCOLS_CONFIG));
+        Assertions.assertEquals("trust-store-password", clientConfigs.getProperty(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG));
+        Assertions.assertEquals("future-value", clientConfigs.getProperty("future.kafka.config"));
+        Assertions.assertFalse(clientConfigs.containsKey(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG));
+
+        ConsumerConfig consumerConfig = new ConsumerConfig(clientConfigs);
+        Assertions.assertEquals(new Password("trust-store-password"),
+                consumerConfig.getPassword(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG));
     }
 }
