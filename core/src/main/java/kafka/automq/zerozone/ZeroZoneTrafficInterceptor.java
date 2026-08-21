@@ -132,7 +132,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         // Zero Zone V2
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time);
-        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, routerInV2, asyncSender, time);
+        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode,
+            routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time);
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
         DefaultReplayer replayer = new DefaultReplayer();
