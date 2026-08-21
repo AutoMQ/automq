@@ -545,7 +545,7 @@ public class S3ObjectControlManager {
 
     private Timeout newPreparedObjectTimeout(long objectId, long deadline) {
         return preparedObjectsTimer.newTimeout(
-            t -> handlePreparedObjectTimeout(objectId), Math.max(time.milliseconds() - deadline, TimeUnit.MINUTES.toMillis(30)),
+            t -> handlePreparedObjectTimeout(objectId), Math.max(deadline - time.milliseconds(), 0L),
             TimeUnit.MILLISECONDS
         );
     }
