@@ -340,17 +340,12 @@ public class TopicConfig {
 
     public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG = "automq.table.topic.iceberg.auto-create.properties";
     public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DOC =
-        "A comma-separated list of 'key=value' pairs passed verbatim as table properties to Catalog#createTable "
-        + "when the Iceberg table does not already exist. Each entry must contain exactly one '=' with a non-blank key; "
-        + "duplicate keys are rejected at topic-configuration time. "
-        + "The user-supplied list completely replaces the built-in defaults, so to omit a default property "
-        + "(e.g. write.object-storage.enabled for Databricks Unity Catalog) simply exclude it from this list. "
-        + "Permission boundary: this config allows setting any Iceberg catalog property, including path-control "
-        + "properties (write.data.path, write.metadata.path) and format/implementation properties "
-        + "(write.parquet.compression-codec, etc.). These are applied at table-creation time only and are not "
-        + "validated against the catalog's own permission model; misconfigured values may render the table "
-        + "unreadable or cause catalog errors. Operators should restrict who can alter this topic config "
-        + "in multi-tenant environments. "
+        "A comma-separated list of 'key=value' pairs passed to Catalog#createTable when creating an Iceberg table. "
+        + "Each entry must contain exactly one '=' with a non-blank key; duplicate keys are rejected. "
+        + "The list replaces the built-in defaults, so omit a default property (e.g. write.object-storage.enabled "
+        + "for Databricks Unity Catalog) by leaving it out. Any Iceberg catalog property is allowed, including "
+        + "path and format properties; values are applied only at creation time and are not validated by AutoMQ. "
+        + "Operators should restrict who can alter this topic config in multi-tenant environments. "
         + "Example: write.metadata.delete-after-commit.enabled=true,write.metadata.previous-versions-max=10";
     public static final List<String> AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DEFAULT = Collections.unmodifiableList(
         Arrays.asList("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true")
