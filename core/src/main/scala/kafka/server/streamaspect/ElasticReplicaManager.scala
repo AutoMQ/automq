@@ -1,7 +1,7 @@
 package kafka.server.streamaspect
 
 import com.automq.stream.api.exceptions.FastReadFailFastException
-import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel, TimerUtil}
+import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel}
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.{FutureUtil, Systems, Threads}
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
@@ -13,7 +13,7 @@ import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, OpenHint, PartitionStatusTracker, ReadHint}
 import kafka.log.{LogManager, UnifiedLog}
-import kafka.server.Limiter.Handler
+import kafka.server.Limiter.{AcquireContext, Permit}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.ReplicaManager.createLogReadResult
 import kafka.server._
@@ -55,35 +55,11 @@ import scala.compat.java8.OptionConverters.RichOptionalGeneric
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, EnumerationHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
-  private val LABEL_FETCH_LIMITER_NAME = AttributeKey.stringKey("limiter_name")
-  private val LABEL_FETCH_EXECUTOR_NAME = AttributeKey.stringKey("executor_name")
   private val LABEL_NODE_ID = AttributeKey.stringKey("node_id")
   private val LABEL_TOPIC_NAME = AttributeKey.stringKey("topic")
   private val LABEL_RACK_ID = AttributeKey.stringKey("rack")
-  private val FETCH_LIMITER_FAST_NAME = "fast"
-  private val FETCH_LIMITER_SLOW_NAME = "slow"
-  private val FETCH_EXECUTOR_FAST_NAME = "fast"
-  private val FETCH_EXECUTOR_SLOW_NAME = "slow"
-  private val FETCH_EXECUTOR_DELAYED_NAME = "delayed"
-
-  private val FETCH_LIMITER_PERMIT_NUM = S3Metrics.instance()
-    .longGauge("kafka_stream_fetch_limiter_permit_num", "The number of permits in fetch limiters", "")
-  private val FETCH_LIMITER_WAITING_TASK_NUM = S3Metrics.instance()
-    .longGauge("kafka_stream_fetch_limiter_waiting_task_num", "The number of tasks waiting for permits in fetch limiters", "")
-  private val FETCH_PENDING_TASK_NUM = S3Metrics.instance()
-    .longGauge("kafka_stream_fetch_pending_task_num", "The number of pending tasks in fetch executors", "")
-  private val FETCH_LIMITER_TIMEOUT_COUNT = S3Metrics.instance()
-    .longCounter("kafka_stream_fetch_limiter_timeout_count", "The number of acquire permits timeout in fetch limiters", "")
-  private val FETCH_LIMITER_TIME = S3Metrics.instance()
-    .histogram("kafka_stream_fetch_limiter_time", "The time cost of acquire permits in fetch limiters", "nanoseconds")
   private val TOPIC_PARTITION_COUNT = S3Metrics.instance()
     .longGauge("kafka_stream_topic_partition_count", "The number of partitions for each topic on each broker", "")
-
-  private def fetchLimiterAttributes(limiterName: String): Attributes =
-    Attributes.of(LABEL_FETCH_LIMITER_NAME, limiterName)
-
-  private def fetchExecutorAttributes(executorName: String): Attributes =
-    Attributes.of(LABEL_FETCH_EXECUTOR_NAME, executorName)
 
   def emptyReadResults(partitions: Seq[TopicIdPartition]): Seq[(TopicIdPartition, LogReadResult)] = {
     partitions.map(tp => tp -> createLogReadResult(null))
@@ -125,15 +101,13 @@ class ElasticReplicaManager(
   brokerEpochSupplier: () => Long = () => -1,
   addPartitionsToTxnManager: Option[AddPartitionsToTxnManager] = None,
   directoryEventHandler: DirectoryEventHandler = DirectoryEventHandler.NOOP,
-  private val fastFetchExecutor: ExecutorService = Threads.newFixedThreadPool(4, "kafka-apis-fast-fetch-executor", true, 10000, LoggerFactory.getLogger(classOf[ElasticReplicaManager])),
-  private val slowFetchExecutor: ExecutorService = Threads.newFixedThreadPool(12, "kafka-apis-slow-fetch-executor", true, 10000, LoggerFactory.getLogger(classOf[ElasticReplicaManager])),
   private val partitionMetricsCleanerExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor(ThreadUtils.createThreadFactory("kafka-partition-metrics-cleaner", true)),
 ) extends ReplicaManager(config, metrics, time, scheduler, logManager, remoteLogManager, quotaManagers, metadataCache,
   logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient, delayedProducePurgatoryParam,
   delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam, delayedElectLeaderPurgatoryParam,
   delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier, addPartitionsToTxnManager,
   directoryEventHandler) {
-  import ElasticReplicaManager.{fetchExecutorAttributes, fetchLimiterAttributes, FETCH_EXECUTOR_DELAYED_NAME, FETCH_EXECUTOR_FAST_NAME, FETCH_EXECUTOR_SLOW_NAME, FETCH_LIMITER_FAST_NAME, FETCH_LIMITER_PERMIT_NUM, FETCH_LIMITER_SLOW_NAME, FETCH_LIMITER_TIME, FETCH_LIMITER_TIMEOUT_COUNT, FETCH_LIMITER_WAITING_TASK_NUM, FETCH_PENDING_TASK_NUM, LABEL_NODE_ID, LABEL_RACK_ID, LABEL_TOPIC_NAME, TOPIC_PARTITION_COUNT}
+  import ElasticReplicaManager.{LABEL_NODE_ID, LABEL_RACK_ID, LABEL_TOPIC_NAME, TOPIC_PARTITION_COUNT}
 
   override protected lazy val logger: Logger =
     Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
@@ -155,42 +129,23 @@ class ElasticReplicaManager(
   protected val openingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
   protected val closingPartitions = new ConcurrentHashMap[TopicPartition, CompletableFuture[Void]]()
 
-  private val fetchLimiterSize = Systems.getEnvInt("AUTOMQ_FETCH_LIMITER_SIZE",
-    // autoscale the fetch limiter size based on heap size, min 200MiB, max 1GiB, every 3GB heap add 100MiB limiter
-     Math.min(1024, 100 * Math.max(2, (Systems.HEAP_MEMORY_SIZE / (1024 * 1024 * 1024) / 3)).asInstanceOf[Int]) * 1024 * 1024
+  private val fetchLimiterSize = Systems.getEnvLong("AUTOMQ_FETCH_LIMITER_SIZE",
+    // autoscale the fetch limiter size based on heap size, min 200MiB, every 3GB heap add 100MiB limiter
+    100L * Math.max(2L, Systems.HEAP_MEMORY_SIZE / (3L * 1024 * 1024 * 1024)) * 1024 * 1024
   )
 
   private def partitionDistribution(): Map[String, Int] = {
     allPartitions.keys.groupBy(_.topic).map(kv => kv._1 -> kv._2.size)
   }
-  private val fastFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_FAST_NAME)
-  private val slowFetchLimiter = new FairLimiter(fetchLimiterSize, FETCH_LIMITER_SLOW_NAME)
-  FETCH_PENDING_TASK_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
-    measurement.record(fetchExecutorQueueSize(fastFetchExecutor), fetchExecutorAttributes(FETCH_EXECUTOR_FAST_NAME))
-    measurement.record(fetchExecutorQueueSize(slowFetchExecutor), fetchExecutorAttributes(FETCH_EXECUTOR_SLOW_NAME))
-    measurement.record(DelayedFetch.executorQueueSize, fetchExecutorAttributes(FETCH_EXECUTOR_DELAYED_NAME))
-  })
-  FETCH_LIMITER_WAITING_TASK_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
-    measurement.record(fastFetchLimiter.waitingThreads(), fetchLimiterAttributes(FETCH_LIMITER_FAST_NAME))
-    measurement.record(slowFetchLimiter.waitingThreads(), fetchLimiterAttributes(FETCH_LIMITER_SLOW_NAME))
-  })
-  FETCH_LIMITER_PERMIT_NUM.register(MetricsLevel.INFO, Attributes.empty(), measurement => {
-    measurement.record(fastFetchLimiter.availablePermits(), fetchLimiterAttributes(FETCH_LIMITER_FAST_NAME))
-    measurement.record(slowFetchLimiter.availablePermits(), fetchLimiterAttributes(FETCH_LIMITER_SLOW_NAME))
-  })
-  private val fetchLimiterTimeoutCounterMap = util.Map.of(
-    fastFetchLimiter.name, FETCH_LIMITER_TIMEOUT_COUNT.register(MetricsLevel.INFO, fetchLimiterAttributes(fastFetchLimiter.name)),
-    slowFetchLimiter.name, FETCH_LIMITER_TIMEOUT_COUNT.register(MetricsLevel.INFO, fetchLimiterAttributes(slowFetchLimiter.name))
-  )
-  private val fetchLimiterTimeHistogramMap = util.Map.of(
-    fastFetchLimiter.name, FETCH_LIMITER_TIME.histogram(MetricsLevel.INFO, fetchLimiterAttributes(fastFetchLimiter.name)),
-    slowFetchLimiter.name, FETCH_LIMITER_TIME.histogram(MetricsLevel.INFO, fetchLimiterAttributes(slowFetchLimiter.name))
-  )
+  private val fetchLimiterHardThreshold = fetchLimiterSize * 3 / 2
+  private val fetchLimiterSoftThreshold = fetchLimiterHardThreshold / 3
 
-  private def fetchExecutorQueueSize(executorService: ExecutorService): Int = executorService match {
-    case executor: ThreadPoolExecutor => executor.getQueue.size()
-    case _ => 0
-  }
+  /** Creates a limiter for a fetch path. Tests may override this to keep inherited ReplicaManager tests synchronous. */
+  protected def createFetchLimiter(name: String): Limiter =
+    new FetchLimiter(fetchLimiterSoftThreshold, fetchLimiterHardThreshold, name, 12, 12)
+
+  private val fastFetchLimiter = createFetchLimiter("fast")
+  private val slowFetchLimiter = createFetchLimiter("slow")
 
   /**
    * Used to reduce allocation in [[readFromLocalLogV2]]
@@ -490,7 +445,7 @@ class ElasticReplicaManager(
     }
 
     // The fetching is done is a separate thread pool to avoid blocking io thread.
-    fastFetchExecutor.submit(new Runnable {
+    fastFetchLimiter.execute(params.connectionId, new Runnable {
       override def run(): Unit = {
         try {
           ReadHint.markReadAll()
@@ -504,7 +459,7 @@ class ElasticReplicaManager(
             val fastReadFailFast = ex.isInstanceOf[FastReadFailFastException]
             if (fastReadFailFast) {
               val timer = Time.SYSTEM.timer(params.maxWaitMs)
-              slowFetchExecutor.submit(new Runnable {
+              slowFetchLimiter.execute(params.connectionId, new Runnable {
                 override def run(): Unit = {
                   try {
                     timer.update()
@@ -639,7 +594,6 @@ class ElasticReplicaManager(
 
   /**
    * A Wrapper of [[readFromLocalLogV2]] which acquire memory permits from limiter.
-   * It has the same behavior as [[readFromLocalLogV2]] using the default [[NoopLimiter]].
    * A non-positive `timeoutMs` means no timeout.
    */
   def readFromLocalLogV2(
@@ -653,22 +607,13 @@ class ElasticReplicaManager(
     def bytesNeed(): Int = {
       // sum the sizes of topics to fetch from fetchInfos
       val bytesNeed = readPartitionInfo.foldLeft(0) { case (sum, (_, partitionData)) => sum + partitionData.maxBytes }
-      val bytesNeedFromParam = if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
-
-      // limit the bytes need to half of the maximum permits
-      math.min(bytesNeedFromParam, limiter.maxPermits())
+      if (bytesNeed <= 0) params.maxBytes else math.min(bytesNeed, params.maxBytes)
     }
 
-    val timer: TimerUtil = new TimerUtil()
-    val handler: Handler = timeoutMs match {
-      case t if t > 0 => limiter.acquire(bytesNeed(), t)
-      case _ => limiter.acquire(bytesNeed())
-    }
-    fetchLimiterTimeHistogramMap.get(limiter.name).record(timer.elapsedAs(TimeUnit.NANOSECONDS))
+    val handler: Permit = limiter.acquire(bytesNeed(), new AcquireContext(timeoutMs, params.connectionId))
 
     if (handler == null) {
       // the handler will be null if it timed out to acquire from limiter
-      fetchLimiterTimeoutCounterMap.get(limiter.name).add(1)
       // warn(s"Returning emtpy fetch response for fetch request $readPartitionInfo since the wait time exceeds $timeoutMs ms.")
       ElasticReplicaManager.emptyReadResults(readPartitionInfo.map(_._1))
     } else {
@@ -693,6 +638,7 @@ class ElasticReplicaManager(
               val newInfo = new FetchDataInfo(oldInfo.fetchOffsetMetadata, newRecords, oldInfo.firstEntryIncomplete, oldInfo.abortedTransactions, oldInfo.delayedRemoteStorageFetch)
               val newReadResult = oldReadResult.copy(info = newInfo)
               logReadResults = logReadResults.updated(i, logReadResults(i)._1 -> newReadResult)
+              handler.markResponseReady()
           }
         }
         logReadResults
