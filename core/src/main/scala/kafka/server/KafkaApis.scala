@@ -1110,7 +1110,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         fetchMinBytes,
         fetchMaxBytes,
         FetchIsolation.of(fetchRequest),
-        clientMetadata
+        clientMetadata,
+        // AutoMQ inject start
+        request.context.connectionId
+        // AutoMQ inject end
       )
 
       // call the replica manager to fetch messages from the local replica
