@@ -46,7 +46,7 @@ import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.metrics.MetricConfigs
 import org.apache.kafka.storage.internals.log.CleanerConfig
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.{Tag, Test}
 import org.junit.jupiter.api.function.Executable
 
 import scala.annotation.nowarn
@@ -388,6 +388,25 @@ class KafkaConfigTest {
     val config = KafkaConfig.fromProps(props)
     assertEquals(
       Seq(EndPoint("localhost", 9093, ListenerName.normalised("CONTROLLER"), SecurityProtocol.PLAINTEXT)),
+      config.effectiveAdvertisedControllerListeners
+    )
+  }
+
+  @Test
+  @Tag("S3Unit")
+  def testEffectAdvertiseControllerListenerUsesQuorumVoterEndpointForWildcardListener(): Unit = {
+    // Given a wildcard controller listener and a matching quorum voter endpoint,
+    // when no explicit advertised listener is configured, use the voter endpoint.
+    val props = new Properties()
+    props.setProperty(KRaftConfigs.PROCESS_ROLES_CONFIG, "controller")
+    props.setProperty(SocketServerConfigs.LISTENERS_CONFIG, "CONTROLLER://:9093")
+    props.setProperty(KRaftConfigs.NODE_ID_CONFIG, "2")
+    props.setProperty(QuorumConfig.QUORUM_VOTERS_CONFIG, "2@10.20.1.32:9092")
+    props.setProperty(KRaftConfigs.CONTROLLER_LISTENER_NAMES_CONFIG, "CONTROLLER")
+
+    val config = KafkaConfig.fromProps(props)
+    assertEquals(
+      Seq(EndPoint("10.20.1.32", 9092, ListenerName.normalised("CONTROLLER"), SecurityProtocol.PLAINTEXT)),
       config.effectiveAdvertisedControllerListeners
     )
   }

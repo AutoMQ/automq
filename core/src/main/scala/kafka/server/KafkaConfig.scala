@@ -872,13 +872,35 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   }
 
   def effectiveAdvertisedControllerListeners: Seq[EndPoint] = {
-    val controllerAdvertisedListeners = advertisedListeners.filter(l => controllerListenerNames.contains(l.listenerName.value()))
+    val controllerAdvertisedListeners = Option(getString(SocketServerConfigs.ADVERTISED_LISTENERS_CONFIG))
+      .map(CoreUtils.listenerListToEndPoints(_, effectiveListenerSecurityProtocolMap, requireDistinctPorts = false))
+      .getOrElse(Seq.empty)
+      .filter(l => controllerListenerNames.contains(l.listenerName.value()))
     val controllerListenersValue = controllerListeners
 
-    controllerListenerNames.flatMap { name =>
+    controllerListenerNames.zipWithIndex.flatMap { case (name, index) =>
       controllerAdvertisedListeners
         .find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name)))
-        .orElse(controllerListenersValue.find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name))))
+        .orElse {
+          controllerListenersValue
+            .find(endpoint => endpoint.listenerName.equals(ListenerName.normalised(name)))
+            .map { endpoint =>
+              if (index == 0 && (endpoint.host == null || endpoint.host == "0.0.0.0")) {
+                Option(QuorumConfig.parseVoterConnections(quorumVoters).get(nodeId))
+                  .map { voterAddress =>
+                    EndPoint(
+                      voterAddress.getHostString,
+                      voterAddress.getPort,
+                      endpoint.listenerName,
+                      endpoint.securityProtocol
+                    )
+                  }
+                  .getOrElse(endpoint)
+              } else {
+                endpoint
+              }
+            }
+        }
     }
   }
 
