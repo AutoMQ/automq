@@ -880,7 +880,8 @@ class ElasticKafkaApis(
         fetchMinBytes,
         fetchMaxBytes,
         FetchIsolation.of(fetchRequest),
-        clientMetadata
+        clientMetadata,
+        request.context.connectionId
       )
 
       // call the replica manager to fetch messages from the local replica
