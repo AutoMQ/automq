@@ -254,7 +254,8 @@ class ElasticKafkaApis(
           case None => (-1, -1)
         }
     }
-    LeaderNode(leaderId, leaderEpoch, OptionConverters.toScala(trafficInterceptor.getLeaderNode(leaderId, clientIdMetadata, ln.value())))
+    val node = OptionConverters.toScala(trafficInterceptor.getLeaderNode(leaderId, clientIdMetadata, ln.value()))
+    LeaderNode(node.map(_.id()).getOrElse(leaderId), leaderEpoch, node)
   }
 
   /**
