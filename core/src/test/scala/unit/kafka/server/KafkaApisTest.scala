@@ -18,6 +18,7 @@
 package kafka.server
 
 import kafka.api.LeaderAndIsr
+import kafka.automq.interceptor.NoopTrafficInterceptor
 import kafka.cluster.{Broker, Partition}
 import kafka.controller.{ControllerContext, KafkaController}
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
@@ -2614,6 +2615,17 @@ class KafkaApisTest extends Logging {
       when(clientQuotaManager.maybeRecordAndGetThrottleTimeMs(
         any[RequestChannel.Request](), anyDouble, anyLong)).thenReturn(0)
       kafkaApis = createKafkaApis()
+      // AutoMQ inject start
+      val expectedLeaderNode = kafkaApis match {
+        case elasticKafkaApis: ElasticKafkaApis =>
+          val proxyNode = new Node(1, "proxy", 9092)
+          val trafficInterceptor = spy(new NoopTrafficInterceptor(elasticKafkaApis, metadataCache))
+          doReturn(Optional.of(proxyNode)).when(trafficInterceptor).getLeaderNode(anyInt(), any(), anyString())
+          elasticKafkaApis.setTrafficInterceptor(trafficInterceptor)
+          proxyNode
+        case _ => new Node(newLeaderId, "broker2", 9092)
+      }
+      // AutoMQ inject end
       kafkaApis.handleProduceRequest(request, RequestLocal.withThreadConfinedCaching)
 
       val response = verifyNoThrottling[ProduceResponse](request)
@@ -2623,12 +2635,12 @@ class KafkaApisTest extends Logging {
       assertEquals(1, topicProduceResponse.partitionResponses.size)
       val partitionProduceResponse = topicProduceResponse.partitionResponses.asScala.head
       assertEquals(Errors.NOT_LEADER_OR_FOLLOWER, Errors.forCode(partitionProduceResponse.errorCode))
-      assertEquals(newLeaderId, partitionProduceResponse.currentLeader.leaderId())
+      assertEquals(expectedLeaderNode.id(), partitionProduceResponse.currentLeader.leaderId())
       assertEquals(newLeaderEpoch, partitionProduceResponse.currentLeader.leaderEpoch())
       assertEquals(1, response.data.nodeEndpoints.size)
       val node = response.data.nodeEndpoints.asScala.head
-      assertEquals(2, node.nodeId)
-      assertEquals("broker2", node.host)
+      assertEquals(expectedLeaderNode.id(), node.nodeId)
+      assertEquals(expectedLeaderNode.host(), node.host)
     }
   }
 
