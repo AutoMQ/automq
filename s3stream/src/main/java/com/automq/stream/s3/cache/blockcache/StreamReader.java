@@ -185,6 +185,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
     public void close() {
         closed = true;
+        blocksEpoch++;
         List<Block> blocks = new ArrayList<>(blocksMap.values());
         // The Block#markRead will immediately invoke after the Block is removed.
         blocksMap.clear();
