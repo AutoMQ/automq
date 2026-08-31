@@ -426,7 +426,8 @@ import static com.automq.stream.utils.FutureUtil.exec;
             return CompletableFuture.completedFuture(null);
         }
         long currentBlocksEpoch = blocksEpoch;
-        inflightLoadIndexCf = new CompletableFuture<>();
+        CompletableFuture<Void> loadIndexCf = new CompletableFuture<>();
+        inflightLoadIndexCf = loadIndexCf;
         long nextLoadingOffset = calWindowBlocksEndOffset();
         AtomicLong nextFindStartOffset = new AtomicLong(nextLoadingOffset);
         TimerUtil time = new TimerUtil();
@@ -467,16 +468,15 @@ import static com.automq.stream.utils.FutureUtil.exec;
             return prevCf;
         }, eventLoop);
         findBlockIndexesCf.whenCompleteAsync((nil, ex) -> {
+            inflightLoadIndexCf = null;
             if (ex != null) {
-                inflightLoadIndexCf.completeExceptionally(ex);
+                loadIndexCf.completeExceptionally(ex);
                 return;
             }
             GET_INDICES_TIME_FIND_INDEX_STATS.record(time.elapsedAs(TimeUnit.NANOSECONDS));
-            CompletableFuture<Void> cf = inflightLoadIndexCf;
-            inflightLoadIndexCf = null;
-            cf.complete(null);
+            loadIndexCf.complete(null);
         }, eventLoop);
-        return inflightLoadIndexCf;
+        return loadIndexCf;
     }
 
     private static DeltaHistogram readBlockCacheStats(boolean isCacheHit) {
