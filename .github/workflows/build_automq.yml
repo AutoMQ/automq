@@ -48,8 +48,10 @@ jobs:
           distribution: "zulu"
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2.9.0
-      - name: Checkstyle
-        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest spotlessJavaCheck
+      - name: Checkstyle and release artifact
+        run: ./gradlew --build-cache rat checkstyleMain checkstyleTest spotlessJavaCheck releaseTarGz
+      - name: Verify release license manifest
+        run: python3 ./committer-tools/verify_license.py --skip-build
   spotbugs:
     name: "Spotbugs"
     runs-on: ${{ matrix.os }}

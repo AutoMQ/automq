@@ -53,6 +53,9 @@ jobs:
               fi
           done
 
+      - name: Verify release license manifest
+        run: python3 ./committer-tools/verify_license.py --skip-build
+
       - uses: tvrcgo/oss-action@master
         name: upload-latest
         if: ${{ github.repository_owner == 'AutoMQ' && steps.build-targz.outputs.IS_LATEST == 'true' }}

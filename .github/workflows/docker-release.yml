@@ -40,6 +40,9 @@ jobs:
         run: |
           ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
 
+      - name: Verify release license manifest
+        run: python3 ./committer-tools/verify_license.py --skip-build
+
       # docker image release
       - name: Cp TarGz to Docker Path
         run: |
