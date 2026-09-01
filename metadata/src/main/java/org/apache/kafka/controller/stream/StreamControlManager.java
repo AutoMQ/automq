@@ -96,8 +96,8 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.AsyncLogger;
-import com.google.common.base.Strings;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
