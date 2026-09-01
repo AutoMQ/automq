@@ -52,9 +52,6 @@ license metadata is not uniform across Maven artifacts; see
 KAFKA-12622 for the rationale. `NOTICE-binary` remains a separate attribution
 document.
 
-For the source-backed upstream workflow and its exact file/command references,
-see [Apache Kafka LICENSE-binary workflow research](apache-kafka-license-workflow.md).
-
 Keep the source paths and command entry points aligned with Kafka when syncing
 upstream changes. Resolve conflicts only for AutoMQ's additional dependencies,
 project artifact names, tarball prefixes, and version-token parsing; do not
