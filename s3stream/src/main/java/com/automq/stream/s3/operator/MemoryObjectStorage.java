@@ -212,10 +212,15 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return CompletableFuture.completedFuture(storage.entrySet()
-            .stream()
-            .filter(entry -> entry.getKey().startsWith(prefix))
+    CompletableFuture<List<ObjectInfo>> doList(ListOptions options) {
+        java.util.stream.Stream<Map.Entry<String, ByteBuf>> stream = storage.entrySet().stream()
+            .filter(entry -> entry.getKey().startsWith(options.prefix()))
+            .filter(entry -> options.startAfter() == null || entry.getKey().compareTo(options.startAfter()) > 0)
+            .sorted(Map.Entry.comparingByKey());
+        if (options.maxKeys() != ListOptions.UNLIMITED) {
+            stream = stream.limit(options.maxKeys());
+        }
+        return CompletableFuture.completedFuture(stream
             .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().readableBytes()))
             .collect(Collectors.toList()));
     }

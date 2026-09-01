@@ -652,9 +652,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<List<ObjectInfo>> list(String prefix) {
+    public CompletableFuture<List<ObjectInfo>> list(ListOptions options) {
         TimerUtil timerUtil = new TimerUtil();
-        CompletableFuture<List<ObjectInfo>> cf = doList(prefix);
+        CompletableFuture<List<ObjectInfo>> cf = doList(options);
         cf.thenAccept(keyList -> {
             ObjectStorageMetrics.recordListObjects(true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             logger.info("List objects finished, count: {}, cost: {}ms", keyList.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
@@ -664,6 +664,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return null;
         });
         return cf;
+    }
+
+    @Override
+    public boolean isListRetriable(Throwable exception) {
+        return toRetryStrategyAndCause(exception, S3Operation.LIST_OBJECTS).getLeft() == RetryStrategy.RETRY;
     }
 
     @Override
@@ -702,7 +707,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     abstract void doClose();
 
-    abstract CompletableFuture<List<ObjectInfo>> doList(String prefix);
+    abstract CompletableFuture<List<ObjectInfo>> doList(ListOptions options);
 
     protected int retryDelay(S3Operation operation, int retryCount) {
         switch (operation) {

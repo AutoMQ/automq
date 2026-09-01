@@ -1,5 +1,5 @@
 /*
- * Copyright 2025, AutoMQ HK Limited.
+ * Copyright 2026, AutoMQ HK Limited.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
@@ -17,28 +17,19 @@
  * limitations under the License.
  */
 
-package kafka.log.stream.s3.network.request;
+package org.apache.kafka.common.errors.s3;
 
-import org.apache.kafka.common.requests.AbstractRequest.Builder;
+import org.apache.kafka.common.errors.ApiException;
 
-public abstract class BatchRequest implements WrapRequest {
-    public abstract Builder addSubRequest(Builder builder);
-
-    /**
-     * Returns how long the first request may wait for more requests with the same batch key.
-     */
-    public long lingerNanos() {
-        return 0;
-    }
-
-    public Object batchKey() {
-        return apiKey();
-    }
+/**
+ * Indicates that a well-formed complete Archive desired state is stale against Controller metadata.
+ */
+public class StreamArchiveStateConflictException extends ApiException {
 
     /**
-     * Returns the maximum number of subrequests emitted in one RPC.
+     * Creates a conflict with the Controller-provided diagnostic message.
      */
-    public int maxBatchSize() {
-        return Integer.MAX_VALUE;
+    public StreamArchiveStateConflictException(String message) {
+        super(message);
     }
 }

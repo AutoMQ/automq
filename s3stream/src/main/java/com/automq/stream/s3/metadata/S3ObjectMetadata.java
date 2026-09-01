@@ -59,6 +59,7 @@ public class S3ObjectMetadata {
      * The object attributes {@link ObjectAttributes}.
      */
     private int attributes;
+    private final String key;
 
     // Only used for testing
     public S3ObjectMetadata(long objectId, long objectSize, S3ObjectType type) {
@@ -95,6 +96,25 @@ public class S3ObjectMetadata {
         long committedTimestamp, long objectSize,
         // this param only comes from S3StreamSetObject
         long orderId, int attributes) {
+        this(objectId, type, offsetRanges, dataTimeInMs, committedTimestamp, objectSize, orderId, attributes, null);
+    }
+
+    /**
+     * Create complete object metadata with an optional explicit physical storage key.
+     *
+     * @param objectId logical object identity
+     * @param type object type
+     * @param offsetRanges represented Stream ranges
+     * @param dataTimeInMs logical data timestamp
+     * @param committedTimestamp physical commit timestamp
+     * @param objectSize physical object size
+     * @param orderId Stream Set Object order, or the invalid order ID
+     * @param attributes object attributes including bucket and Composite type
+     * @param key explicit storage key, or null for the object-ID-derived key
+     */
+    public S3ObjectMetadata(
+        long objectId, S3ObjectType type, List<StreamOffsetRange> offsetRanges, long dataTimeInMs,
+        long committedTimestamp, long objectSize, long orderId, int attributes, String key) {
         this.objectId = objectId;
         this.orderId = orderId;
         this.objectSize = objectSize;
@@ -103,6 +123,7 @@ public class S3ObjectMetadata {
         this.dataTimeInMs = dataTimeInMs;
         this.committedTimestamp = committedTimestamp;
         this.attributes = attributes;
+        this.key = key;
     }
 
     public void setObjectSize(long objectSize) {
@@ -177,11 +198,11 @@ public class S3ObjectMetadata {
 
     public String toString() {
         return "S3ObjectMetadata(objectId=" + objectId + ", objectSize=" + objectSize + ", type=" + type + ", offsetRanges=" + offsetRanges
-            + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ")";
+            + ", committedTimestamp=" + committedTimestamp + ", dataTimestamp=" + dataTimeInMs + ", key=" + key() + ")";
     }
 
     public String key() {
-        return ObjectUtils.genKey(0, objectId);
+        return key == null ? ObjectUtils.genKey(0, objectId) : key;
     }
 
     public short bucket() {

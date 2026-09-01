@@ -435,9 +435,40 @@ public class FeatureControlManagerTest {
                 + "Direct downgrade from AutoMQVersion V6 is not supported.");
 
         for (FeatureUpdate.UpgradeType downgradeType : List.of(
-            FeatureUpdate.UpgradeType.SAFE_DOWNGRADE, FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
+            FeatureUpdate.UpgradeType.UPGRADE, FeatureUpdate.UpgradeType.SAFE_DOWNGRADE,
+            FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
             ControllerResult<Map<String, ApiError>> result = manager.updateFeatures(
                 singletonMap(AutoMQVersion.FEATURE_NAME, AutoMQVersion.V5.featureLevel()),
+                singletonMap(AutoMQVersion.FEATURE_NAME, downgradeType), false);
+
+            assertEquals(ControllerResult.atomicOf(emptyList(),
+                singletonMap(AutoMQVersion.FEATURE_NAME, expectedError)), result);
+        }
+    }
+
+    /**
+     * Given finalized Archive metadata, direct downgrade from V7 is rejected for every downgrade type.
+     */
+    @Tag("S3Unit")
+    @Test
+    public void testCannotDirectlyDowngradeAutoMQVersionV7() {
+        FeatureControlManager manager = new FeatureControlManager.Builder()
+            .setQuorumFeatures(features(AutoMQVersion.FEATURE_NAME,
+                AutoMQVersion.V0.featureLevel(), AutoMQVersion.V7.featureLevel()))
+            .setMetadataVersion(MetadataVersion.IBP_3_9_IV0)
+            .build();
+        manager.replay(new FeatureLevelRecord()
+            .setName(AutoMQVersion.FEATURE_NAME)
+            .setFeatureLevel(AutoMQVersion.V7.featureLevel()));
+        ApiError expectedError = new ApiError(Errors.INVALID_UPDATE_VERSION,
+            "Invalid update version 7 for feature automq.version. "
+                + "Direct downgrade from AutoMQVersion V7 is not supported.");
+
+        for (FeatureUpdate.UpgradeType downgradeType : List.of(
+            FeatureUpdate.UpgradeType.UPGRADE, FeatureUpdate.UpgradeType.SAFE_DOWNGRADE,
+            FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
+            ControllerResult<Map<String, ApiError>> result = manager.updateFeatures(
+                singletonMap(AutoMQVersion.FEATURE_NAME, AutoMQVersion.V6.featureLevel()),
                 singletonMap(AutoMQVersion.FEATURE_NAME, downgradeType), false);
 
             assertEquals(ControllerResult.atomicOf(emptyList(),

@@ -1,5 +1,5 @@
 /*
- * Copyright 2025, AutoMQ HK Limited.
+ * Copyright 2026, AutoMQ HK Limited.
  *
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements. See the NOTICE file distributed with
@@ -17,28 +17,23 @@
  * limitations under the License.
  */
 
-package kafka.log.stream.s3.network.request;
+package com.automq.stream.s3.streams;
 
-import org.apache.kafka.common.requests.AbstractRequest.Builder;
+import java.util.List;
 
-public abstract class BatchRequest implements WrapRequest {
-    public abstract Builder addSubRequest(Builder builder);
-
-    /**
-     * Returns how long the first request may wait for more requests with the same batch key.
-     */
-    public long lingerNanos() {
-        return 0;
-    }
-
-    public Object batchKey() {
-        return apiKey();
-    }
-
-    /**
-     * Returns the maximum number of subrequests emitted in one RPC.
-     */
-    public int maxBatchSize() {
-        return Integer.MAX_VALUE;
-    }
+/**
+ * Complete Broker-owned desired Archive state for one Stream.
+ */
+public record StreamArchiveState(
+    long streamId,
+    long streamEpoch,
+    long archiveStartOffset,
+    long archiveMetadataEndOffset,
+    long archiveEndOffset,
+    long archivePreparedEndOffset,
+    long archiveSize,
+    long archiveCleanupEndOffset,
+    long archiveCleanupSize,
+    List<Long> archiveObjectIds
+) {
 }

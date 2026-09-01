@@ -124,4 +124,25 @@ public interface StreamManager {
      */
     CompletableFuture<Void> deleteStream(long streamId, long epoch);
 
+    /**
+     * Submit one complete desired Stream Archive state to the Controller.
+     *
+     * @param update complete desired state
+     * @return completion of this one update; business errors are never retried in-task
+     */
+    default CompletableFuture<Void> updateStreamArchive(StreamArchiveState update) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Stream Archive is not supported"));
+    }
+
+    /**
+     * Get the complete Archive state observed for an owned Stream.
+     *
+     * @param streamId stream id
+     * @param streamEpoch expected owner epoch
+     * @return the current complete Archive state
+     */
+    default CompletableFuture<StreamArchiveState> getStreamArchive(long streamId, long streamEpoch) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Stream Archive is not supported"));
+    }
+
 }

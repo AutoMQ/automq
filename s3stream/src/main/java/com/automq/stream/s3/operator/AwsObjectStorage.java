@@ -405,6 +405,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = cause(ex);
+        if (operation == S3Operation.LIST_OBJECTS) {
+            if (cause instanceof S3Exception s3Exception) {
+                RetryStrategy strategy = isRetriableDeleteStatus(s3Exception.statusCode())
+                    ? RetryStrategy.RETRY : RetryStrategy.ABORT;
+                return Pair.of(strategy, cause);
+            }
+            RetryStrategy strategy = cause instanceof SdkClientException || cause instanceof TimeoutException
+                ? RetryStrategy.RETRY : RetryStrategy.ABORT;
+            return Pair.of(strategy, cause);
+        }
         RetryStrategy strategy = RetryStrategy.RETRY;
         if (cause instanceof S3Exception) {
             S3Exception s3Ex = (S3Exception) cause;
@@ -444,29 +454,41 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<List<ObjectInfo>> doList(String prefix) {
+    CompletableFuture<List<ObjectInfo>> doList(ListOptions options) {
+        if (options.maxKeys() == 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
         CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
         List<ObjectInfo> allObjects = new ArrayList<>();
-        listNextBatch(prefix, null, allObjects, resultFuture);
+        listNextBatch(options, null, allObjects, resultFuture);
         return resultFuture;
     }
 
-    private void listNextBatch(String prefix, String continuationToken, List<ObjectInfo> allObjects,
+    private void listNextBatch(ListOptions options, String continuationToken, List<ObjectInfo> allObjects,
         CompletableFuture<List<ObjectInfo>> resultFuture) {
         readS3Client.listObjectsV2(builder -> {
-            builder.bucket(bucket).prefix(prefix);
+            builder.bucket(bucket).prefix(options.prefix());
             if (continuationToken != null) {
                 builder.continuationToken(continuationToken);
+            } else if (options.startAfter() != null) {
+                builder.startAfter(options.startAfter());
+            }
+            if (options.maxKeys() != ListOptions.UNLIMITED) {
+                builder.maxKeys(options.maxKeys() - allObjects.size());
             }
         }).thenAccept(resp -> {
             resp.contents()
                 .stream()
                 .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
                 .forEach(allObjects::add);
-            if (resp.isTruncated()) {
-                listNextBatch(prefix, resp.nextContinuationToken(), allObjects, resultFuture);
+            boolean limitReached = options.maxKeys() != ListOptions.UNLIMITED
+                && allObjects.size() >= options.maxKeys();
+            if (resp.isTruncated() && !limitReached) {
+                listNextBatch(options, resp.nextContinuationToken(), allObjects, resultFuture);
             } else {
-                resultFuture.complete(allObjects);
+                int resultSize = options.maxKeys() == ListOptions.UNLIMITED
+                    ? allObjects.size() : Math.min(options.maxKeys(), allObjects.size());
+                resultFuture.complete(new ArrayList<>(allObjects.subList(0, resultSize)));
             }
         }).exceptionally(ex -> {
             resultFuture.completeExceptionally(ex);

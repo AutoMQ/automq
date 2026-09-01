@@ -1,0 +1,50 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+{
+  "apiKey": 521,
+  "type": "request",
+  "listeners": ["controller", "broker"],
+  "name": "UpdateStreamArchiveRequest",
+  "validVersions": "0",
+  "flexibleVersions": "0+",
+  "fields": [
+    { "name": "NodeId", "type": "int32", "versions": "0+", "about": "The node id." },
+    { "name": "NodeEpoch", "type": "int64", "versions": "0+", "about": "The node epoch." },
+    { "name": "UpdateStreamArchiveRequests", "type": "[]StreamArchiveUpdate", "versions": "0+",
+      "about": "The ordered complete desired Archive states.", "fields": [
+      { "name": "StreamId", "type": "int64", "versions": "0+", "entityType": "streamId",
+        "about": "The Stream id." },
+      { "name": "StreamEpoch", "type": "int64", "versions": "0+", "entityType": "streamEpoch",
+        "about": "The Stream epoch held by the requesting node." },
+      { "name": "ArchiveStartOffset", "type": "int64", "versions": "0+",
+        "about": "The first published Archive offset." },
+      { "name": "ArchiveMetadataEndOffset", "type": "int64", "versions": "0+",
+        "about": "The exclusive end offset whose online metadata has been removed." },
+      { "name": "ArchiveEndOffset", "type": "int64", "versions": "0+",
+        "about": "The exclusive published Archive end offset." },
+      { "name": "ArchivePreparedEndOffset", "type": "int64", "versions": "0+",
+        "about": "The exclusive durable prepared Archive end offset." },
+      { "name": "ArchiveSize", "type": "int64", "versions": "0+",
+        "about": "The logical size of published Archive data." },
+      { "name": "ArchiveCleanupEndOffset", "type": "int64", "versions": "0+",
+        "about": "The exclusive end offset of the prepared cleanup range." },
+      { "name": "ArchiveCleanupSize", "type": "int64", "versions": "0+",
+        "about": "The logical size of the prepared cleanup range." },
+      { "name": "ArchiveObjectIds", "type": "[]int64", "versions": "0+",
+        "about": "The ordered online object ids supplied for Archive prepare." }
+    ]}
+  ]
+}

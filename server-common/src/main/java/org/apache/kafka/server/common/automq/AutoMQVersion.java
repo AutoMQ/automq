@@ -44,10 +44,12 @@ public enum AutoMQVersion implements FeatureVersion {
     // Support KV namespace
     V5((short) 6, MetadataVersion.IBP_3_9_IV0),
     // Support fast partition reassignment
-    V6((short) 7, MetadataVersion.IBP_3_9_IV0);
+    V6((short) 7, MetadataVersion.IBP_3_9_IV0),
+    // Support Infinite Storage Stream Archive
+    V7((short) 8, MetadataVersion.IBP_3_9_IV0);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V6;
+    public static final AutoMQVersion LATEST = V7;
 
     private final short level;
     private final Version s3streamVersion;
@@ -142,6 +144,13 @@ public enum AutoMQVersion implements FeatureVersion {
         return isAtLeast(V6);
     }
 
+    /**
+     * Returns whether the finalized feature level supports Stream Archive metadata and protocol.
+     */
+    public boolean isStreamArchiveSupported() {
+        return isAtLeast(V7);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -190,6 +199,7 @@ public enum AutoMQVersion implements FeatureVersion {
         return switch (automqVersion) {
             case 1, 2 -> Version.V0;
             case 3, 4, 5, 6, 7 -> Version.V1;
+            case 8 -> Version.V2;
             default -> throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
         };
     }

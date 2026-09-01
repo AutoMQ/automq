@@ -56,6 +56,9 @@ class ElasticControllerApis(
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
         case ApiKeys.COMMIT_STREAM_SET_OBJECT => handleCommitStreamSetObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
+        // AutoMQ inject start
+        case ApiKeys.UPDATE_STREAM_ARCHIVE => handleUpdateStreamArchive(request)
+        // AutoMQ inject end
         case ApiKeys.GET_OPENING_STREAMS => handleGetOpeningStreams(request)
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
@@ -126,6 +129,9 @@ class ElasticControllerApis(
            | ApiKeys.PREPARE_S3_OBJECT
            | ApiKeys.COMMIT_STREAM_SET_OBJECT
            | ApiKeys.COMMIT_STREAM_OBJECT
+           // AutoMQ inject start
+           | ApiKeys.UPDATE_STREAM_ARCHIVE
+           // AutoMQ inject end
            | ApiKeys.GET_OPENING_STREAMS
            | ApiKeys.GET_KVS
            | ApiKeys.PUT_KVS
@@ -296,6 +302,27 @@ class ElasticControllerApis(
         }
       }
   }
+
+  // AutoMQ inject start
+  /**
+   * Applies ordered complete Archive desired states and returns positional business results.
+   */
+  def handleUpdateStreamArchive(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val updateRequest = request.body[UpdateStreamArchiveRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.updateStreamArchive(context, updateRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new UpdateStreamArchiveResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+  // AutoMQ inject end
 
   def handleGetOpeningStreams(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val getOpeningStreamsRequest = request.body[GetOpeningStreamsRequest]

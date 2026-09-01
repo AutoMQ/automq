@@ -22,9 +22,12 @@ import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.image.S3StreamsMetadataImage.RangeGetter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
@@ -34,6 +37,7 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
@@ -200,6 +204,145 @@ public class S3StreamsMetadataImageTest {
         delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
         RecordTestUtils.replayAll(delta, writer.records());
         assertEquals(150L, delta.apply().streamEndOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a live Stream without a materialized archive record, verify lookup returns the
+     * Stream-start defaults while snapshots remain free of archive records.
+     */
+    @Test
+    public void testArchiveDefaultStateIsNotMaterialized() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 100L, 100L, 100L, 100L, 0L, 100L, 0L),
+            image.getStreamArchiveMetadata(STREAM0));
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof S3StreamArchiveRecord
+                || record.message() instanceof RemoveS3StreamArchiveRecord));
+    }
+
+    /**
+     * Given successive complete archive records, verify replay replaces every field and a
+     * snapshot round trip preserves the surviving state, including cleanup intent.
+     */
+    @Test
+    public void testArchiveReplayReplacementAndSnapshot() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        assertEquals(Set.of(STREAM0), delta.changedStreams());
+        S3StreamsMetadataImage firstImage = delta.apply();
+        assertFalse(firstImage.isEmpty());
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L),
+            firstImage.getStreamArchiveMetadata(STREAM0));
+
+        delta = new S3StreamsMetadataDelta(firstImage);
+        delta.replay(archiveRecord(STREAM0, 25L, 45L, 50L, 50L, 400L, 25L, 0L));
+        S3StreamsMetadataImage replacedImage = delta.apply();
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 25L, 45L, 50L, 50L, 400L, 25L, 0L),
+            replacedImage.getStreamArchiveMetadata(STREAM0));
+        assertEquals(500L, firstImage.getStreamArchiveMetadata(STREAM0).archiveSize());
+
+        RecordListWriter writer = new RecordListWriter();
+        replacedImage.write(writer, new ImageWriterOptions.Builder().build());
+        List<S3StreamArchiveRecord> archiveRecords = writer.records().stream()
+            .map(ApiMessageAndVersion::message)
+            .filter(S3StreamArchiveRecord.class::isInstance)
+            .map(S3StreamArchiveRecord.class::cast)
+            .collect(Collectors.toList());
+        assertEquals(1, archiveRecords.size());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof RemoveS3StreamArchiveRecord));
+
+        S3StreamsMetadataDelta snapshotDelta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(snapshotDelta, writer.records());
+        assertEquals(replacedImage.getStreamArchiveMetadata(STREAM0),
+            snapshotDelta.apply().getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given a removal record, verify replay deletes materialized archive state and snapshots
+     * emit neither the removed full record nor a removal record.
+     */
+    @Test
+    public void testArchiveRemoval() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new RemoveS3StreamArchiveRecord().setStreamId(STREAM0));
+        assertEquals(Set.of(STREAM0), delta.changedStreams());
+        image = delta.apply();
+        assertNull(image.getStreamArchiveMetadata(STREAM0));
+        assertTrue(image.isEmpty());
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof S3StreamArchiveRecord
+                || record.message() instanceof RemoveS3StreamArchiveRecord));
+    }
+
+    /**
+     * Given an older image with Archive state, verify completing a snapshot removes state that
+     * is absent from the snapshot's surviving full records.
+     */
+    @Test
+    public void testArchiveSnapshotCompletionRemovesAbsentState() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.finishSnapshot();
+        assertNull(delta.apply().getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given a prepared Archive boundary after owner recovery, verify the Image enumerates its ordered source range.
+     */
+    @Test
+    public void testPreparedArchiveRangeCanBeRecoveredWithoutObjectIdState() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        delta.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(0L).setEndOffset(50L));
+        delta.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(11L)
+            .setStartOffset(50L).setEndOffset(100L));
+        delta.replay(archiveRecord(STREAM0, 0L, 0L, 0L, 100L, 0L, 0L, 0L));
+
+        S3StreamsMetadataImage recoveredImage = delta.apply();
+        S3StreamArchiveMetadata archive = recoveredImage.getStreamArchiveMetadata(STREAM0);
+        assertEquals(List.of(10L, 11L), recoveredImage.getStreamObjects(STREAM0,
+                archive.archiveEndOffset(), archive.archivePreparedEndOffset(), 100).stream()
+            .map(S3StreamObject::objectId)
+            .collect(Collectors.toList()));
+    }
+
+    private static S3StreamArchiveRecord archiveRecord(
+        long streamId,
+        long archiveStartOffset,
+        long archiveMetadataEndOffset,
+        long archiveEndOffset,
+        long archivePreparedEndOffset,
+        long archiveSize,
+        long archiveCleanupEndOffset,
+        long archiveCleanupSize
+    ) {
+        return new S3StreamArchiveRecord()
+            .setStreamId(streamId)
+            .setArchiveStartOffset(archiveStartOffset)
+            .setArchiveMetadataEndOffset(archiveMetadataEndOffset)
+            .setArchiveEndOffset(archiveEndOffset)
+            .setArchivePreparedEndOffset(archivePreparedEndOffset)
+            .setArchiveSize(archiveSize)
+            .setArchiveCleanupEndOffset(archiveCleanupEndOffset)
+            .setArchiveCleanupSize(archiveCleanupSize);
     }
 
     /**

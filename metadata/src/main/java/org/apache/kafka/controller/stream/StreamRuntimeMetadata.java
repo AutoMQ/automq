@@ -54,6 +54,9 @@ public class StreamRuntimeMetadata {
     private Map<String, String> tags;
     private final TimelineHashMap<Integer/*rangeIndex*/, RangeMetadata> ranges;
     private final TimelineHashMap<Long/*objectId*/, S3StreamObject> streamObjects;
+    // AutoMQ inject start
+    private final TimelineHashMap<Long/*startOffset*/, Long/*objectId*/> streamObjectIdsByStartOffset;
+    // AutoMQ inject end
 
     public StreamRuntimeMetadata(long streamId, long currentEpoch, int currentRangeIndex, long startOffset,
         StreamState currentState, Map<String, String> tags, SnapshotRegistry registry) {
@@ -70,6 +73,9 @@ public class StreamRuntimeMetadata {
         this.tags = tags;
         this.ranges = new TimelineHashMap<>(registry, 0);
         this.streamObjects = new TimelineHashMap<>(registry, 0);
+        // AutoMQ inject start
+        this.streamObjectIdsByStartOffset = new TimelineHashMap<>(registry, 0);
+        // AutoMQ inject end
     }
 
     public long streamId() {
@@ -152,6 +158,39 @@ public class StreamRuntimeMetadata {
     public Map<Long, S3StreamObject> streamObjects() {
         return streamObjects;
     }
+
+    // AutoMQ inject start
+    /**
+     * Adds or replaces a Stream Object and its exact-start-offset lookup entry atomically in the
+     * same timeline.
+     */
+    public void putStreamObject(S3StreamObject object) {
+        S3StreamObject previous = streamObjects.put(object.objectId(), object);
+        if (previous != null && previous.startOffset() != object.startOffset()) {
+            streamObjectIdsByStartOffset.remove(previous.startOffset());
+        }
+        streamObjectIdsByStartOffset.put(object.startOffset(), object.objectId());
+    }
+
+    /**
+     * Removes a Stream Object and its exact-start-offset lookup entry.
+     */
+    public void removeStreamObject(long objectId) {
+        S3StreamObject removed = streamObjects.remove(objectId);
+        if (removed != null && Long.valueOf(objectId).equals(
+            streamObjectIdsByStartOffset.get(removed.startOffset()))) {
+            streamObjectIdsByStartOffset.remove(removed.startOffset());
+        }
+    }
+
+    /**
+     * Returns the current Stream Object beginning exactly at the supplied offset, or null.
+     */
+    public S3StreamObject streamObjectAtStartOffset(long startOffset) {
+        Long objectId = streamObjectIdsByStartOffset.get(startOffset);
+        return objectId == null ? null : streamObjects.get(objectId);
+    }
+    // AutoMQ inject end
 
     public List<RangeMetadata> checkRemovableRanges() {
         NavigableMap<Long, S3StreamObject> objects = new TreeMap<>();

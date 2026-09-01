@@ -43,6 +43,9 @@ import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamRespons
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
@@ -53,6 +56,7 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.api.exceptions.ErrorCode;
@@ -60,6 +64,7 @@ import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.LogContext;
 
@@ -507,6 +512,105 @@ public class ControllerStreamManager implements StreamManager {
         });
         this.requestSender.send(task);
         return future;
+    }
+
+    /**
+     * Sends one complete Archive desired state through the Broker-side bounded accumulator.
+     */
+    @Override
+    public CompletableFuture<Void> updateStreamArchive(StreamArchiveState state) {
+        StreamArchiveUpdate update = new StreamArchiveUpdate()
+            .setStreamId(state.streamId())
+            .setStreamEpoch(state.streamEpoch())
+            .setArchiveStartOffset(state.archiveStartOffset())
+            .setArchiveMetadataEndOffset(state.archiveMetadataEndOffset())
+            .setArchiveEndOffset(state.archiveEndOffset())
+            .setArchivePreparedEndOffset(state.archivePreparedEndOffset())
+            .setArchiveSize(state.archiveSize())
+            .setArchiveCleanupEndOffset(state.archiveCleanupEndOffset())
+            .setArchiveCleanupSize(state.archiveCleanupSize())
+            .setArchiveObjectIds(state.archiveObjectIds());
+        WrapRequest request = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                UpdateStreamArchiveRequest.Builder realBuilder = (UpdateStreamArchiveRequest.Builder) builder;
+                return realBuilder.addSubRequest(update);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.UPDATE_STREAM_ARCHIVE;
+            }
+
+            @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
+            }
+
+            @Override
+            public int maxBatchSize() {
+                return 1_000;
+            }
+
+            @Override
+            public Object batchKey() {
+                return Pair.of(nodeId, apiKey());
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new UpdateStreamArchiveRequest.Builder(new UpdateStreamArchiveRequestData()
+                    .setNodeId(nodeId)
+                    .setNodeEpoch(nodeEpoch)).addSubRequest(update);
+            }
+        };
+        CompletableFuture<Void> senderFuture = new CompletableFuture<>();
+        CompletableFuture<Void> resultFuture = new CompletableFuture<>();
+        RequestTask<UpdateStreamResponse, Void> task = new RequestTask<>(request, senderFuture, response -> {
+            handleArchiveResponse(Errors.forCode(response.errorCode()), resultFuture);
+            return ResponseHandleResult.withSuccess(null);
+        });
+        senderFuture.whenComplete((ignored, exception) -> {
+            if (exception != null) {
+                resultFuture.completeExceptionally(exception);
+            }
+        });
+        requestSender.send(task);
+        return resultFuture;
+    }
+
+    // AutoMQ inject start
+    /**
+     * Returns the locally observed complete Archive state for an owned Stream.
+     */
+    @Override
+    public CompletableFuture<StreamArchiveState> getStreamArchive(long streamId, long streamEpoch) {
+        return CompletableFuture.completedFuture(streamMetadataManager.getStreamArchive(streamId, streamEpoch));
+    }
+    // AutoMQ inject end
+
+    void handleArchiveResponse(Errors error, CompletableFuture<Void> resultFuture) {
+        switch (error) {
+            case NONE:
+                resultFuture.complete(null);
+                return;
+            case STREAM_ARCHIVE_STATE_CONFLICT:
+                streamMetadataManager.refreshOnNextUpdate();
+                resultFuture.completeExceptionally(error.exception());
+                return;
+            case UNSUPPORTED_VERSION:
+            case NODE_EPOCH_EXPIRED:
+            case NODE_EPOCH_NOT_EXIST:
+            case NODE_FENCED:
+            case STREAM_NOT_EXIST:
+            case STREAM_FENCED:
+            case INVALID_REQUEST:
+                resultFuture.completeExceptionally(error.exception());
+                return;
+            default:
+                resultFuture.completeExceptionally(Errors.UNKNOWN_SERVER_ERROR.exception(
+                    "Unexpected UpdateStreamArchive error: " + error));
+        }
     }
 
 }

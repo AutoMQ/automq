@@ -26,6 +26,7 @@ import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
+import com.automq.stream.s3.compact.StreamObjectArchiveCleanupTask;
 import com.automq.stream.s3.compact.StreamObjectCompactor;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
@@ -63,6 +64,7 @@ import java.util.function.Supplier;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.ARCHIVE;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
@@ -303,6 +305,8 @@ public class S3StreamClient implements StreamClient {
         private long lastMajorCompactionTimestamp = System.currentTimeMillis();
         private long lastMinorV1CompactionTimestamp = System.currentTimeMillis();
         private long lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+        private final StreamObjectArchiveCleanupTask.LeftBoundaryCache archiveCleanupCache =
+            new StreamObjectArchiveCleanupTask.LeftBoundaryCache();
 
         public StreamWrapper(S3Stream stream) {
             this.stream = stream;
@@ -368,6 +372,7 @@ public class S3StreamClient implements StreamClient {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
                 long streamId = streamId();
+                archiveCleanupCache.invalidate();
                 if (openedStreams.remove(streamId, this)) {
                     closingStreams.put(streamId, this);
                     return stream.close(force).whenComplete((v, e) -> {
@@ -386,6 +391,7 @@ public class S3StreamClient implements StreamClient {
         public CompletableFuture<Void> destroy() {
             return runInLock(() -> {
                 CompletableFuture<Stream> cf = new CompletableFuture<>();
+                archiveCleanupCache.invalidate();
                 openedStreams.remove(streamId(), this);
                 closingStreams.put(streamId(), this);
                 return stream.destroy().whenComplete((v, e) -> runInLock(() -> {
@@ -441,7 +447,7 @@ public class S3StreamClient implements StreamClient {
             boolean majorRequiredByObjectCount = shouldRunMajorV1CompactionByObjectCount(hint.objectsCount,
                 MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
             List<StreamObjectCompactor.CompactionType> compactionTypes = v1CompactionTypes(majorDue, minorDue,
-                majorRequiredByObjectCount);
+                majorRequiredByObjectCount, config.version().isStreamArchiveSupported());
             for (int i = 0; i < compactionTypes.size(); i++) {
                 StreamObjectCompactor.CompactionType compactionType = compactionTypes.get(i);
                 if (i > 0) {
@@ -467,7 +473,8 @@ public class S3StreamClient implements StreamClient {
             } else if (MINOR_V1.equals(compactionType)) {
                 groupSizeThreshold = MINOR_V1_COMPACTION_SIZE;
             } else {
-                groupSizeThreshold = config.streamObjectCompactionMaxSizeBytes();
+                groupSizeThreshold = MAJOR_V1.equals(compactionType) ? majorV1CompactionSize(config)
+                    : config.streamObjectCompactionMaxSizeBytes();
             }
             // Under normal object counts, leave small normal objects to MINOR_V1. Disable the filter under object-count
             // pressure so MAJOR_V1 can reduce metadata even before MINOR_V1 has enlarged every small object.
@@ -475,10 +482,13 @@ public class S3StreamClient implements StreamClient {
                 && hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD ? MINOR_V1_COMPACTION_SIZE : 0;
             StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
                 .objectManager(objectManager)
+                .streamManager(streamManager)
                 .stream(this)
                 .objectStorage(objectStorage)
                 .groupSizeThreshold(groupSizeThreshold)
-                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
+                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize)
+                .archiveCleanupEnabled(config.version().isStreamArchiveSupported())
+                .archiveCleanupCache(archiveCleanupCache);
 
             taskBuilder.build().compact(compactionType);
         }
@@ -488,8 +498,13 @@ public class S3StreamClient implements StreamClient {
         return objectsCount >= (int) Math.ceil(maxObjectThreshold * MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO);
     }
 
+    static long majorV1CompactionSize(Config config) {
+        return config.version().isStreamArchiveSupported() ? 512L * 1024 * 1024
+            : config.streamObjectCompactionMaxSizeBytes();
+    }
+
     static List<StreamObjectCompactor.CompactionType> v1CompactionTypes(boolean majorDue, boolean minorDue,
-        boolean majorRequiredByObjectCount) {
+        boolean majorRequiredByObjectCount, boolean archiveSupported) {
         StreamObjectCompactor.CompactionType scheduledType;
         if (majorDue) {
             scheduledType = MAJOR_V1;
@@ -500,10 +515,16 @@ public class S3StreamClient implements StreamClient {
         }
         // Object-count pressure accelerates MAJOR_V1 after the regular lifecycle task instead of starving MINOR_V1
         // or CLEANUP_V1. A regularly scheduled MAJOR_V1 already satisfies the pressure request.
+        List<StreamObjectCompactor.CompactionType> types;
         if (majorRequiredByObjectCount && !MAJOR_V1.equals(scheduledType)) {
-            return List.of(scheduledType, MAJOR_V1);
+            types = new ArrayList<>(List.of(scheduledType, MAJOR_V1));
+        } else {
+            types = new ArrayList<>(List.of(scheduledType));
         }
-        return List.of(scheduledType);
+        if (archiveSupported && types.contains(MAJOR_V1)) {
+            types.add(ARCHIVE);
+        }
+        return types;
     }
 
     static class CompactionHint {

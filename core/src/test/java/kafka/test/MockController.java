@@ -82,6 +82,8 @@ import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -615,6 +617,12 @@ public class MockController implements Controller {
 
     @Override
     public CompletableFuture<TrimStreamsResponseData> trimStreams(ControllerRequestContext context, TrimStreamsRequestData request) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public CompletableFuture<UpdateStreamArchiveResponseData> updateStreamArchive(
+        ControllerRequestContext context, UpdateStreamArchiveRequestData request) {
         throw new UnsupportedOperationException();
     }
 

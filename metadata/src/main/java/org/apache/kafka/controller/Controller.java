@@ -76,6 +76,8 @@ import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.RenewDelegationTokenResponseData;
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
@@ -539,6 +541,16 @@ public interface Controller extends AclMutator, AutoCloseable {
         ControllerRequestContext context,
         TrimStreamsRequestData request
     );
+
+    // AutoMQ inject start
+    /**
+     * Apply ordered, independently transactional complete Stream Archive desired states.
+     */
+    CompletableFuture<UpdateStreamArchiveResponseData> updateStreamArchive(
+        ControllerRequestContext context,
+        UpdateStreamArchiveRequestData request
+    );
+    // AutoMQ inject end
 
     /**
      * Delete a stream.

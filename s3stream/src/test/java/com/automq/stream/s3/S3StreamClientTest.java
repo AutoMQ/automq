@@ -21,6 +21,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
+import com.automq.stream.Version;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -40,6 +41,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.ARCHIVE;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -160,10 +162,26 @@ public class S3StreamClientTest {
      */
     @Test
     public void testObjectCountPressureAppendsMajorV1AfterScheduledCompaction() {
-        assertEquals(List.of(MINOR_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, true, true));
-        assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
-        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
-        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
+        assertEquals(List.of(MINOR_V1, MAJOR_V1, ARCHIVE),
+            S3StreamClient.v1CompactionTypes(false, true, true, true));
+        assertEquals(List.of(CLEANUP_V1, MAJOR_V1, ARCHIVE),
+            S3StreamClient.v1CompactionTypes(false, false, true, true));
+        assertEquals(List.of(MAJOR_V1, ARCHIVE), S3StreamClient.v1CompactionTypes(true, true, true, true));
+        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false, true));
+        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true, false));
+    }
+
+    /**
+     * Given Archive feature finalization and a legacy configured 10 GiB compaction size, when MAJOR_V1 selects its
+     * layout target, then finalized Archive uses 512 MiB while the previous feature level keeps the legacy setting.
+     */
+    @Test
+    public void testArchiveFeatureFinalizationSelectsFixedCompositeTarget() {
+        Config legacy = new Config().version(() -> Version.V1).streamObjectCompactionMaxSizeBytes(10L << 30);
+        Config archive = new Config().version(() -> Version.V2).streamObjectCompactionMaxSizeBytes(10L << 30);
+
+        assertEquals(10L << 30, S3StreamClient.majorV1CompactionSize(legacy));
+        assertEquals(512L << 20, S3StreamClient.majorV1CompactionSize(archive));
     }
 
 }

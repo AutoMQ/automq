@@ -5,15 +5,19 @@ import com.automq.stream.s3.metrics.operations.S3Operation;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.zip.CRC32C;
 
 import io.netty.buffer.ByteBuf;
@@ -26,16 +30,82 @@ import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.S3Error;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 public class AwsObjectStorageTest {
+
+    /**
+     * Given LIST transport, service, and permanent request failures, when retryability is classified, then only
+     * transport and transient service failures are eligible for bounded caller retries.
+     */
+    @Test
+    void testListRetryabilityClassification() {
+        AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
+
+        Assertions.assertTrue(storage.isListRetriable(
+            software.amazon.awssdk.core.exception.SdkClientException.create("connection reset")));
+        Assertions.assertTrue(storage.isListRetriable(S3Exception.builder().statusCode(503).build()));
+        Assertions.assertFalse(storage.isListRetriable(S3Exception.builder().statusCode(403).build()));
+        Assertions.assertFalse(storage.isListRetriable(new IllegalArgumentException("invalid request")));
+    }
+
+    /**
+     * Given a bounded LIST spanning provider pages, when listing through ObjectStorage, then the adapter returns one
+     * ordered result and uses the remaining caller limit on each internal page.
+     */
+    @Test
+    void testDoListCollectsMultiplePagesWithinBound() throws Exception {
+        S3AsyncClient s3 = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+        List<ListObjectsV2Request> requests = new ArrayList<>();
+
+        when(s3.listObjectsV2(org.mockito.ArgumentMatchers
+            .<Consumer<ListObjectsV2Request.Builder>>any())).thenAnswer(invocation -> {
+                ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder();
+                Consumer<ListObjectsV2Request.Builder> requestBuilder = invocation.getArgument(0);
+                requestBuilder.accept(builder);
+                ListObjectsV2Request request = builder.build();
+                requests.add(request);
+                if (request.continuationToken() == null) {
+                    return CompletableFuture.completedFuture(ListObjectsV2Response.builder()
+                        .contents(object("archive/1/001"), object("archive/1/003"))
+                        .isTruncated(true)
+                        .nextContinuationToken("page-2")
+                        .build());
+                }
+                return CompletableFuture.completedFuture(ListObjectsV2Response.builder()
+                    .contents(object("archive/1/005"))
+                    .isTruncated(true)
+                    .nextContinuationToken("page-3")
+                    .build());
+            });
+
+        List<String> keys = storage.list(new ObjectStorage.ListOptions("archive/1/")
+                .startAfter("archive/1/000")
+                .maxKeys(3))
+            .get().stream().map(ObjectStorage.ObjectPath::key).toList();
+
+        Assertions.assertEquals(List.of("archive/1/001", "archive/1/003", "archive/1/005"), keys);
+        Assertions.assertEquals(2, requests.size());
+        Assertions.assertEquals("archive/1/", requests.get(0).prefix());
+        Assertions.assertEquals("archive/1/000", requests.get(0).startAfter());
+        Assertions.assertEquals(3, requests.get(0).maxKeys());
+        Assertions.assertNull(requests.get(1).startAfter());
+        Assertions.assertEquals("page-2", requests.get(1).continuationToken());
+        Assertions.assertEquals(1, requests.get(1).maxKeys());
+    }
 
     @Test
     void testDoWriteSetsContentMd5() throws Exception {
@@ -135,6 +205,10 @@ public class AwsObjectStorageTest {
             md5.update(buffer.duplicate());
         }
         return Base64.getEncoder().encodeToString(md5.digest());
+    }
+
+    private static S3Object object(String key) {
+        return S3Object.builder().key(key).lastModified(Instant.EPOCH).size(1L).build();
     }
 
     private static String crc32cBase64(ByteBuf data) {

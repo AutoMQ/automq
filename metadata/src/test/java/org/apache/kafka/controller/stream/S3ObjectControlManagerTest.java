@@ -54,9 +54,13 @@ import org.junit.jupiter.api.Timeout;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
+
+import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -64,7 +68,10 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 @Timeout(40)
 @Tag("S3Unit")
@@ -221,6 +228,49 @@ public class S3ObjectControlManagerTest {
         assertEquals(0L, object.getObjectId());
         assertEquals(1024, object.getObjectSize());
         assertEquals(expectedCommittedTs, object.getTimestamp());
+    }
+
+    /**
+     * Given published Archive bytes and their still-committed source manifest, verify the existing
+     * S3 object-size gauge temporarily counts both and drops the source bytes after shallow cleanup.
+     */
+    @Test
+    public void testS3ObjectSizeMetricIncludesLiveArchiveSize() throws Exception {
+        int compositeAttributes = ObjectAttributes.builder()
+            .type(ObjectAttributes.Type.Composite).build().attributes();
+        manager.replay(new S3ObjectRecord()
+            .setObjectId(10L)
+            .setObjectSize(100L)
+            .setObjectState(S3ObjectState.COMMITTED.toByte())
+            .setAttributes(compositeAttributes));
+        manager.setLiveStreamArchiveSizeSupplier(() -> 50L);
+
+        ObservableLongMeasurement beforeCleanup = mock(ObservableLongMeasurement.class);
+        collectS3ObjectSizeMetric(beforeCleanup);
+        verify(beforeCleanup).record(eq(150L), any());
+
+        manager.replay(new S3ObjectRecord()
+            .setObjectId(10L)
+            .setObjectSize(100L)
+            .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+            .setAttributes(compositeAttributes));
+        ObservableLongMeasurement afterCleanup = mock(ObservableLongMeasurement.class);
+        collectS3ObjectSizeMetric(afterCleanup);
+        verify(afterCleanup).record(eq(50L), any());
+
+        manager.replay(new RemoveS3ObjectRecord().setObjectId(10L));
+        ObservableLongMeasurement afterPhysicalDelete = mock(ObservableLongMeasurement.class);
+        collectS3ObjectSizeMetric(afterPhysicalDelete);
+        verify(afterPhysicalDelete).record(eq(50L), any());
+    }
+
+    private void collectS3ObjectSizeMetric(ObservableLongMeasurement measurement) throws Exception {
+        Field field = S3ObjectControlManager.class.getDeclaredField("s3ObjectSizeMetric");
+        field.setAccessible(true);
+        Object gauge = field.get(manager);
+        Method record = gauge.getClass().getDeclaredMethod("record", ObservableLongMeasurement.class);
+        record.setAccessible(true);
+        record.invoke(gauge, measurement);
     }
 
     @Test

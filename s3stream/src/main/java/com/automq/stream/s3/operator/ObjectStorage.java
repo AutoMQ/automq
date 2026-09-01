@@ -24,6 +24,7 @@ import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -111,7 +112,33 @@ public interface ObjectStorage {
         return CompletableFuture.failedFuture(new UnsupportedOperationException());
     }
 
-    CompletableFuture<List<ObjectInfo>> list(String prefix);
+    /**
+     * List objects under a prefix in lexicographic key order.
+     *
+     * @param options prefix, exclusive cursor, and result bound
+     * @return one logical ordered result; provider pagination is not exposed
+     */
+    CompletableFuture<List<ObjectInfo>> list(ListOptions options);
+
+    /**
+     * Classify whether a failed LIST may be retried safely by a bounded caller.
+     *
+     * @param exception LIST failure
+     * @return true only for a retriable transport or service failure
+     */
+    default boolean isListRetriable(Throwable exception) {
+        return false;
+    }
+
+    /**
+     * List every object under a prefix.
+     *
+     * @param prefix required object-key prefix
+     * @return every matching object in lexicographic key order
+     */
+    default CompletableFuture<List<ObjectInfo>> list(String prefix) {
+        return list(new ListOptions(prefix));
+    }
 
     /**
      * The deleteObjects API have max batch limit.
@@ -190,6 +217,72 @@ public interface ObjectStorage {
 
         public String getCheckSum() {
             return checkSum;
+        }
+    }
+
+    /**
+     * Options for one logical ordered object listing. Provider page state is intentionally not represented here.
+     */
+    class ListOptions {
+        public static final int UNLIMITED = -1;
+
+        private final String prefix;
+        private String startAfter;
+        private int maxKeys = UNLIMITED;
+
+        /**
+         * Create options for a required key prefix with unlimited results.
+         *
+         * @param prefix required object-key prefix
+         */
+        public ListOptions(String prefix) {
+            this.prefix = Objects.requireNonNull(prefix, "prefix");
+        }
+
+        /**
+         * Set the exclusive key cursor.
+         *
+         * @param startAfter exclusive key cursor, or null to start at the prefix beginning
+         * @return these options
+         */
+        public ListOptions startAfter(String startAfter) {
+            this.startAfter = startAfter;
+            return this;
+        }
+
+        /**
+         * Set the result bound.
+         *
+         * @param maxKeys -1 for unlimited results, zero for none, or a positive bound
+         * @return these options
+         */
+        public ListOptions maxKeys(int maxKeys) {
+            if (maxKeys < UNLIMITED) {
+                throw new IllegalArgumentException("maxKeys must be -1 or non-negative");
+            }
+            this.maxKeys = maxKeys;
+            return this;
+        }
+
+        /**
+         * Return the required object-key prefix.
+         */
+        public String prefix() {
+            return prefix;
+        }
+
+        /**
+         * Return the exclusive key cursor, or null when unset.
+         */
+        public String startAfter() {
+            return startAfter;
+        }
+
+        /**
+         * Return -1 for unlimited results, zero for none, or a positive result bound.
+         */
+        public int maxKeys() {
+            return maxKeys;
         }
     }
 

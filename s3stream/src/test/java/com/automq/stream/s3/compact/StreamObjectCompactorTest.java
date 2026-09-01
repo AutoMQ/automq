@@ -36,6 +36,8 @@ import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.streams.StreamArchiveState;
+import com.automq.stream.s3.streams.StreamManager;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +53,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
@@ -61,6 +64,7 @@ import static com.automq.stream.s3.compact.CompactOperations.KEEP_DATA;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByCompositeObject;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactByPhysicalMerge;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
@@ -187,6 +191,72 @@ class StreamObjectCompactorTest {
             512 * 1024 * 1024 * 3, MAJOR_V1);
         // MAJOR_V1 should not trigger cleanup even exceeded threshold for now.
         assertFalse(doCleanupWhenMajorV1Compaction);
+    }
+
+    /**
+     * Given retention cuts through one Normal object after empty-cursor alignment, when MAJOR_V1 evaluates that
+     * singleton, then it is eligible for conversion to a terminal Composite while other singletons remain skipped.
+     */
+    @Test
+    public void testMajorV1ConvertsSingleNormalObjectOverlappingStreamStart() {
+        S3ObjectMetadata overlapping = s3ObjectMetadata(1L, 50L, 150L, 1L, Normal);
+        S3ObjectMetadata living = s3ObjectMetadata(2L, 100L, 150L, 1L, Normal);
+        S3ObjectMetadata composite = s3ObjectMetadata(3L, 50L, 150L, 1L, Composite);
+
+        assertTrue(StreamObjectCompactor.checkObjectGroupCouldBeCompact(
+            List.of(overlapping), 100L, MAJOR_V1, true));
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(List.of(overlapping), 100L, MAJOR_V1));
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(List.of(living), 100L, MAJOR_V1));
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(List.of(composite), 100L, MAJOR_V1));
+    }
+
+    /**
+     * Given the first surviving online object is a small Normal object cut by retention, when MAJOR_V1 runs, then the
+     * size filter does not hide it and the committed replacement is a terminal Composite.
+     */
+    @Test
+    public void testMajorV1CompactsSmallNormalObjectOverlappingStreamStart() throws Exception {
+        S3ObjectMetadata overlapping = prepareData().get(0);
+        when(objectManager.getStreamObjects(streamId, 0L, 32L, Integer.MAX_VALUE))
+            .thenReturn(CompletableFuture.completedFuture(List.of(overlapping)));
+        when(objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(60)))
+            .thenReturn(CompletableFuture.completedFuture(5L));
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.streamEpoch()).thenReturn(4L);
+        when(stream.startOffset()).thenReturn(14L);
+        when(stream.confirmOffset()).thenReturn(32L);
+
+        builder().objectManager(objectManager).objectStorage(objectStorage).stream(stream)
+            .groupSizeThreshold(512L * 1024 * 1024).majorV1MinNormalObjectSize(4L * 1024 * 1024)
+            .archiveCleanupEnabled(true)
+            .build().compact(MAJOR_V1);
+
+        ArgumentCaptor<CompactStreamObjectRequest> request = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager).compactStreamObject(request.capture());
+        assertEquals(Composite, ObjectAttributes.from(request.getValue().getAttributes()).type());
+        assertEquals(List.of(overlapping.objectId()), request.getValue().getSourceObjectIds());
+    }
+
+    /**
+     * Given Archive support is disabled, when retention cuts through a small singleton Normal object, then MAJOR_V1
+     * retains its legacy filtering and singleton-skip behavior.
+     */
+    @Test
+    public void testMajorV1DoesNotSpecialCaseRetentionBoundaryWithoutArchiveSupport() throws Exception {
+        S3ObjectMetadata overlapping = prepareData().get(0);
+        when(objectManager.getStreamObjects(streamId, 0L, 32L, Integer.MAX_VALUE))
+            .thenReturn(CompletableFuture.completedFuture(List.of(overlapping)));
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.startOffset()).thenReturn(14L);
+        when(stream.confirmOffset()).thenReturn(32L);
+
+        builder().objectManager(objectManager).objectStorage(objectStorage).stream(stream)
+            .groupSizeThreshold(512L * 1024 * 1024).majorV1MinNormalObjectSize(4L * 1024 * 1024)
+            .archiveCleanupEnabled(false).build().compact(MAJOR_V1);
+
+        verify(objectManager, times(0)).prepareObject(anyInt(), anyLong());
+        verify(objectManager, times(0)).compactStreamObject(any());
     }
 
     /**
@@ -481,6 +551,25 @@ class StreamObjectCompactorTest {
     }
 
     /**
+     * Given legacy Composite objects larger than the finalized MAJOR_V1 target, when grouping runs, then each legacy
+     * object remains a valid singleton and is not selected for a rewrite merely to satisfy the smaller target.
+     */
+    @Test
+    public void testMajorV1DoesNotRewriteLegacyOversizedComposites() {
+        long legacySize = 10L * 1024 * 1024 * 1024;
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, legacySize, Composite),
+            s3ObjectMetadata(2, 1, 2, legacySize, Composite));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512L * 1024 * 1024, MAJOR_V1,
+            getObjectFilter(MAJOR_V1, 0));
+
+        assertEquals(List.of(List.of(objects.get(0)), List.of(objects.get(1))), groups);
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(groups.get(0), 0L, MAJOR_V1));
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(groups.get(1), 0L, MAJOR_V1));
+    }
+
+    /**
      * Given a small normal object continuously bridging two composite objects, when MAJOR_V1 filters candidates, then
      * the bridge remains eligible so filtering does not create an artificial offset gap between the composites.
      */
@@ -685,6 +774,29 @@ class StreamObjectCompactorTest {
         clean = ac.getAllValues().get(1);
         assertEquals(ObjectUtils.NOOP_OBJECT_ID, clean.getObjectId());
         assertEquals(LongStream.range(EXPIRED_OBJECTS_CLEAN_UP_STEP, 1450).boxed().collect(Collectors.toList()), clean.getSourceObjectIds());
+    }
+
+    /**
+     * Given Archive support is enabled, when CLEANUP_V1 runs, then the existing synchronous compactor invocation first
+     * enters Broker Archive retention cleanup through the Stream Archive state seam.
+     */
+    @Test
+    public void testCleanupV1RunsArchiveRetentionCleanupSynchronously() {
+        StreamManager streamManager = Mockito.mock(StreamManager.class);
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.streamEpoch()).thenReturn(4L);
+        when(stream.startOffset()).thenReturn(10L);
+        when(stream.confirmOffset()).thenReturn(10L);
+        when(streamManager.getStreamArchive(streamId, 4L)).thenReturn(CompletableFuture.completedFuture(
+            new StreamArchiveState(streamId, 4L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of())));
+        when(objectManager.getStreamObjects(streamId, 0L, 10L, Integer.MAX_VALUE))
+            .thenReturn(CompletableFuture.completedFuture(List.of()));
+
+        builder().objectManager(objectManager).streamManager(streamManager).objectStorage(objectStorage)
+            .stream(stream).archiveCleanupEnabled(true)
+            .archiveCleanupCache(new StreamObjectArchiveCleanupTask.LeftBoundaryCache()).build().compact(CLEANUP_V1);
+
+        verify(streamManager).getStreamArchive(streamId, 4L);
     }
 
     @Test

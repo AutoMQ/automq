@@ -40,6 +40,8 @@ import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
@@ -47,9 +49,11 @@ import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -57,6 +61,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
@@ -67,7 +72,10 @@ import org.apache.kafka.image.DeltaList;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3Object;
+import org.apache.kafka.metadata.stream.S3ObjectState;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
@@ -79,8 +87,12 @@ import org.apache.kafka.timeline.TimelineHashMap;
 import org.apache.kafka.timeline.TimelineHashSet;
 import org.apache.kafka.timeline.TimelineLong;
 
+import com.automq.stream.s3.CompositeObject;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.compact.CompactOperations;
+import com.automq.stream.s3.metadata.ArchiveObjectKey;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
@@ -88,6 +100,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.AsyncLogger;
 import com.google.common.base.Strings;
 
@@ -97,6 +110,7 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -110,6 +124,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -157,6 +172,12 @@ public class StreamControlManager {
     private static final Metrics.LongGaugeBundle STREAM_OBJECT_NUM = Metrics.instance()
         .longGauge("kafka_stream_stream_object_num", "The total number of stream objects", "");
     private static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
+    // AutoMQ inject start
+    private static final int MAX_ARCHIVE_METADATA_CLEANUP_OBJECTS = 1_000;
+    private static final int MAX_DELETED_STREAM_ARCHIVE_OBJECTS = 100;
+    private static final long DELETED_STREAM_ARCHIVE_QUIESCENCE_MS = TimeUnit.MINUTES.toMillis(5);
+    private static final long ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES = 1L;
+    // AutoMQ inject end
 
     private final Logger log;
 
@@ -166,6 +187,7 @@ public class StreamControlManager {
     private final TimelineLong nextAssignedStreamId;
 
     private final TimelineHashMap<Long/*streamId*/, StreamRuntimeMetadata> streamsMetadata;
+    private final TimelineHashMap<Long/*streamId*/, S3StreamArchiveMetadata> streamArchiveMetadata;
 
     private final TimelineHashMap<Integer/*nodeId*/, NodeRuntimeMetadata> nodesMetadata;
     private final TimelineHashSet<Integer> lockedNodes;
@@ -183,6 +205,18 @@ public class StreamControlManager {
 
     private final S3ObjectControlManager s3ObjectControlManager;
 
+    // AutoMQ inject start
+    private final ObjectStorage objectStorage;
+
+    private final Time time;
+
+    private final Map<Long, Long> deletedStreamArchiveCleanupsInFlight = new ConcurrentHashMap<>();
+
+    private final Map<Long, Long> deletedStreamArchiveEmptySinceMs = new ConcurrentHashMap<>();
+
+    private final AtomicLong controllerLeadershipGeneration = new AtomicLong();
+    // AutoMQ inject end
+
     private final ClusterControlManager clusterControlManager;
 
     private final FeatureControlManager featureControlManager;
@@ -195,11 +229,14 @@ public class StreamControlManager {
         S3ObjectControlManager s3ObjectControlManager,
         ClusterControlManager clusterControlManager,
         FeatureControlManager featureControlManager,
-        ReplicationControlManager replicationControlManager) {
+        ReplicationControlManager replicationControlManager,
+        ObjectStorage objectStorage,
+        Time time) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = AsyncLogger.wrap(logContext.logger(StreamControlManager.class));
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
         this.streamsMetadata = new TimelineHashMap<>(snapshotRegistry, 100000);
+        this.streamArchiveMetadata = new TimelineHashMap<>(snapshotRegistry, 100000);
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.lockedNodes = new TimelineHashSet<>(snapshotRegistry, 100);
         this.stream2node = new TimelineHashMap<>(snapshotRegistry, 100000);
@@ -210,11 +247,21 @@ public class StreamControlManager {
 
         this.quorumController = quorumController;
         this.s3ObjectControlManager = s3ObjectControlManager;
+        // AutoMQ inject start
+        this.objectStorage = objectStorage;
+        this.time = time;
+        // AutoMQ inject end
         this.clusterControlManager = clusterControlManager;
         this.featureControlManager = featureControlManager;
         this.replicationControlManager = replicationControlManager;
 
         cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
+        // AutoMQ inject start
+        cleanupScheduler.scheduleWithFixedDelay(this::triggerStreamArchiveMetadataCleanupReconciliation,
+            ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES,
+            ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES,
+            TimeUnit.MINUTES);
+        // AutoMQ inject end
 
         this.streamSetObjectNumMetric = STREAM_SET_OBJECT_NUM.register(MetricsLevel.INFO, Attributes.empty(), result -> {
             if (!quorumController.isActive()) {
@@ -266,6 +313,484 @@ public class StreamControlManager {
         resp.setStreamId(streamId);
         log.info("[CreateStream] successfully create a stream. streamId={}, nodeId={}, nodeEpoch={}", streamId, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
+    }
+
+    /**
+     * Validates and persists one complete Broker-proposed Stream Archive state.
+     *
+     * <p>Each invocation is one Controller event and one transaction. Archive prepare validates
+     * the complete current Composite sequence before its protected boundary is persisted.</p>
+     */
+    public ControllerResult<UpdateStreamResponse> updateStreamArchive(int nodeId, long nodeEpoch,
+        StreamArchiveUpdate request) {
+        UpdateStreamResponse response = new UpdateStreamResponse();
+        if (!featureControlManager.autoMQVersion().isStreamArchiveSupported()) {
+            return archiveUpdateError(response, Errors.UNSUPPORTED_VERSION);
+        }
+
+        Errors nodeError = nodeEpochCheck(nodeId, nodeEpoch);
+        if (nodeError != Errors.NONE) {
+            return archiveUpdateError(response, nodeError);
+        }
+
+        StreamRuntimeMetadata stream = streamsMetadata.get(request.streamId());
+        if (stream == null) {
+            return archiveUpdateError(response, Errors.STREAM_NOT_EXIST);
+        }
+        RangeMetadata currentRange = stream.currentRangeMetadata();
+        if (stream.currentEpoch() != request.streamEpoch()
+            || currentRange == null || currentRange.nodeId() != nodeId) {
+            return archiveUpdateError(response, Errors.STREAM_FENCED);
+        }
+
+        if (!isWellFormedArchiveState(request)) {
+            return archiveUpdateError(response, Errors.INVALID_REQUEST);
+        }
+
+        S3StreamArchiveMetadata current = getStreamArchiveMetadata(request.streamId());
+        // AutoMQ inject start
+        boolean preparePayload = request.archivePreparedEndOffset() > request.archiveEndOffset();
+        if (preparePayload && !isCurrentArchiveObjectSequence(stream, request)) {
+            return archiveUpdateError(response, Errors.STREAM_ARCHIVE_STATE_CONFLICT);
+        }
+        // AutoMQ inject end
+        if (archiveStateEquals(current, request)) {
+            return ControllerResult.of(Collections.emptyList(), response);
+        }
+        if (!isLegalArchiveTransition(current, request, stream)) {
+            return archiveUpdateError(response, Errors.STREAM_ARCHIVE_STATE_CONFLICT);
+        }
+
+        S3StreamArchiveMetadata desired = new S3StreamArchiveMetadata(
+            request.streamId(),
+            request.archiveStartOffset(),
+            request.archiveMetadataEndOffset(),
+            request.archiveEndOffset(),
+            request.archivePreparedEndOffset(),
+            request.archiveSize(),
+            request.archiveCleanupEndOffset(),
+            request.archiveCleanupSize());
+        return ControllerResult.atomicOf(List.of(desired.toRecord()), response);
+    }
+
+    // AutoMQ inject start
+    /**
+     * Removes one bounded round of online Composite metadata that is already authoritative in
+     * Archive storage.
+     *
+     * <p>The returned transaction removes Stream Object mappings, marks the original top-level
+     * manifests for shallow {@link CompactOperations#DELETE}, and advances the durable
+     * metadata cleanup cursor atomically. Linked objects are never selected for deletion.</p>
+     *
+     * @param streamId Stream whose published online metadata should be reclaimed
+     * @return one atomic cleanup transaction, or an empty result when there is no valid progress
+     */
+    public ControllerResult<Void> cleanupStreamArchiveMetadata(long streamId) {
+        StreamRuntimeMetadata stream = streamsMetadata.get(streamId);
+        S3StreamArchiveMetadata archive = getStreamArchiveMetadata(streamId);
+        if (stream == null || archive == null
+            || archive.archiveMetadataEndOffset() >= archive.archiveEndOffset()) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+
+        List<Long> objectIds = new ArrayList<>(MAX_ARCHIVE_METADATA_CLEANUP_OBJECTS);
+        long cleanupEndOffset = archive.archiveMetadataEndOffset();
+        while (objectIds.size() < MAX_ARCHIVE_METADATA_CLEANUP_OBJECTS) {
+            S3StreamObject candidate = stream.streamObjectAtStartOffset(cleanupEndOffset);
+            if (candidate == null || candidate.endOffset() <= cleanupEndOffset
+                || candidate.endOffset() > archive.archiveEndOffset()) {
+                break;
+            }
+            S3Object object = s3ObjectControlManager.getObject(candidate.objectId());
+            if (object == null || object.getS3ObjectState() != S3ObjectState.COMMITTED
+                || ObjectAttributes.from(object.getAttributes()).type() != ObjectAttributes.Type.Composite) {
+                break;
+            }
+            objectIds.add(candidate.objectId());
+            cleanupEndOffset = candidate.endOffset();
+        }
+        if (objectIds.isEmpty()) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+
+        ControllerResult<Boolean> shallowDelete = s3ObjectControlManager.markDestroyObjects(
+            objectIds, Collections.nCopies(objectIds.size(), CompactOperations.DELETE));
+        if (!shallowDelete.response()) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+        List<ApiMessageAndVersion> records = new ArrayList<>(shallowDelete.records());
+        objectIds.forEach(objectId -> records.add(new ApiMessageAndVersion(
+            new RemoveS3StreamObjectRecord().setStreamId(streamId).setObjectId(objectId), (short) 0)));
+        records.add(new S3StreamArchiveMetadata(
+            streamId,
+            archive.archiveStartOffset(),
+            cleanupEndOffset,
+            archive.archiveEndOffset(),
+            archive.archivePreparedEndOffset(),
+            archive.archiveSize(),
+            archive.archiveCleanupEndOffset(),
+            archive.archiveCleanupSize()).toRecord());
+        return ControllerResult.atomicOf(records, null);
+    }
+
+    /**
+     * Rediscovers durable live-Stream metadata cleanup and deleted-Stream prefix deletion after
+     * failover or lost scheduling. Each Stream is appended independently to the Controller event
+     * queue; object-storage callbacks carry the current leadership generation so an old tenure
+     * cannot complete or requeue work in a later tenure.
+     */
+    public void reconcileStreamArchiveMetadataCleanup() {
+        streamArchiveMetadata.values().stream()
+            .filter(archive -> streamsMetadata.containsKey(archive.streamId()))
+            .filter(archive -> archive.archiveMetadataEndOffset() < archive.archiveEndOffset())
+            .map(S3StreamArchiveMetadata::streamId)
+            .sorted()
+            .forEach(this::triggerStreamArchiveMetadataCleanup);
+        streamArchiveMetadata.values().stream()
+            .filter(archive -> !streamsMetadata.containsKey(archive.streamId()))
+            .map(S3StreamArchiveMetadata::streamId)
+            .sorted()
+            .forEach(this::triggerDeletedStreamArchiveCleanup);
+    }
+
+    private void triggerDeletedStreamArchiveCleanup(long streamId) {
+        long leadershipGeneration = controllerLeadershipGeneration.get();
+        if (!quorumController.isActive() || streamsMetadata.containsKey(streamId)
+            || !streamArchiveMetadata.containsKey(streamId)
+            || deletedStreamArchiveCleanupsInFlight.putIfAbsent(streamId, leadershipGeneration) != null) {
+            return;
+        }
+        ObjectStorage.ListOptions options = new ObjectStorage.ListOptions(
+            ArchiveObjectKey.manifestPrefix(streamId)).maxKeys(MAX_DELETED_STREAM_ARCHIVE_OBJECTS);
+        objectStorage.list(options).whenComplete((objects, listException) -> {
+            if (leadershipGeneration != controllerLeadershipGeneration.get()
+                || !quorumController.isActive()) {
+                deletedStreamArchiveCleanupsInFlight.remove(streamId, leadershipGeneration);
+                return;
+            }
+            if (listException != null) {
+                deletedStreamArchiveCleanupsInFlight.remove(streamId, leadershipGeneration);
+                log.error("Failed to LIST deleted Stream {} Archive objects", streamId, listException);
+                return;
+            }
+            if (objects.isEmpty()) {
+                deletedStreamArchiveCleanupsInFlight.remove(streamId, leadershipGeneration);
+                enqueueDeletedStreamArchiveEmpty(streamId, leadershipGeneration);
+                return;
+            }
+            deletedStreamArchiveEmptySinceMs.remove(streamId);
+            List<CompletableFuture<Void>> deletes = objects.stream()
+                .map(this::deleteArchiveComposite)
+                .collect(Collectors.toList());
+            CompletableFuture.allOf(deletes.toArray(new CompletableFuture[0]))
+                .whenComplete((ignored, deleteException) -> {
+                    deletedStreamArchiveCleanupsInFlight.remove(streamId, leadershipGeneration);
+                    if (leadershipGeneration != controllerLeadershipGeneration.get()
+                        || !quorumController.isActive()) {
+                        return;
+                    }
+                    if (deleteException != null) {
+                        log.error("Failed to delete Archive objects for deleted Stream {}", streamId,
+                            deleteException);
+                    } else {
+                        enqueueDeletedStreamArchiveCleanup(streamId, leadershipGeneration);
+                    }
+                });
+        });
+    }
+
+    private CompletableFuture<Void> deleteArchiveComposite(ObjectStorage.ObjectInfo object) {
+        int attributes = ObjectAttributes.builder()
+            .bucket(object.bucketId())
+            .type(ObjectAttributes.Type.Composite)
+            .build().attributes();
+        S3ObjectMetadata metadata = new S3ObjectMetadata(
+            S3StreamConstant.INVALID_OBJECT_ID, S3ObjectType.COMPOSITE, Collections.emptyList(),
+            S3StreamConstant.INVALID_TS,
+            object.timestamp(), object.size(), S3StreamConstant.INVALID_ORDER_ID, attributes, object.key());
+        return CompositeObject.delete(metadata, objectStorage);
+    }
+
+    private void enqueueDeletedStreamArchiveCleanup(long streamId, long leadershipGeneration) {
+        quorumController.appendWriteEvent("cleanupDeletedStreamArchive", OptionalLong.empty(), () -> {
+            if (leadershipGeneration != controllerLeadershipGeneration.get()) {
+                return ControllerResult.of(Collections.emptyList(), null);
+            }
+            deletedStreamArchiveEmptySinceMs.remove(streamId);
+            triggerDeletedStreamArchiveCleanup(streamId);
+            return ControllerResult.of(Collections.emptyList(), null);
+        }).exceptionally(exception -> {
+            log.error("Failed to requeue Archive cleanup for deleted Stream {}", streamId, exception);
+            return null;
+        });
+    }
+
+    private void enqueueDeletedStreamArchiveEmpty(long streamId, long leadershipGeneration) {
+        quorumController.appendWriteEvent("completeDeletedStreamArchiveCleanup", OptionalLong.empty(),
+            () -> completeDeletedStreamArchiveCleanup(streamId, leadershipGeneration)).exceptionally(exception -> {
+                log.error("Failed to complete Archive cleanup for deleted Stream {}", streamId, exception);
+                return null;
+            });
+    }
+
+    private ControllerResult<Void> completeDeletedStreamArchiveCleanup(long streamId, long leadershipGeneration) {
+        if (leadershipGeneration != controllerLeadershipGeneration.get()) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+        S3StreamArchiveMetadata archive = streamArchiveMetadata.get(streamId);
+        if (archive == null || streamsMetadata.containsKey(streamId)) {
+            deletedStreamArchiveEmptySinceMs.remove(streamId);
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+        if (archive.archivePreparedEndOffset() == archive.archiveEndOffset()) {
+            return ControllerResult.atomicOf(List.of(new ApiMessageAndVersion(
+                new RemoveS3StreamArchiveRecord().setStreamId(streamId), (short) 0)), null);
+        }
+        long now = time.milliseconds();
+        long emptySince = deletedStreamArchiveEmptySinceMs.computeIfAbsent(streamId, ignored -> now);
+        if (now - emptySince < DELETED_STREAM_ARCHIVE_QUIESCENCE_MS) {
+            return ControllerResult.of(Collections.emptyList(), null);
+        }
+        return ControllerResult.atomicOf(List.of(new ApiMessageAndVersion(
+            new RemoveS3StreamArchiveRecord().setStreamId(streamId), (short) 0)), null);
+    }
+
+    /**
+     * Invalidates all ephemeral deleted-Stream cleanup state at a Controller leadership boundary.
+     * Durable Archive records remain authoritative and reconciliation rediscovers them. Incrementing
+     * the generation fences ObjectStorage callbacks from the old tenure, while clearing the empty
+     * timestamps conservatively restarts every unpublished-prepare quiescence window.
+     */
+    public void onControllerLeadershipChange() {
+        controllerLeadershipGeneration.incrementAndGet();
+        deletedStreamArchiveCleanupsInFlight.clear();
+        deletedStreamArchiveEmptySinceMs.clear();
+    }
+
+    /**
+     * Returns the retained logical Archive bytes belonging to currently live Streams.
+     */
+    public long liveStreamArchiveSize() {
+        return streamArchiveMetadata.values().stream()
+            .filter(archive -> streamsMetadata.containsKey(archive.streamId()))
+            .mapToLong(S3StreamArchiveMetadata::archiveSize)
+            .reduce(0L, Math::addExact);
+    }
+
+    private void triggerStreamArchiveMetadataCleanup(long streamId) {
+        if (!quorumController.isActive()) {
+            return;
+        }
+        quorumController.appendWriteEvent("cleanupStreamArchiveMetadata", OptionalLong.empty(),
+            () -> cleanupStreamArchiveMetadata(streamId)).exceptionally(exception -> {
+                log.error("Failed to clean up published online metadata for Stream {}", streamId, exception);
+                return null;
+            });
+    }
+
+    private void triggerStreamArchiveMetadataCleanupReconciliation() {
+        if (!quorumController.isActive()) {
+            return;
+        }
+        quorumController.appendWriteEvent("reconcileStreamArchiveMetadataCleanup", OptionalLong.empty(), () -> {
+            reconcileStreamArchiveMetadataCleanup();
+            return ControllerResult.of(Collections.emptyList(), null);
+        }).exceptionally(exception -> {
+            log.error("Failed to reconcile Stream Archive metadata cleanup", exception);
+            return null;
+        });
+    }
+    // AutoMQ inject end
+
+    // AutoMQ inject start
+    private boolean isCurrentArchiveObjectSequence(StreamRuntimeMetadata stream, StreamArchiveUpdate request) {
+        long rangeStart = request.archiveEndOffset();
+        long rangeEnd = request.archivePreparedEndOffset();
+        List<S3StreamObject> objects = stream.streamObjects().values().stream()
+            .filter(object -> rangesOverlap(object.startOffset(), object.endOffset(), rangeStart, rangeEnd))
+            .sorted(Comparator.comparingLong(S3StreamObject::startOffset)
+                .thenComparingLong(S3StreamObject::objectId))
+            .collect(Collectors.toList());
+        if (objects.size() != request.archiveObjectIds().size()) {
+            return false;
+        }
+        long nextOffset = rangeStart;
+        for (int i = 0; i < objects.size(); i++) {
+            S3StreamObject streamObject = objects.get(i);
+            if (streamObject.objectId() != request.archiveObjectIds().get(i)
+                || streamObject.startOffset() != nextOffset || streamObject.endOffset() <= nextOffset) {
+                return false;
+            }
+            S3Object object = s3ObjectControlManager.getObject(streamObject.objectId());
+            if (object == null || object.getS3ObjectState() != S3ObjectState.COMMITTED
+                || ObjectAttributes.from(object.getAttributes()).type() != ObjectAttributes.Type.Composite) {
+                return false;
+            }
+            nextOffset = streamObject.endOffset();
+        }
+        return nextOffset == rangeEnd;
+    }
+    // AutoMQ inject end
+
+    private ControllerResult<UpdateStreamResponse> archiveUpdateError(UpdateStreamResponse response, Errors error) {
+        response.setErrorCode(error.code());
+        return ControllerResult.of(Collections.emptyList(), response);
+    }
+
+    private boolean isWellFormedArchiveState(StreamArchiveUpdate desired) {
+        if (desired.streamId() < 0 || desired.streamEpoch() < 0
+            || desired.archiveStartOffset() < 0 || desired.archiveMetadataEndOffset() < 0
+            || desired.archiveEndOffset() < 0 || desired.archivePreparedEndOffset() < 0
+            || desired.archiveSize() < 0 || desired.archiveCleanupEndOffset() < 0
+            || desired.archiveCleanupSize() < 0) {
+            return false;
+        }
+        if (desired.archiveMetadataEndOffset() > desired.archiveEndOffset()
+            || desired.archiveEndOffset() > desired.archivePreparedEndOffset()) {
+            return false;
+        }
+        if (desired.archiveCleanupSize() == 0) {
+            if (desired.archiveCleanupEndOffset() != desired.archiveStartOffset()) {
+                return false;
+            }
+        } else if (desired.archiveCleanupEndOffset() <= desired.archiveStartOffset()
+            || desired.archiveCleanupEndOffset() > desired.archiveEndOffset()
+            || desired.archiveCleanupSize() > desired.archiveSize()) {
+            return false;
+        }
+        if ((desired.archiveEndOffset() == desired.archiveStartOffset())
+            != (desired.archiveSize() == 0)) {
+            return false;
+        }
+        boolean preparePayload = desired.archivePreparedEndOffset() > desired.archiveEndOffset();
+        if (preparePayload) {
+            if (desired.archiveObjectIds().isEmpty() || desired.archiveObjectIds().size() > 100
+                || desired.archiveObjectIds().stream().distinct().count() != desired.archiveObjectIds().size()) {
+                return false;
+            }
+        } else if (!desired.archiveObjectIds().isEmpty()) {
+            return false;
+        }
+        return desired.archiveObjectIds().stream().allMatch(objectId -> objectId >= 0);
+    }
+
+    private boolean archiveStateEquals(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archiveStartOffset() == desired.archiveStartOffset()
+            && current.archiveMetadataEndOffset() == desired.archiveMetadataEndOffset()
+            && current.archiveEndOffset() == desired.archiveEndOffset()
+            && current.archivePreparedEndOffset() == desired.archivePreparedEndOffset()
+            && current.archiveSize() == desired.archiveSize()
+            && current.archiveCleanupEndOffset() == desired.archiveCleanupEndOffset()
+            && current.archiveCleanupSize() == desired.archiveCleanupSize();
+    }
+
+    private boolean isLegalArchiveTransition(S3StreamArchiveMetadata current, StreamArchiveUpdate desired,
+        StreamRuntimeMetadata stream) {
+        if (isArchivePrepare(current, desired, stream)
+            || isArchivePublish(current, desired)
+            || isCleanupPrepare(current, desired)
+            || isCleanupCommit(current, desired)) {
+            return true;
+        }
+        return isEmptyCursorAdvance(current, desired, stream);
+    }
+
+    private boolean isArchivePrepare(S3StreamArchiveMetadata current, StreamArchiveUpdate desired,
+        StreamRuntimeMetadata stream) {
+        return current.archiveEndOffset() == current.archivePreparedEndOffset()
+            && desired.archivePreparedEndOffset() > current.archivePreparedEndOffset()
+            && desired.archivePreparedEndOffset() <= stream.endOffset()
+            && sameExceptPreparedEnd(current, desired);
+    }
+
+    private boolean isArchivePublish(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archivePreparedEndOffset() > current.archiveEndOffset()
+            && desired.archiveEndOffset() == current.archivePreparedEndOffset()
+            && desired.archiveSize() > current.archiveSize()
+            && desired.archiveObjectIds().isEmpty()
+            && current.archiveStartOffset() == desired.archiveStartOffset()
+            && current.archiveMetadataEndOffset() == desired.archiveMetadataEndOffset()
+            && current.archivePreparedEndOffset() == desired.archivePreparedEndOffset()
+            && current.archiveCleanupEndOffset() == desired.archiveCleanupEndOffset()
+            && current.archiveCleanupSize() == desired.archiveCleanupSize();
+    }
+
+    private boolean isCleanupPrepare(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archiveCleanupEndOffset() == current.archiveStartOffset()
+            && current.archiveCleanupSize() == 0
+            && desired.archiveCleanupEndOffset() > current.archiveStartOffset()
+            && desired.archiveCleanupEndOffset() <= current.archiveEndOffset()
+            && desired.archiveCleanupSize() > 0
+            && desired.archiveCleanupSize() <= current.archiveSize()
+            && desired.archiveObjectIds().isEmpty()
+            && sameExceptCleanup(current, desired);
+    }
+
+    private boolean isCleanupCommit(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archiveCleanupSize() > 0
+            && desired.archiveStartOffset() == current.archiveCleanupEndOffset()
+            && desired.archiveSize() == current.archiveSize() - current.archiveCleanupSize()
+            && desired.archiveCleanupEndOffset() == desired.archiveStartOffset()
+            && desired.archiveCleanupSize() == 0
+            && desired.archiveObjectIds().isEmpty()
+            && current.archiveMetadataEndOffset() == desired.archiveMetadataEndOffset()
+            && current.archiveEndOffset() == desired.archiveEndOffset()
+            && current.archivePreparedEndOffset() == desired.archivePreparedEndOffset();
+    }
+
+    private boolean isEmptyCursorAdvance(S3StreamArchiveMetadata current, StreamArchiveUpdate desired,
+        StreamRuntimeMetadata stream) {
+        long currentCursor = current.archiveStartOffset();
+        long newCursor = desired.archiveStartOffset();
+        return current.archiveStartOffset() == current.archiveMetadataEndOffset()
+            && current.archiveMetadataEndOffset() == current.archiveEndOffset()
+            && current.archiveEndOffset() == current.archivePreparedEndOffset()
+            && current.archiveSize() == 0 && current.archiveCleanupSize() == 0
+            && newCursor > currentCursor && newCursor <= stream.startOffset()
+            && desired.archiveStartOffset() == desired.archiveMetadataEndOffset()
+            && desired.archiveMetadataEndOffset() == desired.archiveEndOffset()
+            && desired.archiveEndOffset() == desired.archivePreparedEndOffset()
+            && desired.archiveSize() == 0 && desired.archiveCleanupSize() == 0
+            && desired.archiveObjectIds().isEmpty()
+            && isCurrentOnlineObjectBoundary(stream, newCursor);
+    }
+
+    private boolean isCurrentOnlineObjectBoundary(StreamRuntimeMetadata stream, long offset) {
+        if (stream.streamObjects().values().stream().anyMatch(object -> object.startOffset() == offset)) {
+            return true;
+        }
+        boolean hasOnlineObject = stream.streamObjects().values().stream()
+            .anyMatch(object -> object.endOffset() > stream.startOffset());
+        for (NodeRuntimeMetadata node : nodesMetadata.values()) {
+            for (S3StreamSetObject object : node.streamSetObjects().values()) {
+                for (StreamOffsetRange range : object.offsetRangeList()) {
+                    if (range.streamId() == stream.streamId() && range.startOffset() == offset) {
+                        return true;
+                    }
+                    if (range.streamId() == stream.streamId() && range.endOffset() > stream.startOffset()) {
+                        hasOnlineObject = true;
+                    }
+                }
+            }
+        }
+        return !hasOnlineObject && offset == stream.startOffset();
+    }
+
+    private boolean sameExceptPreparedEnd(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archiveStartOffset() == desired.archiveStartOffset()
+            && current.archiveMetadataEndOffset() == desired.archiveMetadataEndOffset()
+            && current.archiveEndOffset() == desired.archiveEndOffset()
+            && current.archiveSize() == desired.archiveSize()
+            && current.archiveCleanupEndOffset() == desired.archiveCleanupEndOffset()
+            && current.archiveCleanupSize() == desired.archiveCleanupSize();
+    }
+
+    private boolean sameExceptCleanup(S3StreamArchiveMetadata current, StreamArchiveUpdate desired) {
+        return current.archiveStartOffset() == desired.archiveStartOffset()
+            && current.archiveMetadataEndOffset() == desired.archiveMetadataEndOffset()
+            && current.archiveEndOffset() == desired.archiveEndOffset()
+            && current.archivePreparedEndOffset() == desired.archivePreparedEndOffset()
+            && current.archiveSize() == desired.archiveSize();
     }
 
     /**
@@ -1075,6 +1600,13 @@ public class StreamControlManager {
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
 
+        // AutoMQ inject start
+        if (overlapsArchiveProtectedRange(data)) {
+            resp.setErrorCode(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+        // AutoMQ inject end
+
         if (data.sourceObjectIds().size() == 1 && streamObjectId == data.sourceObjectIds().get(0)) {
             return replace(data);
         }
@@ -1149,6 +1681,31 @@ public class StreamControlManager {
             streamObjectId, streamId, streamEpoch, nodeId, nodeEpoch, sourceObjectIds);
         return ControllerResult.atomicOf(records, resp);
     }
+
+    // AutoMQ inject start
+    private boolean overlapsArchiveProtectedRange(CommitStreamObjectRequestData data) {
+        StreamRuntimeMetadata stream = streamsMetadata.get(data.streamId());
+        S3StreamArchiveMetadata archive = getStreamArchiveMetadata(data.streamId());
+        if (stream == null || archive == null
+            || archive.archiveMetadataEndOffset() == archive.archivePreparedEndOffset()) {
+            return false;
+        }
+        long protectedStart = archive.archiveMetadataEndOffset();
+        long protectedEnd = archive.archivePreparedEndOffset();
+        if (data.objectId() != NOOP_OBJECT_ID
+            && rangesOverlap(data.startOffset(), data.endOffset(), protectedStart, protectedEnd)) {
+            return true;
+        }
+        return data.sourceObjectIds().stream()
+            .map(stream.streamObjects()::get)
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(object -> rangesOverlap(object.startOffset(), object.endOffset(), protectedStart, protectedEnd));
+    }
+
+    private boolean rangesOverlap(long firstStart, long firstEnd, long secondStart, long secondEnd) {
+        return firstStart < secondEnd && firstEnd > secondStart;
+    }
+    // AutoMQ inject end
 
     private ControllerResult<CommitStreamObjectResponseData> replace(CommitStreamObjectRequestData data) {
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
@@ -1629,6 +2186,11 @@ public class StreamControlManager {
                 return v;
             });
         });
+        // AutoMQ inject start
+        if (streamArchiveMetadata.containsKey(streamId)) {
+            triggerDeletedStreamArchiveCleanup(streamId);
+        }
+        // AutoMQ inject end
     }
 
     public void replay(RangeRecord record) {
@@ -1751,7 +2313,9 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset));
+        // AutoMQ inject start
+        streamMetadata.putStreamObject(new S3StreamObject(objectId, streamId, startOffset, endOffset));
+        // AutoMQ inject end
         // the offset continuous is ensured by the process layer
         // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
         streamMetadata.endOffset(endOffset);
@@ -1766,7 +2330,9 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay remove stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects().remove(objectId);
+        // AutoMQ inject start
+        streamMetadata.removeStreamObject(objectId);
+        // AutoMQ inject end
     }
 
     public void replay(RemoveNodeWALMetadataRecord record) {
@@ -1806,6 +2372,46 @@ public class StreamControlManager {
         }
     }
 
+    /**
+     * Replaces the complete durable Archive state for a Stream.
+     */
+    public void replay(S3StreamArchiveRecord record) {
+        S3StreamArchiveMetadata archive = S3StreamArchiveMetadata.fromRecord(record);
+        streamArchiveMetadata.put(record.streamId(), archive);
+        // AutoMQ inject start
+        if (streamsMetadata.containsKey(record.streamId())
+            && archive.archiveMetadataEndOffset() < archive.archiveEndOffset()) {
+            triggerStreamArchiveMetadataCleanup(record.streamId());
+        } else if (!streamsMetadata.containsKey(record.streamId())) {
+            triggerDeletedStreamArchiveCleanup(record.streamId());
+        }
+        // AutoMQ inject end
+    }
+
+    /**
+     * Removes the durable Archive state for a Stream.
+     */
+    public void replay(RemoveS3StreamArchiveRecord record) {
+        streamArchiveMetadata.remove(record.streamId());
+        // AutoMQ inject start
+        deletedStreamArchiveEmptySinceMs.remove(record.streamId());
+        deletedStreamArchiveCleanupsInFlight.remove(record.streamId());
+        // AutoMQ inject end
+    }
+
+    /**
+     * Returns materialized Archive state, or the non-materialized default at a live Stream's
+     * current start offset. Returns null when neither state exists.
+     */
+    public S3StreamArchiveMetadata getStreamArchiveMetadata(long streamId) {
+        S3StreamArchiveMetadata archive = streamArchiveMetadata.get(streamId);
+        if (archive != null) {
+            return archive;
+        }
+        StreamRuntimeMetadata stream = streamsMetadata.get(streamId);
+        return stream == null ? null : S3StreamArchiveMetadata.defaultAt(streamId, stream.startOffset());
+    }
+
     public TimelineHashMap<Long, StreamRuntimeMetadata> streamsMetadata() {
         return streamsMetadata;
     }
@@ -1824,6 +2430,7 @@ public class StreamControlManager {
             "snapshotRegistry=" + snapshotRegistry +
             ", s3ObjectControlManager=" + s3ObjectControlManager +
             ", streamsMetadata=" + streamsMetadata +
+            ", streamArchiveMetadata=" + streamArchiveMetadata +
             ", nodesMetadata=" + nodesMetadata +
             '}';
     }

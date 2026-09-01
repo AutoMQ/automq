@@ -1,0 +1,32 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+{
+  "apiKey": 519,
+  "type": "metadata",
+  "name": "S3StreamArchiveRecord",
+  "validVersions": "0",
+  "flexibleVersions": "0+",
+  "fields": [
+    { "name": "StreamId", "type": "int64", "versions": "0", "about": "The stream ID" },
+    { "name": "ArchiveStartOffset", "type": "int64", "versions": "0", "about": "The first archived offset" },
+    { "name": "ArchiveMetadataEndOffset", "type": "int64", "versions": "0", "about": "The end offset whose online metadata has been removed" },
+    { "name": "ArchiveEndOffset", "type": "int64", "versions": "0", "about": "The published archive end offset" },
+    { "name": "ArchivePreparedEndOffset", "type": "int64", "versions": "0", "about": "The prepared archive end offset" },
+    { "name": "ArchiveSize", "type": "int64", "versions": "0", "about": "The archived logical size" },
+    { "name": "ArchiveCleanupEndOffset", "type": "int64", "versions": "0", "about": "The prepared cleanup end offset" },
+    { "name": "ArchiveCleanupSize", "type": "int64", "versions": "0", "about": "The prepared cleanup logical size" }
+  ]
+}
