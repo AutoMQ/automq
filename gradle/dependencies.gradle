@@ -145,7 +145,7 @@ versions += [
   lz4: "1.8.0",
   mavenArtifact: "3.9.6",
   metrics: "2.2.0",
-  netty: "4.1.111.Final",
+  netty: "4.1.137.Final",
   opentelemetryProto: "1.0.0-alpha",
   // AutoMQ inject start
   protobuf: "4.32.1",
