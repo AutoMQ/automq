@@ -991,8 +991,6 @@ project(':core') {
       implementation "org.apache.parquet:parquet-format-structures:${versions.parquet}"
       implementation "org.apache.parquet:parquet-hadoop:${versions.parquet}"
       implementation "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
-      implementation "org.apache.orc:orc-core:${versions.orc}"
-      implementation "org.apache.orc:orc-shims:${versions.orc}"
       implementation "org.apache.thrift:libthrift:${versions.thrift}"
       implementation "org.apache.ant:ant:${versions.ant}"
       implementation "org.apache.ant:ant-launcher:${versions.ant}"

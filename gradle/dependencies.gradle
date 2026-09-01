@@ -107,7 +107,7 @@ versions += [
   javassist: "3.29.2-GA",
   jetty: "9.4.58.v20250814",
   jersey: "2.39.1",
-  jline: "4.2.1",
+  jline: "3.25.1",
   jmh: "1.37",
   hamcrest: "2.2",
   scalaLogging: "3.9.5",
@@ -145,7 +145,7 @@ versions += [
   kafka_37: "3.7.2",
   kafka_38: "3.8.1",
   // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
-  lz4: "1.11.1",
+  lz4: "1.10.1",
   mavenArtifact: "3.9.6",
   metrics: "2.2.0",
   netty: "4.1.137.Final",
@@ -173,13 +173,12 @@ versions += [
   snappy: "1.1.10.5",
   spotbugs: "4.8.6",
   zinc: "1.9.2",
-  zookeeper: "3.8.6",
+  zookeeper: "3.8.4",
 
   // AutoMQ inject start
   commonLang: "3.18.0",
   parquet: "1.15.2",
   parquetJackson: "1.18.0",
-  orc: "1.9.4",
   thrift: "0.23.0",
   ant: "1.10.15",
   aircompressor: "2.0.3",
