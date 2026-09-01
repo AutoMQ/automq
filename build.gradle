@@ -981,6 +981,26 @@ project(':core') {
     implementation libs.jacksonJDK8Datatypes
     implementation libs.joptSimple
     implementation libs.jose4j
+
+    // Keep table-topic transitive dependencies on supported patch versions at the core runtime boundary.
+    constraints {
+      implementation "org.apache.parquet:parquet-avro:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-column:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-common:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-encoding:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-format-structures:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-hadoop:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
+      implementation "org.apache.orc:orc-core:${versions.orc}"
+      implementation "org.apache.orc:orc-shims:${versions.orc}"
+      implementation "org.apache.thrift:libthrift:${versions.thrift}"
+      implementation "org.apache.ant:ant:${versions.ant}"
+      implementation "org.apache.ant:ant-launcher:${versions.ant}"
+      implementation "io.airlift:aircompressor:${versions.aircompressor}"
+      implementation "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
+      implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
+      implementation "commons-beanutils:commons-beanutils:${versions.beanutils}"
+    }
     implementation libs.metrics
     implementation libs.scalaCollectionCompat
     implementation libs.scalaJava8Compat
