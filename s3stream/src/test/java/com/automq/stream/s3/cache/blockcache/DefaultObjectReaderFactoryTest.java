@@ -24,15 +24,20 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Verifies reader construction and logical cache identity when metadata supplies an explicit physical object key.
@@ -45,17 +50,21 @@ public class DefaultObjectReaderFactoryTest {
      * and subsequent lookup retains the existing logical object-ID identity.
      */
     @Test
-    public void testArchivePhysicalKeyAndLogicalCacheIdentity() {
+    public void testArchivePhysicalKeyDoesNotCollideWithOnlineObject() {
         long objectId = 101L;
         String archiveKey = "archive/7/0000000000000000020-0000000000000000010-101-536870912";
-        DefaultObjectReaderFactory factory = new DefaultObjectReaderFactory(new MemoryObjectStorage());
+        ObjectStorage objectStorage = mock(ObjectStorage.class);
+        when(objectStorage.rangeRead(any(), anyString(), anyLong(), anyLong()))
+            .thenReturn(new CompletableFuture<>());
+        DefaultObjectReaderFactory factory = new DefaultObjectReaderFactory(objectStorage);
         ObjectReader archiveReader = factory.get(metadata(objectId, archiveKey));
 
-        ObjectReader sameLogicalObject = factory.get(metadata(objectId, "0/101"));
+        ObjectReader onlineReader = factory.get(metadata(objectId, "0/101"));
 
         assertEquals(archiveKey, archiveReader.objectKey());
-        assertSame(archiveReader, sameLogicalObject);
-        sameLogicalObject.release();
+        assertEquals("0/101", onlineReader.objectKey());
+        org.junit.jupiter.api.Assertions.assertNotSame(archiveReader, onlineReader);
+        onlineReader.release();
         archiveReader.release();
     }
 

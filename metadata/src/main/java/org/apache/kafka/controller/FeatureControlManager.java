@@ -231,12 +231,6 @@ public class FeatureControlManager {
 
         // AutoMQ inject start
         if (featureName.equals(AutoMQVersion.FEATURE_NAME)
-            && currentVersion >= AutoMQVersion.V7.featureLevel()
-            && newVersion < AutoMQVersion.V7.featureLevel()) {
-            return invalidUpdateVersion(featureName, newVersion,
-                "Direct downgrade from AutoMQVersion V7 is not supported.");
-        }
-        if (featureName.equals(AutoMQVersion.FEATURE_NAME)
             && currentVersion >= AutoMQVersion.V6.featureLevel()
             && newVersion < AutoMQVersion.V6.featureLevel()) {
             return invalidUpdateVersion(featureName, newVersion,

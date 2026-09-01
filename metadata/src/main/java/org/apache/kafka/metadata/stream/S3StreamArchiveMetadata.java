@@ -19,6 +19,8 @@ package org.apache.kafka.metadata.stream;
 import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+import com.automq.stream.s3.streams.StreamArchivePhase;
+
 /**
  * The complete durable Archive state for one Stream.
  */
@@ -32,6 +34,50 @@ public record S3StreamArchiveMetadata(
     long archiveCleanupEndOffset,
     long archiveCleanupSize
 ) {
+    /**
+     * Derives the Broker-owned recovery phase from this complete durable state.
+     */
+    public StreamArchivePhase phase() {
+        return StreamArchivePhase.from(archiveEndOffset, archivePreparedEndOffset, archiveCleanupSize);
+    }
+
+    /** Returns the state after durably preparing one Archive copy range. */
+    public S3StreamArchiveMetadata prepareArchive(long preparedEndOffset) {
+        return new S3StreamArchiveMetadata(streamId, archiveStartOffset, archiveMetadataEndOffset,
+            archiveEndOffset, preparedEndOffset, archiveSize, archiveCleanupEndOffset, archiveCleanupSize);
+    }
+
+    /** Returns the state after publishing a prepared Archive copy range. */
+    public S3StreamArchiveMetadata publishArchive(long endOffset, long size) {
+        return new S3StreamArchiveMetadata(streamId, archiveStartOffset, archiveMetadataEndOffset,
+            endOffset, archivePreparedEndOffset, size, archiveCleanupEndOffset, archiveCleanupSize);
+    }
+
+    /** Returns the state after durably preparing one Archive retention-cleanup range. */
+    public S3StreamArchiveMetadata prepareCleanup(long cleanupEndOffset, long cleanupSize) {
+        return new S3StreamArchiveMetadata(streamId, archiveStartOffset, archiveMetadataEndOffset,
+            archiveEndOffset, archivePreparedEndOffset, archiveSize, cleanupEndOffset, cleanupSize);
+    }
+
+    /** Returns the state after committing the currently prepared retention cleanup. */
+    public S3StreamArchiveMetadata commitCleanup() {
+        return new S3StreamArchiveMetadata(streamId, archiveCleanupEndOffset, archiveMetadataEndOffset,
+            archiveEndOffset, archivePreparedEndOffset, Math.subtractExact(archiveSize, archiveCleanupSize),
+            archiveCleanupEndOffset, 0L);
+    }
+
+    /** Returns the fully drained state aligned to a later online object boundary. */
+    public S3StreamArchiveMetadata advanceEmptyCursor(long offset) {
+        return new S3StreamArchiveMetadata(streamId, offset, archiveMetadataEndOffset, offset, offset, 0L,
+            offset, 0L);
+    }
+
+    /** Returns the state after Controller-owned online metadata cleanup advances. */
+    public S3StreamArchiveMetadata advanceMetadataCleanup(long metadataEndOffset) {
+        return new S3StreamArchiveMetadata(streamId, archiveStartOffset, metadataEndOffset,
+            archiveEndOffset, archivePreparedEndOffset, archiveSize, archiveCleanupEndOffset, archiveCleanupSize);
+    }
+
     /**
      * Creates the non-materialized default state at a Stream's current start offset.
      */
@@ -78,4 +124,5 @@ public record S3StreamArchiveMetadata(
             .setArchiveCleanupEndOffset(archiveCleanupEndOffset)
             .setArchiveCleanupSize(archiveCleanupSize), (short) 0);
     }
+
 }

@@ -25,8 +25,8 @@
     { "name": "ArchiveMetadataEndOffset", "type": "int64", "versions": "0", "about": "The end offset whose online metadata has been removed" },
     { "name": "ArchiveEndOffset", "type": "int64", "versions": "0", "about": "The published archive end offset" },
     { "name": "ArchivePreparedEndOffset", "type": "int64", "versions": "0", "about": "The prepared archive end offset" },
-    { "name": "ArchiveSize", "type": "int64", "versions": "0", "about": "The archived logical size" },
+    { "name": "ArchiveSize", "type": "int64", "versions": "0", "about": "The archived object-size accounting total" },
     { "name": "ArchiveCleanupEndOffset", "type": "int64", "versions": "0", "about": "The prepared cleanup end offset" },
-    { "name": "ArchiveCleanupSize", "type": "int64", "versions": "0", "about": "The prepared cleanup logical size" }
+    { "name": "ArchiveCleanupSize", "type": "int64", "versions": "0", "about": "The prepared cleanup object-size accounting total" }
   ]
 }

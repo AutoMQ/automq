@@ -24,13 +24,15 @@ import org.apache.kafka.common.message.CreateStreamsRequestData.CreateStreamRequ
 import org.apache.kafka.common.message.GetOpeningStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsRequestData;
 import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
+import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePublish;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
 import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.controller.stream.StreamClient;
-import org.apache.kafka.common.message.RequestHeaderData;
 import org.apache.kafka.metadata.bootstrap.BootstrapMetadata;
 import org.apache.kafka.metalog.LocalLogManagerTestEnv;
 import org.apache.kafka.server.common.MetadataVersion;
@@ -66,13 +68,13 @@ public class QuorumControllerArchiveTest {
     @Test
     public void testArchiveUpdatesPreservePositionAndSeparateFrameworkErrors() throws Exception {
         try (LocalLogManagerTestEnv logEnv = new LocalLogManagerTestEnv.Builder(1).build();
-             QuorumControllerTestEnv controllerEnv = controllerEnv(logEnv, AutoMQVersion.V7)) {
+             QuorumControllerTestEnv controllerEnv = controllerEnv(logEnv, AutoMQVersion.V6)) {
             QuorumController controller = controllerEnv.activeController(true);
             createOwnedStream(controller);
             UpdateStreamArchiveRequestData request = new UpdateStreamArchiveRequestData()
                 .setNodeId(BROKER_ID)
                 .setNodeEpoch(BROKER_EPOCH)
-                .setUpdateStreamArchiveRequests(List.of(idleState(), idleState().setArchiveStartOffset(-1L),
+                .setOperations(List.of(idleState(), idleState(-1L),
                     idleState()));
 
             UpdateStreamArchiveResponseData response =
@@ -99,12 +101,12 @@ public class QuorumControllerArchiveTest {
     @Test
     public void testArchiveFeatureGateRejectsWholeBatchWithoutState() throws Exception {
         try (LocalLogManagerTestEnv logEnv = new LocalLogManagerTestEnv.Builder(1).build();
-             QuorumControllerTestEnv controllerEnv = controllerEnv(logEnv, AutoMQVersion.V6)) {
+             QuorumControllerTestEnv controllerEnv = controllerEnv(logEnv, AutoMQVersion.V5)) {
             QuorumController controller = controllerEnv.activeController(true);
             UpdateStreamArchiveRequestData request = new UpdateStreamArchiveRequestData()
                 .setNodeId(BROKER_ID)
                 .setNodeEpoch(BROKER_EPOCH)
-                .setUpdateStreamArchiveRequests(List.of(idleState(), idleState()));
+                .setOperations(List.of(idleState(), idleState()));
 
             UpdateStreamArchiveResponseData response =
                 controller.updateStreamArchive(ANONYMOUS_CONTEXT, request).get();
@@ -138,17 +140,16 @@ public class QuorumControllerArchiveTest {
                 .setStreamId(STREAM_ID).setStreamEpoch(STREAM_EPOCH)))).get();
     }
 
-    private static StreamArchiveUpdate idleState() {
-        return new StreamArchiveUpdate()
+    private static StreamArchiveOperation idleState() {
+        return idleState(0L);
+    }
+
+    private static StreamArchiveOperation idleState(long endOffset) {
+        return new StreamArchiveOperation()
             .setStreamId(STREAM_ID)
             .setStreamEpoch(STREAM_EPOCH)
-            .setArchiveStartOffset(0L)
-            .setArchiveMetadataEndOffset(0L)
-            .setArchiveEndOffset(0L)
-            .setArchivePreparedEndOffset(0L)
-            .setArchiveSize(0L)
-            .setArchiveCleanupEndOffset(0L)
-            .setArchiveCleanupSize(0L)
-            .setArchiveObjectIds(List.of());
+            .setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+            .setArchivePublish(new ArchivePublish()
+                .setExpectedArchiveEndOffset(0L).setArchiveEndOffset(endOffset).setArchiveSize(0L));
     }
 }

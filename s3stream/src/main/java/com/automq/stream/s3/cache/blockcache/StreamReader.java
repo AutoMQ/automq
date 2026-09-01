@@ -27,6 +27,7 @@ import com.automq.stream.s3.exceptions.AutoMQException;
 import com.automq.stream.s3.exceptions.BlockNotContinuousException;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
@@ -357,8 +358,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
             for (Map.Entry<Long, Block> entry : blocksMap.tailMap(floorKey).entrySet()) {
                 Block block = entry.getValue();
                 long objectId = block.metadata.objectId();
-                if (!objectManager.isObjectExist(objectId)) {
-                    // The cached block's object maybe deleted by the compaction. So we need to check the object exist.
+                if (!objectManager.isObjectExist(objectId) && !ArchiveObjectKey.isArchiveKey(block.metadata.key())) {
+                    // The cached online block's object may have been deleted by compaction. Archived objects are
+                    // intentionally removed from the Kraft object image, but remain readable through their archive key.
                     ctx.cf.completeExceptionally(new ObjectNotExistException(objectId));
                     return;
                 }

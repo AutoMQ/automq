@@ -26,7 +26,10 @@ import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePublish;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupCommit;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupPrepare;
 import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -36,6 +39,7 @@ import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.controller.ClusterControlManager;
@@ -59,6 +63,7 @@ import com.automq.stream.s3.CompositeObjectWriter;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.compact.StreamObjectArchiveCleanupTask;
 import com.automq.stream.s3.compact.StreamObjectArchiveTask;
+import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -91,6 +96,7 @@ import static org.mockito.Mockito.when;
  * Qualifies the complete Archive lifecycle across the Broker, Controller, KRaft Image, and object-storage seams.
  */
 @Tag("S3Unit")
+@SuppressWarnings("checkstyle:ClassDataAbstractionCoupling")
 public class ArchiveLifecycleIntegrationTest {
     private static final int BROKER_ID = 0;
     private static final long BROKER_EPOCH = 0L;
@@ -145,12 +151,12 @@ public class ArchiveLifecycleIntegrationTest {
             ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
         replayImage(image, List.of(new ApiMessageAndVersion(streamObject, (short) 0)));
 
-        List<StreamArchiveState> desiredStates = new ArrayList<>();
+        List<com.automq.stream.s3.streams.StreamArchiveOperation> desiredStates = new ArrayList<>();
         StreamManager broker = archiveStreamManager(image, desiredStates);
         ObjectManager imageBackedObjects = mock(ObjectManager.class);
-        when(imageBackedObjects.getStreamObjects(STREAM_ID, 0L, 100L, Integer.MAX_VALUE)).thenAnswer(ignored ->
+        when(imageBackedObjects.getStreamObjects(STREAM_ID, 0L, 100L, 101)).thenAnswer(ignored ->
             CompletableFuture.completedFuture(image.get().streamsMetadata()
-                .getStreamObjects(STREAM_ID, 0L, 100L, Integer.MAX_VALUE)
+                .getStreamObjects(STREAM_ID, 0L, 100L, 101)
                 .stream().map(object -> source).toList()));
         AtomicLong streamStartOffset = new AtomicLong(0L);
         Stream stream = stream(streamStartOffset);
@@ -159,12 +165,16 @@ public class ArchiveLifecycleIntegrationTest {
             .objectStorage(objectStorage).stream(stream).build().archive();
 
         assertEquals(2, desiredStates.size());
-        assertEquals(END_OFFSET, desiredStates.get(0).archivePreparedEndOffset());
-        assertEquals(0L, desiredStates.get(0).archiveEndOffset());
-        assertEquals(END_OFFSET, desiredStates.get(1).archiveEndOffset());
-        assertEquals(LOGICAL_SIZE, desiredStates.get(1).archiveSize());
+        com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePrepare prepared =
+            (com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePrepare) desiredStates.get(0);
+        com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePublish published =
+            (com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePublish) desiredStates.get(1);
+        assertEquals(END_OFFSET, prepared.archivePreparedEndOffset());
+        assertEquals(0L, prepared.expectedArchiveEndOffset());
+        assertEquals(END_OFFSET, published.archiveEndOffset());
+        assertEquals(LOGICAL_SIZE, published.archiveSize());
         assertArchiveStateReplayed(image);
-        String archiveKey = "archive/0/0000000000000000010-0000000000000000000-10-536870912";
+        String archiveKey = ArchiveObjectKey.manifestKey(STREAM_ID, 0L, 10L, 10L, 512L * 1024 * 1024);
         assertTrue(objectStorage.contains(ObjectUtils.genKey(0, OBJECT_ID)));
         assertTrue(objectStorage.contains(archiveKey));
 
@@ -187,17 +197,17 @@ public class ArchiveLifecycleIntegrationTest {
     }
 
     private StreamManager archiveStreamManager(AtomicReference<MetadataImage> image,
-        List<StreamArchiveState> desiredStates) {
+        List<com.automq.stream.s3.streams.StreamArchiveOperation> desiredStates) {
         StreamManager broker = mock(StreamManager.class);
         when(broker.getStreamArchive(STREAM_ID, STREAM_EPOCH)).thenAnswer(ignored -> {
             S3StreamArchiveMetadata archive = image.get().streamsMetadata().getStreamArchiveMetadata(STREAM_ID);
             return CompletableFuture.completedFuture(new StreamArchiveState(STREAM_ID, STREAM_EPOCH,
                 archive.archiveStartOffset(), archive.archiveMetadataEndOffset(), archive.archiveEndOffset(),
                 archive.archivePreparedEndOffset(), archive.archiveSize(), archive.archiveCleanupEndOffset(),
-                archive.archiveCleanupSize(), List.of()));
+                archive.archiveCleanupSize()));
         });
         when(broker.updateStreamArchive(any())).thenAnswer(invocation -> {
-            StreamArchiveState desired = invocation.getArgument(0);
+            com.automq.stream.s3.streams.StreamArchiveOperation desired = invocation.getArgument(0);
             desiredStates.add(desired);
             ControllerResult<UpdateStreamResponse> result = controller.updateStreamArchive(
                 BROKER_ID, BROKER_EPOCH, toRequest(desired));
@@ -212,18 +222,40 @@ public class ArchiveLifecycleIntegrationTest {
         return broker;
     }
 
-    private static StreamArchiveUpdate toRequest(StreamArchiveState desired) {
-        return new StreamArchiveUpdate()
-            .setStreamId(desired.streamId())
-            .setStreamEpoch(desired.streamEpoch())
-            .setArchiveStartOffset(desired.archiveStartOffset())
-            .setArchiveMetadataEndOffset(desired.archiveMetadataEndOffset())
-            .setArchiveEndOffset(desired.archiveEndOffset())
-            .setArchivePreparedEndOffset(desired.archivePreparedEndOffset())
-            .setArchiveSize(desired.archiveSize())
-            .setArchiveCleanupEndOffset(desired.archiveCleanupEndOffset())
-            .setArchiveCleanupSize(desired.archiveCleanupSize())
-            .setArchiveObjectIds(desired.archiveObjectIds());
+    private static org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation toRequest(
+        com.automq.stream.s3.streams.StreamArchiveOperation operation) {
+        org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation request =
+            new org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation()
+                .setStreamId(operation.streamId()).setStreamEpoch(operation.streamEpoch());
+        if (operation instanceof com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+                .setArchivePrepare(new ArchivePrepare().setExpectedArchiveEndOffset(prepare.expectedArchiveEndOffset())
+                    .setArchivePreparedEndOffset(prepare.archivePreparedEndOffset())
+                    .setArchiveObjectIds(prepare.archiveObjectIds()));
+        }
+        if (operation instanceof com.automq.stream.s3.streams.StreamArchiveOperation.ArchivePublish publish) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+                .setArchivePublish(new ArchivePublish().setExpectedArchiveEndOffset(publish.expectedArchiveEndOffset())
+                    .setArchiveEndOffset(publish.archiveEndOffset()).setArchiveSize(publish.archiveSize()));
+        }
+        if (operation instanceof com.automq.stream.s3.streams.StreamArchiveOperation.CleanupPrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_PREPARE.value())
+                .setCleanupPrepare(new CleanupPrepare()
+                    .setExpectedArchiveStartOffset(prepare.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(prepare.archiveCleanupEndOffset())
+                    .setArchiveCleanupSize(prepare.archiveCleanupSize()));
+        }
+        if (operation instanceof com.automq.stream.s3.streams.StreamArchiveOperation.CleanupCommit commit) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_COMMIT.value())
+                .setCleanupCommit(new CleanupCommit()
+                    .setExpectedArchiveStartOffset(commit.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(commit.archiveCleanupEndOffset()));
+        }
+        com.automq.stream.s3.streams.StreamArchiveOperation.AdvanceEmptyCursor advance =
+            (com.automq.stream.s3.streams.StreamArchiveOperation.AdvanceEmptyCursor) operation;
+        return request.setOperation(StreamArchiveOperationType.ADVANCE_EMPTY_CURSOR.value())
+            .setAdvanceEmptyCursor(new org.apache.kafka.common.message.UpdateStreamArchiveRequestData.AdvanceEmptyCursor()
+                .setExpectedArchiveOffset(advance.expectedArchiveOffset()).setNewArchiveOffset(advance.newArchiveOffset()));
     }
 
     private S3ObjectMetadata writeComposite() throws Exception {

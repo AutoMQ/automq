@@ -75,10 +75,9 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -89,7 +88,7 @@ class StreamMetadataManagerTest {
 
     /**
      * Given a published Archive range, when Fetch is wholly before the published boundary, then ordinary metadata
-     * carries the archived manifest's physical location and LIST physical properties.
+     * carries the archived manifest's physical location and Composite retained logical size.
      */
     @Test
     public void testFetchArchiveOnlyReturnsOrdinaryMetadataWithPhysicalKey() throws Exception {
@@ -98,9 +97,11 @@ class StreamMetadataManagerTest {
         replayArchive(delta, 10L, 30L, 30L);
         MetadataImage image = delta.apply(new MetadataProvenance(1L, 0, 1L));
         ObjectStorage storage = mock(ObjectStorage.class);
+        ObjectStorage primary = mock(ObjectStorage.class);
+        when(storage.primary()).thenReturn(primary);
         String firstKey = ArchiveObjectKey.manifestKey(STREAM_ID, 10L, 20L, 101L, 999L);
         String secondKey = ArchiveObjectKey.manifestKey(STREAM_ID, 20L, 30L, 102L, 888L);
-        when(storage.list(any(ObjectStorage.ListOptions.class))).thenReturn(CompletableFuture.completedFuture(List.of(
+        when(primary.list(any(ObjectStorage.ListOptions.class))).thenReturn(CompletableFuture.completedFuture(List.of(
             new ObjectStorage.ObjectInfo((short) 0, firstKey, 11L, 123L),
             new ObjectStorage.ObjectInfo((short) 0, secondKey, 12L, 124L))));
         StreamMetadataManager manager = newManager(image, storage);
@@ -112,10 +113,37 @@ class StreamMetadataManagerTest {
         S3ObjectMetadata first = result.objects().get(0);
         assertEquals(S3ObjectType.COMPOSITE, first.getType());
         assertEquals(firstKey, first.key());
-        assertEquals(123L, first.objectSize());
+        assertEquals(999L, first.objectSize());
         assertEquals(11L, first.committedTimestamp());
         assertEquals(S3StreamConstant.INVALID_TS, first.dataTimeInMs());
         assertEquals((short) 0, first.bucket());
+    }
+
+    /**
+     * Given a Normal object in the published Archive range, when Fetch lists its key, then metadata preserves the
+     * ordinary Stream Object type so the normal reader consumes the complete copied object.
+     */
+    @Test
+    public void testFetchArchiveNormalObjectRestoresStreamType() throws Exception {
+        MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
+        replayStream(delta, 10L, 20L);
+        replayArchive(delta, 10L, 20L, 20L);
+        MetadataImage image = delta.apply(new MetadataProvenance(1L, 0, 1L));
+        ObjectStorage storage = mock(ObjectStorage.class);
+        String key = ArchiveObjectKey.manifestKey(STREAM_ID, 10L, 20L, ObjectAttributes.Type.Normal,
+            101L, 123L);
+        when(storage.list(any(ObjectStorage.ListOptions.class))).thenReturn(CompletableFuture.completedFuture(List.of(
+            new ObjectStorage.ObjectInfo((short) 0, key, 11L, 123L))));
+
+        InRangeObjects result = newManager(image, storage).fetch(STREAM_ID, 10L, 20L, 1)
+            .get(1, TimeUnit.SECONDS);
+
+        assertEquals(1, result.objects().size());
+        assertEquals(S3ObjectType.STREAM, result.objects().get(0).getType());
+        assertEquals(ObjectAttributes.Type.Normal,
+            ObjectAttributes.from(result.objects().get(0).attributes()).type());
+        assertEquals(key, result.objects().get(0).key());
+        assertEquals(123L, result.objects().get(0).objectSize());
     }
 
     /**
@@ -136,7 +164,7 @@ class StreamMetadataManagerTest {
 
         assertEquals(List.of(201L), result.objects().stream()
             .map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
-        verifyNoInteractions(storage);
+        verify(storage, never()).list(any(ObjectStorage.ListOptions.class));
     }
 
     /**
@@ -211,7 +239,8 @@ class StreamMetadataManagerTest {
         MetadataImage image = delta.apply(new MetadataProvenance(1L, 0, 1L));
         ObjectStorage malformedStorage = mock(ObjectStorage.class);
         when(malformedStorage.list(any(ObjectStorage.ListOptions.class))).thenReturn(CompletableFuture.completedFuture(List.of(
-            new ObjectStorage.ObjectInfo((short) 0, "archive/7/not-a-manifest", 11L, 123L))));
+            new ObjectStorage.ObjectInfo((short) 0,
+                ArchiveObjectKey.manifestPrefix(STREAM_ID) + "not-a-manifest", 11L, 123L))));
         CompletionException malformed = assertThrows(CompletionException.class,
             () -> newManager(image, malformedStorage).fetch(STREAM_ID, 10L, 30L, 4).join());
         assertInstanceOf(ArchiveMalformedKeyException.class, malformed.getCause());
@@ -249,8 +278,8 @@ class StreamMetadataManagerTest {
     }
 
     /**
-     * Given Archive LIST repeatedly fails at the object-storage boundary, when bounded storage retries are exhausted,
-     * then Fetch propagates the failure without entering metadata pending-fetch retry.
+     * Given Archive LIST fails at the object-storage boundary, when Fetch observes the failure, then it propagates the
+     * error without applying a second retry policy or entering metadata pending-fetch retry.
      */
     @Test
     public void testFetchArchiveListFailureDoesNotWaitForMetadataUpdate() {
@@ -262,71 +291,21 @@ class StreamMetadataManagerTest {
         IllegalStateException listFailure = new IllegalStateException("LIST unavailable");
         when(storage.list(any(ObjectStorage.ListOptions.class)))
             .thenReturn(CompletableFuture.failedFuture(listFailure));
-        when(storage.isListRetriable(listFailure)).thenReturn(true);
         StreamMetadataManager manager = newManager(image, storage);
 
         CompletionException exception = assertThrows(CompletionException.class,
             () -> manager.fetch(STREAM_ID, 10L, 30L, 4).join());
 
         assertEquals(listFailure, exception.getCause());
-        verify(storage, times(3)).list(any(ObjectStorage.ListOptions.class));
-    }
-
-    /**
-     * Given a transient Archive LIST transport failure, when a bounded retry succeeds, then Fetch returns the
-     * published range without waiting for a metadata Image update.
-     */
-    @Test
-    public void testFetchArchiveListRetriesTransientFailure() throws Exception {
-        MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
-        replayStream(delta, 10L, 20L);
-        replayArchive(delta, 10L, 20L, 20L);
-        MetadataImage image = delta.apply(new MetadataProvenance(1L, 0, 1L));
-        ObjectStorage storage = mock(ObjectStorage.class);
-        IllegalStateException listFailure = new IllegalStateException("LIST unavailable");
-        String key = ArchiveObjectKey.manifestKey(STREAM_ID, 10L, 20L, 101L, 100L);
-        when(storage.list(any(ObjectStorage.ListOptions.class)))
-            .thenReturn(CompletableFuture.failedFuture(listFailure))
-            .thenReturn(CompletableFuture.completedFuture(List.of(
-                new ObjectStorage.ObjectInfo((short) 0, key, 11L, 123L))));
-        when(storage.isListRetriable(listFailure)).thenReturn(true);
-
-        InRangeObjects result = newManager(image, storage).fetch(STREAM_ID, 10L, 20L, 4)
-            .get(1, TimeUnit.SECONDS);
-
-        assertEquals(List.of(101L), result.objects().stream()
-            .map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
-        verify(storage, times(2)).list(any(ObjectStorage.ListOptions.class));
-    }
-
-    /**
-     * Given Archive LIST fails with a non-retriable storage error, when Fetch observes it, then the error propagates
-     * after one attempt and no metadata pending-fetch retry is registered.
-     */
-    @Test
-    public void testFetchArchiveListDoesNotRetryNonRetriableFailure() {
-        MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
-        replayStream(delta, 10L, 20L);
-        replayArchive(delta, 10L, 20L, 20L);
-        MetadataImage image = delta.apply(new MetadataProvenance(1L, 0, 1L));
-        ObjectStorage storage = mock(ObjectStorage.class);
-        IllegalArgumentException listFailure = new IllegalArgumentException("invalid LIST configuration");
-        when(storage.list(any(ObjectStorage.ListOptions.class)))
-            .thenReturn(CompletableFuture.failedFuture(listFailure));
-
-        CompletionException exception = assertThrows(CompletionException.class,
-            () -> newManager(image, storage).fetch(STREAM_ID, 10L, 20L, 4).join());
-
-        assertEquals(listFailure, exception.getCause());
         verify(storage).list(any(ObjectStorage.ListOptions.class));
     }
 
     /**
-     * Given an empty requested range begins inside Archive, when Fetch runs, then it preserves the existing contract
-     * by returning the first ordinary object that covers the requested offset.
+     * Given an empty requested range begins inside Archive, when Fetch runs, then it returns an empty result without
+     * listing or consuming an Archive manifest.
      */
     @Test
-    public void testFetchArchiveEqualOffsetsReturnsCoveringObject() throws Exception {
+    public void testFetchArchiveEqualOffsetsReturnsEmptyResult() throws Exception {
         MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
         replayStream(delta, 10L, 20L);
         replayArchive(delta, 10L, 20L, 20L);
@@ -339,8 +318,9 @@ class StreamMetadataManagerTest {
         InRangeObjects result = newManager(image, storage).fetch(STREAM_ID, 12L, 12L, 4)
             .get(1, TimeUnit.SECONDS);
 
-        assertEquals(List.of(101L), result.objects().stream()
-            .map(S3ObjectMetadata::objectId).collect(Collectors.toList()));
+        assertEquals(STREAM_ID, result.streamId());
+        assertEquals(List.of(), result.objects());
+        verify(storage, never()).list(any(ObjectStorage.ListOptions.class));
     }
 
     /**
@@ -417,6 +397,9 @@ class StreamMetadataManagerTest {
     }
 
     private static StreamMetadataManager newManager(MetadataImage image, ObjectStorage storage) {
+        if (storage.primary() == null) {
+            when(storage.primary()).thenReturn(storage);
+        }
         BrokerServer broker = mock(BrokerServer.class);
         KRaftMetadataCache metadataCache = mock(KRaftMetadataCache.class);
         MetadataLoader metadataLoader = mock(MetadataLoader.class);

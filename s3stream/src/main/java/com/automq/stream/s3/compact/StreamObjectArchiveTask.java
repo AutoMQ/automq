@@ -20,16 +20,20 @@
 package com.automq.stream.s3.compact;
 
 import com.automq.stream.api.Stream;
-import com.automq.stream.s3.CompositeObjectReader;
-import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.Writer;
+import com.automq.stream.s3.streams.StreamArchiveOperation;
+import com.automq.stream.s3.streams.StreamArchivePhase;
 import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.utils.Systems;
+import com.google.common.annotations.VisibleForTesting;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -37,38 +41,38 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.LongSupplier;
 
-import io.netty.buffer.ByteBuf;
-
-import static com.automq.stream.s3.CompositeObject.OBJECT_BLOCK_HEADER_SIZE;
-import static com.automq.stream.s3.CompositeObject.OBJECT_UNIT_SIZE;
-import static com.automq.stream.s3.objects.ObjectAttributes.Type.Composite;
-
 /**
- * Owns one bounded Broker ARCHIVE round: recover or prepare a range, copy its Composite manifests, and publish it.
- * Source metadata and linked objects remain untouched for Controller cleanup in a later lifecycle stage.
+ * Owns one bounded Broker Archive round for Normal and Composite Stream Objects.
+ *
+ * <p>Archive first submits the selected object IDs for validation and durably advances
+ * {@code archivePreparedEndOffset}, then copies that frozen range, and finally advances {@code archiveEndOffset}
+ * while accounting its object size. A prepared range is therefore durable retry state: a later round re-enumerates
+ * and recopies the whole range idempotently before publishing it.</p>
  */
 public final class StreamObjectArchiveTask {
-    static final int MAX_COMPOSITES_PER_BATCH = 100;
-    static final long COMPOSITE_TARGET_SIZE = 512L * 1024 * 1024;
-    static final long TASK_TIMEOUT_NANOS = TimeUnit.MINUTES.toNanos(5);
-
+    private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectArchiveTask.class);
+    @VisibleForTesting
+    static final int MAX_OBJECTS_PER_BATCH = 100;
+    @VisibleForTesting
+    static final int MAX_OBJECTS_WITH_LOOKAHEAD = MAX_OBJECTS_PER_BATCH + 1;
+    static final long COMPOSITE_TARGET_SIZE = Systems.getEnvLong(
+        "AUTOMQ_STREAM_ARCHIVE_COMPOSITE_TARGET_SIZE", 512L * 1024 * 1024);
     private final ObjectManager objectManager;
     private final StreamManager streamManager;
     private final ObjectStorage objectStorage;
     private final Stream stream;
-    private final LongSupplier nanoTime;
-    private final long taskTimeoutNanos;
+    private final LongSupplier currentTimeMillis;
+    private final Pressure pressure;
 
     private StreamObjectArchiveTask(Builder builder) {
         objectManager = Objects.requireNonNull(builder.objectManager, "objectManager");
         streamManager = Objects.requireNonNull(builder.streamManager, "streamManager");
         objectStorage = Objects.requireNonNull(builder.objectStorage, "objectStorage");
         stream = Objects.requireNonNull(builder.stream, "stream");
-        nanoTime = builder.nanoTime;
-        taskTimeoutNanos = builder.taskTimeoutNanos;
+        currentTimeMillis = builder.currentTimeMillis;
+        pressure = builder.pressure;
     }
 
     /**
@@ -81,102 +85,127 @@ public final class StreamObjectArchiveTask {
     /**
      * Run one ARCHIVE round. A prepared range is always recovered before selecting new work.
      */
-    public void archive() throws ExecutionException, InterruptedException, TimeoutException {
-        long deadlineNanos = nanoTime.getAsLong() + taskTimeoutNanos;
-        StreamArchiveState state = await(streamManager.getStreamArchive(stream.streamId(), stream.streamEpoch()),
-            deadlineNanos);
-        if (state.archivePreparedEndOffset() > state.archiveEndOffset()) {
-            List<S3ObjectMetadata> prepared = getRange(state.archiveEndOffset(), state.archivePreparedEndOffset(),
-                deadlineNanos);
-            copyAndPublish(state, prepared, deadlineNanos);
+    public void archive() throws ExecutionException, InterruptedException {
+        StreamArchiveState state = streamManager.getStreamArchive(stream.streamId(), stream.streamEpoch()).get();
+        if (state.phase() == StreamArchivePhase.CLEANUP_PREPARED) {
+            // Retention cleanup owns the durable intent. Let the Archive cleanup task recover it before ARCHIVE
+            // selects or recovers work so only one prepare state is active at a time.
+            return;
+        }
+        if (state.phase() == StreamArchivePhase.ARCHIVE_PREPARED) {
+            // Recover a batch whose prepare was committed but whose copies or publish were interrupted. Recopying the
+            // complete batch overwrites the same deterministic keys and avoids per-object recovery state.
+            List<S3ObjectMetadata> prepared = consecutiveObjects(
+                getRange(state.archiveEndOffset(), state.archivePreparedEndOffset(), MAX_OBJECTS_PER_BATCH),
+                state.archiveEndOffset());
+            LOGGER.info("[ARCHIVE_RECOVER] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}",
+                state.streamId(), state.streamEpoch(), state.archiveEndOffset(), state.archivePreparedEndOffset(),
+                prepared.size());
+            copyAndPublish(state, prepared);
             return;
         }
         List<S3ObjectMetadata> online = null;
         if (state.archiveEndOffset() < stream.startOffset()) {
+            // Retention has overtaken the Archive cursor. Do not archive new history until every published Archive
+            // object has been deleted and Controller metadata cleanup has removed the corresponding online metadata.
+            // Empty-cursor advance starts from this fully drained state; the Controller then owns the new metadata
+            // cleanup backlog created by advancing the Broker-owned boundaries.
             if (!isEmptyAndMetadataCaughtUp(state)) {
                 return;
             }
-            online = getRange(stream.startOffset(), stream.confirmOffset(), deadlineNanos);
-            long newCursor = online.stream()
+            online = getRange(stream.startOffset(), stream.confirmOffset(), 1);
+            S3ObjectMetadata firstLivingStreamObject = online.stream()
+                .filter(object -> object.getType() == S3ObjectType.STREAM
+                    || object.getType() == S3ObjectType.COMPOSITE)
+                .filter(object -> object.startOffset() <= stream.startOffset())
                 .filter(object -> object.endOffset() > stream.startOffset())
-                .mapToLong(S3ObjectMetadata::startOffset)
-                .filter(offset -> offset >= state.archiveEndOffset())
-                .min()
-                .orElse(stream.startOffset());
+                .findFirst()
+                .orElse(null);
+            // Wait for Stream Set Object compaction or force-split instead of making the Archive cursor depend on
+            // node-owned SSO metadata. An empty Stream can likewise wait until it has a living Stream Object.
+            if (firstLivingStreamObject == null
+                || firstLivingStreamObject.startOffset() < state.archiveEndOffset()) {
+                return;
+            }
+            long newCursor = firstLivingStreamObject.startOffset();
             if (newCursor > state.archiveEndOffset()) {
-                StreamArchiveState advanced = new StreamArchiveState(state.streamId(), state.streamEpoch(),
-                    newCursor, newCursor, newCursor, newCursor, 0L, newCursor, 0L, List.of());
-                await(streamManager.updateStreamArchive(advanced), deadlineNanos);
+                LOGGER.info("[ARCHIVE_ADVANCE] streamId={}, streamEpoch={}, oldEndOffset={}, newEndOffset={}",
+                    state.streamId(), state.streamEpoch(), state.archiveEndOffset(), newCursor);
+                streamManager.updateStreamArchive(new StreamArchiveOperation.AdvanceEmptyCursor(state.streamId(),
+                    state.streamEpoch(), state.archiveMetadataEndOffset(), newCursor)).get();
                 return;
             }
         }
 
         if (online == null) {
-            online = getRange(state.archiveEndOffset(), stream.confirmOffset(), deadlineNanos);
+            online = getRange(state.archiveEndOffset(), stream.confirmOffset(), MAX_OBJECTS_WITH_LOOKAHEAD);
         }
-        List<ArchiveComposite> parsed = parseConsecutiveComposites(online, state.archiveEndOffset(), deadlineNanos);
-        List<ArchiveComposite> selected = selectTerminal(parsed, stream.startOffset());
+        List<S3ObjectMetadata> parsed = consecutiveObjects(online, state.archiveEndOffset());
+        List<S3ObjectMetadata> selected = selectCandidates(parsed, stream.startOffset());
         if (selected.isEmpty()) {
             return;
         }
-        List<S3ObjectMetadata> objects = selected.stream().map(ArchiveComposite::metadata).toList();
-        long preparedEndOffset = objects.get(objects.size() - 1).endOffset();
-        StreamArchiveState preparedState = new StreamArchiveState(state.streamId(), state.streamEpoch(),
-            state.archiveStartOffset(), state.archiveMetadataEndOffset(), state.archiveEndOffset(), preparedEndOffset,
-            state.archiveSize(), state.archiveCleanupEndOffset(), state.archiveCleanupSize(),
-            objects.stream().map(S3ObjectMetadata::objectId).toList());
-        await(streamManager.updateStreamArchive(preparedState), deadlineNanos);
-        copyAndPublish(preparedState, objects, deadlineNanos);
+        long preparedEndOffset = selected.get(selected.size() - 1).endOffset();
+        StreamArchiveState preparedState = state.toBuilder().archivePreparedEndOffset(preparedEndOffset).build();
+        LOGGER.info("[ARCHIVE_PREPARE] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}, objectIds={}",
+            state.streamId(), state.streamEpoch(), state.archiveEndOffset(), preparedEndOffset, selected.size(),
+            selected.stream().map(S3ObjectMetadata::objectId).toList());
+        // The Controller validates that these IDs still describe the requested consecutive range. Once accepted,
+        // compaction cannot replace the prepared objects while they are being copied.
+        streamManager.updateStreamArchive(new StreamArchiveOperation.ArchivePrepare(state.streamId(), state.streamEpoch(),
+            state.archiveEndOffset(), preparedEndOffset,
+            selected.stream().map(S3ObjectMetadata::objectId).toList())).get();
+        copyAndPublish(preparedState, selected);
     }
 
-    private List<S3ObjectMetadata> getRange(long startOffset, long endOffset, long deadlineNanos)
-        throws ExecutionException, InterruptedException, TimeoutException {
-        return await(objectManager.getStreamObjects(stream.streamId(), startOffset, endOffset, Integer.MAX_VALUE),
-            deadlineNanos);
+    private List<S3ObjectMetadata> getRange(long startOffset, long endOffset, int limit)
+        throws ExecutionException, InterruptedException {
+        return objectManager.getStreamObjects(stream.streamId(), startOffset, endOffset, limit).get();
     }
 
-    private List<ArchiveComposite> parseConsecutiveComposites(List<S3ObjectMetadata> objects, long cursor,
-        long deadlineNanos) throws ExecutionException, InterruptedException, TimeoutException {
-        List<ArchiveComposite> parsed = new ArrayList<>();
+    private List<S3ObjectMetadata> consecutiveObjects(List<S3ObjectMetadata> objects, long cursor) {
+        List<S3ObjectMetadata> parsed = new ArrayList<>();
         long nextOffset = cursor;
         for (S3ObjectMetadata object : objects) {
-            if (parsed.size() > MAX_COMPOSITES_PER_BATCH || object.startOffset() != nextOffset
-                || ObjectAttributes.from(object.attributes()).type() != Composite) {
+            // Candidate 101 is lookahead for deciding whether candidate 100 is a stable merge boundary.
+            if (parsed.size() > MAX_OBJECTS_PER_BATCH || object.startOffset() != nextOffset) {
                 break;
             }
-            parsed.add(new ArchiveComposite(object, readManifestInfo(object, deadlineNanos)));
+            parsed.add(object);
             nextOffset = object.endOffset();
         }
         return parsed;
     }
 
-    private static List<ArchiveComposite> selectTerminal(List<ArchiveComposite> composites, long streamStartOffset) {
-        List<ArchiveComposite> selected = new ArrayList<>();
-        int limit = Math.min(MAX_COMPOSITES_PER_BATCH, composites.size());
+    private List<S3ObjectMetadata> selectCandidates(List<S3ObjectMetadata> objects, long streamStartOffset) {
+        List<S3ObjectMetadata> selected = new ArrayList<>();
+        int limit = Math.min(MAX_OBJECTS_PER_BATCH, objects.size());
+        long now = currentTimeMillis.getAsLong();
         for (int i = 0; i < limit; i++) {
-            ArchiveComposite current = composites.get(i);
-            boolean retentionBoundaryTerminal = current.metadata().startOffset() < streamStartOffset
-                && current.metadata().endOffset() > streamStartOffset;
-            boolean retainedSizeTerminal = current.manifestInfo().logicalSize() >= COMPOSITE_TARGET_SIZE;
-            boolean nextMergeExceedsTarget = i + 1 < composites.size()
-                && composites.get(i + 1).manifestInfo().logicalSize()
-                > COMPOSITE_TARGET_SIZE - current.manifestInfo().logicalSize();
-            boolean nextMergeExceedsOffsetDelta = i + 1 < composites.size()
-                && composites.get(i + 1).metadata().endOffset() - current.metadata().startOffset()
-                > Integer.MAX_VALUE;
-            boolean nextMergeExceedsPartCount = i + 1 < composites.size()
-                && partCount(current.manifestInfo().logicalSize())
-                + partCount(composites.get(i + 1).manifestInfo().logicalSize()) > Writer.MAX_PART_COUNT;
-            boolean nextMergeExceedsFormat = i + 1 < composites.size()
-                && exceedsCompositeFormatLimits(current.manifestInfo(), composites.get(i + 1).manifestInfo());
-            if (!retentionBoundaryTerminal && !retainedSizeTerminal && !nextMergeExceedsTarget
-                && !nextMergeExceedsOffsetDelta
-                && !nextMergeExceedsPartCount && !nextMergeExceedsFormat) {
+            S3ObjectMetadata current = objects.get(i);
+            S3ObjectMetadata next = i + 1 < objects.size() ? objects.get(i + 1) : null;
+            if (!isArchivable(current, next, streamStartOffset, pressure, now)) {
                 break;
             }
             selected.add(current);
         }
         return selected;
+    }
+
+    private static boolean isArchivable(S3ObjectMetadata current, S3ObjectMetadata next, long streamStartOffset,
+        Pressure pressure, long now) {
+        if (current.startOffset() < streamStartOffset && current.endOffset() > streamStartOffset) {
+            return true;
+        }
+        if (current.objectSize() >= COMPOSITE_TARGET_SIZE
+            || pressure.isOldEnough(current.committedTimestamp(), now)) {
+            return true;
+        }
+        if (next == null) {
+            return false;
+        }
+        return StreamObjectCompactor.cannotMergeIntoGroup(current.objectSize(), current.startOffset(), 1,
+            StreamObjectCompactor.objectPartCount(current.objectSize()), next, COMPOSITE_TARGET_SIZE, false);
     }
 
     private static boolean isEmptyAndMetadataCaughtUp(StreamArchiveState state) {
@@ -186,111 +215,53 @@ public final class StreamObjectArchiveTask {
             && state.archiveSize() == 0 && state.archiveCleanupSize() == 0;
     }
 
-    private void copyAndPublish(StreamArchiveState preparedState, List<S3ObjectMetadata> objects, long deadlineNanos)
-        throws ExecutionException, InterruptedException, TimeoutException {
+    private void copyAndPublish(StreamArchiveState preparedState, List<S3ObjectMetadata> objects)
+        throws ExecutionException, InterruptedException {
         if (objects.isEmpty() || objects.get(0).startOffset() != preparedState.archiveEndOffset()
             || objects.get(objects.size() - 1).endOffset() != preparedState.archivePreparedEndOffset()) {
             return;
         }
         List<CompletableFuture<Long>> copies = objects.stream()
-            .map(object -> copyManifest(object, deadlineNanos))
+            .map(this::copyObject)
             .toList();
-        await(CompletableFuture.allOf(copies.toArray(CompletableFuture[]::new)), deadlineNanos);
-        long batchLogicalSize = 0L;
+        CompletableFuture.allOf(copies.toArray(CompletableFuture[]::new)).get();
+        long batchObjectSize = 0L;
         for (CompletableFuture<Long> copy : copies) {
-            batchLogicalSize = Math.addExact(batchLogicalSize, copy.join());
+            batchObjectSize = Math.addExact(batchObjectSize, copy.join());
         }
-        StreamArchiveState published = new StreamArchiveState(preparedState.streamId(), preparedState.streamEpoch(),
-            preparedState.archiveStartOffset(), preparedState.archiveMetadataEndOffset(),
-            preparedState.archivePreparedEndOffset(), preparedState.archivePreparedEndOffset(),
-            Math.addExact(preparedState.archiveSize(), batchLogicalSize), preparedState.archiveCleanupEndOffset(),
-            preparedState.archiveCleanupSize(), List.of());
-        await(streamManager.updateStreamArchive(published), deadlineNanos);
+        long archiveSize = Math.addExact(preparedState.archiveSize(), batchObjectSize);
+        LOGGER.info("[ARCHIVE_PUBLISH] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}, objectSize={}, archiveSize={}",
+            preparedState.streamId(), preparedState.streamEpoch(), preparedState.archiveEndOffset(),
+            preparedState.archivePreparedEndOffset(), objects.size(), batchObjectSize, archiveSize);
+        streamManager.updateStreamArchive(new StreamArchiveOperation.ArchivePublish(preparedState.streamId(),
+            preparedState.streamEpoch(), preparedState.archiveEndOffset(), preparedState.archivePreparedEndOffset(),
+            archiveSize)).get();
     }
 
-    private CompletableFuture<Long> copyManifest(S3ObjectMetadata object, long deadlineNanos) {
-        ObjectStorage.ReadOptions readOptions = new ObjectStorage.ReadOptions().bucket(object.bucket());
-        return objectStorage.rangeRead(readOptions, object.key(), 0L, ObjectStorage.RANGE_READ_TO_END)
-            .thenCompose(manifest -> logicalSize(manifest, object).handle((logicalSize, exception) -> {
-                if (exception != null) {
-                    manifest.release();
-                    throw new java.util.concurrent.CompletionException(exception);
-                }
-                return logicalSize;
-            }).thenCompose(logicalSize -> {
-                long remainingMillis = remainingMillis(deadlineNanos);
-                if (remainingMillis <= 0) {
-                    manifest.release();
-                    return CompletableFuture.failedFuture(new TimeoutException("ARCHIVE task deadline expired"));
-                }
-                String archiveKey = ArchiveObjectKey.manifestKey(stream.streamId(), object.startOffset(),
-                    object.endOffset(), object.objectId(), logicalSize);
-                return objectStorage.write(new ObjectStorage.WriteOptions().timeout(remainingMillis), archiveKey,
-                    manifest).thenApply(ignored -> logicalSize);
-            }));
+    private CompletableFuture<Long> copyObject(S3ObjectMetadata object) {
+        ObjectAttributes.Type type = ObjectAttributes.from(object.attributes()).type();
+        String archiveKey = ArchiveObjectKey.manifestKey(stream.streamId(), object.startOffset(), object.endOffset(),
+            type, object.objectId(), object.objectSize());
+        return objectStorage.primary().copy(objectStorage.bucketURI(object.bucket()).bucket(), object.key(), archiveKey)
+            .thenApply(ignored -> object.objectSize());
     }
 
-    private CompositeManifestInfo readManifestInfo(S3ObjectMetadata object, long deadlineNanos)
-        throws ExecutionException, InterruptedException, TimeoutException {
-        ByteBuf manifest = await(objectStorage.rangeRead(new ObjectStorage.ReadOptions().bucket(object.bucket()),
-            object.key(), 0L, ObjectStorage.RANGE_READ_TO_END), deadlineNanos);
-        try {
-            return await(manifestInfo(manifest, object), deadlineNanos);
-        } finally {
-            manifest.release();
+    public enum Pressure {
+        LOW(Long.MAX_VALUE),
+        MEDIUM(TimeUnit.HOURS.toMillis(24)),
+        HIGH(TimeUnit.HOURS.toMillis(1));
+
+        private final long minimumAgeMillis;
+
+        Pressure(long minimumAgeMillis) {
+            this.minimumAgeMillis = minimumAgeMillis;
         }
-    }
 
-    private static CompletableFuture<Long> logicalSize(ByteBuf manifest, S3ObjectMetadata object) {
-        return manifestInfo(manifest, object).thenApply(CompositeManifestInfo::logicalSize);
-    }
-
-    private static CompletableFuture<CompositeManifestInfo> manifestInfo(ByteBuf manifest,
-        S3ObjectMetadata object) {
-        CompositeObjectReader reader = new CompositeObjectReader(object,
-            (readOptions, metadata, start, end) -> CompletableFuture.completedFuture(manifest.retainedDuplicate()));
-        return reader.basicObjectInfo().thenApply(info -> {
-            CompositeObjectReader.BasicObjectInfoExt compositeInfo =
-                (CompositeObjectReader.BasicObjectInfoExt) info;
-            long logicalSize = info.indexBlock().indexes().stream().mapToLong(DataBlockIndex::size).sum();
-            return new CompositeManifestInfo(logicalSize, info.indexBlock().count(),
-                compositeInfo.objectsBlock().indexes().size(), 0);
-        }).whenComplete((ignored, exception) -> reader.close());
-    }
-
-    private static long partCount(long size) {
-        return size / Writer.MAX_PART_SIZE + (size % Writer.MAX_PART_SIZE == 0 ? 0 : 1);
-    }
-
-    static boolean exceedsCompositeFormatLimits(CompositeManifestInfo current,
-        CompositeManifestInfo next) {
-        if (current.formatVersion() != next.formatVersion()) {
-            return true;
+        @VisibleForTesting
+        boolean isOldEnough(long committedTimestamp, long now) {
+            return committedTimestamp >= 0 && minimumAgeMillis != Long.MAX_VALUE
+                && now - committedTimestamp >= minimumAgeMillis;
         }
-        long indexCount = current.dataBlockIndexCount() + next.dataBlockIndexCount();
-        long linkedObjectCount = current.linkedObjectCount() + next.linkedObjectCount();
-        return indexCount > Integer.MAX_VALUE / DataBlockIndex.BLOCK_INDEX_SIZE
-            || linkedObjectCount > (Integer.MAX_VALUE - OBJECT_BLOCK_HEADER_SIZE) / OBJECT_UNIT_SIZE;
-    }
-
-    private <T> T await(CompletableFuture<T> future, long deadlineNanos)
-        throws ExecutionException, InterruptedException, TimeoutException {
-        long remainingNanos = deadlineNanos - nanoTime.getAsLong();
-        if (remainingNanos <= 0) {
-            throw new TimeoutException("ARCHIVE task deadline expired");
-        }
-        return future.get(remainingNanos, TimeUnit.NANOSECONDS);
-    }
-
-    private long remainingMillis(long deadlineNanos) {
-        return Math.max(0L, TimeUnit.NANOSECONDS.toMillis(deadlineNanos - nanoTime.getAsLong()));
-    }
-
-    private record ArchiveComposite(S3ObjectMetadata metadata, CompositeManifestInfo manifestInfo) {
-    }
-
-    record CompositeManifestInfo(long logicalSize, long dataBlockIndexCount, long linkedObjectCount,
-                                 int formatVersion) {
     }
 
     /**
@@ -301,8 +272,8 @@ public final class StreamObjectArchiveTask {
         private StreamManager streamManager;
         private ObjectStorage objectStorage;
         private Stream stream;
-        private LongSupplier nanoTime = System::nanoTime;
-        private long taskTimeoutNanos = TASK_TIMEOUT_NANOS;
+        private LongSupplier currentTimeMillis = System::currentTimeMillis;
+        private Pressure pressure = Pressure.LOW;
 
         private Builder() {
         }
@@ -339,13 +310,14 @@ public final class StreamObjectArchiveTask {
             return this;
         }
 
-        Builder nanoTime(LongSupplier nanoTime) {
-            this.nanoTime = nanoTime;
+        public Builder pressure(Pressure pressure) {
+            this.pressure = Objects.requireNonNull(pressure, "pressure");
             return this;
         }
 
-        Builder taskTimeoutNanos(long taskTimeoutNanos) {
-            this.taskTimeoutNanos = taskTimeoutNanos;
+        @VisibleForTesting
+        Builder currentTimeMillis(LongSupplier currentTimeMillis) {
+            this.currentTimeMillis = currentTimeMillis;
             return this;
         }
 

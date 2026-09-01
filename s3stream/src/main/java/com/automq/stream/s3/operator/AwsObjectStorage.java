@@ -79,6 +79,7 @@ import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CopyPartResult;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.Delete;
@@ -275,6 +276,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        CopyObjectRequest.Builder builder = CopyObjectRequest.builder()
+            .sourceBucket(sourceBucket)
+            .sourceKey(sourcePath)
+            .destinationBucket(bucket)
+            .destinationKey(destinationPath);
+        return writeS3Client.copyObject(builder.build()).thenApply(ignored -> null);
+    }
+
+    @Override
     CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path) {
         CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
@@ -378,11 +389,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     private boolean isRetriableDeleteError(DeleteObjectError error) {
-        return isRetriableDeleteStatus(error.statusCode())
+        return isRetriableStatus(error.statusCode())
             || RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code());
     }
 
-    private boolean isRetriableDeleteStatus(int statusCode) {
+    private boolean isRetriableStatus(int statusCode) {
         return statusCode == HttpStatusCode.THROTTLING
             || statusCode == HttpStatusCode.REQUEST_TIMEOUT
             || statusCode == HttpStatusCode.INTERNAL_SERVER_ERROR
@@ -403,46 +414,40 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = cause(ex);
-        if (operation == S3Operation.LIST_OBJECTS) {
-            if (cause instanceof S3Exception s3Exception) {
-                RetryStrategy strategy = isRetriableDeleteStatus(s3Exception.statusCode())
-                    ? RetryStrategy.RETRY : RetryStrategy.ABORT;
-                return Pair.of(strategy, cause);
-            }
-            RetryStrategy strategy = cause instanceof SdkClientException || cause instanceof TimeoutException
-                ? RetryStrategy.RETRY : RetryStrategy.ABORT;
-            return Pair.of(strategy, cause);
-        }
-        RetryStrategy strategy = RetryStrategy.RETRY;
-        if (cause instanceof S3Exception) {
-            S3Exception s3Ex = (S3Exception) cause;
-            switch (s3Ex.statusCode()) {
-                case HttpStatusCode.NOT_FOUND:
-                    strategy = RetryStrategy.ABORT;
-                    break;
-                default:
-                    strategy = RetryStrategy.RETRY;
-            }
-            if (cause instanceof NoSuchUploadException) {
-                if (COMPLETE_MULTI_PART_UPLOAD == operation) {
-                    strategy = RetryStrategy.VISIBILITY_CHECK;
-                } else if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
-                    // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
-                    // Retrying with a dead upload ID is futile and would loop until the broker crashes.
-                    strategy = RetryStrategy.ABORT;
-                }
-            }
-            if (GET_OBJECT == operation) {
-                if (cause instanceof NoSuchKeyException) {
-                    cause = new ObjectNotExistException(cause);
-                }
-            }
-        } else if (cause instanceof ApiCallAttemptTimeoutException) {
+        if (cause instanceof ApiCallAttemptTimeoutException) {
             cause = new TimeoutException(cause.getMessage());
         }
-        return Pair.of(strategy, cause);
+        // Common transport and service failures are retriable for every operation.
+        if (cause instanceof S3Exception s3Exception && isRetriableStatus(s3Exception.statusCode())
+            || cause instanceof SdkClientException || cause instanceof TimeoutException) {
+            return Pair.of(RetryStrategy.RETRY, cause);
+        }
+        if (cause instanceof IllegalArgumentException || cause instanceof ObjectNotExistException) {
+            return Pair.of(RetryStrategy.ABORT, cause);
+        }
+        if (cause instanceof NoSuchUploadException) {
+            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
+                return Pair.of(RetryStrategy.VISIBILITY_CHECK, cause);
+            }
+            if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
+                // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
+                // Retrying with a dead upload ID is futile and would loop until the broker crashes.
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        if (cause instanceof S3Exception s3Exception) {
+            if (GET_OBJECT == operation && cause instanceof NoSuchKeyException) {
+                return Pair.of(RetryStrategy.ABORT, new ObjectNotExistException(cause));
+            }
+            if (s3Exception.statusCode() == HttpStatusCode.NOT_FOUND
+                || operation == S3Operation.LIST_OBJECTS || operation == S3Operation.COPY_OBJECT) {
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        return Pair.of(RetryStrategy.RETRY, cause);
     }
 
     @Override

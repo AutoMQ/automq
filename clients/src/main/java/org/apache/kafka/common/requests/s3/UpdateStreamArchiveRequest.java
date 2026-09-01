@@ -20,7 +20,7 @@
 package org.apache.kafka.common.requests.s3;
 
 import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
 import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.ByteBufferAccessor;
@@ -30,12 +30,12 @@ import org.apache.kafka.common.requests.ApiError;
 import java.nio.ByteBuffer;
 
 /**
- * Version-zero Broker-to-Controller request for complete per-Stream Archive desired states.
+ * Version-zero Broker-to-Controller request for typed per-Stream Archive operations.
  */
 public class UpdateStreamArchiveRequest extends AbstractRequest {
 
     /**
-     * Builds a version-zero complete-state request and supports Broker-side positional batching.
+     * Builds a version-zero operation request and supports Broker-side positional batching.
      */
     public static class Builder extends AbstractRequest.Builder<UpdateStreamArchiveRequest> {
         private final UpdateStreamArchiveRequestData data;
@@ -51,8 +51,8 @@ public class UpdateStreamArchiveRequest extends AbstractRequest {
         /**
          * Appends one update while preserving submission order.
          */
-        public Builder addSubRequest(StreamArchiveUpdate request) {
-            data.updateStreamArchiveRequests().add(request);
+        public Builder addSubRequest(StreamArchiveOperation request) {
+            data.operations().add(request);
             return this;
         }
 

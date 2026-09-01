@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,10 +38,17 @@ class ArchiveObjectKeyTest {
     public void testManifestKeyRoundTripAndOrderedCursor() {
         String key = ArchiveObjectKey.manifestKey(7L, 10L, 20L, 101L, 999L);
 
-        assertEquals(new ArchiveObjectKey.ManifestKey(7L, 10L, 20L, 101L, 999L),
+        assertEquals(new ArchiveObjectKey.ManifestKey(7L, 10L, 20L,
+                com.automq.stream.s3.objects.ObjectAttributes.Type.Composite, 101L, 999L),
             ArchiveObjectKey.parseManifestKey(key));
-        assertEquals("archive/7/", ArchiveObjectKey.manifestPrefix(7L));
+        assertEquals("70000000/" + ObjectUtils.getNamespace() + "/archive/7/",
+            ArchiveObjectKey.manifestPrefix(7L));
         assertTrue(ArchiveObjectKey.startAfter(7L, 20L).compareTo(key) > 0);
+        String normalKey = ArchiveObjectKey.manifestKey(7L, 10L, 20L,
+            com.automq.stream.s3.objects.ObjectAttributes.Type.Normal, 101L, 123L);
+        assertEquals(123L, ArchiveObjectKey.parseManifestKey(normalKey).objectSize());
+        assertTrue(ArchiveObjectKey.isArchiveKey(key));
+        assertFalse(ArchiveObjectKey.isArchiveKey("not-an-archive-key"));
     }
 
     /**
@@ -50,12 +58,15 @@ class ArchiveObjectKeyTest {
     @Test
     public void testMalformedManifestKeysAreRejected() {
         assertThrows(IllegalArgumentException.class,
-            () -> ArchiveObjectKey.parseManifestKey("archive/7/not-a-manifest"));
+            () -> ArchiveObjectKey.parseManifestKey(
+                "70000000/" + ObjectUtils.getNamespace() + "/archive/7/not-a-manifest"));
         assertThrows(IllegalArgumentException.class,
             () -> ArchiveObjectKey.parseManifestKey(
-                "archive/7/0000000000000000010-0000000000000000010-101-999"));
+                "70000000/" + ObjectUtils.getNamespace()
+                    + "/archive/7/0000000000000000010-0000000000000000010-1-101-999"));
         assertThrows(IllegalArgumentException.class,
             () -> ArchiveObjectKey.parseManifestKey(
-                "archive/07/0000000000000000020-0000000000000000010-101-999"));
+                "70000000/" + ObjectUtils.getNamespace()
+                    + "/archive/07/0000000000000000020-0000000000000000010-1-101-999"));
     }
 }

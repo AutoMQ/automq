@@ -107,7 +107,7 @@ public class S3ObjectMetadata {
      * @param offsetRanges represented Stream ranges
      * @param dataTimeInMs logical data timestamp
      * @param committedTimestamp physical commit timestamp
-     * @param objectSize physical object size
+     * @param objectSize physical object size for Normal Objects, or retained logical data size for Composite Objects
      * @param orderId Stream Set Object order, or the invalid order ID
      * @param attributes object attributes including bucket and Composite type
      * @param key explicit storage key, or null for the object-ID-derived key

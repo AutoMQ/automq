@@ -20,15 +20,19 @@
 package com.automq.stream.s3.metadata;
 
 import java.util.Locale;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.ObjectStorage;
+
 /**
- * Defines the deterministic object-storage namespace for archived Composite manifests.
+ * Defines the deterministic object-storage namespace for archived Normal and Composite Stream Objects.
  */
 public final class ArchiveObjectKey {
     private static final Pattern MANIFEST_KEY_PATTERN = Pattern.compile(
-        "archive/(0|[1-9][0-9]*)/([0-9]{19})-([0-9]{19})-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)");
+        "([^/]+)/([^/]+)/archive/(0|[1-9][0-9]*)/([0-9]{19})-([0-9]{19})-([01])-(0|[1-9][0-9]*)-(0|[1-9][0-9]*)");
 
     private ArchiveObjectKey() {
     }
@@ -40,16 +44,24 @@ public final class ArchiveObjectKey {
      * @param startOffset inclusive represented offset
      * @param endOffset exclusive represented offset
      * @param objectId reused Composite object identity
-     * @param logicalSize logical bytes represented by the manifest indexes
+     * @param objectSize source metadata size: physical bytes for Normal, retained logical bytes for Composite
      * @return deterministic Archive manifest key
      */
-    public static String manifestKey(long streamId, long startOffset, long endOffset, long objectId,
-        long logicalSize) {
-        if (streamId < 0 || startOffset < 0 || endOffset < startOffset || objectId < 0 || logicalSize < 0) {
+    public static String manifestKey(long streamId, long startOffset, long endOffset, ObjectAttributes.Type type,
+        long objectId, long objectSize) {
+        if (streamId < 0 || startOffset < 0 || endOffset < startOffset || objectId < 0 || objectSize < 0) {
             throw new IllegalArgumentException("Archive key fields must be non-negative and offsets ordered");
         }
-        return String.format(Locale.ROOT, "archive/%d/%019d-%019d-%d-%d", streamId, endOffset, startOffset,
-            objectId, logicalSize);
+        return String.format(Locale.ROOT, "%s%019d-%019d-%d-%d-%d", manifestPrefix(streamId), endOffset,
+            startOffset, type.value(), objectId, objectSize);
+    }
+
+    /**
+     * Build a Composite Archive key for callers that already imply the object type.
+     */
+    public static String manifestKey(long streamId, long startOffset, long endOffset, long objectId,
+        long objectSize) {
+        return manifestKey(streamId, startOffset, endOffset, ObjectAttributes.Type.Composite, objectId, objectSize);
     }
 
     /**
@@ -62,7 +74,13 @@ public final class ArchiveObjectKey {
         if (streamId < 0) {
             throw new IllegalArgumentException("Stream ID must be non-negative");
         }
-        return "archive/" + streamId + "/";
+        String namespace = ObjectUtils.getNamespace();
+        if (namespace == null || namespace.isEmpty() || namespace.indexOf('/') >= 0) {
+            throw new IllegalStateException("Invalid object namespace: " + namespace);
+        }
+        String streamIdHex = String.format(Locale.ROOT, "%08x", streamId);
+        String hashPrefix = new StringBuilder(streamIdHex).reverse().toString();
+        return hashPrefix + "/" + namespace + "/archive/" + streamId + "/";
     }
 
     /**
@@ -83,7 +101,7 @@ public final class ArchiveObjectKey {
      * Parse and validate one canonical Archive manifest key.
      *
      * @param key storage key
-     * @return parsed manifest identity, range, and logical size
+     * @return parsed manifest identity, range, and source metadata size
      * @throws IllegalArgumentException if the key is outside the Archive namespace or is not canonical
      */
     public static ManifestKey parseManifestKey(String key) {
@@ -92,23 +110,51 @@ public final class ArchiveObjectKey {
             throw new IllegalArgumentException("Malformed Archive manifest key: " + key);
         }
         try {
-            long streamId = Long.parseLong(matcher.group(1));
-            long endOffset = Long.parseLong(matcher.group(2));
-            long startOffset = Long.parseLong(matcher.group(3));
-            long objectId = Long.parseLong(matcher.group(4));
-            long logicalSize = Long.parseLong(matcher.group(5));
+            long streamId = Long.parseLong(matcher.group(3));
+            long endOffset = Long.parseLong(matcher.group(4));
+            long startOffset = Long.parseLong(matcher.group(5));
+            ObjectAttributes.Type type = ObjectAttributes.Type.from(Integer.parseInt(matcher.group(6)));
+            long objectId = Long.parseLong(matcher.group(7));
+            long objectSize = Long.parseLong(matcher.group(8));
             if (endOffset <= startOffset) {
                 throw new IllegalArgumentException("Archive manifest range must be non-empty: " + key);
             }
-            return new ManifestKey(streamId, startOffset, endOffset, objectId, logicalSize);
+            return new ManifestKey(streamId, startOffset, endOffset, type, objectId, objectSize);
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("Archive manifest key contains an out-of-range number: " + key, e);
         }
     }
 
     /**
+     * Return whether a key is a canonical archived object key.
+     */
+    public static boolean isArchiveKey(String key) {
+        try {
+            parseManifestKey(key);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Build the ordinary object metadata used to read or delete a canonical Archive manifest.
+     */
+    public static S3ObjectMetadata objectMetadata(ObjectStorage.ObjectInfo object, ManifestKey key) {
+        int attributes = ObjectAttributes.builder().bucket(object.bucketId()).type(key.type())
+            .build().attributes();
+        S3ObjectType objectType = key.type() == ObjectAttributes.Type.Composite
+            ? S3ObjectType.COMPOSITE : S3ObjectType.STREAM;
+        return new S3ObjectMetadata(key.objectId(), objectType,
+            List.of(new StreamOffsetRange(key.streamId(), key.startOffset(), key.endOffset())),
+            S3StreamConstant.INVALID_TS, object.timestamp(), key.objectSize(),
+            S3StreamConstant.INVALID_ORDER_ID, attributes, object.key());
+    }
+
+    /**
      * Canonical fields encoded in an Archive manifest key.
      */
-    public record ManifestKey(long streamId, long startOffset, long endOffset, long objectId, long logicalSize) {
+    public record ManifestKey(long streamId, long startOffset, long endOffset, ObjectAttributes.Type type,
+                              long objectId, long objectSize) {
     }
 }

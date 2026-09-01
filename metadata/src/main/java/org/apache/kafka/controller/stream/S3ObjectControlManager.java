@@ -134,9 +134,8 @@ public class S3ObjectControlManager {
     private final TimelineLong s3ObjectSize;
     private final Metrics.LongGaugeBundle.LongGauge s3ObjectCountMetric;
     private final Metrics.LongGaugeBundle.LongGauge s3ObjectSizeMetric;
-    // AutoMQ inject start
-    private volatile LongSupplier liveStreamArchiveSizeSupplier = () -> 0L;
-    // AutoMQ inject end
+    // The metric callback may run outside the Controller event thread.
+    private volatile LongSupplier streamArchiveSizeSupplier = () -> 0L;
 
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
@@ -193,27 +192,18 @@ public class S3ObjectControlManager {
             if (!quorumController.isActive()) {
                 return;
             }
-            // AutoMQ inject start
-            result.record(Math.addExact(s3ObjectSize.get(), liveStreamArchiveSizeSupplier.getAsLong()));
-            // AutoMQ inject end
+            result.record(Math.addExact(s3ObjectSize.get(), streamArchiveSizeSupplier.getAsLong()));
         });
     }
 
-    // AutoMQ inject start
     /**
-     * Supplies retained logical Archive bytes for live Streams to the existing S3 object-size
-     * gauge. The owning {@link QuorumController} installs the supplier once after constructing
-     * both control managers; it remains valid for this manager's lifetime and requires no separate
-     * cleanup. Metric collection may evaluate it outside the Controller event thread, matching the
-     * existing timeline-backed S3 object-size read. The volatile reference safely publishes the
-     * one-time installation to that collector thread.
+     * Sets the Stream Archive-size supplier included in the S3 object-size metric.
      *
-     * @param supplier live Stream Archive-size supplier
+     * @param supplier Stream Archive-size supplier
      */
-    public void setLiveStreamArchiveSizeSupplier(LongSupplier supplier) {
-        this.liveStreamArchiveSizeSupplier = supplier;
+    public void setStreamArchiveSizeSupplier(LongSupplier supplier) {
+        this.streamArchiveSizeSupplier = supplier;
     }
-    // AutoMQ inject end
 
     private void triggerCheckEvent() {
         if (!quorumController.isActive()) {

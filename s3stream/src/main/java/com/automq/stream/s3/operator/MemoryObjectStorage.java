@@ -106,6 +106,24 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        if (!bucketURI.bucket().equals(sourceBucket)) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("Memory copy requires one bucket"));
+        }
+        ByteBuf source = storage.get(sourcePath);
+        if (source == null) {
+            return FutureUtil.failedFuture(new ObjectNotExistException("object not exist"));
+        }
+        ByteBuf copy = Unpooled.buffer(source.readableBytes());
+        copy.writeBytes(source.duplicate());
+        ByteBuf previous = storage.put(destinationPath, copy);
+        if (previous != null) {
+            previous.release();
+        }
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
     public boolean readinessCheck() {
         return true;
     }
@@ -221,7 +239,7 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
             stream = stream.limit(options.maxKeys());
         }
         return CompletableFuture.completedFuture(stream
-            .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().readableBytes()))
+            .map(entry -> new ObjectInfo(bucketId, entry.getKey(), 0L, entry.getValue().readableBytes()))
             .collect(Collectors.toList()));
     }
 

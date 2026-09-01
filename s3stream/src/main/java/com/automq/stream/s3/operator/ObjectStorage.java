@@ -64,6 +64,18 @@ public interface ObjectStorage {
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
+    /**
+     * Copy one complete object inside object storage without transferring its payload through the Broker.
+     *
+     * @param sourceBucket source bucket name
+     * @param sourcePath source object key
+     * @param destinationPath destination object key
+     * @return copy completion
+     */
+    default CompletableFuture<Void> copy(String sourceBucket, String sourcePath, String destinationPath) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
     // Low level API
     default CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf) {
         Writer writer = writer(options, objectPath);
@@ -121,16 +133,6 @@ public interface ObjectStorage {
     CompletableFuture<List<ObjectInfo>> list(ListOptions options);
 
     /**
-     * Classify whether a failed LIST may be retried safely by a bounded caller.
-     *
-     * @param exception LIST failure
-     * @return true only for a retriable transport or service failure
-     */
-    default boolean isListRetriable(Throwable exception) {
-        return false;
-    }
-
-    /**
      * List every object under a prefix.
      *
      * @param prefix required object-key prefix
@@ -150,6 +152,18 @@ public interface ObjectStorage {
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
     short bucketId();
+
+    /**
+     * Resolve the physical bucket URI for a bucket identity.
+     */
+    BucketURI bucketURI(short bucketId);
+
+    /**
+     * Return the stable concrete storage used for Archive objects.
+     */
+    default ObjectStorage primary() {
+        return this;
+    }
 
     class ObjectPath {
         private final short bucketId;

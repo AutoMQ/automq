@@ -43,7 +43,6 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectPath;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.s3.operator.Writer;
-import com.automq.stream.s3.streams.StreamManager;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,7 +67,6 @@ import io.netty.buffer.CompositeByteBuf;
 import static com.automq.stream.s3.ByteBufAlloc.STREAM_OBJECT_COMPACTION_READ;
 import static com.automq.stream.s3.ByteBufAlloc.STREAM_OBJECT_COMPACTION_WRITE;
 import static com.automq.stream.s3.Constants.NOOP_OBJECT_ID;
-import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.ARCHIVE;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
@@ -104,25 +102,18 @@ public class StreamObjectCompactor {
     private final long groupSizeThreshold;
     private final Stream stream;
     private final ObjectManager objectManager;
-    private final StreamManager streamManager;
     private final ObjectStorage objectStorage;
     private final int dataBlockGroupSizeThreshold;
     private final long majorV1MinNormalObjectSize;
-    private final boolean archiveCleanupEnabled;
-    private final StreamObjectArchiveCleanupTask.LeftBoundaryCache archiveCleanupCache;
     private CompactStreamObjectRequest request;
 
     private StreamObjectCompactor(ObjectManager objectManager,
-                                  StreamManager streamManager,
                                   ObjectStorage objectStorage,
                                   Stream stream,
                                   long groupSizeThreshold,
                                   int dataBlockGroupSizeThreshold,
-                                  long majorV1MinNormalObjectSize,
-                                  boolean archiveCleanupEnabled,
-                                  StreamObjectArchiveCleanupTask.LeftBoundaryCache archiveCleanupCache) {
+                                  long majorV1MinNormalObjectSize) {
         this.objectManager = objectManager;
-        this.streamManager = streamManager;
         this.objectStorage = objectStorage;
         this.stream = stream;
         this.groupSizeThreshold = Math.min(groupSizeThreshold, Writer.MAX_OBJECT_SIZE);
@@ -130,8 +121,6 @@ public class StreamObjectCompactor {
         this.s3ObjectLogger = S3ObjectLogger.logger(logIdent);
         this.dataBlockGroupSizeThreshold = dataBlockGroupSizeThreshold;
         this.majorV1MinNormalObjectSize = majorV1MinNormalObjectSize;
-        this.archiveCleanupEnabled = archiveCleanupEnabled;
-        this.archiveCleanupCache = archiveCleanupCache;
     }
 
     public void compact(CompactionType compactionType) {
@@ -193,9 +182,6 @@ public class StreamObjectCompactor {
     }
 
     void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException, TimeoutException {
-        if (handleArchiveLifecycle(compactionType)) {
-            return;
-        }
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
 
@@ -224,14 +210,12 @@ public class StreamObjectCompactor {
         if (CLEANUP_V1.equals(compactionType)) {
             objectGroups = cleanupV1Groups(livingObjects, startOffset);
         } else {
-            objectGroups = group0(livingObjects,
-                groupSizeThreshold,
-                compactionType,
-                archiveAwareObjectFilter(compactionType, startOffset));
+            objectGroups = group0(livingObjects, groupSizeThreshold, compactionType,
+                getObjectFilter(compactionType, majorV1MinNormalObjectSize));
         }
 
         for (List<S3ObjectMetadata> objectGroup : objectGroups) {
-            if (!checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType, archiveCleanupEnabled)) {
+            if (!checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType)) {
                 continue;
             }
             TimerUtil start = new TimerUtil();
@@ -253,65 +237,15 @@ public class StreamObjectCompactor {
         }
     }
 
-    private BiPredicate<List<S3ObjectMetadata>, Integer> archiveAwareObjectFilter(CompactionType compactionType,
-        long startOffset) {
-        BiPredicate<List<S3ObjectMetadata>, Integer> regularFilter =
-            getObjectFilter(compactionType, majorV1MinNormalObjectSize);
-        if (!MAJOR_V1.equals(compactionType)) {
-            return regularFilter;
-        }
-        return (candidates, index) -> regularFilter.test(candidates, index)
-            || archiveCleanupEnabled && isNormalObjectCutByRetention(candidates.get(index), startOffset);
-    }
-
-    private boolean handleArchiveLifecycle(CompactionType compactionType)
-        throws ExecutionException, InterruptedException, TimeoutException {
-        if (ARCHIVE.equals(compactionType)) {
-            StreamObjectArchiveTask.builder()
-                .objectManager(objectManager)
-                .streamManager(streamManager)
-                .objectStorage(objectStorage)
-                .stream(stream)
-                .build()
-                .archive();
-            return true;
-        }
-        if (!CLEANUP_V1.equals(compactionType) || !archiveCleanupEnabled) {
-            return false;
-        }
-        return !StreamObjectArchiveCleanupTask.builder()
-            .streamManager(streamManager)
-            .objectStorage(objectStorage)
-            .stream(stream)
-            .cache(archiveCleanupCache)
-            .build()
-            .cleanup();
-    }
-
     static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
         CompactionType compactionType) {
-        return checkObjectGroupCouldBeCompact(objectGroup, startOffset, compactionType, false);
-    }
-
-    static boolean checkObjectGroupCouldBeCompact(List<S3ObjectMetadata> objectGroup, long startOffset,
-        CompactionType compactionType, boolean archiveEnabled) {
         if (objectGroup.size() == 1 && SKIP_COMPACTION_TYPE_WHEN_ONE_OBJECT_IN_GROUP.contains(compactionType)) {
-            S3ObjectMetadata object = objectGroup.get(0);
-            boolean retentionCutsThroughNormalObject = archiveEnabled && MAJOR_V1.equals(compactionType)
-                && isNormalObjectCutByRetention(object, startOffset);
-            if (!retentionCutsThroughNormalObject) {
-                return false;
-            }
+            return false;
         }
         if (objectGroup.stream().anyMatch(o -> o.bucket() == LocalFileObjectStorage.BUCKET_ID)) {
             return false;
         }
         return true;
-    }
-
-    private static boolean isNormalObjectCutByRetention(S3ObjectMetadata object, long startOffset) {
-        return ObjectAttributes.from(object.attributes()).type() == Normal
-            && object.startOffset() < startOffset && object.endOffset() > startOffset;
     }
 
     static List<List<S3ObjectMetadata>> cleanupV1Groups(List<S3ObjectMetadata> livingObjects, long startOffset) {
@@ -604,7 +538,7 @@ public class StreamObjectCompactor {
                 continue;
             }
 
-            int objectPartCount = (int) ((object.objectSize() + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
+            int objectPartCount = objectPartCount(object.objectSize());
             if (objectPartCount >= Writer.MAX_PART_COUNT) {
                 continue;
             }
@@ -616,14 +550,8 @@ public class StreamObjectCompactor {
             if (groupNextOffset != object.startOffset()
                 // MINOR_V1 allows crossing the threshold once so small objects can reach the minimum size consumed by
                 // MAJOR_V1. Once a group has reached the threshold, the next object starts a new group.
-                || (!group.isEmpty() && (softGroupSizeThreshold
-                    ? groupSize >= groupSizeThreshold
-                    : groupSize + object.objectSize() > groupSizeThreshold))
-                // object count in a group is larger than MAX_OBJECT_GROUP_COUNT
-                || group.size() >= MAX_OBJECT_GROUP_COUNT
-                || partCount + objectPartCount > Writer.MAX_PART_COUNT
-                // the group offset delta would exceed int32
-                || object.endOffset() - groupStartOffset > Integer.MAX_VALUE
+                || (!group.isEmpty() && cannotMergeIntoGroup(groupSize, groupStartOffset, group.size(), partCount,
+                    object, groupSizeThreshold, softGroupSizeThreshold))
             ) {
                 if (!group.isEmpty()) {
                     objectGroups.add(group);
@@ -644,6 +572,29 @@ public class StreamObjectCompactor {
         return objectGroups;
     }
 
+    /**
+     * Return whether adding an offset-continuous object would exceed a compaction group boundary.
+     */
+    static boolean cannotMergeIntoGroup(long groupSize, long groupStartOffset, int groupObjectCount,
+        int groupPartCount, S3ObjectMetadata nextObject, long groupSizeThreshold, boolean softGroupSizeThreshold) {
+        if (softGroupSizeThreshold ? groupSize >= groupSizeThreshold
+            : nextObject.objectSize() > groupSizeThreshold - groupSize) {
+            return true;
+        }
+        if (groupObjectCount >= MAX_OBJECT_GROUP_COUNT) {
+            return true;
+        }
+        int nextPartCount = objectPartCount(nextObject.objectSize());
+        if (nextPartCount > Writer.MAX_PART_COUNT - groupPartCount) {
+            return true;
+        }
+        return nextObject.endOffset() - groupStartOffset > Integer.MAX_VALUE;
+    }
+
+    static int objectPartCount(long objectSize) {
+        return Math.toIntExact((objectSize + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
+    }
+
     static boolean isSoftGroupSizeThreshold(CompactionType compactionType) {
         // The soft threshold is part of MINOR_V1 behavior, not a caller-tunable size policy.
         return MINOR_V1.equals(compactionType);
@@ -659,29 +610,14 @@ public class StreamObjectCompactor {
 
     public static class Builder {
         private ObjectManager objectManager;
-        private StreamManager streamManager;
         private ObjectStorage objectStorage;
         private Stream stream;
         private long groupSizeThreshold;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
         private long majorV1MinNormalObjectSize;
-        private boolean archiveCleanupEnabled;
-        private StreamObjectArchiveCleanupTask.LeftBoundaryCache archiveCleanupCache =
-            new StreamObjectArchiveCleanupTask.LeftBoundaryCache();
 
         public Builder objectManager(ObjectManager objectManager) {
             this.objectManager = objectManager;
-            return this;
-        }
-
-        /**
-         * Set the Stream Archive state owner used only by ARCHIVE lifecycle tasks.
-         *
-         * @param streamManager Stream metadata manager
-         * @return this builder
-         */
-        public Builder streamManager(StreamManager streamManager) {
-            this.streamManager = streamManager;
             return this;
         }
 
@@ -724,31 +660,9 @@ public class StreamObjectCompactor {
             return this;
         }
 
-        /**
-         * Enable Broker Archive retention cleanup as part of CLEANUP_V1.
-         *
-         * @param archiveCleanupEnabled whether the finalized feature enables Archive cleanup
-         * @return this builder
-         */
-        public Builder archiveCleanupEnabled(boolean archiveCleanupEnabled) {
-            this.archiveCleanupEnabled = archiveCleanupEnabled;
-            return this;
-        }
-
-        /**
-         * Set the Archive cleanup cache whose lifetime matches Stream ownership.
-         *
-         * @param archiveCleanupCache per-owned-Stream left-boundary cache
-         * @return this builder
-         */
-        public Builder archiveCleanupCache(StreamObjectArchiveCleanupTask.LeftBoundaryCache archiveCleanupCache) {
-            this.archiveCleanupCache = archiveCleanupCache;
-            return this;
-        }
-
         public StreamObjectCompactor build() {
-            return new StreamObjectCompactor(objectManager, streamManager, objectStorage, stream, groupSizeThreshold,
-                dataBlockGroupSizeThreshold, majorV1MinNormalObjectSize, archiveCleanupEnabled, archiveCleanupCache);
+            return new StreamObjectCompactor(objectManager, objectStorage, stream, groupSizeThreshold,
+                dataBlockGroupSizeThreshold, majorV1MinNormalObjectSize);
         }
     }
 
@@ -764,8 +678,6 @@ public class StreamObjectCompactor {
         // minor v1: 1. CLEANUP; 2. physically merge objects until the group crosses the size threshold
         MINOR_V1,
         // major v1: 1. CLEANUP; 2. use composite object logic with a hard group size threshold
-        MAJOR_V1,
-        // archive: recover or copy terminal Composite manifests after MAJOR_V1
-        ARCHIVE
+        MAJOR_V1
     }
 }

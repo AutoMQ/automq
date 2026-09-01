@@ -44,7 +44,11 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
 import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.AdvanceEmptyCursor;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePublish;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupCommit;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupPrepare;
 import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
@@ -57,16 +61,19 @@ import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamArchiveState;
+import com.automq.stream.s3.streams.StreamArchiveOperation;
+import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.LogContext;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -515,21 +522,10 @@ public class ControllerStreamManager implements StreamManager {
     }
 
     /**
-     * Sends one complete Archive desired state through the Broker-side bounded accumulator.
+     * Sends one typed Archive operation through the bounded accumulator.
      */
-    @Override
-    public CompletableFuture<Void> updateStreamArchive(StreamArchiveState state) {
-        StreamArchiveUpdate update = new StreamArchiveUpdate()
-            .setStreamId(state.streamId())
-            .setStreamEpoch(state.streamEpoch())
-            .setArchiveStartOffset(state.archiveStartOffset())
-            .setArchiveMetadataEndOffset(state.archiveMetadataEndOffset())
-            .setArchiveEndOffset(state.archiveEndOffset())
-            .setArchivePreparedEndOffset(state.archivePreparedEndOffset())
-            .setArchiveSize(state.archiveSize())
-            .setArchiveCleanupEndOffset(state.archiveCleanupEndOffset())
-            .setArchiveCleanupSize(state.archiveCleanupSize())
-            .setArchiveObjectIds(state.archiveObjectIds());
+    private CompletableFuture<Void> sendArchiveOperation(StreamArchiveOperation operation) {
+        UpdateStreamArchiveRequestData.StreamArchiveOperation update = toRequest(operation);
         WrapRequest request = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -579,7 +575,49 @@ public class ControllerStreamManager implements StreamManager {
         return resultFuture;
     }
 
-    // AutoMQ inject start
+    @Override
+    public CompletableFuture<Void> updateStreamArchive(StreamArchiveOperation operation) {
+        return sendArchiveOperation(operation);
+    }
+
+    private static UpdateStreamArchiveRequestData.StreamArchiveOperation toRequest(StreamArchiveOperation operation) {
+        UpdateStreamArchiveRequestData.StreamArchiveOperation request =
+            new UpdateStreamArchiveRequestData.StreamArchiveOperation()
+                .setStreamId(operation.streamId()).setStreamEpoch(operation.streamEpoch());
+        if (operation instanceof StreamArchiveOperation.ArchivePrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+                .setArchivePrepare(new ArchivePrepare()
+                    .setExpectedArchiveEndOffset(prepare.expectedArchiveEndOffset())
+                    .setArchivePreparedEndOffset(prepare.archivePreparedEndOffset())
+                    .setArchiveObjectIds(prepare.archiveObjectIds()));
+        }
+        if (operation instanceof StreamArchiveOperation.ArchivePublish publish) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+                .setArchivePublish(new ArchivePublish()
+                    .setExpectedArchiveEndOffset(publish.expectedArchiveEndOffset())
+                    .setArchiveEndOffset(publish.archiveEndOffset())
+                    .setArchiveSize(publish.archiveSize()));
+        }
+        if (operation instanceof StreamArchiveOperation.CleanupPrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_PREPARE.value())
+                .setCleanupPrepare(new CleanupPrepare()
+                    .setExpectedArchiveStartOffset(prepare.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(prepare.archiveCleanupEndOffset())
+                    .setArchiveCleanupSize(prepare.archiveCleanupSize()));
+        }
+        if (operation instanceof StreamArchiveOperation.CleanupCommit commit) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_COMMIT.value())
+                .setCleanupCommit(new CleanupCommit()
+                    .setExpectedArchiveStartOffset(commit.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(commit.archiveCleanupEndOffset()));
+        }
+        StreamArchiveOperation.AdvanceEmptyCursor advance = (StreamArchiveOperation.AdvanceEmptyCursor) operation;
+        return request.setOperation(StreamArchiveOperationType.ADVANCE_EMPTY_CURSOR.value())
+            .setAdvanceEmptyCursor(new AdvanceEmptyCursor()
+                .setExpectedArchiveOffset(advance.expectedArchiveOffset())
+                .setNewArchiveOffset(advance.newArchiveOffset()));
+    }
+
     /**
      * Returns the locally observed complete Archive state for an owned Stream.
      */
@@ -587,15 +625,14 @@ public class ControllerStreamManager implements StreamManager {
     public CompletableFuture<StreamArchiveState> getStreamArchive(long streamId, long streamEpoch) {
         return CompletableFuture.completedFuture(streamMetadataManager.getStreamArchive(streamId, streamEpoch));
     }
-    // AutoMQ inject end
 
+    @VisibleForTesting
     void handleArchiveResponse(Errors error, CompletableFuture<Void> resultFuture) {
         switch (error) {
             case NONE:
                 resultFuture.complete(null);
                 return;
             case STREAM_ARCHIVE_STATE_CONFLICT:
-                streamMetadataManager.refreshOnNextUpdate();
                 resultFuture.completeExceptionally(error.exception());
                 return;
             case UNSUPPORTED_VERSION:

@@ -19,7 +19,6 @@
 
 package kafka.log.stream.s3.streams;
 
-import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.network.request.BatchRequest;
 
@@ -29,20 +28,18 @@ import org.apache.kafka.common.requests.s3.CloseStreamsRequest;
 import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
-import com.automq.stream.s3.streams.StreamArchiveState;
+import com.automq.stream.s3.streams.StreamArchiveOperation;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -72,15 +69,15 @@ public class ControllerStreamManagerTest {
     }
 
     /**
-     * Given an Archive update, verify the Broker emits the complete v0 payload with a 1,000-entry cap.
+     * Given an Archive update, verify the Broker emits one typed v0 operation with a 1,000-entry cap.
      */
     @Test
     public void testArchiveUpdateUsesBoundedBatchRequest() {
         ControllerRequestSender sender = mock(ControllerRequestSender.class);
         ControllerStreamManager manager = new ControllerStreamManager(null, sender, 1, 2L,
-            () -> AutoMQVersion.V7, false);
-        StreamArchiveState update = new StreamArchiveState(
-            3L, 4L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, List.of());
+            () -> AutoMQVersion.V6, false);
+        StreamArchiveOperation.ArchivePublish update = new StreamArchiveOperation.ArchivePublish(
+            3L, 4L, 0L, 0L, 0L);
 
         manager.updateStreamArchive(update);
 
@@ -93,29 +90,25 @@ public class ControllerStreamManagerTest {
         assertEquals(1_000, batch.maxBatchSize());
         assertEquals(1, request.data().nodeId());
         assertEquals(2L, request.data().nodeEpoch());
-        assertEquals(update.streamId(), request.data().updateStreamArchiveRequests().get(0).streamId());
-        assertEquals(update.streamEpoch(), request.data().updateStreamArchiveRequests().get(0).streamEpoch());
+        assertEquals(update.streamId(), request.data().operations().get(0).streamId());
+        assertEquals(update.streamEpoch(), request.data().operations().get(0).streamEpoch());
     }
 
-    /**
-     * Given business failures, verify only Archive conflict registers a metadata refresh and none retry.
-     */
+    /** Given Archive business failures, verify the client completes each operation exceptionally without retrying. */
     @Test
-    public void testArchiveConflictAloneRefreshesMetadata() {
-        StreamMetadataManager metadataManager = mock(StreamMetadataManager.class);
-        ControllerStreamManager manager = new ControllerStreamManager(metadataManager, null, 1, 2L,
-            () -> AutoMQVersion.V7, false);
+    public void testArchiveBusinessFailuresCompleteExceptionally() {
+        ControllerStreamManager manager = new ControllerStreamManager(null, null, 1, 2L,
+            () -> AutoMQVersion.V6, false);
         CompletableFuture<Void> result = new CompletableFuture<>();
 
         manager.handleArchiveResponse(Errors.INVALID_REQUEST, result);
         assertTrue(result.isCompletedExceptionally());
-        verify(metadataManager, times(0)).refreshOnNextUpdate();
 
         CompletableFuture<Void> conflictResult = new CompletableFuture<>();
         manager.handleArchiveResponse(Errors.STREAM_ARCHIVE_STATE_CONFLICT, conflictResult);
         assertTrue(conflictResult.isCompletedExceptionally());
-        verify(metadataManager).refreshOnNextUpdate();
     }
+
     private CloseStreamRequest captureCloseRequest(AutoMQVersion version, long endOffset) {
         ControllerRequestSender sender = mock(ControllerRequestSender.class);
         ControllerStreamManager manager = new ControllerStreamManager(null, sender, 1, 2L,

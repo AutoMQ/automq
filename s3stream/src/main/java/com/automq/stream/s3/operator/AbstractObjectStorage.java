@@ -280,6 +280,43 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
+    @Override
+    public CompletableFuture<Void> copy(String sourceBucket, String sourcePath, String destinationPath) {
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        copy0(sourceBucket, sourcePath, destinationPath, cf, 0);
+        return cf;
+    }
+
+    private void copy0(String sourceBucket, String sourcePath, String destinationPath,
+        CompletableFuture<Void> cf, int retryCount) {
+        CompletableFuture<Void> attempt;
+        try {
+            attempt = doCopy(sourceBucket, sourcePath, destinationPath);
+        } catch (Throwable ex) {
+            attempt = CompletableFuture.failedFuture(ex);
+        }
+        attempt.whenComplete((nil, ex) -> {
+            if (ex == null) {
+                cf.complete(null);
+                return;
+            }
+            Pair<RetryStrategy, Throwable> strategyAndCause =
+                toRetryStrategyAndCause(ex, S3Operation.COPY_OBJECT);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
+                logger.warn("Copy object from {} to {} failed", sourcePath, destinationPath, cause);
+                cf.completeExceptionally(cause);
+                return;
+            }
+            int delay = retryDelay(S3Operation.COPY_OBJECT, retryCount);
+            logger.warn("Copy object from {} to {} failed, retry in {}ms", sourcePath, destinationPath, delay,
+                cause);
+            scheduler.schedule(() -> copy0(sourceBucket, sourcePath, destinationPath, cf, retryCount + 1),
+                delay, TimeUnit.MILLISECONDS);
+        });
+    }
+
     private void recordWriteStats(String path, long objectSize, TimerUtil timerUtil) {
         s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         ObjectStorageMetrics.recordUploadSize(objectSize);
@@ -654,7 +691,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     @Override
     public CompletableFuture<List<ObjectInfo>> list(ListOptions options) {
         TimerUtil timerUtil = new TimerUtil();
-        CompletableFuture<List<ObjectInfo>> cf = doList(options);
+        CompletableFuture<List<ObjectInfo>> cf = new CompletableFuture<>();
+        list0(options, cf, 0);
         cf.thenAccept(keyList -> {
             ObjectStorageMetrics.recordListObjects(true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             logger.info("List objects finished, count: {}, cost: {}ms", keyList.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
@@ -666,14 +704,43 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return cf;
     }
 
-    @Override
-    public boolean isListRetriable(Throwable exception) {
-        return toRetryStrategyAndCause(exception, S3Operation.LIST_OBJECTS).getLeft() == RetryStrategy.RETRY;
+    private void list0(ListOptions options, CompletableFuture<List<ObjectInfo>> cf, int retryCount) {
+        CompletableFuture<List<ObjectInfo>> attempt;
+        try {
+            attempt = doList(options);
+        } catch (Throwable ex) {
+            attempt = CompletableFuture.failedFuture(ex);
+        }
+        attempt.whenComplete((objects, ex) -> {
+            if (ex == null) {
+                cf.complete(objects);
+                return;
+            }
+            Pair<RetryStrategy, Throwable> strategyAndCause =
+                toRetryStrategyAndCause(ex, S3Operation.LIST_OBJECTS);
+            RetryStrategy retryStrategy = strategyAndCause.getLeft();
+            Throwable cause = strategyAndCause.getRight();
+            if (retryStrategy == RetryStrategy.ABORT || checkS3ApiMode) {
+                cf.completeExceptionally(cause);
+                return;
+            }
+            int delay = retryDelay(S3Operation.LIST_OBJECTS, retryCount);
+            logger.warn("List objects with prefix {} failed, retry in {}ms", options.prefix(), delay, cause);
+            scheduler.schedule(() -> list0(options, cf, retryCount + 1), delay, TimeUnit.MILLISECONDS);
+        });
     }
 
     @Override
     public short bucketId() {
         return bucketURI.bucketId();
+    }
+
+    @Override
+    public BucketURI bucketURI(short bucketId) {
+        if (bucketId != bucketURI.bucketId()) {
+            throw new IllegalArgumentException("Unknown bucket " + bucketId);
+        }
+        return bucketURI;
     }
 
     @Override
@@ -689,6 +756,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     abstract CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end);
 
     abstract CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data);
+
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
 
     abstract CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path);
 

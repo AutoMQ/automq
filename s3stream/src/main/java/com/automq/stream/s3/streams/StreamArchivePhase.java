@@ -17,19 +17,28 @@
  * limitations under the License.
  */
 
-package org.apache.kafka.common.errors.s3;
-
-import org.apache.kafka.common.errors.ApiException;
+package com.automq.stream.s3.streams;
 
 /**
- * Indicates that a well-formed Archive operation is stale against Controller metadata.
+ * Mutually exclusive Broker-owned Stream Archive recovery phases derived from durable offset and size facts.
+ * Controller metadata cleanup is orthogonal to these phases.
  */
-public class StreamArchiveStateConflictException extends ApiException {
+public enum StreamArchivePhase {
+    IDLE,
+    ARCHIVE_PREPARED,
+    CLEANUP_PREPARED;
 
     /**
-     * Creates a conflict with the Controller-provided diagnostic message.
+     * Derive the recovery phase without persisting a redundant state discriminator.
      */
-    public StreamArchiveStateConflictException(String message) {
-        super(message);
+    public static StreamArchivePhase from(long archiveEndOffset, long archivePreparedEndOffset,
+        long archiveCleanupSize) {
+        if (archivePreparedEndOffset > archiveEndOffset) {
+            return ARCHIVE_PREPARED;
+        }
+        if (archiveCleanupSize > 0) {
+            return CLEANUP_PREPARED;
+        }
+        return IDLE;
     }
 }

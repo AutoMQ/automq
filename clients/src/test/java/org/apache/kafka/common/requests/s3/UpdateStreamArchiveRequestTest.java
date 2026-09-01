@@ -20,7 +20,8 @@
 package org.apache.kafka.common.requests.s3;
 
 import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
 import org.apache.kafka.common.protocol.ApiKeys;
 
 import org.junit.jupiter.api.Tag;
@@ -32,34 +33,31 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Verifies the complete version-zero Stream Archive wire contract.
+ * Verifies the version-zero Broker-owned Stream Archive wire contract.
  */
 @Tag("S3Unit")
 public class UpdateStreamArchiveRequestTest {
 
     /**
-     * Given one complete desired state, verify v0 is flexible and preserves every semantic field.
+     * Given one typed Broker-owned operation, verify v0 is flexible and preserves its payload.
      */
     @Test
     public void testVersionZeroWireContract() {
-        StreamArchiveUpdate update = new StreamArchiveUpdate()
+        StreamArchiveOperation update = new StreamArchiveOperation()
             .setStreamId(1L)
             .setStreamEpoch(2L)
-            .setArchiveStartOffset(3L)
-            .setArchiveMetadataEndOffset(4L)
-            .setArchiveEndOffset(5L)
-            .setArchivePreparedEndOffset(6L)
-            .setArchiveSize(7L)
-            .setArchiveCleanupEndOffset(8L)
-            .setArchiveCleanupSize(9L)
-            .setArchiveObjectIds(List.of(10L, 11L));
+            .setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+            .setArchivePrepare(new ArchivePrepare()
+                .setExpectedArchiveEndOffset(5L)
+                .setArchivePreparedEndOffset(6L)
+                .setArchiveObjectIds(List.of(10L, 11L)));
         UpdateStreamArchiveRequestData data = new UpdateStreamArchiveRequestData()
             .setNodeId(12)
             .setNodeEpoch(13L)
-            .setUpdateStreamArchiveRequests(List.of(update));
+            .setOperations(List.of(update));
 
         assertTrue(ApiKeys.UPDATE_STREAM_ARCHIVE.messageType.highestSupportedVersion(true) >= 0);
         assertEquals(data, new UpdateStreamArchiveRequest.Builder(data).build((short) 0).data());
-        assertEquals(List.of(10L, 11L), data.updateStreamArchiveRequests().get(0).archiveObjectIds());
+        assertEquals(List.of(10L, 11L), data.operations().get(0).archivePrepare().archiveObjectIds());
     }
 }

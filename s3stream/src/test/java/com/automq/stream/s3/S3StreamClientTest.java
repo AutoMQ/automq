@@ -19,9 +19,10 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.Version;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
-import com.automq.stream.Version;
+import com.automq.stream.s3.compact.StreamObjectArchiveTask;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -41,7 +42,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
-import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.ARCHIVE;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -162,13 +162,21 @@ public class S3StreamClientTest {
      */
     @Test
     public void testObjectCountPressureAppendsMajorV1AfterScheduledCompaction() {
-        assertEquals(List.of(MINOR_V1, MAJOR_V1, ARCHIVE),
-            S3StreamClient.v1CompactionTypes(false, true, true, true));
-        assertEquals(List.of(CLEANUP_V1, MAJOR_V1, ARCHIVE),
-            S3StreamClient.v1CompactionTypes(false, false, true, true));
-        assertEquals(List.of(MAJOR_V1, ARCHIVE), S3StreamClient.v1CompactionTypes(true, true, true, true));
-        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false, true));
-        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true, false));
+        assertEquals(List.of(MINOR_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, true, true));
+        assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
+        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
+        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
+    }
+
+    /**
+     * Given post-compaction global object counts, when selecting Archive pressure, then the MAJOR_V1 soft and hard
+     * thresholds define Low, Medium, and High.
+     */
+    @Test
+    public void testArchivePressureUsesPostCompactionGlobalThresholds() {
+        assertEquals(StreamObjectArchiveTask.Pressure.LOW, S3StreamClient.archivePressure(89, 100));
+        assertEquals(StreamObjectArchiveTask.Pressure.MEDIUM, S3StreamClient.archivePressure(90, 100));
+        assertEquals(StreamObjectArchiveTask.Pressure.HIGH, S3StreamClient.archivePressure(100, 100));
     }
 
     /**

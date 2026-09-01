@@ -144,6 +144,27 @@ public class LocalFileObjectStorage implements ObjectStorage {
     }
 
     @Override
+    public CompletableFuture<Void> copy(String sourceBucket, String sourcePath, String destinationPath) {
+        if (!bucketURI.bucket().equals(sourceBucket)) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Local copy requires one bucket"));
+        }
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        ioExecutor.submit(() -> {
+            try {
+                Path destination = dataPath(destinationPath);
+                Files.createDirectories(destination.getParent());
+                Files.copy(dataPath(sourcePath), destination, StandardCopyOption.REPLACE_EXISTING);
+                cf.complete(null);
+            } catch (NoSuchFileException e) {
+                cf.completeExceptionally(new ObjectNotExistException());
+            } catch (Throwable e) {
+                cf.completeExceptionally(e);
+            }
+        });
+        return cf;
+    }
+
+    @Override
     public CompletableFuture<List<ObjectInfo>> list(ListOptions options) {
         CompletableFuture<List<ObjectInfo>> cf = new CompletableFuture<>();
         if (options.maxKeys() == 0) {
@@ -214,6 +235,14 @@ public class LocalFileObjectStorage implements ObjectStorage {
     @Override
     public short bucketId() {
         return bucketURI.bucketId();
+    }
+
+    @Override
+    public BucketURI bucketURI(short bucketId) {
+        if (bucketId != bucketURI.bucketId()) {
+            throw new IllegalArgumentException("Unknown bucket " + bucketId);
+        }
+        return bucketURI;
     }
 
     private Path atomicWritePath() {

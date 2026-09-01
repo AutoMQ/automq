@@ -41,8 +41,11 @@ import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
-import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveUpdate;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
 import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
@@ -50,13 +53,13 @@ import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
-import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
-import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
@@ -73,20 +76,21 @@ import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
-import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
-import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.CompositeObjectWriter;
 import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.compact.CompactOperations;
+import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -108,7 +112,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
@@ -145,6 +148,7 @@ import static org.mockito.Mockito.when;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
+@SuppressWarnings("checkstyle:JavaNCSS")
 public class StreamControlManagerTest {
 
     private static final long STREAM0 = 0;
@@ -1468,9 +1472,9 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
             .setNodeId(BROKER0).setEpoch(EPOCH0).setStartOffset(0L).setEndOffset(100L));
-        addCommittedComposite(10L, 0L, 50L);
+        addCommittedNormal(10L, 0L, 50L);
 
-        StreamArchiveUpdate prepare = archiveUpdate(0L, 0L, 0L, 50L, 0L, 0L, 0L)
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 50L, 0L, 0L, 0L)
             .setArchiveObjectIds(List.of(10L));
         ControllerResult<UpdateStreamResponse> prepareResult =
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
@@ -1480,13 +1484,55 @@ public class StreamControlManagerTest {
 
         assertTrue(manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare).records().isEmpty());
 
-        StreamArchiveUpdate publish = archiveUpdate(0L, 0L, 50L, 50L, 1_000L, 0L, 0L);
+        ArchiveUpdate publish = archiveUpdate(0L, 50L, 50L, 1_000L, 0L, 0L);
         ControllerResult<UpdateStreamResponse> publishResult =
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, publish);
         assertEquals(Errors.NONE.code(), publishResult.response().errorCode());
         replay(manager, publishResult.records());
         assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveEndOffset());
         assertEquals(1_000L, manager.getStreamArchiveMetadata(STREAM0).archiveSize());
+    }
+
+    /**
+     * Given Controller metadata cleanup advances between Broker operations, verify prepare, publish, and retention
+     * cleanup preserve that Controller-owned progress instead of conflicting with or overwriting it.
+     */
+    @Test
+    public void testBrokerArchiveUpdatesPreserveControllerMetadataProgress() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setNodeId(BROKER0).setEpoch(EPOCH0).setStartOffset(0L).setEndOffset(100L));
+        addCommittedNormal(10L, 50L, 100L);
+        replay(manager, List.of(archiveMetadata(0L, 25L, 50L, 50L, 500L, 0L, 0L).toRecord()));
+
+        ArchiveUpdate prepare = archiveUpdate(0L, 50L, 100L, 500L, 0L, 0L)
+            .setArchiveObjectIds(List.of(10L));
+        ControllerResult<UpdateStreamResponse> prepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        assertEquals(Errors.NONE.code(), prepareResult.response().errorCode());
+        replay(manager, prepareResult.records());
+        assertEquals(25L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+
+        replay(manager, List.of(archiveMetadata(0L, 50L, 50L, 100L, 500L, 0L, 0L).toRecord()));
+        ArchiveUpdate publish = archiveUpdate(0L, 100L, 100L, 1_000L, 0L, 0L);
+        ControllerResult<UpdateStreamResponse> publishResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, publish);
+        assertEquals(Errors.NONE.code(), publishResult.response().errorCode());
+        replay(manager, publishResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+
+        ArchiveUpdate cleanupPrepare = archiveUpdate(0L, 100L, 100L, 1_000L, 50L, 100L);
+        ControllerResult<UpdateStreamResponse> cleanupPrepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, cleanupPrepare);
+        assertEquals(Errors.NONE.code(), cleanupPrepareResult.response().errorCode());
+        replay(manager, cleanupPrepareResult.records());
+        ArchiveUpdate cleanupCommit = archiveUpdate(50L, 100L, 100L, 900L, 50L, 0L);
+        ControllerResult<UpdateStreamResponse> cleanupCommitResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, cleanupCommit);
+        assertEquals(Errors.NONE.code(), cleanupCommitResult.response().errorCode());
+        replay(manager, cleanupCommitResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
     }
 
     /**
@@ -1566,11 +1612,11 @@ public class StreamControlManagerTest {
 
         manager.replay((S3StreamArchiveRecord) archiveMetadata(
             0L, 0L, 1_002L, 1_002L, 10_020L, 0L, 0L).toRecord().message());
+        manager.reconcileStreamArchiveMetadataCleanup();
 
         assertEquals(Set.of(1_002L), manager.streamsMetadata().get(STREAM0).streamObjects().keySet());
         assertEquals(1_002L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
-        verify(quorumController, times(2)).appendWriteEvent(
-            eq("cleanupStreamArchiveMetadata"), eq(OptionalLong.empty()), any());
+        verify(objectControlManager, times(2)).markDestroyObjects(anyList(), anyList());
     }
 
     /**
@@ -1621,16 +1667,15 @@ public class StreamControlManagerTest {
 
         assertTrue(manager.streamsMetadata().get(STREAM0).streamObjects().isEmpty());
         assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
-        verify(quorumController).appendWriteEvent(
-            eq("cleanupStreamArchiveMetadata"), eq(OptionalLong.empty()), any());
+        verify(objectControlManager).markDestroyObjects(anyList(), anyList());
     }
 
     /**
-     * Given Archive state for live and deleted Streams, verify capacity accounting includes only
-     * the live Streams' retained logical bytes.
+     * Given Archive records are added, replaced, and removed, verify capacity accounting follows those records
+     * independently of Stream deletion.
      */
     @Test
-    public void testLiveStreamArchiveSizeExcludesDeletedStreams() {
+    public void testStreamArchiveSizeFollowsArchiveRecords() {
         manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
         manager.replay(new S3StreamRecord().setStreamId(STREAM1).setStartOffset(0L));
         manager.replay((S3StreamArchiveRecord) archiveMetadata(
@@ -1645,19 +1690,26 @@ public class StreamControlManagerTest {
             .setArchiveCleanupEndOffset(0L)
             .setArchiveCleanupSize(0L));
 
-        assertEquals(1_200L, manager.liveStreamArchiveSize());
+        assertEquals(1_200L, manager.streamArchiveSize());
+
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 50L, 50L, 50L, 600L, 0L, 0L).toRecord().message());
+        assertEquals(1_300L, manager.streamArchiveSize());
 
         manager.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
-        assertEquals(700L, manager.liveStreamArchiveSize());
+        assertEquals(1_300L, manager.streamArchiveSize());
+
+        manager.replay(new RemoveS3StreamArchiveRecord().setStreamId(STREAM0));
+        assertEquals(700L, manager.streamArchiveSize());
     }
 
     /**
      * Given a closed Stream with a published Archive record and an empty Archive prefix, when the
      * Stream is deleted, then visible Stream metadata disappears immediately and the Controller
-     * removes the durable deletion task after the first empty LIST.
+     * removes the durable deletion task after the empty prefix remains quiescent for five minutes.
      */
     @Test
-    public void testDeleteStreamCompletesPublishedArchiveTaskOnFirstEmptyList() {
+    public void testDeleteStreamCompletesPublishedArchiveTaskAfterQuiescence() {
         when(quorumController.isActive()).thenReturn(true);
         manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
         manager.replay((S3StreamArchiveRecord) archiveMetadata(
@@ -1669,6 +1721,9 @@ public class StreamControlManagerTest {
             .setStreamId(STREAM0)
             .setStreamEpoch(EPOCH0));
         replay(manager, result.records());
+        manager.reconcileStreamArchiveMetadataCleanup();
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
+        manager.reconcileStreamArchiveMetadataCleanup();
         verify(quorumController, timeout(5_000)).appendWriteEvent(
             eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
 
@@ -1678,9 +1733,9 @@ public class StreamControlManagerTest {
     }
 
     /**
-     * Given more than one page of Archive manifests with non-canonical names, when a new Controller
-     * rediscovers the deleted Stream's durable task, then it repeatedly deletes bounded first pages,
-     * including linked objects, without interpreting keys as live cleanup progress.
+     * Given more than one page of canonical Composite manifests and a malformed top-level object, when a new
+     * Controller rediscovers the deleted Stream's durable task, then it repeatedly deletes bounded first pages,
+     * deep-deletes known Composites, and directly deletes the malformed object.
      */
     @Test
     public void testDeletedStreamArchiveCleanupIsBoundedFormatAgnosticAndRecoveredAfterFailover()
@@ -1692,12 +1747,17 @@ public class StreamControlManagerTest {
         List<String> manifestKeys = new ArrayList<>();
         List<String> linkedKeys = new ArrayList<>();
         for (int i = 0; i < 101; i++) {
-            String manifestKey = String.format(Locale.ROOT, "archive/%d/non-canonical-%03d", STREAM0, i);
             long linkedObjectId = 10_000L + i;
+            String manifestKey = ArchiveObjectKey.manifestKey(
+                STREAM0, i, i + 1L, ObjectAttributes.Type.Composite, linkedObjectId, 1L);
             String linkedKey = writeArchiveComposite(manifestKey, linkedObjectId, i);
             manifestKeys.add(manifestKey);
             linkedKeys.add(linkedKey);
         }
+        String malformedKey = ArchiveObjectKey.manifestPrefix(STREAM0) + "non-canonical";
+        objectStorage.write(new ObjectStorage.WriteOptions(), malformedKey,
+            Unpooled.wrappedBuffer(new byte[] {1})).get();
+        manifestKeys.add(malformedKey);
         S3StreamArchiveRecord archive = (S3StreamArchiveRecord) archiveMetadata(
             0L, 101L, 101L, 101L, 101L, 0L, 0L).toRecord().message();
         manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
@@ -1713,10 +1773,15 @@ public class StreamControlManagerTest {
             replicationControlManager, objectStorage, time);
         when(quorumController.isActive()).thenReturn(true);
         manager.replay(archive);
+        manager.reconcileStreamArchiveMetadataCleanup();
 
+        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
+        awaitCondition(() -> manifestKeys.stream().noneMatch(objectStorage::contains));
+        linkedKeys.forEach(key -> assertFalse(objectStorage.contains(key)));
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
+        manager.reconcileStreamArchiveMetadataCleanup();
         awaitCondition(() -> manager.getStreamArchiveMetadata(STREAM0) == null);
         manifestKeys.forEach(key -> assertFalse(objectStorage.contains(key)));
-        linkedKeys.forEach(key -> assertFalse(objectStorage.contains(key)));
         org.mockito.ArgumentCaptor<ObjectStorage.ListOptions> options =
             org.mockito.ArgumentCaptor.forClass(ObjectStorage.ListOptions.class);
         verify(objectStorage, Mockito.atLeast(3)).list(options.capture());
@@ -1739,88 +1804,34 @@ public class StreamControlManagerTest {
             .thenReturn(ControllerResult.atomicOf(List.of(), true));
         replay(manager, manager.deleteStream(new DeleteStreamRequest()
             .setStreamId(STREAM0).setStreamEpoch(EPOCH0)).records());
-        verify(quorumController, timeout(5_000)).appendWriteEvent(
-            eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
+        manager.reconcileStreamArchiveMetadataCleanup();
         assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
-        List<StreamArchiveUpdate> postDeleteUpdates = List.of(
-            archiveUpdate(0L, 50L, 50L, 100L, 500L, 0L, 0L),
-            archiveUpdate(0L, 50L, 100L, 100L, 600L, 0L, 0L),
-            archiveUpdate(0L, 50L, 50L, 100L, 500L, 25L, 100L),
-            archiveUpdate(25L, 50L, 50L, 100L, 400L, 25L, 0L));
+        List<ArchiveUpdate> postDeleteUpdates = List.of(
+            archiveUpdate(0L, 50L, 100L, 500L, 0L, 0L),
+            archiveUpdate(0L, 100L, 100L, 600L, 0L, 0L),
+            archiveUpdate(0L, 50L, 100L, 500L, 25L, 100L),
+            archiveUpdate(25L, 50L, 100L, 400L, 25L, 0L));
         postDeleteUpdates.forEach(update -> assertEquals(Errors.STREAM_NOT_EXIST.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, update).response().errorCode()));
 
         time.sleep(TimeUnit.MINUTES.toMillis(4));
-        String lateManifest = "archive/0/late-prepared";
+        String lateManifest = ArchiveObjectKey.manifestPrefix(STREAM0) + "late-prepared";
         writeArchiveComposite(lateManifest, 20_000L, 0L);
         manager.reconcileStreamArchiveMetadataCleanup();
-        awaitCondition(() -> !objectStorage.contains(lateManifest));
-        verify(quorumController, timeout(5_000).atLeast(2)).appendWriteEvent(
-            eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
+        assertTrue(objectStorage.contains(lateManifest));
 
-        time.sleep(TimeUnit.MINUTES.toMillis(5) - 1L);
+        time.sleep(TimeUnit.MINUTES.toMillis(1));
         manager.reconcileStreamArchiveMetadataCleanup();
-        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
-        time.sleep(1L);
+        awaitCondition(() -> !objectStorage.contains(lateManifest));
+
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
         manager.reconcileStreamArchiveMetadataCleanup();
         awaitCondition(() -> manager.getStreamArchiveMetadata(STREAM0) == null);
 
-        String acceptedLeak = "archive/0/accepted-late-leak";
+        String acceptedLeak = ArchiveObjectKey.manifestPrefix(STREAM0) + "accepted-late-leak";
         writeArchiveComposite(acceptedLeak, 30_000L, 0L);
         manager.reconcileStreamArchiveMetadataCleanup();
         assertTrue(objectStorage.contains(acceptedLeak));
-    }
-
-    /**
-     * Given an unpublished prepared deletion task whose prefix is empty, verify a Controller
-     * leadership boundary conservatively restarts its full five-minute quiescence window.
-     */
-    @Test
-    public void testDeletedPreparedArchiveQuiescenceRestartsAfterLeadershipChange() throws Exception {
-        when(quorumController.isActive()).thenReturn(true);
-        manager.replay((S3StreamArchiveRecord) archiveMetadata(
-            0L, 50L, 50L, 100L, 500L, 0L, 0L).toRecord().message());
-        verify(quorumController, timeout(5_000)).appendWriteEvent(
-            eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
-
-        time.sleep(TimeUnit.MINUTES.toMillis(5));
-        manager.onControllerLeadershipChange();
-        manager.reconcileStreamArchiveMetadataCleanup();
-        verify(quorumController, timeout(5_000).atLeast(2)).appendWriteEvent(
-            eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
-        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
-
-        time.sleep(TimeUnit.MINUTES.toMillis(5));
-        manager.reconcileStreamArchiveMetadataCleanup();
-        awaitCondition(() -> manager.getStreamArchiveMetadata(STREAM0) == null);
-    }
-
-    /**
-     * Given an old-tenure LIST is still pending, verify its callback cannot remove the new tenure's
-     * in-flight token and permit an overlapping cleanup round for the same deleted Stream.
-     */
-    @Test
-    public void testOldLeadershipCallbackCannotClearNewCleanupGuard() {
-        ObjectStorage pendingListStorage = mock(ObjectStorage.class);
-        when(quorumController.isActive()).thenReturn(true);
-        CompletableFuture<List<ObjectStorage.ObjectInfo>> oldList = new CompletableFuture<>();
-        CompletableFuture<List<ObjectStorage.ObjectInfo>> newList = new CompletableFuture<>();
-        java.util.concurrent.atomic.AtomicInteger listCount = new java.util.concurrent.atomic.AtomicInteger();
-        when(pendingListStorage.list(any(ObjectStorage.ListOptions.class))).thenAnswer(
-            ignored -> listCount.getAndIncrement() == 0 ? oldList : newList);
-        manager = new StreamControlManager(quorumController, new SnapshotRegistry(new LogContext()),
-            new LogContext(), objectControlManager, clusterControlManager, featureControlManager,
-            replicationControlManager, pendingListStorage, time);
-        manager.replay((S3StreamArchiveRecord) archiveMetadata(
-            0L, 50L, 50L, 100L, 500L, 0L, 0L).toRecord().message());
-
-        manager.onControllerLeadershipChange();
-        manager.reconcileStreamArchiveMetadataCleanup();
-        oldList.complete(List.of());
-        manager.reconcileStreamArchiveMetadataCleanup();
-
-        verify(pendingListStorage, times(2)).list(any(ObjectStorage.ListOptions.class));
-        assertFalse(newList.isDone());
     }
 
     private String writeArchiveComposite(String manifestKey, long linkedObjectId, long startOffset)
@@ -1861,7 +1872,7 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), compaction.response().errorCode());
         replay(manager, compaction.records());
 
-        StreamArchiveUpdate prepare = archiveUpdate(0L, 0L, 0L, 100L, 0L, 0L, 0L)
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L)
             .setArchiveObjectIds(List.of(10L, 11L));
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare).response().errorCode());
@@ -1878,7 +1889,7 @@ public class StreamControlManagerTest {
         addCommittedComposite(11L, 50L, 100L);
         mockSuccessfulObjectCommits();
         ControllerResult<UpdateStreamResponse> prepare = manager.updateStreamArchive(BROKER0, BROKER_EPOCH0,
-            archiveUpdate(0L, 0L, 0L, 100L, 0L, 0L, 0L).setArchiveObjectIds(List.of(10L, 11L)));
+            archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L).setArchiveObjectIds(List.of(10L, 11L)));
         replay(manager, prepare.records());
 
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
@@ -1902,16 +1913,16 @@ public class StreamControlManagerTest {
     }
 
     /**
-     * Given a well-formed prepare payload, verify only the exact continuous committed Composite sequence is accepted.
+     * Given a well-formed prepare payload, verify only the exact continuous committed Stream Object sequence is accepted.
      */
     @Test
-    public void testArchivePrepareValidatesCurrentCompositeSequence() {
+    public void testArchivePrepareValidatesCurrentObjectSequence() {
         registerAlwaysSuccessEpoch(BROKER0);
         createAndOpenStream(BROKER0, EPOCH0);
         addCommittedComposite(10L, 0L, 50L);
         addCommittedComposite(11L, 50L, 100L);
 
-        StreamArchiveUpdate prepare = archiveUpdate(0L, 0L, 0L, 100L, 0L, 0L, 0L);
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L);
         prepare.setArchiveObjectIds(List.of(11L, 10L));
         assertArchiveConflict(prepare);
         prepare.setArchiveObjectIds(List.of(10L));
@@ -1927,10 +1938,6 @@ public class StreamControlManagerTest {
             S3ObjectState.PREPARED,
             ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
         assertArchiveConflict(prepare);
-        when(objectControlManager.getObject(11L)).thenReturn(new S3Object(11L, 999L, 0L,
-            S3ObjectState.COMMITTED, ObjectAttributes.DEFAULT.attributes()));
-        assertArchiveConflict(prepare);
-
         addCommittedComposite(11L, 60L, 100L);
         assertArchiveConflict(prepare);
         addCommittedComposite(11L, 50L, 100L);
@@ -1939,53 +1946,40 @@ public class StreamControlManagerTest {
     }
 
     /**
-     * Given a prepare was already persisted, verify an equal retry still validates the frozen metadata range.
+     * Given a prepare was already persisted, verify an equal retry trusts the range fence established by prepare.
      */
     @Test
-    public void testIdempotentArchivePrepareRevalidatesFrozenRange() {
+    public void testIdempotentArchivePrepareUsesPersistedIntent() {
         registerAlwaysSuccessEpoch(BROKER0);
         createAndOpenStream(BROKER0, EPOCH0);
         addCommittedComposite(10L, 0L, 50L);
-        StreamArchiveUpdate prepare = archiveUpdate(0L, 0L, 0L, 50L, 0L, 0L, 0L)
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 50L, 0L, 0L, 0L)
             .setArchiveObjectIds(List.of(10L));
         ControllerResult<UpdateStreamResponse> result =
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
         replay(manager, result.records());
 
         manager.replay(new RemoveS3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L));
-        assertArchiveConflict(prepare);
+        ControllerResult<UpdateStreamResponse> retry =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        assertEquals(Errors.NONE.code(), retry.response().errorCode());
+        assertTrue(retry.records().isEmpty());
     }
 
     /**
-     * Given malformed and stale desired states, verify they return distinct non-retriable errors.
+     * Given an unreadable operation payload and a stale cursor, verify they return distinct non-retriable errors.
      */
     @Test
     public void testUpdateStreamArchiveInvalidRequestAndConflict() {
         registerAlwaysSuccessEpoch(BROKER0);
         createAndOpenStream(BROKER0, EPOCH0);
 
-        StreamArchiveUpdate malformed = archiveUpdate(-1L, 0L, 0L, 0L, 0L, 0L, 0L);
+        ArchiveUpdate malformed = new ArchiveUpdate().setStreamId(STREAM0).setStreamEpoch(EPOCH0)
+            .setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value());
         assertEquals(Errors.INVALID_REQUEST.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
 
-        StreamArchiveUpdate emptyPrepare = archiveUpdate(0L, 0L, 0L, 10L, 0L, 0L, 0L);
-        assertEquals(Errors.INVALID_REQUEST.code(),
-            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, emptyPrepare).response().errorCode());
-        emptyPrepare.setArchiveObjectIds(List.of(1L, 1L));
-        assertEquals(Errors.INVALID_REQUEST.code(),
-            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, emptyPrepare).response().errorCode());
-        emptyPrepare.setArchiveObjectIds(List.of(-1L));
-        assertEquals(Errors.INVALID_REQUEST.code(),
-            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, emptyPrepare).response().errorCode());
-        List<Long> oversizedObjectIds = new ArrayList<>();
-        for (long objectId = 0; objectId <= 100; objectId++) {
-            oversizedObjectIds.add(objectId);
-        }
-        emptyPrepare.setArchiveObjectIds(oversizedObjectIds);
-        assertEquals(Errors.INVALID_REQUEST.code(),
-            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, emptyPrepare).response().errorCode());
-
-        StreamArchiveUpdate stale = archiveUpdate(0L, 0L, 10L, 10L, 100L, 0L, 0L);
+        ArchiveUpdate stale = archiveUpdate(0L, 10L, 10L, 100L, 0L, 0L);
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, stale).response().errorCode());
     }
@@ -1999,19 +1993,33 @@ public class StreamControlManagerTest {
         createAndOpenStream(BROKER0, EPOCH0);
         replay(manager, List.of(archiveMetadata(0L, 0L, 50L, 50L, 100L, 0L, 0L).toRecord()));
 
-        StreamArchiveUpdate prepareCleanup = archiveUpdate(0L, 0L, 50L, 50L, 100L, 25L, 40L);
+        ArchiveUpdate prepareCleanup = archiveUpdate(0L, 50L, 50L, 100L, 25L, 40L);
         ControllerResult<UpdateStreamResponse> prepareResult =
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepareCleanup);
         assertEquals(Errors.NONE.code(), prepareResult.response().errorCode());
         replay(manager, prepareResult.records());
 
-        StreamArchiveUpdate commitCleanup = archiveUpdate(25L, 0L, 50L, 50L, 60L, 25L, 0L);
+        ArchiveUpdate commitCleanup = archiveUpdate(25L, 50L, 50L, 60L, 25L, 0L);
         ControllerResult<UpdateStreamResponse> commitResult =
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, commitCleanup);
         assertEquals(Errors.NONE.code(), commitResult.response().errorCode());
         replay(manager, commitResult.records());
         assertEquals(25L, manager.getStreamArchiveMetadata(STREAM0).archiveStartOffset());
         assertEquals(60L, manager.getStreamArchiveMetadata(STREAM0).archiveSize());
+    }
+
+    /**
+     * Given one Archive lifecycle has a durable prepare intent, verify the Controller rejects a stale request that
+     * attempts to prepare the other lifecycle concurrently.
+     */
+    @Test
+    public void testArchiveAndCleanupPrepareAreMutuallyExclusive() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 50L, 100L, 100L, 0L, 0L).toRecord()));
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(0L, 50L, 50L, 100L, 25L, 40L))
+            .response().errorCode());
     }
 
     /**
@@ -2027,23 +2035,26 @@ public class StreamControlManagerTest {
         manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
             .setStartOffset(50L).setEndOffset(150L));
 
-        ControllerResult<UpdateStreamResponse> result = manager.updateStreamArchive(
-            BROKER0, BROKER_EPOCH0, archiveUpdate(50L, 50L, 50L, 50L, 0L, 50L, 0L));
+        ArchiveUpdate advance = archiveUpdate(50L, 50L, 50L, 0L, 50L, 0L);
+        ControllerResult<UpdateStreamResponse> result =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, advance);
         assertEquals(Errors.NONE.code(), result.response().errorCode());
         replay(manager, result.records());
         assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveStartOffset());
+        assertEquals(0L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+        assertTrue(manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, advance).records().isEmpty());
 
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
-            BROKER0, BROKER_EPOCH0, archiveUpdate(75L, 75L, 75L, 75L, 0L, 75L, 0L))
+            BROKER0, BROKER_EPOCH0, archiveUpdate(75L, 75L, 75L, 0L, 75L, 0L))
             .response().errorCode());
     }
 
     /**
-     * Given multiple current online boundaries beyond an empty Archive cursor, verify the Controller accepts the
-     * Broker's non-first candidate when it is no later than Stream start.
+     * Given expired and living Stream Objects, verify the Controller accepts the boundary of the object containing
+     * Stream start.
      */
     @Test
-    public void testUpdateStreamArchiveEmptyCursorAcceptsNonFirstOnlineBoundary() {
+    public void testUpdateStreamArchiveEmptyCursorAcceptsLivingStreamObjectBoundary() {
         registerAlwaysSuccessEpoch(BROKER0);
         createAndOpenStream(BROKER0, EPOCH0);
         replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
@@ -2055,16 +2066,16 @@ public class StreamControlManagerTest {
             .setStartOffset(80L).setEndOffset(150L));
 
         ControllerResult<UpdateStreamResponse> result = manager.updateStreamArchive(
-            BROKER0, BROKER_EPOCH0, archiveUpdate(80L, 80L, 80L, 80L, 0L, 80L, 0L));
+            BROKER0, BROKER_EPOCH0, archiveUpdate(80L, 80L, 80L, 0L, 80L, 0L));
 
         assertEquals(Errors.NONE.code(), result.response().errorCode());
     }
 
     /**
-     * Given no current online object, verify an empty Archive cursor may advance only to Stream start.
+     * Given no living Stream Object, verify the Controller rejects empty Archive cursor advancement.
      */
     @Test
-    public void testUpdateStreamArchiveEmptyCursorWithoutOnlineObjectsRequiresStreamStart() {
+    public void testUpdateStreamArchiveEmptyCursorWaitsWithoutLivingStreamObject() {
         registerAlwaysSuccessEpoch(BROKER0);
         createAndOpenStream(BROKER0, EPOCH0);
         replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
@@ -2072,10 +2083,10 @@ public class StreamControlManagerTest {
             .setRangeIndex(0).setStartOffset(100L).setStreamState(StreamState.OPENED.toByte()));
 
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
-            BROKER0, BROKER_EPOCH0, archiveUpdate(99L, 99L, 99L, 99L, 0L, 99L, 0L))
+            BROKER0, BROKER_EPOCH0, archiveUpdate(99L, 99L, 99L, 0L, 99L, 0L))
             .response().errorCode());
-        assertEquals(Errors.NONE.code(), manager.updateStreamArchive(
-            BROKER0, BROKER_EPOCH0, archiveUpdate(100L, 100L, 100L, 100L, 0L, 100L, 0L))
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(100L, 100L, 100L, 0L, 100L, 0L))
             .response().errorCode());
     }
 
@@ -2084,12 +2095,12 @@ public class StreamControlManagerTest {
      */
     @Test
     public void testUpdateStreamArchiveErrorPrecedence() {
-        StreamArchiveUpdate malformed = archiveUpdate(-1L, 0L, 0L, 0L, 0L, 0L, 0L);
-        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        ArchiveUpdate malformed = archiveUpdate(-1L, 0L, 0L, 0L, 0L, 0L);
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V5);
         assertEquals(Errors.UNSUPPORTED_VERSION.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
 
-        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V7);
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
         assertEquals(Errors.NODE_EPOCH_NOT_EXIST.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
 
@@ -2109,18 +2120,96 @@ public class StreamControlManagerTest {
             preparedEndOffset, size, cleanupEndOffset, cleanupSize);
     }
 
-    private StreamArchiveUpdate archiveUpdate(long startOffset, long metadataEndOffset, long endOffset,
+    private ArchiveUpdate archiveUpdate(long startOffset, long endOffset,
         long preparedEndOffset, long size, long cleanupEndOffset, long cleanupSize) {
-        return new StreamArchiveUpdate()
-            .setStreamId(STREAM0)
-            .setStreamEpoch(EPOCH0)
-            .setArchiveStartOffset(startOffset)
-            .setArchiveMetadataEndOffset(metadataEndOffset)
-            .setArchiveEndOffset(endOffset)
-            .setArchivePreparedEndOffset(preparedEndOffset)
-            .setArchiveSize(size)
-            .setArchiveCleanupEndOffset(cleanupEndOffset)
-            .setArchiveCleanupSize(cleanupSize);
+        S3StreamArchiveMetadata current = manager.getStreamArchiveMetadata(STREAM0);
+        long currentStart = current == null ? 0L : current.archiveStartOffset();
+        long currentEnd = current == null ? 0L : current.archiveEndOffset();
+        ArchiveUpdate operation = new ArchiveUpdate().setStreamId(STREAM0).setStreamEpoch(EPOCH0);
+        if (preparedEndOffset > endOffset) {
+            return operation.setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+                .setArchivePrepare(new ArchivePrepare().setExpectedArchiveEndOffset(endOffset)
+                    .setArchivePreparedEndOffset(preparedEndOffset));
+        }
+        if (cleanupSize > 0) {
+            return operation.setOperation(StreamArchiveOperationType.CLEANUP_PREPARE.value())
+                .setCleanupPrepare(new UpdateStreamArchiveRequestData.CleanupPrepare()
+                    .setExpectedArchiveStartOffset(startOffset).setArchiveCleanupEndOffset(cleanupEndOffset)
+                    .setArchiveCleanupSize(cleanupSize));
+        }
+        if (current != null && current.archiveCleanupSize() > 0 && startOffset == cleanupEndOffset) {
+            return operation.setOperation(StreamArchiveOperationType.CLEANUP_COMMIT.value())
+                .setCleanupCommit(new UpdateStreamArchiveRequestData.CleanupCommit()
+                    .setExpectedArchiveStartOffset(currentStart).setArchiveCleanupEndOffset(cleanupEndOffset));
+        }
+        if (startOffset == endOffset && size == 0 && startOffset > currentStart) {
+            return operation.setOperation(StreamArchiveOperationType.ADVANCE_EMPTY_CURSOR.value())
+                .setAdvanceEmptyCursor(new UpdateStreamArchiveRequestData.AdvanceEmptyCursor()
+                    .setExpectedArchiveOffset(currentStart).setNewArchiveOffset(startOffset));
+        }
+        return operation.setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+            .setArchivePublish(new UpdateStreamArchiveRequestData.ArchivePublish()
+                .setExpectedArchiveEndOffset(currentEnd).setArchiveEndOffset(endOffset).setArchiveSize(size));
+    }
+
+    private static final class ArchiveUpdate extends StreamArchiveOperation {
+        @Override
+        public ArchiveUpdate setStreamId(long streamId) {
+            super.setStreamId(streamId);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setStreamEpoch(long streamEpoch) {
+            super.setStreamEpoch(streamEpoch);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setOperation(byte operation) {
+            super.setOperation(operation);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setArchivePrepare(ArchivePrepare payload) {
+            super.setArchivePrepare(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setCleanupPrepare(UpdateStreamArchiveRequestData.CleanupPrepare payload) {
+            super.setCleanupPrepare(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setCleanupCommit(UpdateStreamArchiveRequestData.CleanupCommit payload) {
+            super.setCleanupCommit(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setAdvanceEmptyCursor(UpdateStreamArchiveRequestData.AdvanceEmptyCursor payload) {
+            super.setAdvanceEmptyCursor(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setArchivePublish(UpdateStreamArchiveRequestData.ArchivePublish payload) {
+            super.setArchivePublish(payload);
+            return this;
+        }
+
+        ArchiveUpdate setArchiveObjectIds(List<Long> objectIds) {
+            archivePrepare().setArchiveObjectIds(objectIds);
+            return this;
+        }
+
+        ArchiveUpdate setArchivePreparedEndOffset(long offset) {
+            archivePrepare().setArchivePreparedEndOffset(offset);
+            return this;
+        }
     }
 
     private ControllerResult<CommitStreamSetObjectResponseData> commitRange(long objectId, long startOffset,
@@ -2161,7 +2250,15 @@ public class StreamControlManagerTest {
             ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
     }
 
-    private void assertArchiveConflict(StreamArchiveUpdate update) {
+    private void addCommittedNormal(long objectId, long startOffset, long endOffset) {
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(objectId)
+            .setStartOffset(startOffset).setEndOffset(endOffset));
+        when(objectControlManager.getObject(objectId)).thenReturn(new S3Object(objectId, 999L, 0L,
+            S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Normal).build().attributes()));
+    }
+
+    private void assertArchiveConflict(ArchiveUpdate update) {
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
             manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, update).response().errorCode());
     }

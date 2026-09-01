@@ -29,14 +29,16 @@ import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
-import software.amazon.awssdk.services.s3.model.S3Object;
 import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.S3Object;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doCallRealMethod;
@@ -47,18 +49,24 @@ import static org.mockito.Mockito.when;
 public class AwsObjectStorageTest {
 
     /**
-     * Given LIST transport, service, and permanent request failures, when retryability is classified, then only
-     * transport and transient service failures are eligible for bounded caller retries.
+     * Given LIST and COPY failures, when the storage layer classifies them, then only transport and transient service
+     * failures are retried.
      */
     @Test
-    void testListRetryabilityClassification() {
+    void testListAndCopyRetryabilityClassification() {
         AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
 
-        Assertions.assertTrue(storage.isListRetriable(
-            software.amazon.awssdk.core.exception.SdkClientException.create("connection reset")));
-        Assertions.assertTrue(storage.isListRetriable(S3Exception.builder().statusCode(503).build()));
-        Assertions.assertFalse(storage.isListRetriable(S3Exception.builder().statusCode(403).build()));
-        Assertions.assertFalse(storage.isListRetriable(new IllegalArgumentException("invalid request")));
+        for (S3Operation operation : List.of(S3Operation.LIST_OBJECTS, S3Operation.COPY_OBJECT)) {
+            Assertions.assertEquals(RetryStrategy.RETRY, storage.toRetryStrategyAndCause(
+                software.amazon.awssdk.core.exception.SdkClientException.create("connection reset"), operation)
+                .getLeft());
+            Assertions.assertEquals(RetryStrategy.RETRY,
+                storage.toRetryStrategyAndCause(S3Exception.builder().statusCode(503).build(), operation).getLeft());
+            Assertions.assertEquals(RetryStrategy.ABORT,
+                storage.toRetryStrategyAndCause(S3Exception.builder().statusCode(403).build(), operation).getLeft());
+            Assertions.assertEquals(RetryStrategy.ABORT,
+                storage.toRetryStrategyAndCause(new IllegalArgumentException("invalid request"), operation).getLeft());
+        }
     }
 
     /**
@@ -127,6 +135,29 @@ public class AwsObjectStorageTest {
         } finally {
             data.release();
         }
+    }
+
+    /**
+     * Given a source in another data bucket, when Archive renames it into the first bucket, then CopyObject carries
+     * both bucket identities and both keys without transferring payload through the Broker.
+     */
+    @Test
+    void testDoCopySetsCrossBucketSourceAndRenamedDestination() throws Exception {
+        S3AsyncClient s3 = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(s3, "archive-bucket");
+        List<CopyObjectRequest> requests = new ArrayList<>();
+        when(s3.copyObject(any(CopyObjectRequest.class))).thenAnswer(invocation -> {
+            requests.add(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(CopyObjectResponse.builder().build());
+        });
+
+        storage.doCopy("source-bucket", "data/source-key", "archive/renamed-key").get();
+
+        Assertions.assertEquals(1, requests.size());
+        Assertions.assertEquals("source-bucket", requests.get(0).sourceBucket());
+        Assertions.assertEquals("data/source-key", requests.get(0).sourceKey());
+        Assertions.assertEquals("archive-bucket", requests.get(0).destinationBucket());
+        Assertions.assertEquals("archive/renamed-key", requests.get(0).destinationKey());
     }
 
     @Test

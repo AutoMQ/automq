@@ -45,15 +45,14 @@ public class AutoMQVersionTest {
     }
 
     /**
-     * Given the Archive feature level, verify only finalized V7 enables Stream Archive.
+     * Given the Archive feature level, verify finalized V6 enables Stream Archive.
      */
     @Test
-    public void testStreamArchiveCapabilityStartsAtV7() {
-        assertFalse(AutoMQVersion.V6.isStreamArchiveSupported());
-        assertTrue(AutoMQVersion.V7.isStreamArchiveSupported());
-        assertSame(AutoMQVersion.V7, AutoMQVersion.LATEST);
-        assertSame(AutoMQVersion.V7, AutoMQVersion.from((short) 8));
-        assertSame(Version.V1, AutoMQVersion.V6.s3streamVersion());
-        assertSame(Version.V2, AutoMQVersion.V7.s3streamVersion());
+    public void testStreamArchiveCapabilityStartsAtV6() {
+        assertFalse(AutoMQVersion.V5.isStreamArchiveSupported());
+        assertTrue(AutoMQVersion.V6.isStreamArchiveSupported());
+        assertSame(AutoMQVersion.V6, AutoMQVersion.LATEST);
+        assertSame(Version.V1, AutoMQVersion.V5.s3streamVersion());
+        assertSame(Version.V2, AutoMQVersion.V6.s3streamVersion());
     }
 }

@@ -243,7 +243,7 @@ public class S3ObjectControlManagerTest {
             .setObjectSize(100L)
             .setObjectState(S3ObjectState.COMMITTED.toByte())
             .setAttributes(compositeAttributes));
-        manager.setLiveStreamArchiveSizeSupplier(() -> 50L);
+        manager.setStreamArchiveSizeSupplier(() -> 50L);
 
         ObservableLongMeasurement beforeCleanup = mock(ObservableLongMeasurement.class);
         collectS3ObjectSizeMetric(beforeCleanup);

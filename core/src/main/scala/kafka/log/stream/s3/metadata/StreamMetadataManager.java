@@ -38,7 +38,6 @@ import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
@@ -64,7 +63,6 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -74,19 +72,13 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
-    // AutoMQ inject start
-    private static final int ARCHIVE_LIST_MAX_ATTEMPTS = 3;
-    private static final long ARCHIVE_LIST_RETRY_DELAY_MILLIS = 100L;
-    private static final long ARCHIVE_CORRUPTION_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
-    private static final int MAX_ARCHIVE_CORRUPTION_LOG_KEYS = 1_024;
-    private static final Map<String, Long> LAST_ARCHIVE_CORRUPTION_LOG_NANOS = new java.util.HashMap<>();
-    // AutoMQ inject end
     private final int nodeId;
     private final List<GetObjectsTask> pendingGetObjectsTasks;
     private final ExecutorService pendingExecutorService;
     private MetadataImage metadataImage;
     private final ObjectReaderFactory objectReaderFactory;
     private final LocalStreamRangeIndexCache indexCache;
+    private final StreamArchiveReader archiveReader;
     private final Map<Long, StreamMetadataListener> streamMetadataListeners = new ConcurrentHashMap<>();
 
     public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory,
@@ -96,6 +88,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         this.pendingGetObjectsTasks = new LinkedList<>();
         this.objectReaderFactory = objectReaderFactory;
         this.indexCache = indexCache;
+        this.archiveReader = new StreamArchiveReader(objectReaderFactory, this::fetchOnline);
         this.pendingExecutorService = Executors.newSingleThreadScheduledExecutor(new DefaultThreadFactory("pending-get-objects-task-executor"));
         broker.metadataLoader().installPublishers(List.of(this)).join();
     }
@@ -151,12 +144,14 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     @Override
     public CompletableFuture<InRangeObjects> fetch(long streamId, long startOffset, long endOffset, int limit) {
         // TODO: cache the object list for next search
+        if (streamId >= 0 && startOffset >= 0 && startOffset == endOffset && limit >= 0) {
+            return CompletableFuture.completedFuture(new InRangeObjects(streamId, List.of()));
+        }
         CompletableFuture<InRangeObjects> cf = new CompletableFuture<>();
         exec(() -> fetch0(cf, streamId, startOffset, endOffset, limit, false), cf, LOGGER, "fetchObjects");
         return cf;
     }
 
-    // AutoMQ inject start
     private void fetch0(CompletableFuture<InRangeObjects> cf, long streamId,
         long startOffset, long endOffset, int limit, boolean retryFetch) {
         Image image = getImage();
@@ -164,7 +159,7 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         try {
             final S3StreamsMetadataImage streamsImage = image.streamsMetadata();
             final S3ObjectsImage objectsImage = image.objectsMetadata();
-            getObjectsCf = fetchFromImage(streamsImage, objectsImage, streamId, startOffset, endOffset, limit);
+            getObjectsCf = archiveReader.fetch(streamsImage, objectsImage, streamId, startOffset, endOffset, limit);
         } catch (Throwable e) {
             image.close();
             cf.completeExceptionally(e);
@@ -174,9 +169,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             image.close();
             Throwable cause = FutureUtil.cause(exception);
             if (cause != null) {
-                if (cause instanceof ArchiveCorruptionException) {
-                    logArchiveCorruption(streamId, startOffset, endOffset, cause);
-                }
                 cf.completeExceptionally(cause);
                 return;
             }
@@ -206,132 +198,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         });
     }
 
-    private CompletableFuture<InRangeObjects> fetchFromImage(S3StreamsMetadataImage streamsImage,
-        S3ObjectsImage objectsImage, long streamId, long startOffset, long endOffset, int limit) {
-        if (invalidFetchRequest(streamId, startOffset, endOffset, limit) || limit == 0) {
-            return fetchOnline(streamsImage, objectsImage, streamId, startOffset, endOffset, limit);
-        }
-        S3StreamArchiveMetadata archive = streamsImage.getStreamArchiveMetadata(streamId);
-        S3StreamMetadataImage stream = streamsImage.getStreamMetadata(streamId);
-        if (shouldFetchOnlineOnly(archive, stream, startOffset)) {
-            return fetchOnline(streamsImage, objectsImage, streamId, startOffset, endOffset, limit);
-        }
-        long archiveEndOffset = archive.archiveEndOffset();
-        long archiveTargetOffset = endOffset == ObjectUtils.NOOP_OFFSET
-            ? archiveEndOffset : Math.min(endOffset, archiveEndOffset);
-        ObjectStorage.ListOptions options = new ObjectStorage.ListOptions(ArchiveObjectKey.manifestPrefix(streamId))
-            .startAfter(ArchiveObjectKey.startAfter(streamId, startOffset))
-            .maxKeys(limit);
-        return listArchiveObjects(options, 1).thenCompose(listedObjects -> {
-            List<S3ObjectMetadata> archivedObjects = parseArchivedObjects(streamId, startOffset,
-                archiveTargetOffset, archiveEndOffset, limit, listedObjects);
-            long coveredEndOffset = archivedObjects.isEmpty()
-                ? startOffset : archivedObjects.get(archivedObjects.size() - 1).endOffset();
-            if (archivedObjects.size() >= limit
-                || (endOffset != ObjectUtils.NOOP_OFFSET && coveredEndOffset >= endOffset)) {
-                return CompletableFuture.completedFuture(new InRangeObjects(streamId, archivedObjects));
-            }
-            if (coveredEndOffset < archiveTargetOffset) {
-                return CompletableFuture.failedFuture(new ArchiveMissingCoverageException(String.format(
-                    "Archive LIST for stream %d covered only to %d, expected %d", streamId, coveredEndOffset,
-                    archiveTargetOffset)));
-            }
-            int remainingLimit = limit - archivedObjects.size();
-            return fetchOnline(streamsImage, objectsImage, streamId, archiveEndOffset, endOffset, remainingLimit)
-                .thenApply(online -> combineArchiveAndOnline(streamId, archiveEndOffset, archivedObjects, online));
-        });
-    }
-
-    private CompletableFuture<List<ObjectStorage.ObjectInfo>> listArchiveObjects(ObjectStorage.ListOptions options,
-        int attempt) {
-        ObjectStorage storage = objectReaderFactory.getObjectStorage();
-        CompletableFuture<List<ObjectStorage.ObjectInfo>> listFuture;
-        try {
-            listFuture = storage.list(options);
-        } catch (Throwable e) {
-            listFuture = CompletableFuture.failedFuture(e);
-        }
-        return listFuture.handle((result, ex) -> {
-            Throwable cause = FutureUtil.cause(ex);
-            if (cause == null) {
-                return CompletableFuture.completedFuture(result);
-            }
-            if (attempt >= ARCHIVE_LIST_MAX_ATTEMPTS || !storage.isListRetriable(cause)) {
-                return CompletableFuture.<List<ObjectStorage.ObjectInfo>>failedFuture(cause);
-            }
-            return CompletableFuture.supplyAsync(() -> null,
-                    CompletableFuture.delayedExecutor(ARCHIVE_LIST_RETRY_DELAY_MILLIS, TimeUnit.MILLISECONDS))
-                .thenCompose(ignored -> listArchiveObjects(options, attempt + 1));
-        }).thenCompose(result -> result);
-    }
-
-    private boolean invalidFetchRequest(long streamId, long startOffset, long endOffset, int limit) {
-        return streamId < 0 || limit < 0
-            || (endOffset != ObjectUtils.NOOP_OFFSET && startOffset > endOffset);
-    }
-
-    private boolean shouldFetchOnlineOnly(S3StreamArchiveMetadata archive, S3StreamMetadataImage stream,
-        long startOffset) {
-        return archive == null || stream == null || startOffset < stream.startOffset()
-            || startOffset >= archive.archiveEndOffset();
-    }
-
-    private List<S3ObjectMetadata> parseArchivedObjects(long streamId, long startOffset, long targetOffset,
-        long archiveEndOffset, int limit, List<ObjectStorage.ObjectInfo> listedObjects) {
-        List<S3ObjectMetadata> objects = new ArrayList<>(Math.min(limit, listedObjects.size()));
-        long expectedOffset = startOffset;
-        for (ObjectStorage.ObjectInfo objectInfo : listedObjects) {
-            if (objects.size() >= limit || (!objects.isEmpty() && expectedOffset >= targetOffset)) {
-                break;
-            }
-            ArchiveObjectKey.ManifestKey key = parseArchiveKey(objectInfo.key());
-            validateArchiveKey(key, streamId, startOffset, expectedOffset, objects.isEmpty(), archiveEndOffset);
-            int attributes = ObjectAttributes.builder().bucket(objectInfo.bucketId())
-                .type(ObjectAttributes.Type.Composite).build().attributes();
-            objects.add(new S3ObjectMetadata(key.objectId(), com.automq.stream.s3.metadata.S3ObjectType.COMPOSITE,
-                List.of(new StreamOffsetRange(streamId, key.startOffset(), key.endOffset())),
-                S3StreamConstant.INVALID_TS, objectInfo.timestamp(), objectInfo.size(),
-                S3StreamConstant.INVALID_ORDER_ID, attributes, objectInfo.key()));
-            expectedOffset = key.endOffset();
-        }
-        if (objects.isEmpty() || (expectedOffset < targetOffset && objects.size() < limit)) {
-            throw new ArchiveMissingCoverageException(String.format(
-                "Archive LIST for stream %d does not cover requested range [%d, %d)", streamId, startOffset,
-                targetOffset));
-        }
-        return objects;
-    }
-
-    private ArchiveObjectKey.ManifestKey parseArchiveKey(String objectKey) {
-        try {
-            return ArchiveObjectKey.parseManifestKey(objectKey);
-        } catch (IllegalArgumentException e) {
-            throw new ArchiveMalformedKeyException("Cannot parse Archive key " + objectKey, e);
-        }
-    }
-
-    private void validateArchiveKey(ArchiveObjectKey.ManifestKey key, long streamId, long requestedOffset,
-        long expectedOffset, boolean firstObject, long archiveEndOffset) {
-        if (key.streamId() != streamId) {
-            throw new ArchiveMalformedKeyException("Archive key belongs to stream " + key.streamId()
-                + " instead of " + streamId, null);
-        }
-        if (firstObject && (key.startOffset() > requestedOffset || key.endOffset() <= requestedOffset)) {
-            throw new ArchiveMissingCoverageException(String.format(
-                "First Archive range [%d, %d) does not cover requested offset %d",
-                key.startOffset(), key.endOffset(), requestedOffset));
-        }
-        if (!firstObject && key.startOffset() != expectedOffset) {
-            throw new ArchiveDiscontinuousRangeException(String.format(
-                "Archive range starts at %d instead of continuous offset %d", key.startOffset(), expectedOffset));
-        }
-        if (key.startOffset() < archiveEndOffset && key.endOffset() > archiveEndOffset) {
-            throw new ArchiveDiscontinuousRangeException(String.format(
-                "Archive range [%d, %d) crosses published end offset %d", key.startOffset(), key.endOffset(),
-                archiveEndOffset));
-        }
-    }
-
     private CompletableFuture<InRangeObjects> fetchOnline(S3StreamsMetadataImage streamsImage,
         S3ObjectsImage objectsImage, long streamId, long startOffset, long endOffset, int limit) {
         return streamsImage.getObjects(streamId, startOffset, endOffset, limit,
@@ -357,49 +223,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         object.setCommittedTimestamp(objectMetadata.getTimestamp());
         object.setAttributes(objectMetadata.getAttributes());
     }
-
-    private InRangeObjects combineArchiveAndOnline(long streamId, long archiveEndOffset,
-        List<S3ObjectMetadata> archivedObjects, InRangeObjects online) {
-        if (online == InRangeObjects.INVALID) {
-            return online;
-        }
-        if (!online.objects().isEmpty() && online.startOffset() != archiveEndOffset) {
-            throw new ArchiveDiscontinuousRangeException(String.format(
-                "Online range starts at %d instead of published Archive end %d", online.startOffset(),
-                archiveEndOffset));
-        }
-        List<S3ObjectMetadata> combined = new ArrayList<>(archivedObjects.size() + online.objects().size());
-        combined.addAll(archivedObjects);
-        combined.addAll(online.objects());
-        return new InRangeObjects(streamId, combined);
-    }
-
-    private static synchronized void logArchiveCorruption(long streamId, long startOffset, long endOffset,
-        Throwable cause) {
-        long now = System.nanoTime();
-        String diagnosticKey = streamId + ":" + cause.getClass().getName() + ":" + cause.getMessage();
-        Long previous = LAST_ARCHIVE_CORRUPTION_LOG_NANOS.get(diagnosticKey);
-        boolean shouldLog = previous == null || now - previous >= ARCHIVE_CORRUPTION_LOG_INTERVAL_NANOS;
-        if (shouldLog) {
-            ensureArchiveCorruptionLogCapacity(diagnosticKey);
-            LAST_ARCHIVE_CORRUPTION_LOG_NANOS.put(diagnosticKey, now);
-        }
-        if (shouldLog) {
-            LOGGER.error("[FetchObjects],[ARCHIVE_CORRUPTION],streamId={} startOffset={} endOffset={}",
-                streamId, startOffset, endOffset, cause);
-        }
-    }
-
-    private static void ensureArchiveCorruptionLogCapacity(String diagnosticKey) {
-        if (LAST_ARCHIVE_CORRUPTION_LOG_NANOS.containsKey(diagnosticKey)
-            || LAST_ARCHIVE_CORRUPTION_LOG_NANOS.size() < MAX_ARCHIVE_CORRUPTION_LOG_KEYS) {
-            return;
-        }
-        String oldestKey = LAST_ARCHIVE_CORRUPTION_LOG_NANOS.entrySet().stream()
-            .min(Map.Entry.comparingByValue()).orElseThrow().getKey();
-        LAST_ARCHIVE_CORRUPTION_LOG_NANOS.remove(oldestKey);
-    }
-    // AutoMQ inject end
 
     public CompletableFuture<List<S3ObjectMetadata>> getStreamObjects(long streamId, long startOffset, long endOffset,
         int limit) {
@@ -450,7 +273,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         }
     }
 
-    // AutoMQ inject start
     /**
      * Returns the complete Archive state from one retained metadata Image.
      *
@@ -464,12 +286,19 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             if (archive == null) {
                 throw new IllegalArgumentException("Stream " + streamId + " does not exist");
             }
-            return new StreamArchiveState(streamId, streamEpoch, archive.archiveStartOffset(),
-                archive.archiveMetadataEndOffset(), archive.archiveEndOffset(), archive.archivePreparedEndOffset(),
-                archive.archiveSize(), archive.archiveCleanupEndOffset(), archive.archiveCleanupSize(), List.of());
+            return StreamArchiveState.builder()
+                .streamId(streamId)
+                .streamEpoch(streamEpoch)
+                .archiveStartOffset(archive.archiveStartOffset())
+                .archiveMetadataEndOffset(archive.archiveMetadataEndOffset())
+                .archiveEndOffset(archive.archiveEndOffset())
+                .archivePreparedEndOffset(archive.archivePreparedEndOffset())
+                .archiveSize(archive.archiveSize())
+                .archiveCleanupEndOffset(archive.archiveCleanupEndOffset())
+                .archiveCleanupSize(archive.archiveCleanupSize())
+                .build();
         }
     }
-    // AutoMQ inject end
 
     public boolean isObjectExist(long objectId) {
         try (Image image = getImage()) {
@@ -517,14 +346,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             pendingGetObjectsTasks.add(task);
         }
         return task.cf;
-    }
-
-    /**
-     * Registers interest in the next metadata Image, allowing a stale Archive task to stop while
-     * ensuring normal metadata publication refreshes its local view before a later cycle.
-     */
-    public void refreshOnNextUpdate() {
-        pendingFetch();
     }
 
     void retryPendingTasks() {

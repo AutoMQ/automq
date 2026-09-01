@@ -24,13 +24,12 @@ import com.automq.stream.s3.CompositeObject;
 import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.ArchiveObjectKey.ManifestKey;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metadata.S3ObjectType;
-import com.automq.stream.s3.metadata.S3StreamConstant;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.ListOptions;
 import com.automq.stream.s3.operator.ObjectStorage.ObjectInfo;
+import com.automq.stream.s3.streams.StreamArchiveOperation;
+import com.automq.stream.s3.streams.StreamArchivePhase;
 import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 
@@ -45,10 +44,21 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Runs one bounded Broker retention-cleanup round for fully expired Archived Composite objects.
+ * Runs one bounded Broker retention-cleanup round for fully expired archived Stream Objects.
+ *
+ * <p>Cleanup uses a durable two-step transition so object deletion can be retried safely:</p>
+ * <ol>
+ *     <li>Idle: {@code archiveCleanupSize == 0} and {@code archiveCleanupEndOffset == archiveStartOffset}.</li>
+ *     <li>Prepared: persist the exact cleanup end offset and object-size total before deleting selected objects.</li>
+ *     <li>Committed: advance {@code archiveStartOffset}, subtract the prepared size exactly once, and return the
+ *     cleanup fields to the idle form.</li>
+ * </ol>
+ *
+ * <p>A failure after prepare leaves the prepared state durable. The next round reconstructs that same range from
+ * object keys, repeats deletion idempotently, and commits it instead of selecting a new batch.</p>
  */
 public final class StreamObjectArchiveCleanupTask {
-    static final int MAX_COMPOSITES_PER_ROUND = 100;
+    static final int MAX_OBJECTS_PER_ROUND = 100;
     private static final long MALFORMED_KEY_LOG_INTERVAL_NANOS = TimeUnit.MINUTES.toNanos(1);
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamObjectArchiveCleanupTask.class);
 
@@ -76,25 +86,35 @@ public final class StreamObjectArchiveCleanupTask {
     /**
      * Run one retention cleanup round, recovering a durable cleanup intent before selecting new work.
      *
-     * @return false only when malformed Archive metadata requires CLEANUP_V1 to stop this Stream
+     * @return false only when malformed Archive metadata requires the current Archive phase to stop this Stream
      * @throws ExecutionException if object storage or the Controller rejects the operation
      * @throws InterruptedException if the synchronous cleanup scheduler is interrupted
      */
     public boolean cleanup() throws ExecutionException, InterruptedException {
         StreamArchiveState state = streamManager.getStreamArchive(stream.streamId(), stream.streamEpoch()).get();
+        if (state.phase() == StreamArchivePhase.ARCHIVE_PREPARED) {
+            // ARCHIVE owns the durable intent. Its recovery must publish or fail before retention cleanup prepares a
+            // batch, keeping the two recovery state machines mutually exclusive.
+            return true;
+        }
         if (state.archiveStartOffset() == state.archiveEndOffset()) {
             cache.invalidate();
             return true;
         }
 
-        if (state.archiveCleanupSize() > 0) {
-            List<ArchivedComposite> prepared;
+        if (state.phase() == StreamArchivePhase.CLEANUP_PREPARED) {
+            // A previous round persisted its intent but did not commit it. Re-run that exact deletion; selecting new
+            // work here could subtract the prepared size from a different range.
+            List<ArchivedObject> prepared;
             try {
                 prepared = listPrepared(state);
             } catch (IllegalArgumentException exception) {
                 cache.reportMalformed(stream.streamId(), exception);
                 return false;
             }
+            LOGGER.info("[ARCHIVE_CLEANUP_RECOVER] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}, cleanupSize={}",
+                state.streamId(), state.streamEpoch(), state.archiveStartOffset(), state.archiveCleanupEndOffset(),
+                prepared.size(), state.archiveCleanupSize());
             delete(prepared);
             commit(state);
             return true;
@@ -104,7 +124,7 @@ public final class StreamObjectArchiveCleanupTask {
         if (cache.provesNoWork(state.archiveStartOffset(), streamStartOffset)) {
             return true;
         }
-        List<ArchivedComposite> selected;
+        List<ArchivedObject> selected;
         try {
             selected = listExpired(state, streamStartOffset);
         } catch (IllegalArgumentException exception) {
@@ -114,66 +134,99 @@ public final class StreamObjectArchiveCleanupTask {
         if (selected.isEmpty()) {
             return true;
         }
-        long cleanupEndOffset = selected.get(selected.size() - 1).key().endOffset();
-        long cleanupSize = selected.stream().mapToLong(composite -> composite.key().logicalSize())
+        // Persist the range and its object-size total before touching object storage. The non-zero cleanup size is the
+        // recovery marker used at the beginning of a later round if deletion or commit fails.
+        List<ArchivedObject> expired = selected.stream()
+            .filter(object -> object.key().endOffset() > state.archiveStartOffset())
+            .toList();
+        if (expired.isEmpty()) {
+            // Orphaned manifests fully before the durable cursor were already accounted for by an earlier commit.
+            // Delete them without advancing or charging the cursor again.
+            delete(selected);
+            cache.invalidate();
+            return true;
+        }
+        long cleanupEndOffset = expired.get(expired.size() - 1).key().endOffset();
+        long cleanupSize = expired.stream().mapToLong(object -> object.key().objectSize())
             .reduce(0L, Math::addExact);
-        StreamArchiveState prepared = new StreamArchiveState(state.streamId(), state.streamEpoch(),
-            state.archiveStartOffset(), state.archiveMetadataEndOffset(), state.archiveEndOffset(),
-            state.archivePreparedEndOffset(), state.archiveSize(), cleanupEndOffset, cleanupSize, List.of());
-        streamManager.updateStreamArchive(prepared).get();
+        StreamArchiveState prepared = state.toBuilder().archiveCleanupEndOffset(cleanupEndOffset)
+            .archiveCleanupSize(cleanupSize).build();
+        LOGGER.info("[ARCHIVE_CLEANUP_PREPARE] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}, cleanupSize={}",
+            state.streamId(), state.streamEpoch(), state.archiveStartOffset(), cleanupEndOffset, expired.size(), cleanupSize);
+        streamManager.updateStreamArchive(new StreamArchiveOperation.CleanupPrepare(state.streamId(), state.streamEpoch(),
+            state.archiveStartOffset(), cleanupEndOffset, cleanupSize)).get();
+        // Physical deletion is idempotent. A crash from this point through commit is recovered by the prepared-state
+        // branch above, which repeats deletion and applies the size change only in commit.
         delete(selected);
+        LOGGER.info("[ARCHIVE_CLEANUP_DELETE] streamId={}, streamEpoch={}, range=[{}, {}), objectCount={}, objectIds={}",
+            prepared.streamId(), prepared.streamEpoch(), prepared.archiveStartOffset(),
+            prepared.archiveCleanupEndOffset(), selected.size(),
+            selected.stream().map(object -> object.key().objectId()).toList());
         commit(prepared);
         return true;
     }
 
-    private List<ArchivedComposite> listPrepared(StreamArchiveState state)
+    private List<ArchivedObject> listPrepared(StreamArchiveState state)
         throws ExecutionException, InterruptedException {
         List<ObjectInfo> objects = listFromArchiveStart(state);
-        List<ArchivedComposite> prepared = new ArrayList<>();
+        List<ArchivedObject> prepared = new ArrayList<>();
         long previousEndOffset = state.archiveStartOffset();
         for (ObjectInfo object : objects) {
             ManifestKey key = ArchiveObjectKey.parseManifestKey(object.key());
-            if (key.streamId() != state.streamId() || key.startOffset() < previousEndOffset) {
+            if (key.streamId() != state.streamId()) {
                 throw new IllegalArgumentException("Invalid Archive manifest key for cleanup: " + object.key());
             }
-            if (key.endOffset() > state.archiveCleanupEndOffset()) {
+            // A previous cleanup may have committed while the corresponding DELETE was only eventually visible.
+            // These objects are safe to retry and must not block recovery of the prepared range.
+            if (key.endOffset() <= state.archiveStartOffset()) {
+                prepared.add(new ArchivedObject(key, ArchiveObjectKey.objectMetadata(object, key)));
                 continue;
             }
-            prepared.add(new ArchivedComposite(key, metadata(object, key)));
+            if (key.startOffset() < previousEndOffset) {
+                throw new IllegalArgumentException("Overlapping Archive manifest key for cleanup: " + object.key());
+            }
+            if (key.endOffset() > state.archiveCleanupEndOffset()) {
+                break;
+            }
+            prepared.add(new ArchivedObject(key, ArchiveObjectKey.objectMetadata(object, key)));
             previousEndOffset = key.endOffset();
         }
         return prepared;
     }
 
-    private List<ArchivedComposite> listExpired(StreamArchiveState state, long streamStartOffset)
+    private List<ArchivedObject> listExpired(StreamArchiveState state, long streamStartOffset)
         throws ExecutionException, InterruptedException {
         List<ObjectInfo> objects = listFromArchiveStart(state);
-        List<ArchivedComposite> published = new ArrayList<>();
+        List<ArchivedObject> selected = new ArrayList<>();
+        ArchivedObject firstPublished = null;
         long nextOffset = state.archiveStartOffset();
         for (ObjectInfo object : objects) {
             ManifestKey key = ArchiveObjectKey.parseManifestKey(object.key());
             if (key.streamId() != state.streamId()) {
                 throw new IllegalArgumentException("Invalid Archive manifest key for cleanup: " + object.key());
             }
-            if (key.endOffset() > state.archiveEndOffset()) {
+            if (key.endOffset() <= state.archiveStartOffset()) {
+                selected.add(new ArchivedObject(key, ArchiveObjectKey.objectMetadata(object, key)));
                 continue;
+            }
+            if (key.endOffset() > state.archiveEndOffset()) {
+                break;
             }
             if (key.startOffset() != nextOffset) {
                 throw new IllegalArgumentException("Discontinuous Archive manifest key for cleanup: " + object.key());
             }
-            published.add(new ArchivedComposite(key, metadata(object, key)));
+            ArchivedObject published = new ArchivedObject(key, ArchiveObjectKey.objectMetadata(object, key));
+            if (firstPublished == null) {
+                firstPublished = published;
+            }
             nextOffset = key.endOffset();
-        }
-        if (published.isEmpty()) {
-            return List.of();
-        }
-        cache.update(state.archiveStartOffset(), published.get(0));
-        List<ArchivedComposite> selected = new ArrayList<>();
-        for (ArchivedComposite composite : published) {
-            if (composite.key().endOffset() > streamStartOffset) {
+            if (key.endOffset() > streamStartOffset) {
                 break;
             }
-            selected.add(composite);
+            selected.add(published);
+        }
+        if (firstPublished != null) {
+            cache.update(state.archiveStartOffset(), firstPublished.key().endOffset());
         }
         return selected;
     }
@@ -181,37 +234,32 @@ public final class StreamObjectArchiveCleanupTask {
     private List<ObjectInfo> listFromArchiveStart(StreamArchiveState state)
         throws ExecutionException, InterruptedException {
         ListOptions options = new ListOptions(ArchiveObjectKey.manifestPrefix(state.streamId()))
-            .startAfter(ArchiveObjectKey.startAfter(state.streamId(), state.archiveStartOffset()))
-            .maxKeys(MAX_COMPOSITES_PER_ROUND);
-        return objectStorage.list(options).get();
+            .maxKeys(MAX_OBJECTS_PER_ROUND);
+        return objectStorage.primary().list(options).get();
     }
 
-    private S3ObjectMetadata metadata(ObjectInfo object, ManifestKey key) {
-        int attributes = ObjectAttributes.builder().bucket(object.bucketId()).type(ObjectAttributes.Type.Composite)
-            .build().attributes();
-        return new S3ObjectMetadata(key.objectId(), S3ObjectType.COMPOSITE,
-            List.of(new StreamOffsetRange(key.streamId(), key.startOffset(), key.endOffset())),
-            S3StreamConstant.INVALID_TS, object.timestamp(), object.size(), S3StreamConstant.INVALID_ORDER_ID,
-            attributes, object.key());
-    }
-
-    private void delete(List<ArchivedComposite> selected) throws ExecutionException, InterruptedException {
+    private void delete(List<ArchivedObject> selected) throws ExecutionException, InterruptedException {
         List<CompletableFuture<Void>> deletes = selected.stream()
-            .map(composite -> CompositeObject.delete(composite.metadata(), objectStorage))
+            .map(object -> object.key().type() == ObjectAttributes.Type.Composite
+                ? CompositeObject.delete(object.metadata(), objectStorage)
+                : objectStorage.delete(List.of(new ObjectStorage.ObjectPath(
+                    object.metadata().bucket(), object.metadata().key()))))
             .toList();
         CompletableFuture.allOf(deletes.toArray(CompletableFuture[]::new)).get();
     }
 
     private void commit(StreamArchiveState prepared) throws ExecutionException, InterruptedException {
-        StreamArchiveState committed = new StreamArchiveState(prepared.streamId(), prepared.streamEpoch(),
-            prepared.archiveCleanupEndOffset(), prepared.archiveMetadataEndOffset(), prepared.archiveEndOffset(),
-            prepared.archivePreparedEndOffset(), Math.subtractExact(prepared.archiveSize(), prepared.archiveCleanupSize()),
-            prepared.archiveCleanupEndOffset(), 0L, List.of());
-        streamManager.updateStreamArchive(committed).get();
+        // Atomically publish the new left boundary, account for the prepared batch exactly once, and clear the
+        // durable cleanup intent. Keeping cleanupEndOffset equal to the new start offset is the canonical idle form.
+        streamManager.updateStreamArchive(new StreamArchiveOperation.CleanupCommit(prepared.streamId(),
+            prepared.streamEpoch(), prepared.archiveStartOffset(), prepared.archiveCleanupEndOffset())).get();
+        LOGGER.info("[ARCHIVE_CLEANUP_COMMIT] streamId={}, streamEpoch={}, oldStartOffset={}, newStartOffset={}, cleanupSize={}",
+            prepared.streamId(), prepared.streamEpoch(), prepared.archiveStartOffset(),
+            prepared.archiveCleanupEndOffset(), prepared.archiveCleanupSize());
         cache.invalidate();
     }
 
-    private record ArchivedComposite(ManifestKey key, S3ObjectMetadata metadata) {
+    private record ArchivedObject(ManifestKey key, S3ObjectMetadata metadata) {
     }
 
     /**
@@ -224,7 +272,7 @@ public final class StreamObjectArchiveCleanupTask {
         private String lastMalformedDiagnostic;
         private long lastMalformedLogNanos = Long.MIN_VALUE;
 
-        private boolean provesNoWork(long archiveStartOffset, long streamStartOffset) {
+        boolean provesNoWork(long archiveStartOffset, long streamStartOffset) {
             if (boundary == null) {
                 return false;
             }
@@ -235,10 +283,8 @@ public final class StreamObjectArchiveCleanupTask {
             return boundary.endOffset() > streamStartOffset;
         }
 
-        private void update(long archiveStartOffset, ArchivedComposite composite) {
-            ManifestKey key = composite.key();
-            boundary = new Boundary(archiveStartOffset, key.startOffset(), key.endOffset(), key.objectId(),
-                key.logicalSize(), composite.metadata().key());
+        void update(long archiveStartOffset, long endOffset) {
+            boundary = new Boundary(archiveStartOffset, endOffset);
         }
 
         /**
@@ -248,7 +294,7 @@ public final class StreamObjectArchiveCleanupTask {
             boundary = null;
         }
 
-        private void reportMalformed(long streamId, IllegalArgumentException exception) {
+        void reportMalformed(long streamId, IllegalArgumentException exception) {
             String diagnostic = exception.getMessage();
             long now = System.nanoTime();
             if (!Objects.equals(lastMalformedDiagnostic, diagnostic)
@@ -259,8 +305,7 @@ public final class StreamObjectArchiveCleanupTask {
             }
         }
 
-        private record Boundary(long archiveStartOffset, long startOffset, long endOffset, long objectId,
-                                long logicalSize, String key) {
+        private record Boundary(long archiveStartOffset, long endOffset) {
         }
     }
 

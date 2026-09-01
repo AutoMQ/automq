@@ -27,6 +27,7 @@ import com.automq.stream.api.RecordBatch;
 import com.automq.stream.api.Stream;
 import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.compact.StreamObjectArchiveCleanupTask;
+import com.automq.stream.s3.compact.StreamObjectArchiveTask;
 import com.automq.stream.s3.compact.StreamObjectCompactor;
 import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
@@ -45,6 +46,7 @@ import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,7 +66,6 @@ import java.util.function.Supplier;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
-import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.ARCHIVE;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR;
@@ -81,6 +82,8 @@ public class S3StreamClient implements StreamClient {
     private static final long COMPACTION_COOLDOWN_AFTER_OPEN_STREAM = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_COOLDOWN_AFTER_OPEN_STREAM", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(10));
     private static final long MAJOR_V1_COMPACTION_INTERVAL = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_INTERVAL", TimeUnit.MINUTES.toMillis(60));
+    private static final long STREAM_OBJECT_COMPACTION_INTERVAL = Systems.getEnvLong(
+        "AUTOMQ_STREAM_OBJECT_COMPACTION_INTERVAL", TimeUnit.MINUTES.toMillis(1));
     private static final long MINOR_V1_COMPACTION_SIZE = Systems.getEnvLong("AUTOMQ_STREAM_COMPACTION_MINOR_V1_COMPACTION_SIZE_THRESHOLD", MINOR_V1_COMPACTION_SIZE_THRESHOLD);
     /**
      * When the cluster objects count approaches MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD, the MAJOR_V1 compaction will be triggered.
@@ -88,7 +91,9 @@ public class S3StreamClient implements StreamClient {
      */
     private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
     static final double MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO = 0.9;
-    private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 20);
+    // Maximum initial scheduling jitter in milliseconds, used to avoid a broker-wide compaction stampede.
+    private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt(
+        "AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 1000);
     private static final long COMPACTION_METADATA_REPLAY_DELAY_MS = TimeUnit.SECONDS.toMillis(1);
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
@@ -162,17 +167,24 @@ public class S3StreamClient implements StreamClient {
      * Start stream objects compactions.
      */
     private void startStreamObjectsCompactions() {
-        long compactionJitterDelay = ThreadLocalRandom.current().nextInt(STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY);
+        long compactionJitterDelay = STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY <= 0 ? 0
+            : ThreadLocalRandom.current().nextInt(STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY);
 
         scheduledCompactionTaskFuture = streamObjectCompactionScheduler.scheduleWithFixedDelay(() -> {
             try {
                 CompactionHint hint = new CompactionHint(objectManager.getObjectsCount().get());
                 List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
                 operationStreams.forEach(s -> s.compact(hint));
+                if (config.version().isStreamArchiveSupported()) {
+                    int objectsCountAfterCompaction = objectManager.getObjectsCount().get();
+                    StreamObjectArchiveTask.Pressure pressure = archivePressure(objectsCountAfterCompaction,
+                        MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
+                    operationStreams.forEach(stream -> stream.archive(pressure));
+                }
             } catch (Throwable e) {
                 LOGGER.info("run stream object compaction task failed", e);
             }
-        }, compactionJitterDelay, 1, TimeUnit.MINUTES);
+        }, compactionJitterDelay, STREAM_OBJECT_COMPACTION_INTERVAL, TimeUnit.MILLISECONDS);
     }
 
     private CompletableFuture<Stream> openStream0(long streamId, long epoch, Map<String, String> tags,
@@ -412,8 +424,8 @@ public class S3StreamClient implements StreamClient {
 
         void compact(CompactionHint hint) {
             if (isClosed() || stream.snapshotRead()) {
-                // the compaction task may be taking a long time,
-                // so we need to check if the stream is closed before starting the compaction.
+                // A scheduled compaction may start after the Stream is closed. Snapshot-read Streams are read-only
+                // views and must not rewrite or delete the objects backing their snapshot.
                 return;
             }
             long now = System.currentTimeMillis();
@@ -447,7 +459,7 @@ public class S3StreamClient implements StreamClient {
             boolean majorRequiredByObjectCount = shouldRunMajorV1CompactionByObjectCount(hint.objectsCount,
                 MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
             List<StreamObjectCompactor.CompactionType> compactionTypes = v1CompactionTypes(majorDue, minorDue,
-                majorRequiredByObjectCount, config.version().isStreamArchiveSupported());
+                majorRequiredByObjectCount);
             for (int i = 0; i < compactionTypes.size(); i++) {
                 StreamObjectCompactor.CompactionType compactionType = compactionTypes.get(i);
                 if (i > 0) {
@@ -482,15 +494,41 @@ public class S3StreamClient implements StreamClient {
                 && hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD ? MINOR_V1_COMPACTION_SIZE : 0;
             StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
                 .objectManager(objectManager)
-                .streamManager(streamManager)
                 .stream(this)
                 .objectStorage(objectStorage)
                 .groupSizeThreshold(groupSizeThreshold)
-                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize)
-                .archiveCleanupEnabled(config.version().isStreamArchiveSupported())
-                .archiveCleanupCache(archiveCleanupCache);
+                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
 
             taskBuilder.build().compact(compactionType);
+        }
+
+        private void archive(StreamObjectArchiveTask.Pressure pressure) {
+            if (isClosed() || stream.snapshotRead()
+                || System.currentTimeMillis() - openedTimestamp < COMPACTION_COOLDOWN_AFTER_OPEN_STREAM) {
+                return;
+            }
+            try {
+                boolean cleanupHealthy = StreamObjectArchiveCleanupTask.builder()
+                    .streamManager(streamManager)
+                    .objectStorage(objectStorage)
+                    .stream(this)
+                    .cache(archiveCleanupCache)
+                    .build()
+                    .cleanup();
+                if (!cleanupHealthy) {
+                    return;
+                }
+                StreamObjectArchiveTask.builder()
+                    .objectManager(objectManager)
+                    .streamManager(streamManager)
+                    .objectStorage(objectStorage)
+                    .stream(this)
+                    .pressure(pressure)
+                    .build()
+                    .archive();
+            } catch (Throwable e) {
+                LOGGER.error("[STREAM_OBJECT_ARCHIVE_FAIL],[UNEXPECTED],streamId={}", streamId(), e);
+            }
         }
     }
 
@@ -504,7 +542,7 @@ public class S3StreamClient implements StreamClient {
     }
 
     static List<StreamObjectCompactor.CompactionType> v1CompactionTypes(boolean majorDue, boolean minorDue,
-        boolean majorRequiredByObjectCount, boolean archiveSupported) {
+        boolean majorRequiredByObjectCount) {
         StreamObjectCompactor.CompactionType scheduledType;
         if (majorDue) {
             scheduledType = MAJOR_V1;
@@ -521,10 +559,16 @@ public class S3StreamClient implements StreamClient {
         } else {
             types = new ArrayList<>(List.of(scheduledType));
         }
-        if (archiveSupported && types.contains(MAJOR_V1)) {
-            types.add(ARCHIVE);
-        }
         return types;
+    }
+
+    @VisibleForTesting
+    static StreamObjectArchiveTask.Pressure archivePressure(int objectsCount, int maxObjectThreshold) {
+        if (objectsCount >= maxObjectThreshold) {
+            return StreamObjectArchiveTask.Pressure.HIGH;
+        }
+        return shouldRunMajorV1CompactionByObjectCount(objectsCount, maxObjectThreshold)
+            ? StreamObjectArchiveTask.Pressure.MEDIUM : StreamObjectArchiveTask.Pressure.LOW;
     }
 
     static class CompactionHint {
