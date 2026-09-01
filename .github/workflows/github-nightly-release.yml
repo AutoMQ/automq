@@ -38,6 +38,9 @@ jobs:
       - name: Build TarGz
         run: ./gradlew -Pprefix=automq-nightly_ --build-cache --refresh-dependencies clean releaseTarGz
 
+      - name: Verify release license manifest
+        run: python3 ./committer-tools/verify_license.py --skip-build
+
       - name: GitHub Release
         uses: softprops/action-gh-release@v1
         with:
