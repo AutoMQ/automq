@@ -219,7 +219,7 @@ public class FileDescriptorConverter implements DynamicSchemaConverter<Descripto
         for (DescriptorProtos.DescriptorProto.ExtensionRange range : descriptor.getExtensionRangeList()) {
             List<Object> values = new ArrayList<>();
             values.add(new IntRange(range.getStart(), range.getEnd() - 1));
-            builder.addExtension(new ExtensionsElement(DEFAULT_LOCATION, "", values));
+            builder.addExtension(new ExtensionsElement(DEFAULT_LOCATION, "", values, Collections.emptyList()));
         }
     }
 
