@@ -193,7 +193,7 @@ versions += [
   avro: "1.11.4",
   confluentSchema: "7.8.0",
   iceberg: "1.6.1",
-  wire: "4.9.1",
+  wire: "6.3.0",
   oshi: "6.8.1",
   cloudevents: "4.0.1",
   // AutoMQ inject end
