@@ -32,6 +32,7 @@ import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.Systems;
 import com.google.common.annotations.VisibleForTesting;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

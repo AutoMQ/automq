@@ -19,13 +19,13 @@
 
 package com.automq.stream.s3.metadata;
 
-import java.util.Locale;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.ObjectStorage;
+
+import java.util.List;
+import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Defines the deterministic object-storage namespace for archived Normal and Composite Stream Objects.

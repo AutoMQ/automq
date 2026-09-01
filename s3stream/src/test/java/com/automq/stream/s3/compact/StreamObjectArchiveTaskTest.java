@@ -38,8 +38,8 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.s3.operator.Writer;
-import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamArchiveOperation;
+import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 
 import org.junit.jupiter.api.Tag;

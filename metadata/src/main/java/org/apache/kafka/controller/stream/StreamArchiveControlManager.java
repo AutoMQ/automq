@@ -324,7 +324,7 @@ final class StreamArchiveControlManager {
         }
     }
 
-    private final class ArchivePublishHandler {
+    private static final class ArchivePublishHandler {
         ControllerResult<UpdateStreamResponse> handle(S3StreamArchiveMetadata current,
             ArchivePublish desired, UpdateStreamResponse response) {
             if (!isValid(desired)) {
@@ -358,7 +358,7 @@ final class StreamArchiveControlManager {
         }
     }
 
-    private final class CleanupPrepareHandler {
+    private static final class CleanupPrepareHandler {
         ControllerResult<UpdateStreamResponse> handle(S3StreamArchiveMetadata current,
             CleanupPrepare desired, UpdateStreamResponse response) {
             if (!isValid(desired)) {
@@ -394,7 +394,7 @@ final class StreamArchiveControlManager {
         }
     }
 
-    private final class CleanupCommitHandler {
+    private static final class CleanupCommitHandler {
         ControllerResult<UpdateStreamResponse> handle(S3StreamArchiveMetadata current,
             CleanupCommit desired, UpdateStreamResponse response) {
             if (!isValid(desired)) {
@@ -427,7 +427,7 @@ final class StreamArchiveControlManager {
         }
     }
 
-    private final class AdvanceEmptyCursorHandler {
+    private static final class AdvanceEmptyCursorHandler {
         ControllerResult<UpdateStreamResponse> handle(StreamRuntimeMetadata stream,
             S3StreamArchiveMetadata current, AdvanceEmptyCursor desired, UpdateStreamResponse response) {
             if (!isValid(desired)) {
