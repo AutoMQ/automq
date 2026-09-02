@@ -982,6 +982,7 @@ project(':core') {
     implementation libs.joptSimple
     implementation libs.jose4j
 
+    // AutoMQ inject start
     // Keep table-topic transitive dependencies on supported patch versions at the core runtime boundary.
     constraints {
       implementation "org.apache.parquet:parquet-avro:${versions.parquet}"
@@ -999,6 +1000,7 @@ project(':core') {
       implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
       implementation "commons-beanutils:commons-beanutils:${versions.beanutils}"
     }
+    // AutoMQ inject end
     implementation libs.metrics
     implementation libs.scalaCollectionCompat
     implementation libs.scalaJava8Compat
