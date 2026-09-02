@@ -86,6 +86,7 @@ versions += [
   apacheds: "2.0.0-M24",
   argparse4j: "0.7.0",
   bcpkix: "1.75",
+  bcprov: "1.84",
   caffeine: "2.9.3", // 3.x supports JDK 11 and above
   // when updating checkstyle, check whether the exclusion of
   // CVE-2023-2976 and CVE-2020-8908 can be dropped from
@@ -99,16 +100,15 @@ versions += [
   grgit: "4.1.1",
   httpclient: "4.5.14",
   // AutoMQ inject start
-  jackson: "2.20.0",
-  // jackson-annotations uses "2.20" instead of "2.20.0"
-  jacksonAnnotationsVersion: "2.20",
+  jackson: "2.21.5",
+  // jackson-annotations uses a short version instead of the full Jackson version
+  jacksonAnnotationsVersion: "2.21",
   // AutoMQ inject end
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
   jetty: "9.4.58.v20250814",
   jersey: "2.39.1",
-  jline: "3.25.1",
-  jline: "3.25.1",
+  jline: "3.30.14",
   jmh: "1.37",
   hamcrest: "2.2",
   scalaLogging: "3.9.5",
@@ -118,7 +118,7 @@ versions += [
   jaxrs: "2.1.1",
   jfreechart: "1.0.0",
   jopt: "5.0.4",
-  jose4j: "0.9.4",
+  jose4j: "0.9.6",
   junit: "5.10.2",
   jqwik: "1.8.3",
   kafka_0100: "0.10.0.1",
@@ -146,8 +146,9 @@ versions += [
   kafka_37: "3.7.2",
   kafka_38: "3.8.1",
   // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
-  lz4: "1.8.0",
+  lz4: "1.10.1",
   mavenArtifact: "3.9.6",
+  plexusUtils: "3.6.1",
   metrics: "2.2.0",
   netty: "4.1.137.Final",
   opentelemetryProto: "1.0.0-alpha",
@@ -174,10 +175,17 @@ versions += [
   snappy: "1.1.10.5",
   spotbugs: "4.8.6",
   zinc: "1.9.2",
-  zookeeper: "3.8.4",
+  zookeeper: "3.8.6",
 
   // AutoMQ inject start
-  commonLang: "3.12.0",
+  commonLang: "3.18.0",
+  parquet: "1.15.2",
+  parquetJackson: "1.18.0",
+  thrift: "0.23.0",
+  ant: "1.10.15",
+  aircompressor: "2.0.3",
+  httpcore5: "5.4.3",
+  beanutils: "1.11.0",
   commonio: "2.15.1",
   commonMath3: "3.6.1",
   opentelemetrySDK: "1.40.0",
@@ -282,7 +290,7 @@ libs += [
   kafkaStreams_36: "org.apache.kafka:kafka-streams:$versions.kafka_36",
   kafkaStreams_37: "org.apache.kafka:kafka-streams:$versions.kafka_37",
   kafkaStreams_38: "org.apache.kafka:kafka-streams:$versions.kafka_38",
-  lz4: "org.lz4:lz4-java:$versions.lz4",
+  lz4: "at.yawk.lz4:lz4-java:$versions.lz4",
   metrics: "com.yammer.metrics:metrics-core:$versions.metrics",
   dropwizardMetrics: "io.dropwizard.metrics:metrics-core:$versions.dropwizardMetrics",
   mockitoCore: "org.mockito:$mockitoArtifactName:$mockitoVersion",
