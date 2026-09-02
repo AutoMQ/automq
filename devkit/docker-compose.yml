@@ -1,4 +1,5 @@
 x-automq-common: &automq-common
+  image: automq-devkit:jdk21
   build:
     context: .
     dockerfile: Dockerfile
@@ -14,8 +15,7 @@ x-automq-common: &automq-common
   environment:
     - KAFKA_S3_ACCESS_KEY=${KAFKA_S3_ACCESS_KEY}
     - KAFKA_S3_SECRET_KEY=${KAFKA_S3_SECRET_KEY}
-    - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m -XX:MaxDirectMemorySize=1G}
-    - KAFKA_JVM_PERFORMANCE_OPTS=-server -XX:+UseZGC -XX:ZCollectionInterval=5
+    - KAFKA_HEAP_OPTS=${KAFKA_HEAP_OPTS:--Xms1g -Xmx4g -XX:MetaspaceSize=96m}
     - LOG_DIR=/tmp/kafka-logs
   depends_on:
     mc:

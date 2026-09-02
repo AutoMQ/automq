@@ -87,12 +87,6 @@ public class Failover {
             WriteAheadLog wal = factory.getWal(request);
             try {
                 wal.start();
-            } catch (WALNotInitializedException ex) {
-                LOGGER.info("fail over empty wal {}", request);
-                return resp;
-            }
-
-            try {
                 WALMetadata metadata = wal.metadata();
                 if (nodeId != metadata.nodeId()) {
                     throw new IllegalArgumentException(String.format("nodeId mismatch, request=%s, wal=%s", request, metadata));
@@ -106,8 +100,11 @@ public class Failover {
                 ObjectManager objectManager = factory.getObjectManager(nodeId, nodeEpoch);
                 LOGGER.info("failover recover {}", request);
                 walRecover.recover(wal, streamManager, objectManager, taskLogger);
+            } catch (WALNotInitializedException ex) {
+                LOGGER.info("fail over empty wal {}", request);
+                return resp;
             } finally {
-                wal.shutdownGracefully();
+                FutureUtil.suppress(wal::shutdownGracefully, LOGGER);
             }
             LOGGER.info("failover done {}", request);
             return resp;

@@ -76,7 +76,7 @@ public class ConfirmWal implements WriteAheadLog {
         this.factory = factory;
         this.nodeManager = nodeManager;
         this.walHandle = walHandle;
-        this.executor = Threads.newFixedThreadPoolWithMonitor(2, name, true, logger);
+        this.executor = Threads.newFixedThreadPool(2, name, true, logger);
 
         try {
             // Init register node config if the node is the first time to start.

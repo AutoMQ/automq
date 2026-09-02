@@ -42,14 +42,12 @@ public enum S3Operation {
     READ_STORAGE(S3MetricsType.S3Storage, "read"),
     READ_STORAGE_LOG_CACHE(S3MetricsType.S3Storage, "read_log_cache"),
     READ_STORAGE_BLOCK_CACHE(S3MetricsType.S3Storage, "read_block_cache"),
-    BLOCK_CACHE_READ_AHEAD(S3MetricsType.S3Storage, "read_ahead"),
     /* S3 storage operations end */
 
     /* S3 request operations start */
     GET_OBJECT(S3MetricsType.S3Request, "get_object"),
     PUT_OBJECT(S3MetricsType.S3Request, "put_object"),
     LIST_OBJECTS(S3MetricsType.S3Request, "list_objects"),
-    DELETE_OBJECT(S3MetricsType.S3Request, "delete_object"),
     DELETE_OBJECTS(S3MetricsType.S3Request, "delete_objects"),
     CREATE_MULTI_PART_UPLOAD(S3MetricsType.S3Request, "create_multi_part_upload"),
     UPLOAD_PART(S3MetricsType.S3Request, "upload_part"),

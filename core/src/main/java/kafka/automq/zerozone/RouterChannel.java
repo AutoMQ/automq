@@ -48,6 +48,10 @@ public interface RouterChannel {
             return epoch;
         }
 
+        /**
+         * Returns the immutable, unpooled channel offset. The buffer is GC-managed, so callers must not mutate or
+         * release it.
+         */
         public ByteBuf channelOffset() {
             return channelOffset;
         }

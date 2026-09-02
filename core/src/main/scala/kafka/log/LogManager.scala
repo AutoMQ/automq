@@ -17,6 +17,8 @@
 
 package kafka.log
 
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog, OpenHint}
 
 import java.io._
@@ -49,6 +51,7 @@ import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.server.util.{FileLock, Scheduler}
 import org.apache.kafka.storage.internals.log.{CleanerConfig, LogConfig, LogDirFailureChannel, ProducerStateManagerConfig}
 import org.apache.kafka.storage.internals.checkpoint.CleanShutdownFileHandler
+import org.slf4j.LoggerFactory
 
 import java.util
 import scala.annotation.nowarn
@@ -87,6 +90,11 @@ class LogManager(logDirs: Seq[File],
                  val initialTaskDelayMs: Long) extends Logging {
 
   import LogManager._
+
+  // AutoMQ inject start
+  override protected lazy val logger: Logger =
+    Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+  // AutoMQ inject end
 
   private val metricsGroup = new KafkaMetricsGroup(this.getClass)
 

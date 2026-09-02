@@ -65,7 +65,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
-import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
@@ -254,9 +253,12 @@ public class ElasticLogFileRecords implements AutoCloseable {
         streamSlice.seal();
     }
 
+    /**
+     * Prevents new operations without waiting for the last append. The owning log performs its explicit final flush
+     * after segment metadata has been finalized.
+     */
     public void close() {
         status = ElasticResourceStatus.CLOSED;
-        suppress(this::flush, LOGGER);
     }
 
     public void closeHandlers() {
@@ -311,7 +313,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
-        return batchesFrom(FetchContext.DEFAULT, startOffset);
+        return () -> batchIterator(new FetchContext(), startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     public Iterable<RecordBatch> batchesFrom(FetchContext fetchContext, final long startOffset) {
@@ -319,7 +321,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, long maxOffset, int fetchSize) {
-        return batchIterator(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize);
+        return batchIterator(new FetchContext(), startOffset, maxOffset, fetchSize);
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(FetchContext fetchContext, long startOffset, long maxOffset, int fetchSize) {
@@ -539,7 +541,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
             }
             Records records;
             try {
-                records = elasticLogFileRecords.readAll0(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize).get();
+                records = elasticLogFileRecords.readAll0(new FetchContext(), startOffset, maxOffset, fetchSize).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }

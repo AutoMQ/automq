@@ -74,4 +74,9 @@ public class DefaultQuorumControllerExtension implements QuorumControllerExtensi
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
         return Optional.empty();
     }
+
+    @Override
+    public void onBrokerFenced(int brokerId) {
+        failoverControlManager.triggerFailover();
+    }
 }

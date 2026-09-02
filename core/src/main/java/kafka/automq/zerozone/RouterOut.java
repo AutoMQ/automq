@@ -21,6 +21,7 @@ package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
+import kafka.automq.utils.AsyncSender;
 import kafka.server.streamaspect.ElasticKafkaApis;
 
 import org.apache.kafka.common.Node;
@@ -36,7 +37,6 @@ import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.BucketURI;
@@ -94,7 +94,7 @@ public class RouterOut {
     private final GetRouterOutNode mapping;
     private final ElasticKafkaApis kafkaApis;
     private final Time time;
-    private final NetworkBandwidthLimiter inboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
+    private final NetworkBandwidthLimiter inboundLimiter = GlobalNetworkBandwidthLimiters.instance().inbound();
 
     private final PerfMode perfMode = new PerfMode();
 

@@ -50,9 +50,22 @@ public class ZeroZoneMetricsManager {
         .build());
 
     private static final Metrics.HistogramBundle ROUTER_LATENCY = Metrics.instance().histogram(PREFIX + "router_latency", "ZeroZone route latency", "nanoseconds");
-    public static final DeltaHistogram APPEND_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "append_channel"));
-    public static final DeltaHistogram PROXY_REQUEST_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "out", AttributeKey.stringKey("stage"), "proxy_request"));
-    public static final DeltaHistogram GET_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "in", AttributeKey.stringKey("stage"), "get_channel"));
+    public static final DeltaHistogram OUT_HANDLE_REQUEST_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("out", "handle_request"));
+    public static final DeltaHistogram OUT_APPEND_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("out", "append_channel"));
+    public static final DeltaHistogram OUT_REQUEST_TARGET_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("out", "request_target"));
+    public static final DeltaHistogram IN_HANDLE_REQUEST_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("in", "handle_request"));
+    public static final DeltaHistogram IN_GET_CHANNEL_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("in", "get_channel"));
+    public static final DeltaHistogram IN_APPEND_PARTITION_LATENCY = ROUTER_LATENCY.histogram(MetricsLevel.INFO,
+        latencyAttributes("in", "append_partition"));
+
+    private static Attributes latencyAttributes(String operation, String stage) {
+        return Attributes.of(AttributeKey.stringKey("operation"), operation, AttributeKey.stringKey("stage"), stage);
+    }
 
     public static void recordRouterOutBytes(int toNodeId, int bytes) {
         try {

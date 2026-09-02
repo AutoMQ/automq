@@ -116,8 +116,10 @@ jobs:
         if: ${{ always() }}
         with:
           name: ${{ inputs.suite-id }}
-          retention-days: 3
-          compression-level: 1
+          # E2E result directories can be several GiB per suite; keep only the
+          # short debugging window needed after scheduled runs.
+          retention-days: 1
+          compression-level: 6
           path: |
             results/
       - name: show results

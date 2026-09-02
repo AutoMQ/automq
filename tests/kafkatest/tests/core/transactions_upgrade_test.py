@@ -217,8 +217,6 @@ class TransactionsUpgradeTest(Test):
         security_protocol = 'PLAINTEXT'
         self.kafka.security_protocol = security_protocol
         self.kafka.interbroker_security_protocol = security_protocol
-        self.kafka.logs["kafka_data_1"]["collect_default"] = True
-        self.kafka.logs["kafka_data_2"]["collect_default"] = True
         self.kafka.logs["kafka_operational_logs_debug"]["collect_default"] = True
 
         self.setup_topics()

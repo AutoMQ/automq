@@ -19,55 +19,69 @@
 
 package kafka.server;
 
+import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.Executor;
+
 /**
- * A limiter that does nothing.
+ * A limiter adapter that admits every acquisition without retaining capacity.
  */
-public class NoopLimiter implements Limiter {
+public final class NoopLimiter implements Limiter {
+    private static final Logger LOGGER = LoggerFactory.getLogger(NoopLimiter.class);
+    private static final Executor EXECUTOR = Threads.newFixedThreadPool(1, "noop-fetch-executor", true, LOGGER);
 
     public static final NoopLimiter INSTANCE = new NoopLimiter();
 
-    @Override
-    public Handler acquire(int permit) throws InterruptedException {
-        return new NoopHandler();
+    private NoopLimiter() {
     }
 
     @Override
-    public Handler acquire(int permit, long timeoutMs) throws InterruptedException {
-        return new NoopHandler();
+    public Permit acquire(long permits, AcquireContext context) {
+        if (permits < 0) {
+            throw new IllegalArgumentException("permits must not be negative");
+        }
+        if (context == null) {
+            throw new IllegalArgumentException("context must not be null");
+        }
+        return new NoopPermit(permits);
     }
 
     @Override
-    public int maxPermits() {
-        return Integer.MAX_VALUE;
+    public void execute(String connectionId, Runnable task) {
+        EXECUTOR.execute(task);
     }
 
-    @Override
-    public int availablePermits() {
-        return Integer.MAX_VALUE;
-    }
+    private static final class NoopPermit implements Permit {
+        private long permitsHeld;
 
-    @Override
-    public int waitingThreads() {
-        return 0;
-    }
+        private NoopPermit(long permitsHeld) {
+            this.permitsHeld = permitsHeld;
+        }
 
-    @Override
-    public String name() {
-        return "noop";
-    }
+        @Override
+        public void markResponseReady() {
+        }
 
-    public static class NoopHandler implements Handler {
         @Override
         public void close() {
+            permitsHeld = 0;
         }
 
         @Override
-        public void release(int permits) {
+        public boolean releaseTo(long newPermits) {
+            if (newPermits < 0 || newPermits > permitsHeld) {
+                return false;
+            }
+            permitsHeld = newPermits;
+            return true;
         }
 
         @Override
-        public int permitsHeld() {
-            return 0;
+        public long permitsHeld() {
+            return permitsHeld;
         }
     }
 }

@@ -50,11 +50,17 @@ class ConsumerEventHandler(object):
         self.committed = {}
         self.total_consumed = 0
         self.verify_offsets = verify_offsets
+        # // AutoMQ inject start
+        self.shutdown_complete = False
+        # // AutoMQ inject end
 
     def handle_shutdown_complete(self, node=None, logger=None):
         self.state = ConsumerState.Dead
         self.assignment = []
         self.position = {}
+        # // AutoMQ inject start
+        self.shutdown_complete = True
+        # // AutoMQ inject end
 
         if node is not None and logger is not None:
             logger.debug("Shut down %s" % node.account.hostname)
@@ -253,6 +259,9 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin, Backgrou
                 else:
                     self.event_handlers[node] = IncrementalAssignmentConsumerEventHandler(node, self.verify_offsets, idx)
             handler = self.event_handlers[node]
+            # // AutoMQ inject start
+            handler.shutdown_complete = False
+            # // AutoMQ inject end
 
         node.account.ssh("mkdir -p %s" % VerifiableConsumer.PERSISTENT_ROOT, allow_fail=False)
 
@@ -479,6 +488,13 @@ class VerifiableConsumer(KafkaPathResolverMixin, VerifiableClientMixin, Backgrou
         with self.lock:
             return [handler.node for handler in self.event_handlers.values()
                     if handler.state != ConsumerState.Dead]
+
+    # // AutoMQ inject start
+    def shutdown_complete_nodes(self):
+        with self.lock:
+            return [handler.node for handler in self.event_handlers.values()
+                    if handler.shutdown_complete]
+    # // AutoMQ inject end
 
     def is_consumer_group_protocol_enabled(self):
         return self.group_protocol and self.group_protocol.upper() == "CONSUMER"

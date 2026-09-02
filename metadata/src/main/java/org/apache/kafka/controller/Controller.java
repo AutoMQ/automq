@@ -650,5 +650,8 @@ public interface Controller extends AclMutator, AutoCloseable {
             BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
         return Optional.empty();
     }
+
+    default void onBrokerFenced(int brokerId) {
+    }
     // AutoMQ for Kafka inject end
 }

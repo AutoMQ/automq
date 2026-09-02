@@ -19,9 +19,6 @@
 
 package com.automq.stream.s3.network;
 
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.NetworkStats;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.Threads;
 
@@ -50,17 +47,15 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private final ScheduledExecutorService refillThreadPool;
     private final ExecutorService callbackThreadPool;
     private final Queue<BucketItem> queuedCallbacks;
-    private final Type type;
     private final long tokenSize;
     private final AtomicLong availableTokens;
 
-    public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs) {
-        this(type, tokenSize, refillIntervalMs, tokenSize);
+    public AsyncNetworkBandwidthLimiter(long tokenSize, int refillIntervalMs) {
+        this(tokenSize, refillIntervalMs, tokenSize);
     }
 
     @SuppressWarnings("this-escape")
-    public AsyncNetworkBandwidthLimiter(Type type, long tokenSize, int refillIntervalMs, long maxTokens) {
-        this.type = type;
+    public AsyncNetworkBandwidthLimiter(long tokenSize, int refillIntervalMs, long maxTokens) {
         this.tokenSize = tokenSize;
         this.availableTokens = new AtomicLong(this.tokenSize);
         this.maxTokens = maxTokens;
@@ -68,12 +63,9 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.refillThreadPool =
             Threads.newSingleThreadScheduledExecutor(new DefaultThreadFactory("refill-bucket-thread"), LOGGER);
         // The threads number must be larger than 1 because the #run will occupy one thread.
-        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(2, "callback-thread", true, LOGGER);
+        this.callbackThreadPool = Threads.newFixedFastThreadLocalThreadPool(2, "callback-thread", true, LOGGER);
         this.callbackThreadPool.execute(this::run);
         this.refillThreadPool.scheduleAtFixedRate(this::refillToken, refillIntervalMs, refillIntervalMs, TimeUnit.MILLISECONDS);
-        S3StreamMetricsManager.registerNetworkLimiterQueueSizeSupplier(type, this::getQueueSize);
-        LOGGER.info("AsyncNetworkBandwidthLimiter initialized, type: {}, tokenSize: {}, maxTokens: {}, refillIntervalMs: {}",
-            type.getName(), tokenSize, maxTokens, refillIntervalMs);
     }
 
     private void run() {
@@ -132,6 +124,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         return availableTokens.get();
     }
 
+    @Override
     public int getQueueSize() {
         lock.lock();
         try {
@@ -147,7 +140,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
 
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((v, e) -> NetworkStats.getInstance().networkUsageTotalStats(type, throttleStrategy).add(MetricsLevel.INFO, size));
         if (Objects.requireNonNull(throttleStrategy) == ThrottleStrategy.BYPASS) {
             forceConsume(size);
             cf.complete(null);
@@ -175,22 +167,7 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
         this.availableTokens.getAndUpdate(old -> Math.max(-maxTokens, old - size));
     }
 
-    public enum Type {
-        INBOUND("Inbound"),
-        OUTBOUND("Outbound");
-
-        private final String name;
-
-        Type(String name) {
-            this.name = name;
-        }
-
-        public String getName() {
-            return name;
-        }
-    }
-
-    private class BucketItem implements Comparable<BucketItem> {
+    private static class BucketItem implements Comparable<BucketItem> {
         private final ThrottleStrategy strategy;
         private final CompletableFuture<Void> cf;
         private final long timestamp;
@@ -215,7 +192,6 @@ public class AsyncNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             size -= completeSize;
             if (size <= 0) {
                 executor.submit(() -> cf.complete(null));
-                NetworkStats.getInstance().networkLimiterQueueTimeStats(type, strategy).record(System.nanoTime() - timestamp);
                 return true;
             }
             return false;

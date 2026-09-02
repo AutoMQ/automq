@@ -41,6 +41,7 @@ public class AutomqUpdateGroupRequest extends AbstractRequest {
     public AbstractResponse getErrorResponse(int throttleTimeMs, Throwable e) {
         ApiError apiError = ApiError.fromThrowable(e);
         AutomqUpdateGroupResponseData response = new AutomqUpdateGroupResponseData()
+            .setGroupId(data.groupId())
             .setErrorCode(apiError.error().code())
             .setThrottleTimeMs(throttleTimeMs);
         return new AutomqUpdateGroupResponse(response);

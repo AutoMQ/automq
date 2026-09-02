@@ -32,18 +32,23 @@ import org.apache.kafka.storage.internals.log.LogOffsetMetadata;
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.ConfirmWAL;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -58,9 +63,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 public class PartitionSnapshotsManagerTest {
     private MockTime time;
     private ConfirmWAL confirmWAL;
@@ -130,6 +137,7 @@ public class PartitionSnapshotsManagerTest {
 
     @Test
     public void testConfirmWalDeltaWakesPendingLongPoll() throws Exception {
+        Deque<Runnable> longPollTasks = useManualLongPollExecutor();
         when(confirmWAL.confirmOffset()).thenReturn(DefaultRecordOffset.of(1, 0, 0));
         AutomqGetPartitionSnapshotResponse first = manager.handle(request(0, 0, false, (short) 1, (short) 2))
             .get(1, TimeUnit.SECONDS);
@@ -138,6 +146,8 @@ public class PartitionSnapshotsManagerTest {
             request(first.data().sessionId(), first.data().sessionEpoch(), false, (short) 1, (short) 2));
         assertFalse(second.isDone());
         appendWalRecord(0, 0);
+        assertEquals(1, longPollTasks.size());
+        longPollTasks.removeFirst().run();
 
         AutomqGetPartitionSnapshotResponse walOffsetResponse = second.get(1, TimeUnit.SECONDS);
         assertTrue(walOffsetResponse.data().topics().isEmpty());
@@ -147,6 +157,8 @@ public class PartitionSnapshotsManagerTest {
             request(walOffsetResponse.data().sessionId(), walOffsetResponse.data().sessionEpoch(), false, (short) 1, (short) 2));
         assertFalse(third.isDone());
         appendWalRecord(1, 1);
+        assertEquals(1, longPollTasks.size());
+        longPollTasks.removeFirst().run();
 
         AutomqGetPartitionSnapshotResponse walDeltaResponse = third.get(1, TimeUnit.SECONDS);
         assertTrue(walDeltaResponse.data().topics().isEmpty());
@@ -322,7 +334,7 @@ public class PartitionSnapshotsManagerTest {
     }
 
     private void appendWalRecord(long baseOffset, long walOffset) {
-        StreamRecordBatch record = StreamRecordBatch.of(1, 2, baseOffset, 1, Unpooled.wrappedBuffer(new byte[1]));
+        StreamRecordBatch record = StreamRecordBatch.of(1, 2, baseOffset, 1, Unpooled.wrappedBuffer(new byte[1]), DefaultByteBufSupplier.INSTANCE);
         appendListener.get().onAppend(
             record,
             DefaultRecordOffset.of(1, walOffset, 1),
@@ -335,6 +347,21 @@ public class PartitionSnapshotsManagerTest {
         Field field = PartitionSnapshotsManager.class.getDeclaredField("longPollExecutor");
         field.setAccessible(true);
         return (ScheduledExecutorService) field.get(manager);
+    }
+
+    private Deque<Runnable> useManualLongPollExecutor() throws Exception {
+        Deque<Runnable> tasks = new ArrayDeque<>();
+        ScheduledExecutorService executor = mock(ScheduledExecutorService.class);
+        ScheduledFuture<?> timeout = mock(ScheduledFuture.class);
+        doReturn(timeout).when(executor).schedule(any(Runnable.class), anyLong(), any(TimeUnit.class));
+        doAnswer(invocation -> {
+            tasks.addLast(invocation.getArgument(0));
+            return null;
+        }).when(executor).execute(any(Runnable.class));
+        Field field = PartitionSnapshotsManager.class.getDeclaredField("longPollExecutor");
+        field.setAccessible(true);
+        field.set(manager, executor);
+        return tasks;
     }
 
     private static Partition partition(Uuid topicId, int partitionId, int leaderEpoch, long endOffset) {

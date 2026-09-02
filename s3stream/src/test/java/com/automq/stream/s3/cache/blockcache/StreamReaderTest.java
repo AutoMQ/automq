@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache.blockcache;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -35,6 +36,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -57,6 +59,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
@@ -90,21 +93,21 @@ public class StreamReaderTest {
         // object=6 [24, 29)
         // object=7 [29, 34)
         objects.put(0L, MockObject.builder(0, BLOCK_SIZE_THRESHOLD).mockDelay(100).write(STREAM_ID, List.of(
-            StreamRecordBatch.of(STREAM_ID, 0, 0, 1, TestUtils.random(1))
+            StreamRecordBatch.of(STREAM_ID, 0, 0, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE)
         )).build());
         objects.put(1L, MockObject.builder(1L, 1).mockDelay(100).write(STREAM_ID, List.of(
-            StreamRecordBatch.of(STREAM_ID, 0, 1, 1, TestUtils.random(19)),
-            StreamRecordBatch.of(STREAM_ID, 0, 2, 1, TestUtils.random(10)),
-            StreamRecordBatch.of(STREAM_ID, 0, 3, 1, TestUtils.random(10))
+            StreamRecordBatch.of(STREAM_ID, 0, 1, 1, TestUtils.random(19), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 2, 1, TestUtils.random(10), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 3, 1, TestUtils.random(10), DefaultByteBufSupplier.INSTANCE)
         )).build());
         for (int i = 0; i < 6; i++) {
             long offset = 4 + i * 5;
             objects.put(i + 2L, MockObject.builder(i + 2L, BLOCK_SIZE_THRESHOLD).mockDelay(100).write(STREAM_ID, List.of(
-                StreamRecordBatch.of(STREAM_ID, 0, offset, 1, TestUtils.random(1024 * 1024 / 4)),
-                StreamRecordBatch.of(STREAM_ID, 0, offset + 1, 1, TestUtils.random(1024 * 1024 / 4)),
-                StreamRecordBatch.of(STREAM_ID, 0, offset + 2, 1, TestUtils.random(1024 * 1024 / 4)),
-                StreamRecordBatch.of(STREAM_ID, 0, offset + 3, 1, TestUtils.random(1024 * 1024 / 4)),
-                StreamRecordBatch.of(STREAM_ID, 0, offset + 4, 1, TestUtils.random(1024 * 1024 / 4))
+                StreamRecordBatch.of(STREAM_ID, 0, offset, 1, TestUtils.random(1024 * 1024 / 4), DefaultByteBufSupplier.INSTANCE),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 1, 1, TestUtils.random(1024 * 1024 / 4), DefaultByteBufSupplier.INSTANCE),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 2, 1, TestUtils.random(1024 * 1024 / 4), DefaultByteBufSupplier.INSTANCE),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 3, 1, TestUtils.random(1024 * 1024 / 4), DefaultByteBufSupplier.INSTANCE),
+                StreamRecordBatch.of(STREAM_ID, 0, offset + 4, 1, TestUtils.random(1024 * 1024 / 4), DefaultByteBufSupplier.INSTANCE)
             )).build());
         }
 
@@ -126,6 +129,58 @@ public class StreamReaderTest {
         };
         dataBlockCache = spy(new DataBlockCache(Long.MAX_VALUE, eventLoops));
         streamReader = new StreamReader(STREAM_ID, 0, eventLoops[0], objectManager, objectReaderFactory, dataBlockCache);
+    }
+
+    /**
+     * Given a block-index load made discontinuous by an object compaction race, when the reader retries, then it
+     * reloads the object metadata and completes the original read.
+     */
+    @Test
+    public void testReadRetryAfterDiscontinuousBlockIndexLoad() throws Exception {
+        MockObject compactedObject = MockObject.builder(8L, BLOCK_SIZE_THRESHOLD).write(STREAM_ID, List.of(
+            StreamRecordBatch.of(STREAM_ID, 0, 0, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 1, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 2, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 3, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(STREAM_ID, 0, 4, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE)
+        )).build();
+        objects.put(8L, compactedObject);
+        when(objectManager.getObjects(STREAM_ID, 0L, 4L, GET_OBJECT_STEP))
+            .thenReturn(CompletableFuture.completedFuture(List.of(
+                objects.get(0L).metadata,
+                objects.get(1L).metadata)));
+        when(objectManager.getObjects(STREAM_ID, 4L, 5L, GET_OBJECT_STEP))
+            .thenReturn(CompletableFuture.completedFuture(List.of(compactedObject.metadata)));
+        when(objectManager.getObjects(STREAM_ID, 1L, 5L, GET_OBJECT_STEP))
+            .thenReturn(CompletableFuture.completedFuture(List.of(compactedObject.metadata)));
+
+        AtomicReference<CompletableFuture<ReadDataBlock>> readCf = new AtomicReference<>();
+        eventLoops[0].submit(() -> streamReader.readahead.reset()).get();
+        eventLoops[0].submit(() -> readCf.set(streamReader.read(0L, 4L, 1))).get();
+
+        ReadDataBlock firstRead = readCf.get().get(5, TimeUnit.SECONDS);
+        assertEquals(List.of(0L), firstRead.getRecords().stream()
+            .map(StreamRecordBatch::getBaseOffset)
+            .toList());
+        firstRead.getRecords().forEach(StreamRecordBatch::release);
+        eventLoops[0].submit(() -> {
+            assertEquals(List.of(1L, 2L, 3L), new ArrayList<>(streamReader.blocksMap.keySet()));
+            assertEquals(4L, streamReader.loadedBlockIndexEndOffset);
+        }).get();
+
+        eventLoops[0].submit(() -> readCf.set(streamReader.read(1L, 5L, Integer.MAX_VALUE))).get();
+
+        ReadDataBlock result = readCf.get().get(5, TimeUnit.SECONDS);
+        assertEquals(List.of(1L, 2L, 3L, 4L), result.getRecords().stream()
+            .map(StreamRecordBatch::getBaseOffset)
+            .toList());
+        result.getRecords().forEach(StreamRecordBatch::release);
+
+        InOrder metadataLoads = inOrder(objectManager);
+        metadataLoads.verify(objectManager).getObjects(STREAM_ID, 0L, 4L, GET_OBJECT_STEP);
+        metadataLoads.verify(objectManager).getObjects(STREAM_ID, 4L, 5L, GET_OBJECT_STEP);
+        metadataLoads.verify(objectManager).getObjects(STREAM_ID, 1L, 5L, GET_OBJECT_STEP);
+        verify(objectManager, times(3)).getObjects(anyLong(), anyLong(), anyLong(), anyInt());
     }
 
     @Test

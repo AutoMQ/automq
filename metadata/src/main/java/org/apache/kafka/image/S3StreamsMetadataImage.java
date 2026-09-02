@@ -23,6 +23,8 @@ import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
@@ -38,9 +40,8 @@ import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamsMetadataMetrics;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.MetadataStats;
 import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
@@ -79,6 +80,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0)
         );
 
@@ -86,6 +88,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
     private final TimelineHashMap<Long/*streamId*/, S3StreamMetadataImage> streamMetadataMap;
     private final TimelineHashMap<Integer/*nodeId*/, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap;
+    private final TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> uncommittedOffsets;
 
     // Partition <-> Streams mapping in memory
     // this should be created only once in each image and not be modified
@@ -101,6 +104,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         RegistryRef registryRef,
         TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap,
         TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap,
+        TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> uncommittedOffsets,
         TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams,
         TimelineHashMap<Long, TopicIdPartition> stream2partition,
         TimelineHashMap<Long, Long> streamEndOffsets
@@ -108,6 +112,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamMetadataMap = streamMetadataMap;
         this.nodeMetadataMap = nodeMetadataMap;
+        this.uncommittedOffsets = uncommittedOffsets;
         this.partition2streams = partition2streams;
         this.stream2partition = stream2partition;
         this.streamEndOffsets = streamEndOffsets;
@@ -133,6 +138,11 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
         List<NodeS3StreamSetObjectMetadataImage> nodeMetadataList = this.nodeMetadataList();
         nodeMetadataList.forEach(v -> v.write(writer, options));
+        if (options.metadataVersion().autoMQVersion().isFastPartitionReassignmentSupported()) {
+            Map<Integer, List<NodeWALUncommittedOffset>> offsetsByNode = nodeWALUncommittedOffsetsByNode();
+            nodeMetadataList.forEach(node -> writeNodeWALUncommittedOffsets(
+                writer, node.getNodeId(), offsetsByNode.getOrDefault(node.getNodeId(), Collections.emptyList())));
+        }
 
         if (options.metadataVersion().autoMQVersion().isHugeClusterSupported()) {
             Map<Long, Long> streamEndOffsetMap = this.streamEndOffsets();
@@ -144,6 +154,30 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 (short) 0
             ));
         }
+    }
+
+    private void writeNodeWALUncommittedOffsets(
+        ImageWriter writer, int nodeId, List<NodeWALUncommittedOffset> offsets
+    ) {
+        List<NodeWALUncommittedOffset> entries = offsets.stream()
+            .sorted(Comparator.comparingLong(NodeWALUncommittedOffset::streamId))
+            .toList();
+        NodeWALUncommittedOffsetsRecords.create(nodeId, entries).forEach(writer::write);
+    }
+
+    private Map<Integer, List<NodeWALUncommittedOffset>> nodeWALUncommittedOffsetsByNode() {
+        if (registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        return registryRef.inLock(() -> {
+            // Preserve raw upload progress in snapshots. Stream-relative activity is evaluated lazily by Controller
+            // consumers, and the next successful commit from a node emits tombstones for its inactive entries.
+            Map<Integer, List<NodeWALUncommittedOffset>> offsetsByNode = new HashMap<>();
+            uncommittedOffsets.entrySet(registryRef.epoch()).forEach(entry -> offsetsByNode
+                .computeIfAbsent(entry.getKey().nodeId(), ignored -> new ArrayList<>())
+                .add(entry.getValue()));
+            return offsetsByNode;
+        });
     }
 
     public CompletableFuture<InRangeObjects> getObjects(long streamId, long startOffset, long endOffset, int limit,
@@ -172,11 +206,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         }
         ctx.cf.whenComplete((r, ex) -> {
             long timeElapsedNanos = TimerUtil.timeElapsedSince(startTimeNanos, TimeUnit.NANOSECONDS);
-            if (ex != null) {
-                MetadataStats.getInstance().getObjectsTimeFailedStats().record(timeElapsedNanos);
-            } else {
-                MetadataStats.getInstance().getObjectsTimeSuccessStats().record(timeElapsedNanos);
-            }
+            S3StreamsMetadataMetrics.recordGetObjectsTime(ex == null, timeElapsedNanos);
         });
         return ctx.cf;
     }
@@ -327,7 +357,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                         streamSetObject.dataTimeInMs()));
                     nextStartOffset = streamOffsetRange.endOffset();
                     if (firstTimeSearchInSSO && ctx.isFromSparseIndex) {
-                        MetadataStats.getInstance().getRangeIndexSkippedObjectNumStats().record(streamSetObjectIndex - finalStartSearchIndex);
+                        S3StreamsMetadataMetrics.recordRangeIndexSkippedObjectNum(streamSetObjectIndex - finalStartSearchIndex);
                         firstTimeSearchInSSO = false;
                     }
                     if (objects.size() >= ctx.limit || (ctx.endOffset != ObjectUtils.NOOP_OFFSET && nextStartOffset >= ctx.endOffset)) {
@@ -432,13 +462,13 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
                 int startIndex = -1;
                 if (objectId >= 0) {
                     startIndex = findStartSearchIndex(objectId, node.orderList());
-                    MetadataStats.getInstance().getRangeIndexHitCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexHit();
                 } else {
-                    MetadataStats.getInstance().getRangeIndexMissCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexMiss();
                 }
                 if (startIndex < 0 && ctx.indexCache.nodeId() != node.getNodeId()) {
                     NodeRangeIndexCache.getInstance().invalidate(node.getNodeId());
-                    MetadataStats.getInstance().getRangeIndexInvalidateCountStats().add(MetricsLevel.INFO, 1);
+                    NodeRangeIndexCache.recordRangeIndexInvalidate();
                 }
                 return Math.max(0, startIndex);
             });
@@ -561,6 +591,35 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return registryRef.inLock(() -> nodeMetadataMap.get(nodeId, registryRef.epoch()));
     }
 
+    /**
+     * Returns the historical WAL responsibility entry for a node and stream, or null when absent.
+     */
+    public NodeWALUncommittedOffset getNodeWALUncommittedOffset(int nodeId, long streamId) {
+        if (registryRef == RegistryRef.NOOP) {
+            return null;
+        }
+        return registryRef.inLock(() ->
+            uncommittedOffsets.get(new NodeWALUncommittedOffsetKey(nodeId, streamId), registryRef.epoch()));
+    }
+
+    /**
+     * Returns an immutable snapshot of the historical WAL responsibility entries for a node.
+     */
+    public Map<Long, NodeWALUncommittedOffset> nodeWALUncommittedOffsets(int nodeId) {
+        if (registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        return registryRef.inLock(() -> {
+            Map<Long, NodeWALUncommittedOffset> offsets = new HashMap<>();
+            uncommittedOffsets.entrySet(registryRef.epoch()).forEach(entry -> {
+                if (entry.getKey().nodeId() == nodeId) {
+                    offsets.put(entry.getKey().streamId(), entry.getValue());
+                }
+            });
+            return Collections.unmodifiableMap(offsets);
+        });
+    }
+
     public Set<Long> getTopicPartitionStreams(Uuid topicId, int partition) {
         if (registryRef == RegistryRef.NOOP) {
             return null;
@@ -587,17 +646,37 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return this.nextAssignedStreamId == other.nextAssignedStreamId
             && this.streamMetadataList().equals(other.streamMetadataList())
             && this.nodeMetadataList().equals(other.nodeMetadataList())
+            && this.uncommittedOffsets().equals(other.uncommittedOffsets())
             && this.streamEndOffsets().equals(other.streamEndOffsets());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(nextAssignedStreamId, streamMetadataList(), nodeMetadataList(), streamEndOffsets());
+        return Objects.hash(nextAssignedStreamId, streamMetadataList(), nodeMetadataList(), uncommittedOffsets(),
+            streamEndOffsets());
     }
 
     // caller use this value should be protected by registryRef lock
     public TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> timelineNodeMetadata() {
         return nodeMetadataMap;
+    }
+
+    // caller use this value should be protected by registryRef lock
+    TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> timelineUncommittedOffsets() {
+        return uncommittedOffsets;
+    }
+
+    Map<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> uncommittedOffsets() {
+        if (registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        return registryRef.inLock(() -> {
+            Map<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> offsets =
+                new HashMap<>(uncommittedOffsets.size());
+            uncommittedOffsets.entrySet(registryRef.epoch()).forEach(entry ->
+                offsets.put(entry.getKey(), entry.getValue()));
+            return offsets;
+        });
     }
 
     List<NodeS3StreamSetObjectMetadataImage> nodeMetadataList() {

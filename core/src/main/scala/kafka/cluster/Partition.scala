@@ -16,10 +16,13 @@
  */
 package kafka.cluster
 
+import com.automq.stream.utils.AsyncLogger
+import com.typesafe.scalalogging.Logger
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
 import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
 import kafka.api.LeaderAndIsr
+import kafka.automq.runtime.DataPathMonitor
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
@@ -47,6 +50,7 @@ import org.apache.kafka.metadata.LeaderRecoveryState
 import org.apache.kafka.server.common.MetadataVersion
 import org.apache.kafka.storage.internals.log.{AppendOrigin, FetchDataInfo, FetchIsolation, FetchParams, LeaderHwChange, LogAppendInfo, LogOffsetMetadata, LogOffsetSnapshot, LogOffsetsListener, LogReadInfo, LogStartOffsetIncrementReason, VerificationGuard}
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
+import org.slf4j.LoggerFactory
 
 import scala.collection.{Map, Seq}
 import scala.jdk.CollectionConverters._
@@ -319,6 +323,10 @@ class Partition(val topicPartition: TopicPartition,
                 alterIsrManager: AlterPartitionManager,
                 @volatile private var _topicId: Option[Uuid] = None // TODO: merge topicPartition and _topicId into TopicIdPartition once TopicId persist in most of the code by KAFKA-16212
                ) extends Logging {
+  // AutoMQ inject start
+  override protected lazy val logger: Logger =
+    Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+  // AutoMQ inject end
 
   import Partition.metricsGroup
   def topic: String = topicPartition.topic
@@ -641,6 +649,20 @@ class Partition(val topicPartition: TopicPartition,
     leaderReplicaIdOpt.filter(_ == localBrokerId)
   }
 
+  // AutoMQ inject start
+  def forceRollLocalLog(): Unit = {
+    checkClosed()
+    if (!isLeader) {
+      throw new NotLeaderOrFollowerException(s"Cannot roll $topicPartition because broker $localBrokerId is not leader")
+    }
+    localLogOrException.roll()
+  }
+
+  def segmentEndOffsetContaining(offset: Long): Long = {
+    localLogOrException.segmentEndOffsetContaining(offset)
+  }
+  // AutoMQ inject end
+
   def localLogWithEpochOrThrow(
     currentLeaderEpoch: Optional[Integer],
     requireLeader: Boolean
@@ -800,7 +822,14 @@ class Partition(val topicPartition: TopicPartition,
       Partition.removeMetrics(topicPartition)
     }
     if (needCloseLog.isDefined) {
-      needCloseLog.get.close()
+      // AutoMQ inject start
+      val closeHandle = DataPathMonitor.recordPartitionCloseStarted(topicPartition)
+      try {
+        needCloseLog.get.close()
+      } finally {
+        closeHandle.close()
+      }
+      // AutoMQ inject end
     }
   }
   // AutoMQ for Kafka inject end

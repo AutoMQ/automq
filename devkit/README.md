@@ -85,8 +85,8 @@ just logs 0 | tail -20          # newest entries
 
 `just logs` only shows container stdout/stderr. Kafka component logs are written
 inside the node container under `/tmp/kafka-logs`, for example
-`/tmp/kafka-logs/server.log`, `controller.log`, `s3-object.log`, and
-`s3stream-threads.log`. Use `just exec` when checking detailed broker logs:
+`/tmp/kafka-logs/server.log`, `controller.log`, and `s3-object.log`. Use
+`just exec` when checking detailed broker logs:
 
 ```bash
 just exec 0 grep -R ERROR /tmp/kafka-logs
@@ -210,7 +210,7 @@ just shell      # Enter node-0 shell — jstack, jmap, jcmd available
 just shell 1    # Enter node-1 shell
 ```
 
-> To change JVM heap size, edit `HEAP_OPTS` in `justfile` (default: `-Xms256m -Xmx256m`).
+> To change the broker JVM heap size, set `KAFKA_HEAP_OPTS` before starting DevKit. The default is `-Xms1g -Xmx4g -XX:MetaspaceSize=96m`.
 
 ## IDEA Remote Debugging
 

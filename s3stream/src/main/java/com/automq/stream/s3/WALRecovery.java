@@ -19,7 +19,7 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -44,7 +44,9 @@ import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
  */
 public class WALRecovery {
     private static final Logger LOGGER = LoggerFactory.getLogger(WALRecovery.class);
-    private static final ByteBufSeqAlloc DECODE_LINK_RECORD_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 1);
+    // Owned by this class for the process lifetime so recovery operations reuse the same slabs.
+    private static final RecyclingByteBufSeqAlloc DECODE_LINK_RECORD_INSTANT_ALLOC =
+        new RecyclingByteBufSeqAlloc(DECODE_RECORD, 1);
 
     /**
      * Recover records from the WAL iterator, putting them into {@link LogCache.LogCacheBlock}s.

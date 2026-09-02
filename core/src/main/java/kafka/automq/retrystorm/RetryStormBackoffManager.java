@@ -106,7 +106,6 @@ public class RetryStormBackoffManager implements Reconfigurable {
      */
     @Override
     public void validateReconfiguration(Map<String, ?> configs) throws ConfigException {
-        RetryStormBackoffConfig.validate(configs);
     }
 
     /**

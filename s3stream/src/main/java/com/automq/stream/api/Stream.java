@@ -87,7 +87,7 @@ public interface Stream {
     CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint);
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return fetch(FetchContext.DEFAULT, startOffset, endOffset, maxBytesHint);
+        return fetch(new FetchContext(), startOffset, endOffset, maxBytesHint);
     }
 
     /**
@@ -98,6 +98,12 @@ public interface Stream {
      * - complete exception with {@link StreamClientException}, when trim fail.
      */
     CompletableFuture<Void> trim(long newStartOffset);
+
+    /**
+     * Hints that this stream may be closed soon. Callers may omit this hint.
+     */
+    default void beforeClose() {
+    }
 
     /**
      * Close the stream.

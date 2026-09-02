@@ -21,6 +21,7 @@ package org.apache.kafka.image;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.controller.stream.KVKey;
+import org.apache.kafka.controller.stream.KVNamespace;
 import org.apache.kafka.image.writer.ImageWriter;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
@@ -44,42 +45,87 @@ public final class KVImage extends AbstractReferenceCounted {
 
     private final RegistryRef registryRef;
 
-    private final TimelineHashMap<KVKey, ByteBuffer> kv;
+    private final TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> kvByNamespace;
 
-    public KVImage(TimelineHashMap<KVKey, ByteBuffer> kv, RegistryRef registryRef) {
+    public KVImage(TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> kvByNamespace,
+                   RegistryRef registryRef) {
         this.registryRef = registryRef;
-        this.kv = kv;
+        this.kvByNamespace = kvByNamespace;
     }
 
     public ByteBuffer getValue(KVKey kvKey) {
-        if (kv == null || registryRef == RegistryRef.NOOP) {
-            return null;
-        }
-        return registryRef.inLock(() -> this.kv.get(kvKey, registryRef.epoch()));
+        return getValue(kvKey.namespace(), kvKey.key());
     }
 
-    public void forEach(BiConsumer<KVKey, ByteBuffer> action) {
-        if (kv == null || registryRef == RegistryRef.NOOP) {
-            return;
+    public ByteBuffer getValue(String namespace, String key) {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
+            return null;
         }
-        registryRef.inLock(() -> {
-            kv.entrySet(registryRef.epoch()).forEach(e -> action.accept(e.getKey(), e.getValue()));
+        return registryRef.inLock(() -> {
+            TimelineHashMap<String, ByteBuffer> namespaceKVs = this.kvByNamespace.get(KVNamespace.of(namespace),
+                registryRef.epoch());
+            return namespaceKVs == null ? null : namespaceKVs.get(key, registryRef.epoch());
         });
     }
 
-    Map<KVKey, ByteBuffer> kvs() {
-        if (kv == null || registryRef == RegistryRef.NOOP) {
+    public Map<String, ByteBuffer> namespaceKVs(String namespace) {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
             return Collections.emptyMap();
         }
         return registryRef.inLock(() -> {
-            Map<KVKey, ByteBuffer> result = new HashMap<>();
-            kv.entrySet(registryRef().epoch()).forEach(e -> result.put(e.getKey(), e.getValue()));
+            TimelineHashMap<String, ByteBuffer> namespaceKVs = kvByNamespace.get(KVNamespace.of(namespace),
+                registryRef.epoch());
+            if (namespaceKVs == null) {
+                return Collections.emptyMap();
+            }
+            Map<String, ByteBuffer> result = new HashMap<>();
+            namespaceKVs.entrySet(registryRef.epoch()).forEach(e -> result.put(e.getKey(), e.getValue()));
             return result;
         });
     }
 
-    public TimelineHashMap<KVKey, ByteBuffer> timelineKVs() {
-        return kv;
+    public List<String> namespaces() {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
+            return Collections.emptyList();
+        }
+        return registryRef.inLock(() -> {
+            List<String> result = new ArrayList<>();
+            kvByNamespace.keySet(registryRef.epoch()).forEach(namespace -> result.add(namespace.namespace()));
+            return result;
+        });
+    }
+
+    Map<KVNamespace, Map<String, ByteBuffer>> kvsByNamespace() {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        return registryRef.inLock(() -> {
+            Map<KVNamespace, Map<String, ByteBuffer>> result = new HashMap<>();
+            kvByNamespace.entrySet(registryRef().epoch()).forEach(namespaceEntry -> {
+                Map<String, ByteBuffer> namespaceKVs = new HashMap<>();
+                namespaceEntry.getValue().entrySet(registryRef().epoch())
+                    .forEach(e -> namespaceKVs.put(e.getKey(), e.getValue()));
+                result.put(namespaceEntry.getKey(), namespaceKVs);
+            });
+            return result;
+        });
+    }
+
+    void forEachEntry(BiConsumer<KVKey, ByteBuffer> action) {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
+            return;
+        }
+        registryRef.inLock(() -> {
+            kvByNamespace.entrySet(registryRef().epoch()).forEach(namespaceEntry -> {
+                String namespace = namespaceEntry.getKey().namespace();
+                namespaceEntry.getValue().entrySet(registryRef().epoch())
+                    .forEach(e -> action.accept(KVKey.of(namespace, e.getKey()), e.getValue()));
+            });
+        });
+    }
+
+    TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> timelineKVsByNamespace() {
+        return kvByNamespace;
     }
 
     RegistryRef registryRef() {
@@ -87,23 +133,21 @@ public final class KVImage extends AbstractReferenceCounted {
     }
 
     public void write(ImageWriter writer, ImageWriterOptions options) {
-        if (kv == null || registryRef == RegistryRef.NOOP) {
+        if (kvByNamespace == null || registryRef == RegistryRef.NOOP) {
             return;
         }
 
         AutoMQVersion autoMQVersion = options.metadataVersion().autoMQVersion();
         short kvVersion = autoMQVersion.kvRecordVersion();
 
-        List<Map.Entry<KVKey, ByteBuffer>> entries = registryRef.inLock(() ->
-            new ArrayList<>(kv.entrySet(registryRef.epoch())));
-
-        entries.forEach(e -> {
-            KVKey kvKey = e.getKey();
-            String namespace = kvVersion >= 1 ? kvKey.namespace() : null;
-            writer.write(new ApiMessageAndVersion(new KVRecord()
-                .setKeyValues(Collections.singletonList(
-                    new KeyValue().setKey(kvKey.key()).setValue(e.getValue().array()).setNamespace(namespace))),
-                kvVersion));
+        Map<KVNamespace, Map<String, ByteBuffer>> entries = kvsByNamespace();
+        entries.forEach((kvNamespace, namespaceKVs) -> {
+            String namespace = kvVersion >= 1 ? kvNamespace.namespace() : null;
+            namespaceKVs.forEach((key, value) ->
+                writer.write(new ApiMessageAndVersion(new KVRecord()
+                    .setKeyValues(Collections.singletonList(
+                        new KeyValue().setKey(key).setValue(value.array()).setNamespace(namespace))),
+                    kvVersion)));
         });
     }
 
@@ -116,16 +160,16 @@ public final class KVImage extends AbstractReferenceCounted {
             return false;
         }
         KVImage kvImage = (KVImage) o;
-        return kvs().equals(kvImage.kvs());
+        return kvsByNamespace().equals(kvImage.kvsByNamespace());
     }
 
     public boolean isEmpty() {
-        return kv.isEmpty();
+        return kvByNamespace.isEmpty();
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kv);
+        return Objects.hash(kvsByNamespace());
     }
 
     @Override

@@ -5,12 +5,14 @@ import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.{ApiVersionManager, ControllerApis, KafkaConfig, RequestLocal}
-import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
+import org.apache.kafka.common.acl.AclOperation.{ALTER_CONFIGS, CLUSTER_ACTION, DESCRIBE_CONFIGS}
 import org.apache.kafka.common.errors.{ApiException, UnsupportedVersionException}
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
+import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
+import org.apache.kafka.common.resource.ResourceType.CLUSTER
 import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse}
 import org.apache.kafka.common.requests.s3._
 import org.apache.kafka.common.utils.Time
@@ -39,6 +41,12 @@ class ElasticControllerApis(
 
   def handleExtensionRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     try {
+      // AutoMQ inject start
+      if (!authorizeExtensionRequest(request)) {
+        return
+      }
+      // AutoMQ inject end
+
       val handlerFuture: CompletableFuture[Unit] = request.header.apiKey match {
         case ApiKeys.CREATE_STREAMS => handleCreateStream(request)
         case ApiKeys.OPEN_STREAMS => handleOpenStream(request)
@@ -89,6 +97,25 @@ class ElasticControllerApis(
     }
   }
 
+  // AutoMQ inject start
+  private def authorizeExtensionRequest(request: RequestChannel.Request): Boolean = {
+    val operation = request.header.apiKey match {
+      case ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => DESCRIBE_CONFIGS
+      case ApiKeys.UPDATE_LICENSE => ALTER_CONFIGS
+      case _ => CLUSTER_ACTION
+    }
+    if (!authHelper.authorize(request.context, operation, CLUSTER, CLUSTER_NAME)) {
+      requestHelper.sendMaybeThrottle(request, request.body[AbstractRequest].getErrorResponse(
+        0,
+        Errors.CLUSTER_AUTHORIZATION_FAILED.exception))
+      false
+    } else {
+      true
+    }
+  }
+  // AutoMQ inject end
+
   override def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     request.header.apiKey match {
       case ApiKeys.CREATE_STREAMS
@@ -118,7 +145,6 @@ class ElasticControllerApis(
 
   private def handleGetNextNodeId(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val getNextNodeIdRequest = request.body[GetNextNodeIdRequest]
-    authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.getNextNodeId(context, getNextNodeIdRequest.data()).handle[Unit] { (reply, e) =>

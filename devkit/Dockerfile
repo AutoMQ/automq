@@ -1,4 +1,4 @@
-ARG jdk_version=eclipse-temurin:17-jdk-jammy
+ARG jdk_version=eclipse-temurin:21-jdk-jammy
 FROM $jdk_version
 
 ENV DEBIAN_FRONTEND=noninteractive

@@ -23,6 +23,7 @@ import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.automq.interceptor.TrafficInterceptor;
+import kafka.automq.utils.AsyncSender;
 import kafka.network.RequestChannel;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
@@ -47,7 +48,6 @@ import org.apache.kafka.image.loader.LoaderManifest;
 import org.apache.kafka.image.publisher.MetadataPublisher;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -82,6 +82,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private final RouterOutV2 routerOutV2;
     private final RouterInV2 routerInV2;
     private final CommittedEpochManager committedEpochManager;
+    private final AsyncSender asyncSender;
 
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
     private volatile AutoMQVersion version;
@@ -113,7 +114,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         Time time = Time.SYSTEM;
 
-        AsyncSender asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time, ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext());
+        this.asyncSender = new AsyncSender.BrokersAsyncSender(kafkaConfig, kafkaApis.metrics(), "zone_router", time,
+            ZoneRouterPack.ZONE_ROUTER_CLIENT_ID, new LogContext(), 30_000);
 
         this.config = kafkaConfig.automq().zoneRouterChannels().get();
 
@@ -122,15 +124,16 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.clientRackProvider = clientRackProvider;
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
             .readWriteIsolate(true)
-            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
             .build();
         this.routerOut = new RouterOut(currentNode, bucketURI, objectStorage, mapping::getRouteOutNode, kafkaApis, asyncSender, time);
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
         // Zero Zone V2
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time);
-        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode, routerInV2, asyncSender, time);
+        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode,
+            routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time);
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
         DefaultReplayer replayer = new DefaultReplayer();
@@ -153,6 +156,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         if (closed.compareAndSet(false, true)) {
             committedEpochManager.close();
             snapshotReadPartitionsManager.close();
+            asyncSender.close();
         }
     }
 

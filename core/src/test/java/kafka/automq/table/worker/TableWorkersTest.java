@@ -24,6 +24,7 @@ import kafka.server.KafkaConfig;
 
 import org.apache.kafka.server.config.ZkConfigs;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -32,6 +33,7 @@ import java.util.Properties;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
+@Tag("S3Unit")
 class TableWorkersTest {
     @Test
     void tableTopicSchemaRegistryClientConfigsMapsAutoMQPrefix() {

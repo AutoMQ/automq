@@ -22,11 +22,13 @@ package kafka.autobalancer.model;
 import kafka.autobalancer.common.AutoBalancerConstants;
 import kafka.autobalancer.common.types.Resource;
 
+import org.apache.kafka.automq.ControllerState;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.utils.Utils;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.utils.LogContext;
 
 import org.slf4j.Logger;
@@ -38,9 +40,15 @@ import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 public class ClusterModel {
     protected final Logger logger;
+    private static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
+    private static final Metrics.LongGaugeBundle AUTO_BALANCER_METRICS_TIME_DELAY = Metrics.instance()
+        .longGauge("kafka_stream_auto_balancer_metrics_time_delay",
+            "The time delay of auto balancer metrics per broker", "ms");
     private static final String DEFAULT_RACK_ID = "rack_default";
     private static final long DEFAULT_MAX_TOLERATED_METRICS_DELAY_MS = 60000L;
     private static final long DEFAULT_METRICS_DELAY_EXEMPTION_TIME_MS = 60000L;
@@ -55,6 +63,7 @@ public class ClusterModel {
     protected final Map<Uuid, String> idToTopicNameMap = new HashMap<>();
     // <topicName, <partitionId, brokerId>>
     protected final Map<String, Map<Integer, Integer>> topicPartitionReplicaMap = new HashMap<>();
+    private final Metrics.LongGaugeBundle.LongGauge autoBalancerMetricsTimeDelayMetric;
 
     public ClusterModel() {
         this(null);
@@ -65,7 +74,18 @@ public class ClusterModel {
             logContext = new LogContext("[ClusterModel]");
         }
         logger = logContext.logger(AutoBalancerConstants.AUTO_BALANCER_LOGGER_CLAZZ);
-        S3StreamKafkaMetricsManager.setAutoBalancerMetricsTimeMapSupplier(this::calculateBrokerLatestMetricsTime);
+        this.autoBalancerMetricsTimeDelayMetric = AUTO_BALANCER_METRICS_TIME_DELAY
+            .register(MetricsLevel.INFO, Attributes.empty(), result -> {
+                if (!ControllerState.isActive()) {
+                    return;
+                }
+                Map<Integer, Long> metricsTimeDelayMap = calculateBrokerLatestMetricsTime();
+                for (Map.Entry<Integer, Long> entry : metricsTimeDelayMap.entrySet()) {
+                    long timestamp = entry.getValue();
+                    long delay = timestamp == 0 ? -1 : System.currentTimeMillis() - timestamp;
+                    result.record(delay, Attributes.of(LABEL_NODE_ID, String.valueOf(entry.getKey())));
+                }
+            });
     }
 
     Map<Integer, Long> calculateBrokerLatestMetricsTime() {

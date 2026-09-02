@@ -112,7 +112,10 @@ public class KafkaRaftClientDriver<T> extends ShutdownableThread {
             header.correlationId(),
             header.apiVersion(),
             request,
-            createdTimeMs
+            // AutoMQ inject start
+            createdTimeMs,
+            context.connectionId
+            // AutoMQ inject end
         );
 
         client.handle(inboundRequest);

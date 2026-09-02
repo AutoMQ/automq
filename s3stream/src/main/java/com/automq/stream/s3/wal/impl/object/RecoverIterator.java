@@ -261,7 +261,7 @@ public class RecoverIterator implements Iterator<RecoverResult> {
         int size = recordBuf.readableBytes() + RECORD_HEADER_SIZE;
 
         try {
-            return new RecoverResultImpl(StreamRecordBatch.parse(recordBuf, false), DefaultRecordOffset.of(getEpoch(offset), offset, size));
+            return new RecoverResultImpl(StreamRecordBatch.parse(recordBuf, false, null), DefaultRecordOffset.of(getEpoch(offset), offset, size));
         } finally {
             recordBuf.release();
         }

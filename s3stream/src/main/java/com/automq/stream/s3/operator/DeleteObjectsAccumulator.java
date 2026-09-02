@@ -19,8 +19,12 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.S3OperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Threads;
 import com.google.common.annotations.VisibleForTesting;
@@ -50,6 +54,10 @@ public class DeleteObjectsAccumulator {
     private static final long DELETE_OBJECTS_RETRY_BASE_DELAY_MS = 1000;
     private static final long DELETE_OBJECTS_RETRY_MAX_DELAY_MS = 30 * 1000;
     private static final long DELETE_OPERATION_LOG_INTERVAL = 60 * 1000;
+    private static final DeltaHistogram DELETE_OBJECTS_SUCCESS_STATS = OperationLatencyMetrics.operation(
+        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
+    private static final DeltaHistogram DELETE_OBJECTS_FAILED_STATS = OperationLatencyMetrics.operation(
+        MetricsLevel.INFO, S3Operation.DELETE_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_FAILED);
     private final Function<List<String>, CompletableFuture<Void>> deleteObjectsFunction;
     private final ConcurrentLinkedDeque<PendingDeleteRequest> deleteRequestQueue = new ConcurrentLinkedDeque<>();
     private final DeleteOperationSummary deleteOperationSummary = new DeleteOperationSummary();
@@ -153,7 +161,7 @@ public class DeleteObjectsAccumulator {
         deleteObjectsFunction.apply(objectKeys).whenComplete((res, e) -> concurrentRequestLimiter.release())
             .thenAccept(nil -> {
                 deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), true, Collections.emptyList());
-                S3OperationStats.getInstance().deleteObjectsStats(true).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                DELETE_OBJECTS_SUCCESS_STATS.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                 completeRequests(requests);
                 handleDeleteRequestQueue();
             }).exceptionally(ex -> {
@@ -163,7 +171,7 @@ public class DeleteObjectsAccumulator {
                     deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, deleteObjectsException.getFailedKeys());
                     handleDeleteObjectsException(requests, deleteObjectsException);
                 } else {
-                    S3OperationStats.getInstance().deleteObjectsStats(false).record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                    DELETE_OBJECTS_FAILED_STATS.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                     deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, Collections.emptyList());
                     completeRequestsExceptionally(requests, ex);
                 }

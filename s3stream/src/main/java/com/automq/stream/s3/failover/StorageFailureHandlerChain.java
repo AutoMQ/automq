@@ -31,7 +31,7 @@ import java.util.concurrent.ExecutorService;
 public class StorageFailureHandlerChain implements StorageFailureHandler {
     private static final Logger LOGGER = LoggerFactory.getLogger(StorageFailureHandlerChain.class);
     private final List<StorageFailureHandler> handlers = new ArrayList<>();
-    private final ExecutorService executorService = Threads.newFixedThreadPoolWithMonitor(1, "storage-failure-handler", true, LOGGER);
+    private final ExecutorService executorService = Threads.newFixedThreadPool(1, "storage-failure-handler", true, LOGGER);
 
     @Override
     public void handle(Throwable ex) {

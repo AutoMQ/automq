@@ -22,14 +22,20 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.objects.ObjectAttributes;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -38,10 +44,12 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.async.ResponsePublisher;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CopyPartResult;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
@@ -54,8 +62,16 @@ import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -122,12 +138,47 @@ class MultiPartWriterTest {
             .map(UploadPartRequest::partNumber)
             .collect(Collectors.toList()));
         assertEquals(List.of(120L, 120L, 280L, 10L), contentLengths);
+        assertEquals(md5Base64(payloads.get(0)), requests.get(0).contentMD5());
+    }
+
+    @Test
+    void testWriteWithChecksumAlgorithm() throws Exception {
+        operator = new AwsObjectStorage(s3, "unit-test-bucket", ChecksumAlgorithm.SHA256);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path-checksum", 100, 100);
+
+        List<UploadPartRequest> requests = new ArrayList<>();
+        List<CompleteMultipartUploadRequest> completeRequests = new ArrayList<>();
+
+        UploadPartResponse response = UploadPartResponse.builder()
+            .eTag("unit-test-etag")
+            .checksumSHA256("part-checksum")
+            .build();
+        when(s3.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
+            requests.add(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(response);
+        });
+        when(s3.completeMultipartUpload(any(CompleteMultipartUploadRequest.class))).thenAnswer(invocation -> {
+            completeRequests.add(invocation.getArgument(0));
+            return CompletableFuture.completedFuture(null);
+        });
+        writer.uploadIdCf.get();
+
+        ByteBuf payload = TestUtils.random(120);
+        writer.write(payload);
+        writer.close().get();
+
+        assertEquals(1, requests.size());
+        assertNull(requests.get(0).contentMD5());
+        assertNull(requests.get(0).checksumAlgorithm());
+        assertEquals(sha256Base64(payload), requests.get(0).checksumSHA256());
+        assertEquals(1, completeRequests.size());
+        assertEquals("part-checksum", completeRequests.get(0).multipartUpload().parts().get(0).checksumSHA256());
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void testCopyWrite() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, ExecutionException, InterruptedException {
-        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, operator, "test-path-2", 100);
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 0), operator, "test-path-2", 100);
         List<UploadPartRequest> uploadPartRequests = new ArrayList<>();
         List<UploadPartCopyRequest> uploadPartCopyRequests = new ArrayList<>();
         List<Long> writeContentLengths = new ArrayList<>();
@@ -235,6 +286,72 @@ class MultiPartWriterTest {
         assertEquals(List.of("bytes=0-119"), uploadPartCopyRequests.stream()
             .map(UploadPartCopyRequest::copySourceRange)
             .collect(Collectors.toList()));
+    }
+
+    /**
+     * Given the source bucket differs from the target bucket, copyWrite reads source ranges through ObjectStorage
+     * instead of issuing same-bucket server-side copy requests.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void testCrossBucketCopyWriteUsesRangeReadChunks() throws Exception {
+        ObjectStorage.WriteOptions options = ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 1);
+        ObjectStorage readStorage = mock(ObjectStorage.class);
+        when(readStorage.createMultipartUpload(options, "cross-bucket-target"))
+            .thenReturn(CompletableFuture.completedFuture("upload-id"));
+        when(readStorage.rangeRead(any(), anyString(), anyLong(), anyLong())).thenAnswer(invocation -> {
+            long start = invocation.getArgument(2);
+            long end = invocation.getArgument(3);
+            return CompletableFuture.completedFuture(Unpooled.wrappedBuffer(new byte[(int) (end - start)]));
+        });
+        when(readStorage.uploadPart(eq(options), eq("cross-bucket-target"), eq("upload-id"), anyInt(), any()))
+            .thenAnswer(invocation -> CompletableFuture.completedFuture(
+                new ObjectStorage.ObjectStorageCompletedPart(invocation.getArgument(3), "etag", null)));
+        when(readStorage.completeMultipartUpload(eq(options), eq("cross-bucket-target"), eq("upload-id"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+        writer = new MultiPartWriter(options, readStorage, "cross-bucket-target", 100);
+        long chunkSize = 32L * 1024 * 1024;
+
+        S3ObjectMetadata source = new S3ObjectMetadata(1, ObjectAttributes.builder().bucket((short) 2).build().attributes());
+        writer.copyWrite(source, 0, 2 * chunkSize + 1);
+        writer.close().get();
+
+        ArgumentCaptor<ObjectStorage.ReadOptions> readOptionsCaptor = ArgumentCaptor.forClass(ObjectStorage.ReadOptions.class);
+        ArgumentCaptor<Long> startCaptor = ArgumentCaptor.forClass(Long.class);
+        ArgumentCaptor<Long> endCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(readStorage, times(3)).rangeRead(readOptionsCaptor.capture(), eq(source.key()), startCaptor.capture(), endCaptor.capture());
+        assertEquals(List.of((short) 2, (short) 2, (short) 2), readOptionsCaptor.getAllValues().stream()
+            .map(ObjectStorage.ReadOptions::bucket)
+            .collect(Collectors.toList()));
+        assertEquals(List.of(0L, chunkSize, 2 * chunkSize), startCaptor.getAllValues());
+        assertEquals(List.of(chunkSize, 2 * chunkSize, 2 * chunkSize + 1), endCaptor.getAllValues());
+
+        ArgumentCaptor<ByteBuf> partCaptor = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(readStorage, times(3)).uploadPart(eq(options), eq("cross-bucket-target"), eq("upload-id"), anyInt(), partCaptor.capture());
+        assertEquals(List.of(chunkSize, chunkSize, 1L), partCaptor.getAllValues().stream()
+            .map(part -> (long) part.readableBytes())
+            .collect(Collectors.toList()));
+        verify(readStorage, never()).uploadPartCopy(any(), any(), any(), anyLong(), anyLong(), any(), anyInt());
+    }
+
+    private static String md5Base64(ByteBuf data) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            for (ByteBuffer buffer : data.nioBuffers()) {
+                md5.update(buffer.duplicate());
+            }
+            return Base64.getEncoder().encodeToString(md5.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    private static String sha256Base64(ByteBuf data) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        for (ByteBuffer buffer : data.nioBuffers()) {
+            sha256.update(buffer.duplicate());
+        }
+        return Base64.getEncoder().encodeToString(sha256.digest());
     }
 
 }

@@ -1,6 +1,5 @@
 package unit.kafka.server.streamaspect
 
-import com.google.common.util.concurrent.MoreExecutors
 import kafka.automq.AutoMQConfig
 import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.log.remote.RemoteLogManager
@@ -50,6 +49,13 @@ import scala.jdk.CollectionConverters.{MapHasAsJava, PropertiesHasAsScala}
 @Tag("S3Unit")
 class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
+  private val directFetchLimiter = new Limiter {
+    override def acquire(permits: Long, context: Limiter.AcquireContext): Limiter.Permit =
+      NoopLimiter.INSTANCE.acquire(permits, context)
+
+    override def execute(connectionId: String, task: Runnable): Unit = task.run()
+  }
+
   @BeforeEach
   override def setUp(): Unit = {
     val props = TestUtils.createBrokerConfig(1, TestUtils.MockZkConnect)
@@ -98,8 +104,9 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       metadataCache, logDirFailureChannel, alterPartitionManager, brokerTopicStats, isShuttingDown, zkClient,
       delayedProducePurgatoryParam, delayedFetchPurgatoryParam, delayedDeleteRecordsPurgatoryParam,
       delayedElectLeaderPurgatoryParam, delayedRemoteFetchPurgatoryParam, threadNamePrefix, brokerEpochSupplier,
-      addPartitionsToTxnManager, directoryEventHandler,
-      MoreExecutors.newDirectExecutorService(), MoreExecutors.newDirectExecutorService())
+      addPartitionsToTxnManager, directoryEventHandler) {
+    override protected def createFetchLimiter(name: String): Limiter = directFetchLimiter
+  }
 
   override protected def setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager: AddPartitionsToTxnManager,
       transactionalTopicPartitions: List[TopicPartition],
@@ -185,7 +192,6 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
     val mockProducePurgatory = new DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", timer, reaperEnabled = false)
 
-    DelayedFetch.setFetchExecutor(MoreExecutors.newDirectExecutorService())
     val mockFetchPurgatory = new DelayedOperationPurgatory[DelayedFetch](
       purgatoryName = "Fetch", timer, reaperEnabled = false)
 
@@ -224,9 +230,9 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       remoteLogManager = if (enableRemoteStorage) if (remoteLogManager.isDefined)
         remoteLogManager
       else
-        Some(mockRemoteLogManager) else None,
-      fastFetchExecutor = MoreExecutors.newDirectExecutorService(),
-      slowFetchExecutor = MoreExecutors.newDirectExecutorService()) {
+        Some(mockRemoteLogManager) else None) {
+
+      override protected def createFetchLimiter(name: String): Limiter = directFetchLimiter
 
       override protected def createReplicaFetcherManager(
         metrics: Metrics,
@@ -416,9 +422,9 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       delayedDeleteRecordsPurgatoryParam = Some(mockDeleteRecordsPurgatory),
       delayedElectLeaderPurgatoryParam = Some(mockElectLeaderPurgatory),
       delayedRemoteFetchPurgatoryParam = Some(mockRemoteFetchPurgatory),
-      threadNamePrefix = Option(this.getClass.getName),
-      fastFetchExecutor = MoreExecutors.newDirectExecutorService(),
-      slowFetchExecutor = MoreExecutors.newDirectExecutorService()) {
+      threadNamePrefix = Option(this.getClass.getName)) {
+
+      override protected def createFetchLimiter(name: String): Limiter = directFetchLimiter
 
       override protected def createReplicaFetcherManager(metrics: Metrics,
         time: Time,
@@ -474,9 +480,9 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
         quotaManagers = quotaManager,
         metadataCache = MetadataCache.zkMetadataCache(config.brokerId, config.interBrokerProtocolVersion),
         logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size),
-        alterPartitionManager = alterPartitionManager,
-        fastFetchExecutor = MoreExecutors.newDirectExecutorService(),
-        slowFetchExecutor = MoreExecutors.newDirectExecutorService()) {
+        alterPartitionManager = alterPartitionManager) {
+        override protected def createFetchLimiter(name: String): Limiter = directFetchLimiter
+
         override def getPartitionOrException(topicPartition: TopicPartition): Partition = throw Errors.NOT_LEADER_OR_FOLLOWER.exception()
       }
     }

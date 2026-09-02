@@ -137,6 +137,6 @@ public class ObjectUtils {
         if (header.getMagicCode() != RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE) {
             throw new IllegalStateException("Invalid magic code in record header.");
         }
-        return StreamRecordBatch.parse(dataBuffer, false);
+        return StreamRecordBatch.parse(dataBuffer, false, null);
     }
 }

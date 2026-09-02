@@ -19,8 +19,12 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -61,8 +65,16 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
-    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
+    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPool(
         1, "LOG_CACHE_ASYNC", true, LOGGER);
+    private static final DeltaHistogram APPEND_STORAGE_LOG_CACHE_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_HIT_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_MISS_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+    // Controlling the overhead of each cached record can prevent excessive heap memory usage for small-sized records
+    private static final int RECORD_OVERHEAD = 1024;
     static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
@@ -70,6 +82,7 @@ public class LogCache {
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
     private final AtomicLong size = new AtomicLong();
+    private final AtomicLong evictableSize = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -113,9 +126,9 @@ public class LogCache {
             readLock.unlock();
         }
         if (added) {
-            size.addAndGet(recordBatch.occupiedSize());
+            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
         }
-        StorageOperationStats.getInstance().appendLogCacheStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        APPEND_STORAGE_LOG_CACHE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         return added;
     }
 
@@ -167,8 +180,12 @@ public class LogCache {
 
         long timeElapsed = TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
-        StorageOperationStats.getInstance().readLogCacheStats(isCacheHit).record(timeElapsed);
+        readLogCacheStats(isCacheHit).record(timeElapsed);
         return records;
+    }
+
+    private static DeltaHistogram readLogCacheStats(boolean isCacheHit) {
+        return isCacheHit ? READ_STORAGE_LOG_CACHE_HIT_LATENCY : READ_STORAGE_LOG_CACHE_MISS_LATENCY;
     }
 
     public List<StreamRecordBatch> get0(Long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -260,7 +277,13 @@ public class LogCache {
     }
 
     public CompletableFuture<Void> markFree(LogCacheBlock block) {
-        block.free = true;
+        writeLock.lock();
+        try {
+            block.free = true;
+            updateEvictableSize();
+        } finally {
+            writeLock.unlock();
+        }
         tryRealFree();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> {
@@ -272,6 +295,17 @@ public class LogCache {
             }
         });
         return cf;
+    }
+
+    private void updateEvictableSize() {
+        long size = 0L;
+        for (LogCacheBlock block : blocks) {
+            if (!block.free) {
+                break;
+            }
+            size += block.size();
+        }
+        evictableSize.set(size);
     }
 
     private void tryRealFree() {
@@ -300,10 +334,11 @@ public class LogCache {
                     break;
                 }
             }
+            size.addAndGet(-freeSize);
+            updateEvictableSize();
         } finally {
             writeLock.unlock();
         }
-        size.addAndGet(-freeSize);
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();
@@ -378,6 +413,13 @@ public class LogCache {
 
     public long capacity() {
         return capacity;
+    }
+
+    /**
+     * Returns the size of the contiguous free blocks at the head of the FIFO cache that can be evicted immediately.
+     */
+    public long evictableSize() {
+        return evictableSize.get();
     }
 
     public void clearStreamRecords(long streamId) {
@@ -470,7 +512,7 @@ public class LogCache {
                 overflow = true;
                 return false;
             }
-            size.addAndGet(recordBatch.occupiedSize());
+            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
             return true;
         }
 

@@ -176,6 +176,9 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
     private final Random random;
     private final FuturePurgatory<Long> appendPurgatory;
     private final FuturePurgatory<Long> fetchPurgatory;
+    // AutoMQ inject start
+    private final FetchHighWatermarkTracker fetchHighWatermarkTracker = new FetchHighWatermarkTracker();
+    // AutoMQ inject end
     private final RecordSerde<T> serde;
     private final MemoryPool memoryPool;
     private final RaftMessageQueue messageQueue;
@@ -354,6 +357,10 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
             // purgatory so that we have an opportunity to route the pending
             // records still held in memory directly to the listener
             appendPurgatory.maybeComplete(highWatermark.offset(), currentTimeMs);
+
+            // AutoMQ inject start
+            fetchPurgatory.completeAll(currentTimeMs);
+            // AutoMQ inject end
 
             // It is also possible that the high watermark is being updated
             // for the first time following the leader election, so we need
@@ -1379,13 +1386,20 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
             || FetchResponse.recordsSize(partitionResponse) > 0
             || request.maxWaitMs() == 0
             || isPartitionDiverged(partitionResponse)
-            || isPartitionSnapshotted(partitionResponse)) {
+            || isPartitionSnapshotted(partitionResponse)
+            // AutoMQ inject start
+            || hasNewHighWatermark(requestMetadata, partitionResponse, currentTimeMs)
+            // AutoMQ inject end
+        ) {
             // Reply immediately if any of the following is true
             // 1. The response contains an error
             // 2. There are records in the response
             // 3. The fetching replica doesn't want to wait for the partition to contain new data
             // 4. The fetching replica needs to truncate because the log diverged
             // 5. The fetching replica needs to fetch a snapshot
+            // AutoMQ inject start
+            updateFetchHighWatermark(requestMetadata, partitionResponse, currentTimeMs);
+            // AutoMQ inject end
             return completedFuture(response);
         }
 
@@ -1434,15 +1448,56 @@ public final class KafkaRaftClient<T> implements RaftClient<T> {
             // It is safe to call tryCompleteFetchRequest because only the polling thread completes this
             // future successfully. This is true because only the polling thread appends record batches to
             // the log from maybeAppendBatches.
-            return tryCompleteFetchRequest(
+            FetchResponseData completedResponse = tryCompleteFetchRequest(
                 requestMetadata.listenerName(),
                 requestMetadata.apiVersion(),
                 replicaKey,
                 fetchPartition,
                 time.milliseconds()
             );
+            // AutoMQ inject start
+            FetchResponseData.PartitionData completedPartitionResponse =
+                completedResponse.responses().get(0).partitions().get(0);
+            updateFetchHighWatermark(requestMetadata, completedPartitionResponse, time.milliseconds());
+            // AutoMQ inject end
+            return completedResponse;
         });
     }
+
+    // AutoMQ inject start
+    private boolean hasNewHighWatermark(
+        RaftRequest.Inbound request,
+        FetchResponseData.PartitionData response,
+        long currentTimeMs
+    ) {
+        long highWatermark = response.highWatermark();
+        return highWatermark >= 0 && request.connectionId()
+            .map(connectionId -> fetchHighWatermarkTracker.hasNewHighWatermark(
+                connectionId,
+                quorum.epoch(),
+                highWatermark,
+                currentTimeMs
+            ))
+            .orElse(false);
+    }
+
+    private void updateFetchHighWatermark(
+        RaftRequest.Inbound request,
+        FetchResponseData.PartitionData response,
+        long currentTimeMs
+    ) {
+        long highWatermark = response.highWatermark();
+        if (highWatermark < 0) {
+            return;
+        }
+        request.connectionId().ifPresent(connectionId -> fetchHighWatermarkTracker.update(
+            connectionId,
+            quorum.epoch(),
+            highWatermark,
+            currentTimeMs
+        ));
+    }
+    // AutoMQ inject end
 
     private FetchResponseData tryCompleteFetchRequest(
         ListenerName listenerName,

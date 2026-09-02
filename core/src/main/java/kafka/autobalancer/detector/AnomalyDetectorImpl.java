@@ -36,7 +36,6 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
 import org.apache.kafka.controller.es.ClusterStats;
-import org.apache.kafka.server.metrics.s3stream.S3StreamKafkaMetricsManager;
 
 import com.automq.stream.utils.LogContext;
 
@@ -72,7 +71,6 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
     private int executionConcurrency;
     private long executionIntervalMs;
     private volatile boolean isLeader = false;
-    private volatile Map<Integer, Boolean> slowBrokers = new HashMap<>();
 
     public AnomalyDetectorImpl(Map<String, ?> configs, LogContext logContext, ClusterModel clusterModel, ActionExecutorService actionExecutor) {
         super(logContext);
@@ -87,7 +85,6 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
                 updateClusterStats(clusterModel, maxTolerateMetricsDelayMs);
             }
         }, 30, 30, TimeUnit.SECONDS);
-        S3StreamKafkaMetricsManager.setSlowBrokerSupplier(() -> this.slowBrokers);
         logger.info("detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
                 this.detectInterval, this.executionConcurrency, this.executionIntervalMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }

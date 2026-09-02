@@ -64,7 +64,7 @@ public class LocalFileObjectStorage implements ObjectStorage {
     // thread-safe is guarded by synchronized(availableSpace)
     final AtomicLong availableSpace = new AtomicLong();
     final Queue<WriteTask> waitingTasks = new LinkedBlockingQueue<>();
-    private final ExecutorService ioExecutor = Threads.newFixedThreadPoolWithMonitor(8, "LOCAL_FILE_OBJECT_STORAGE_IO", true, LOGGER);
+    private final ExecutorService ioExecutor = Threads.newFixedThreadPool(8, "LOCAL_FILE_OBJECT_STORAGE_IO", true, LOGGER);
 
     public LocalFileObjectStorage(BucketURI bucketURI) {
         if (bucketURI.bucketId() != BUCKET_ID) {

@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.SimpleRecord;
 
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -34,6 +35,7 @@ import io.netty.buffer.ByteBuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 public class LinkRecordTest {
 
     @Test

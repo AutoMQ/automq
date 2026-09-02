@@ -34,7 +34,7 @@ RUN apt-get update && apt-get install -y ca-certificates curl procps zlib1g libj
     apt-get clean && rm -rf /var/lib/apt/lists /var/cache/apt/archives
 RUN mkdir -p /tmp/bitnami/pkg/cache/ ; cd /tmp/bitnami/pkg/cache/ || exit 1 ; \
     COMPONENTS=( \
-      "jre-17.0.14-10-1-linux-${OS_ARCH}-debian-12" \
+      "jre-21.0.6-10-1-linux-${OS_ARCH}-debian-12" \
     ) ; \
     for COMPONENT in "${COMPONENTS[@]}"; do \
       if [ ! -f "${COMPONENT}.tar.gz" ]; then \

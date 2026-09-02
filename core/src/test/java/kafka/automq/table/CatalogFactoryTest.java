@@ -11,6 +11,7 @@ import org.apache.iceberg.aws.s3.S3FileIOProperties;
 import org.apache.iceberg.inmemory.InMemoryFileIO;
 import org.apache.iceberg.rest.RESTCatalog;
 import org.apache.iceberg.util.SerializableMap;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.TestInstance.Lifecycle.PER_CLASS;
 
 @TestInstance(PER_CLASS)
+@Tag("S3Unit")
 class CatalogFactoryTest {
     // minimalistic properties to let KafkaConfig validation pass and let us test our catalog factory
     private final Map<String, String> requiredKafkaConfigProperties = Map.of(

@@ -29,24 +29,54 @@ import org.apache.kafka.image.TopicImage;
 import org.apache.kafka.metadata.PartitionRegistration;
 
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.utils.ThreadUtils;
 
 import java.util.Arrays;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DefaultOpenStreamChecker implements OpenStreamChecker {
     private final int nodeId;
     private final KRaftMetadataCache metadataCache;
+    private final Set<PendingCheck> pendingChecks = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean checkScheduled = new AtomicBoolean();
+    private final ExecutorService checkExecutor = Executors.newSingleThreadExecutor(
+        ThreadUtils.createThreadFactory("open-stream-checker-%d", true));
+    private final AutoCloseable imageListenerHandle;
+    private volatile boolean closed;
 
     public DefaultOpenStreamChecker(int nodeId, KRaftMetadataCache metadataCache) {
         this.nodeId = nodeId;
         this.metadataCache = metadataCache;
+        this.imageListenerHandle = metadataCache.addNewImageListener(this::schedulePendingChecks);
     }
 
     @Override
-    public boolean check(Uuid topicId, int partition, long streamId, long epoch) throws StreamFencedException {
-        return metadataCache.safeRun(image -> DefaultOpenStreamChecker.check(image, topicId, partition, streamId, epoch, nodeId));
+    public CompletableFuture<Void> check(Uuid topicId, int partition, long streamId, long epoch) {
+        if (closed) {
+            return CompletableFuture.failedFuture(fenced("Open stream checker is closed"));
+        }
+        PendingCheck pendingCheck = new PendingCheck(topicId, partition, streamId, epoch);
+        pendingChecks.add(pendingCheck);
+        pendingCheck.result.whenComplete((result, exception) -> pendingChecks.remove(pendingCheck));
+        if (closed) {
+            pendingCheck.result.completeExceptionally(fenced("Open stream checker is closed"));
+            return pendingCheck.result;
+        }
+        try {
+            checkExecutor.execute(() -> checkPendingCheck(pendingCheck));
+        } catch (Throwable exception) {
+            pendingCheck.result.completeExceptionally(exception);
+        }
+        return pendingCheck.result;
     }
 
-    public static boolean check(MetadataImage image, Uuid topicId, int partition, long streamId, long epoch, int currentNodeId) throws StreamFencedException {
+    public static boolean check0(MetadataImage image, Uuid topicId, int partition, long streamId, long epoch,
+        int currentNodeId) throws StreamFencedException {
         // When ABA reassign happens:
         // 1. Assign P0 to broker0 with epoch=0, broker0 opens the partition
         // 2. Assign P0 to broker1 with epoch=1, broker1 waits for the partition to be closed
@@ -77,6 +107,52 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
         return StreamState.CLOSED.equals(stream.state());
     }
 
+    private void schedulePendingChecks() {
+        if (!closed && checkScheduled.compareAndSet(false, true)) {
+            checkExecutor.execute(this::checkPendingChecks);
+        }
+    }
+
+    private void checkPendingChecks() {
+        checkScheduled.set(false);
+        pendingChecks.forEach(this::checkPendingCheck);
+    }
+
+    private void checkPendingCheck(PendingCheck pendingCheck) {
+        if (pendingCheck.result.isDone()) {
+            return;
+        }
+        try {
+            boolean ready = metadataCache.safeRun(image -> check0(image, pendingCheck.topicId,
+                pendingCheck.partition, pendingCheck.streamId, pendingCheck.epoch, nodeId));
+            if (ready) {
+                pendingCheck.result.complete(null);
+            }
+        } catch (StreamFencedException exception) {
+            pendingCheck.result.completeExceptionally(exception);
+        } catch (Throwable exception) {
+            pendingCheck.result.completeExceptionally(exception);
+        }
+    }
+
+    @Override
+    public void close() {
+        closed = true;
+        try {
+            imageListenerHandle.close();
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        } finally {
+            checkExecutor.shutdownNow();
+            StreamFencedException exception = fenced("Open stream checker is closed");
+            pendingChecks.forEach(pendingCheck -> pendingCheck.result.completeExceptionally(exception));
+        }
+    }
+
+    private static StreamFencedException fenced(String message) {
+        return new StreamFencedException(message);
+    }
+
     private static boolean contains(int[] isr, int nodeId) {
         if (isr == null) {
             return false;
@@ -87,5 +163,20 @@ public class DefaultOpenStreamChecker implements OpenStreamChecker {
             }
         }
         return false;
+    }
+
+    private static class PendingCheck {
+        private final Uuid topicId;
+        private final int partition;
+        private final long streamId;
+        private final long epoch;
+        private final CompletableFuture<Void> result = new CompletableFuture<>();
+
+        private PendingCheck(Uuid topicId, int partition, long streamId, long epoch) {
+            this.topicId = topicId;
+            this.partition = partition;
+            this.streamId = streamId;
+            this.epoch = epoch;
+        }
     }
 }

@@ -18,7 +18,6 @@
  */
 package com.automq.stream.s3.compact;
 
-import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3ObjectLogger;
 import com.automq.stream.s3.StreamDataBlock;
@@ -31,7 +30,6 @@ import com.automq.stream.s3.compact.utils.GroupByOffsetPredicate;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -133,10 +131,10 @@ public class CompactionManager {
             ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger, true, false);
         this.utilityScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("compaction-utility-executor-%d", true), logger, true, false);
-        this.compactThreadPool = Threads.newFixedThreadPoolWithMonitor(1, "object-compaction-manager", true, logger);
-        this.forceSplitThreadPool = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "force-split-executor", true, logger);
+        this.compactThreadPool = Threads.newFixedThreadPool(1, "object-compaction-manager", true, logger);
+        this.forceSplitThreadPool = Threads.newFixedFastThreadLocalThreadPool(1, "force-split-executor", true, logger);
         this.running.set(true);
-        S3StreamMetricsManager.registerCompactionDelayTimeSuppler(() -> compactionDelayTime);
+        CompactionMetrics.COMPACTION_DELAY_TIME.record(() -> compactionDelayTime);
         this.logger.info("Compaction manager initialized with config: compactionInterval: {} min, compactionCacheSize: {} bytes, " +
                 "streamSplitSize: {} bytes, forceSplitObjectPeriod: {} min, maxObjectNumToCompact: {}, maxStreamNumInStreamSet: {}, maxStreamObjectNum: {}",
             compactionInterval, compactionCacheSize, streamSplitSize, forceSplitObjectPeriod, maxObjectNumToCompact, maxStreamNumPerStreamSetObject, maxStreamObjectNumPerCommit);
@@ -805,17 +803,6 @@ public class CompactionManager {
 
             streamObjectCfList.stream().map(CompletableFuture::join).forEach(request::addStreamObject);
 
-            if (ByteBufAlloc.getPolicy().isPooled()) {
-                // Check if all blocks are released after each iteration
-                List<CompactedObject> compactedObjects = compactionPlan.compactedObjects();
-                for (CompactedObject compactedObject : compactedObjects) {
-                    for (StreamDataBlock block : compactedObject.streamDataBlocks()) {
-                        if (block.getDataCf().join().refCnt() > 0) {
-                            logger.error("Block {} is not released after compaction, compact type: {}", block, compactedObject.type());
-                        }
-                    }
-                }
-            }
         }
         List<ObjectStreamRange> objectStreamRanges = CompactionUtils.buildObjectStreamRangeFromGroup(
             CompactionUtils.groupStreamDataBlocks(sortedStreamDataBlocks, new GroupByOffsetPredicate()));

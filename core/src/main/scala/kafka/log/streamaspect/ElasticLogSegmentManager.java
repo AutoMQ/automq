@@ -24,6 +24,7 @@ import kafka.cluster.LogEventListener;
 import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
+import com.automq.stream.utils.AsyncLogger;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
@@ -43,7 +44,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 public class ElasticLogSegmentManager {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogSegmentManager.class);
+    private static final Logger LOGGER = AsyncLogger.wrap(LoggerFactory.getLogger(ElasticLogSegmentManager.class));
     /**
      * The lock of {@link #segments} and {@link #inflightCleanedSegments}
      */
@@ -133,6 +134,16 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
+        return asyncPersistLogMeta(true);
+    }
+
+    /**
+     * Persists the current log metadata asynchronously.
+     *
+     * @param trimStreams whether to trigger stream trims after the metadata append succeeds
+     * @return the persisted log metadata
+     */
+    public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta(boolean trimStreams) {
         ElasticLogMeta meta;
         Map<String, Long> trimOffsets;
 
@@ -159,7 +170,9 @@ public class ElasticLogSegmentManager {
         MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
         return metaStream.append(kv).thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
-            trimStream(trimOffsets);
+            if (trimStreams) {
+                trimStream(trimOffsets);
+            }
             return meta;
         }).whenComplete((nil, ex) -> {
             if (ex != null) {

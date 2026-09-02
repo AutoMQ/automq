@@ -36,7 +36,6 @@ import org.apache.avro.generic.GenericRecord;
 import org.jetbrains.annotations.NotNull;
 
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +47,7 @@ import io.confluent.kafka.schemaregistry.client.rest.exceptions.RestClientExcept
 import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
 import static kafka.automq.table.process.RecordAssembler.KAFKA_VALUE_FIELD;
 import static kafka.automq.table.process.RecordAssembler.ensureOptional;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY;
 
 /**
  * Default implementation of RecordProcessor using a two-stage processing pipeline.
@@ -59,29 +59,45 @@ import static kafka.automq.table.process.RecordAssembler.ensureOptional;
 public class DefaultRecordProcessor implements RecordProcessor {
     private static final Schema HEADER_SCHEMA = Schema.createMap(Schema.create(Schema.Type.BYTES));
     private static final String HEADER_SCHEMA_IDENTITY = String.valueOf(HEADER_SCHEMA.hashCode());
+    private static final String NULL_KEY_SCHEMA_IDENTITY = "null";
     private static final ConversionResult EMPTY_HEADERS_RESULT =
         new ConversionResult(Map.of(), HEADER_SCHEMA, HEADER_SCHEMA_IDENTITY);
     private final String topicName;
     private final Converter keyConverter;
     private final Converter valueConverter;
     private final List<Transform> transformChain;
+    private final List<String> idColumns;
+    private final boolean fromDebeziumKey;
     private final RecordAssembler recordAssembler; // Reusable assembler
     private final String transformIdentity; // precomputed transform chain identity
+    private String lastKeySchemaId;
+    private List<String> lastKeyIds = List.of();
 
     private static final int VALUE_WRAPPER_SCHEMA_CACHE_MAX = 32;
     private final Cache<String, Schema> valueWrapperSchemaCache = new LRUCache<>(VALUE_WRAPPER_SCHEMA_CACHE_MAX);
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter) {
-        this.transformChain = new ArrayList<>();
-        this.topicName = topicName;
-        this.keyConverter = keyConverter;
-        this.valueConverter = valueConverter;
-        this.recordAssembler = new RecordAssembler();
-        this.transformIdentity = ""; // no transforms
+        this(topicName, keyConverter, valueConverter, List.of(), List.of());
     }
 
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter, List<Transform> transforms) {
+        this(topicName, keyConverter, valueConverter, transforms, List.of());
+    }
+
+    /**
+     * Creates a processor with explicit transforms and identifier column configuration.
+     *
+     * @param topicName source Kafka topic name
+     * @param keyConverter converter used for Kafka record keys
+     * @param valueConverter converter used for Kafka record values
+     * @param transforms ordered transform chain applied after value conversion
+     * @param idColumns configured identifier columns, or {@code [_from_debezium_key_]} to derive them from the key schema
+     */
+    public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter,
+                                  List<Transform> transforms, List<String> idColumns) {
         this.transformChain = transforms;
+        this.idColumns = idColumns == null ? List.of() : List.copyOf(idColumns);
+        this.fromDebeziumKey = this.idColumns.size() == 1 && FROM_DEBEZIUM_KEY.equals(this.idColumns.get(0));
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
@@ -102,13 +118,14 @@ public class DefaultRecordProcessor implements RecordProcessor {
             Objects.requireNonNull(kafkaRecord, "Kafka record cannot be null");
 
             ConversionResult headerResult = processHeaders(kafkaRecord);
-            ConversionResult keyResult = keyConverter.convert(topicName, kafkaRecord.key());
+            ConversionResult keyResult = convertKey(kafkaRecord);
             ConversionResult valueResult = valueConverter.convert(topicName, kafkaRecord.value());
 
             GenericRecord baseRecord = wrapValue(valueResult);
             GenericRecord transformedRecord = applyTransformChain(baseRecord, partition, kafkaRecord);
 
-            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult);
+            List<String> identifierColumns = resolveIdentifierColumns(keyResult);
+            String schemaIdentity = generateCompositeSchemaIdentity(headerResult, keyResult, valueResult, identifierColumns);
 
             GenericRecord record = recordAssembler
                 .reset(transformedRecord)
@@ -119,7 +136,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
                 .assemble();
             Schema schema = record.getSchema();
 
-            return new ProcessingResult(record, schema, schemaIdentity);
+            return new ProcessingResult(record, schema, schemaIdentity, identifierColumns);
         } catch (ConverterException e) {
             return getProcessingResult(kafkaRecord, "Convert operation failed for record: %s", DataError.ErrorType.CONVERT_ERROR, e);
         } catch (TransformException e) {
@@ -137,6 +154,57 @@ public class DefaultRecordProcessor implements RecordProcessor {
             }
             return getProcessingResult(kafkaRecord, "Unexpected error processing record: %s", DataError.ErrorType.UNKNOW_ERROR, e);
         }
+    }
+
+    private List<String> resolveIdentifierColumns(ConversionResult keyResult) {
+        if (!fromDebeziumKey) {
+            return idColumns;
+        }
+        if (keyResult == null) {
+            return List.of();
+        }
+        String keySchemaId = keyResult.getSchemaIdentity();
+        if (Objects.equals(lastKeySchemaId, keySchemaId)) {
+            return lastKeyIds;
+        }
+        List<String> ids = resolveIdentifierColumns(keyResult.getSchema());
+        lastKeySchemaId = keySchemaId;
+        lastKeyIds = ids;
+        return ids;
+    }
+
+    private ConversionResult convertKey(Record kafkaRecord) throws ConverterException {
+        if (fromDebeziumKey && kafkaRecord.key() == null) {
+            return null;
+        }
+        return keyConverter.convert(topicName, kafkaRecord.key());
+    }
+
+    private List<String> resolveIdentifierColumns(Schema keySchema) {
+        Schema unwrappedKeySchema = unwrapNullable(keySchema);
+        if (unwrappedKeySchema == null || unwrappedKeySchema.getType() != Schema.Type.RECORD) {
+            return List.of();
+        }
+        return unwrappedKeySchema.getFields().stream()
+            .map(Schema.Field::name)
+            .toList();
+    }
+
+    private Schema unwrapNullable(Schema schema) {
+        if (schema == null || schema.getType() != Schema.Type.UNION) {
+            return schema;
+        }
+        Schema nonNull = null;
+        for (Schema type : schema.getTypes()) {
+            if (type.getType() == Schema.Type.NULL) {
+                continue;
+            }
+            if (nonNull != null) {
+                return schema;
+            }
+            nonNull = type;
+        }
+        return nonNull;
     }
 
     // io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient#isSchemaOrSubjectNotFoundException
@@ -224,12 +292,22 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private String generateCompositeSchemaIdentity(
         ConversionResult headerResult,
         ConversionResult keyResult,
-        ConversionResult valueResult) {
+        ConversionResult valueResult,
+        List<String> identifierColumns) {
         // Extract schema identities
         String headerIdentity = headerResult.getSchemaIdentity();
-        String keyIdentity = keyResult.getSchemaIdentity();
+        String keyIdentity = keyResult == null ? NULL_KEY_SCHEMA_IDENTITY : keyResult.getSchemaIdentity();
         String valueIdentity = valueResult.getSchemaIdentity();
-        return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity;
+        return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity
+            + "|id:" + encodeIdentifierColumns(identifierColumns);
+    }
+
+    private String encodeIdentifierColumns(List<String> identifierColumns) {
+        StringBuilder builder = new StringBuilder();
+        for (String column : identifierColumns) {
+            builder.append(column.length()).append('#').append(column);
+        }
+        return builder.toString();
     }
 
     @Override

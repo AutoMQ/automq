@@ -16,6 +16,7 @@
  */
 package org.apache.kafka.controller.stream;
 
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
@@ -28,6 +29,7 @@ public class NodeRuntimeMetadata {
     private final TimelineLong nodeEpoch;
     private final TimelineObject<Boolean> failoverMode;
     private final TimelineHashMap<Long/*objectId*/, S3StreamSetObject> streamSetObjects;
+    private final TimelineHashMap<Long/*streamId*/, NodeWALUncommittedOffset> uncommittedOffsets;
 
     public NodeRuntimeMetadata(int nodeId, long nodeEpoch, boolean failoverMode, SnapshotRegistry registry) {
         this.nodeId = nodeId;
@@ -35,6 +37,7 @@ public class NodeRuntimeMetadata {
         this.nodeEpoch.set(nodeEpoch);
         this.failoverMode = new TimelineObject<>(registry, failoverMode);
         this.streamSetObjects = new TimelineHashMap<>(registry, 0);
+        this.uncommittedOffsets = new TimelineHashMap<>(registry, 0);
     }
 
     public int getNodeId() {
@@ -59,6 +62,15 @@ public class NodeRuntimeMetadata {
 
     public TimelineHashMap<Long, S3StreamSetObject> streamSetObjects() {
         return streamSetObjects;
+    }
+
+    /**
+     * Return this node's raw historical WAL responsibility entries by stream id. The Controller
+     * event thread owns mutations during metadata replay; the timeline map provides snapshot and
+     * rollback semantics consistent with the rest of this node's runtime metadata.
+     */
+    public TimelineHashMap<Long, NodeWALUncommittedOffset> uncommittedOffsets() {
+        return uncommittedOffsets;
     }
 
     @Override

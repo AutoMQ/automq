@@ -1,7 +1,8 @@
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.api.LinkRecordDecoder;
+import com.automq.stream.s3.ByteBufSupplier;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -53,8 +54,11 @@ import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 import static com.automq.stream.s3.ByteBufAlloc.SNAPSHOT_READ_CACHE;
 
 public class SnapshotReadCache {
-    public static final ByteBufSeqAlloc DECODE_LINK_INSTANT_ALLOC = new ByteBufSeqAlloc(DECODE_RECORD, 4);
-    public static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 1);
+    // Owned by this class for the process lifetime so snapshot caches reuse the same slabs.
+    private static final ByteBufSupplier DECODE_LINK_INSTANT_ALLOC =
+        new RecyclingByteBufSeqAlloc(DECODE_RECORD);
+    private static final ByteBufSupplier ENCODE_ALLOC =
+        new RecyclingByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 1);
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
 

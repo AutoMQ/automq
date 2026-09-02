@@ -1,3 +1,7 @@
+---
+last_updated: 2026-08-07
+---
+
 # AutoMQ Agent Instructions
 
 This repository is the open-source AutoMQ Kafka fork.
@@ -10,6 +14,8 @@ progressively loaded rules live in `.agents/`.
 - Before changing production code, read `.agents/coding-conventions.md`.
 - Before adding or changing tests, read `.agents/testing.md`.
 - Before reviewing or handing off a PR, read `.agents/review.md`.
+- Before preparing or updating a PR description, read
+  `.agents/pull-request-description.md`.
 
 ## Core Rules
 
@@ -21,6 +27,8 @@ progressively loaded rules live in `.agents/`.
   completion gates, SpotBugs, E2E suite registration, and suppression rules.
 - Follow `.agents/review.md` for PR review range, repository rule checks, and
   CI failure handling.
+- Follow `.agents/pull-request-description.md` when writing a PR description
+  that will become the squash commit body.
 
 ## Verification
 

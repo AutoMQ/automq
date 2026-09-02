@@ -19,7 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -30,6 +30,7 @@ import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.ReservationService;
+import com.automq.stream.s3.wal.State;
 import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.exception.RuntimeIOException;
@@ -58,6 +59,7 @@ import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -79,8 +81,9 @@ public class DefaultWriter implements Writer {
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
     private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
-    private static final ByteBufSeqAlloc BYTE_BUF_ALLOC = new ByteBufSeqAlloc(S3_WAL, 8);
-    private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
+    // Owned by this class for the process lifetime so WAL writers reuse the same slabs.
+    private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
+    private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
     private static final ScheduledExecutorService SCHEDULE = Threads.newSingleThreadScheduledExecutor("S3_WAL_SCHEDULE", true, LOGGER);
 
     protected final ObjectWALConfig config;
@@ -96,8 +99,8 @@ public class DefaultWriter implements Writer {
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
 
-    protected volatile boolean closed = true;
     protected volatile boolean fenced;
+    private volatile State state = State.NOT_STARTED;
 
     private Bulk activeBulk = null;
     private Bulk lastInActiveBulk = null;
@@ -110,6 +113,7 @@ public class DefaultWriter implements Writer {
 
     private CompletableFuture<Void> callbackCf = CompletableFuture.completedFuture(null);
     private final EventLoop callbackExecutor = new EventLoop("S3_WAL_CALLBACK");
+    private volatile ScheduledFuture<?> monitorTask;
 
     private final AtomicLong nextOffset = new AtomicLong();
     private final AtomicLong flushedOffset = new AtomicLong();
@@ -131,7 +135,11 @@ public class DefaultWriter implements Writer {
         }
     }
 
-    public void start() {
+    public synchronized void start() {
+        if (state != State.NOT_STARTED) {
+            LOGGER.warn("Skip starting the WAL because its state is {}.", state);
+            return;
+        }
         // Verify the permission.
         reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
             .thenAccept(result -> {
@@ -168,12 +176,19 @@ public class DefaultWriter implements Writer {
 
         startMonitor();
 
-        closed = false;
+        state = State.STARTED;
     }
 
     @Override
-    public void close() {
-        closed = true;
+    public synchronized void close() {
+        if (state != State.NOT_STARTED && state != State.STARTED) {
+            return;
+        }
+        state = State.CLOSING;
+        ScheduledFuture<?> monitorTask = this.monitorTask;
+        if (monitorTask != null) {
+            monitorTask.cancel(false);
+        }
         uploadActiveBulk();
         if (lastInActiveBulk != null) {
             try {
@@ -182,6 +197,8 @@ public class DefaultWriter implements Writer {
                 LOGGER.error("Failed to flush records when close.", ex);
             }
         }
+        FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
+        state = State.CLOSED;
 
         LOGGER.info("S3WAL Writer is closed.");
     }
@@ -195,7 +212,7 @@ public class DefaultWriter implements Writer {
     }
 
     protected void checkStatus() throws WALFencedException {
-        if (closed) {
+        if (state != State.STARTED) {
             throw new IllegalStateException("WAL is closed.");
         }
 
@@ -242,6 +259,7 @@ public class DefaultWriter implements Writer {
         Record record = new Record(streamRecordBatch, new CompletableFuture<>());
         lock.writeLock().lock();
         try {
+            checkWriteStatus();
             if (activeBulk == null) {
                 activeBulk = new Bulk(nextOffset.get());
             }
@@ -251,7 +269,9 @@ public class DefaultWriter implements Writer {
             }
             bufferedDataBytes.addAndGet(dataSize);
             activeBulk.add(record);
-            if (activeBulk.size > config.maxBytesInBatch()) {
+            // In FAILOVER mode, the only append is the fake record from trim to persist trimOffset.
+            // Upload immediately to avoid the batch delay (~250ms) when failover recover.
+            if (activeBulk.size > config.maxBytesInBatch() || config.openMode() == OpenMode.FAILOVER) {
                 uploadActiveBulk();
             }
         } finally {
@@ -478,7 +498,8 @@ public class DefaultWriter implements Writer {
             trimOffset.set(inclusiveTrimRecordOffset);
             // We cannot force upload an empty wal object cause of the recover workflow don't accept an empty wal object.
             // So we use a fake record to trigger the wal object upload.
-            persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER));
+            persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER,
+                BYTE_BUF_ALLOC));
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
                 Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {
@@ -519,10 +540,7 @@ public class DefaultWriter implements Writer {
                     if (throwable != null) {
                         LOGGER.error("Failed to delete objects when trim S3 WAL: {}", deleteObjectList, throwable);
                     }
-                    SCHEDULE.schedule(() -> {
-                        // - Try to Delete the objects again after 30 seconds to avoid object leak because of underlying fast retry
-                        objectStorage.delete(deleteObjectList);
-                    }, 10, TimeUnit.SECONDS);
+                    SCHEDULE.schedule(() -> retryDelete(deleteObjectList), 10, TimeUnit.SECONDS);
                 });
             });
             return lastTrimCf;
@@ -533,8 +551,15 @@ public class DefaultWriter implements Writer {
         }
     }
 
+    private void retryDelete(List<ObjectStorage.ObjectPath> objectPaths) {
+        if (state == State.STARTED) {
+            // Try to delete the objects again to avoid an object leak after a fast retry failure.
+            objectStorage.delete(objectPaths);
+        }
+    }
+
     private void startMonitor() {
-        SCHEDULE.scheduleWithFixedDelay(() -> {
+        monitorTask = SCHEDULE.scheduleWithFixedDelay(() -> {
             try {
                 long count = uploadingBulks.stream()
                     .filter(bulk -> time.nanoseconds() - bulk.startNanos > DEFAULT_UPLOAD_WARNING_TIMEOUT)

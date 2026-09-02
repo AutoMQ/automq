@@ -24,7 +24,6 @@ import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -156,8 +155,8 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (objectStorage == null) {
             this.objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
                 .readWriteIsolate(true)
-                .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-                .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+                .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+                .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
                 .build();
         }
         return objectStorage;

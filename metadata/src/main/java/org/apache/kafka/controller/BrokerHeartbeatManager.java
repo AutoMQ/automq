@@ -471,6 +471,29 @@ public class BrokerHeartbeatManager {
         }
     }
 
+    // AutoMQ inject start
+    /**
+     * Establish or advance the metadata barrier for a Broker in persisted controlled shutdown.
+     * Establishing the barrier restores heartbeat soft state after a Controller change.
+     */
+    void advanceControlledShutdownOffset(int brokerId, long controlledShutdownOffset) {
+        BrokerHeartbeatState broker = heartbeatStateOrThrow(brokerId);
+        if (broker.fenced()) {
+            throw new IllegalStateException("Fenced broker " + brokerId
+                + " cannot advance its controlled shutdown offset.");
+        }
+        active.remove(broker);
+        if (!broker.shuttingDown()) {
+            broker.lastControlledShutdownNs = time.nanoseconds();
+        }
+        if (broker.controlledShutdownOffset < controlledShutdownOffset) {
+            broker.controlledShutdownOffset = controlledShutdownOffset;
+            log.debug("Advanced the controlled shutdown offset for broker {} to {}.",
+                brokerId, controlledShutdownOffset);
+        }
+    }
+    // AutoMQ inject end
+
     /**
      * Return the time in monotonic nanoseconds at which we should check if a broker
      * session needs to be expired.

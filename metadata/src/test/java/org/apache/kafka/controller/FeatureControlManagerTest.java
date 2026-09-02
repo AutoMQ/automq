@@ -29,9 +29,11 @@ import org.apache.kafka.metadata.bootstrap.BootstrapMetadata;
 import org.apache.kafka.metadata.migration.ZkMigrationState;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -412,6 +414,35 @@ public class FeatureControlManagerTest {
                 Collections.singletonMap("foo", ApiError.NONE)), result2);
         RecordTestUtils.replayAll(manager, result2.records());
         assertEquals(Optional.empty(), manager.finalizedFeatures(Long.MAX_VALUE).get("foo"));
+    }
+
+    /**
+     * Given finalized V6 metadata, both safe and unsafe direct downgrade requests to V5 are rejected.
+     */
+    @Tag("S3Unit")
+    @Test
+    public void testCannotDirectlyDowngradeAutoMQVersionV6() {
+        FeatureControlManager manager = new FeatureControlManager.Builder()
+            .setQuorumFeatures(features(AutoMQVersion.FEATURE_NAME,
+                AutoMQVersion.V0.featureLevel(), AutoMQVersion.V6.featureLevel()))
+            .setMetadataVersion(MetadataVersion.IBP_3_9_IV0)
+            .build();
+        manager.replay(new FeatureLevelRecord()
+            .setName(AutoMQVersion.FEATURE_NAME)
+            .setFeatureLevel(AutoMQVersion.V6.featureLevel()));
+        ApiError expectedError = new ApiError(Errors.INVALID_UPDATE_VERSION,
+            "Invalid update version 6 for feature automq.version. "
+                + "Direct downgrade from AutoMQVersion V6 is not supported.");
+
+        for (FeatureUpdate.UpgradeType downgradeType : List.of(
+            FeatureUpdate.UpgradeType.SAFE_DOWNGRADE, FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
+            ControllerResult<Map<String, ApiError>> result = manager.updateFeatures(
+                singletonMap(AutoMQVersion.FEATURE_NAME, AutoMQVersion.V5.featureLevel()),
+                singletonMap(AutoMQVersion.FEATURE_NAME, downgradeType), false);
+
+            assertEquals(ControllerResult.atomicOf(emptyList(),
+                singletonMap(AutoMQVersion.FEATURE_NAME, expectedError)), result);
+        }
     }
 
     @Test

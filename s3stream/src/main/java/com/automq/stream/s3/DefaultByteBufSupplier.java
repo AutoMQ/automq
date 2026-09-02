@@ -21,9 +21,19 @@ package com.automq.stream.s3;
 
 import io.netty.buffer.ByteBuf;
 
+/**
+ * Allocates buffers directly through {@link ByteBufAlloc} without sequential slab recycling.
+ */
 public class DefaultByteBufSupplier implements ByteBufSupplier {
+    public static final DefaultByteBufSupplier INSTANCE = new DefaultByteBufSupplier(ByteBufAlloc.DEFAULT);
+
     private final int type;
 
+    /**
+     * Creates a supplier that attributes allocations to the specified type.
+     *
+     * @param type allocation type defined by {@link ByteBufAlloc}
+     */
     public DefaultByteBufSupplier(int type) {
         this.type = type;
     }

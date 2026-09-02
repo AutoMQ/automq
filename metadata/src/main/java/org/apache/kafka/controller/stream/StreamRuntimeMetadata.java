@@ -65,6 +65,7 @@ public class StreamRuntimeMetadata {
         this.startOffset = new TimelineLong(registry);
         this.startOffset.set(startOffset);
         this.endOffset = new TimelineLong(registry);
+        this.endOffset.set(startOffset);
         this.currentState = new TimelineObject<StreamState>(registry, currentState);
         this.tags = tags;
         this.ranges = new TimelineHashMap<>(registry, 0);
@@ -107,7 +108,10 @@ public class StreamRuntimeMetadata {
     }
 
     public void startOffset(long offset) {
-        this.startOffset.set(offset);
+        long oldStartOffset = startOffset.get();
+        if (offset > oldStartOffset) {
+            this.startOffset.set(offset);
+        }
     }
 
     public long endOffset() {

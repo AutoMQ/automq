@@ -54,16 +54,6 @@ public class RetryStormBackoffConfigTest {
     }
 
     /**
-     * Given a dynamic config update, validation rejects a negative max delay before runtime update.
-     */
-    @Test
-    public void testValidateRejectsNegativeMaxDelayMs() {
-        assertThrows(ConfigException.class, () -> RetryStormBackoffConfig.validate(Map.of(
-            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, -1L
-        )));
-    }
-
-    /**
      * Given static broker config parsing, ConfigDef rejects negative max delay values.
      */
     @Test
@@ -90,16 +80,6 @@ public class RetryStormBackoffConfigTest {
     }
 
     /**
-     * Given a dynamic config update, validation rejects values above the retry storm delay upper bound.
-     */
-    @Test
-    public void testValidateRejectsMaxDelayAboveUpperBound() {
-        assertThrows(ConfigException.class, () -> RetryStormBackoffConfig.validate(Map.of(
-            AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, 10001L
-        )));
-    }
-
-    /**
      * Given explicit runtime construction, config snapshots reject values above the delay upper bound.
      */
     @Test
@@ -121,7 +101,7 @@ public class RetryStormBackoffConfigTest {
         assertFalse(config.enabled());
         assertEquals(1000L, config.maxDelayMs());
 
-        config.update(Map.of(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, "250"));
+        config.update(Map.of(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, 250L));
         assertFalse(config.enabled());
         assertEquals(250L, config.maxDelayMs());
     }

@@ -22,6 +22,7 @@ package kafka.automq.table.process;
 import org.apache.avro.Schema;
 import org.apache.avro.generic.GenericRecord;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -42,6 +43,7 @@ public final class ProcessingResult {
     private final GenericRecord finalRecord;
     private final Schema finalSchema;
     private final String finalSchemaIdentity;
+    private final List<String> identifierColumns;
     private final DataError error;
 
     /**
@@ -53,9 +55,23 @@ public final class ProcessingResult {
      * @throws IllegalArgumentException if any parameter is null
      */
     public ProcessingResult(GenericRecord finalRecord, Schema finalSchema, String finalSchemaIdentity) {
+        this(finalRecord, finalSchema, finalSchemaIdentity, List.of());
+    }
+
+    /**
+     * Creates a successful processing result with the resolved identifier columns.
+     *
+     * @param finalRecord the Avro GenericRecord ready for further processing, must not be null
+     * @param finalSchema the Avro schema matching the finalRecord, must not be null
+     * @param finalSchemaIdentity unique identifier for schema and identifier comparison, must not be null
+     * @param identifierColumns resolved identifier column names, or empty when no identifier columns apply
+     * @throws IllegalArgumentException if finalRecord, finalSchema, or finalSchemaIdentity is null
+     */
+    public ProcessingResult(GenericRecord finalRecord, Schema finalSchema, String finalSchemaIdentity, List<String> identifierColumns) {
         this.finalRecord = Objects.requireNonNull(finalRecord, "finalRecord cannot be null");
         this.finalSchema = Objects.requireNonNull(finalSchema, "finalSchema cannot be null");
         this.finalSchemaIdentity = Objects.requireNonNull(finalSchemaIdentity, "finalSchemaIdentity cannot be null");
+        this.identifierColumns = identifierColumns == null ? List.of() : List.copyOf(identifierColumns);
         this.error = null;
     }
 
@@ -69,6 +85,7 @@ public final class ProcessingResult {
         this.finalRecord = null;
         this.finalSchema = null;
         this.finalSchemaIdentity = null;
+        this.identifierColumns = List.of();
         this.error = Objects.requireNonNull(error, "error cannot be null");
     }
 
@@ -84,6 +101,12 @@ public final class ProcessingResult {
     public DataError getError() {
         return error;
     }
+    /**
+     * Returns the resolved identifier column names that should be applied to the Iceberg schema.
+     */
+    public List<String> getIdentifierColumns() {
+        return identifierColumns;
+    }
     public boolean isSuccess() {
         return error == null;
     }
@@ -97,17 +120,18 @@ public final class ProcessingResult {
         return Objects.equals(finalRecord, that.finalRecord) &&
                Objects.equals(finalSchema, that.finalSchema) &&
                Objects.equals(finalSchemaIdentity, that.finalSchemaIdentity) &&
+               Objects.equals(identifierColumns, that.identifierColumns) &&
                Objects.equals(error, that.error);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(finalRecord, finalSchema, finalSchemaIdentity, error);
+        return Objects.hash(finalRecord, finalSchema, finalSchemaIdentity, identifierColumns, error);
     }
 
     @Override
     public String toString() {
-        if (!isSuccess()) {
+        if (isSuccess()) {
             return "ProcessingResult{success=true, schemaIdentity=" + finalSchemaIdentity + "}";
         } else {
             return "ProcessingResult{success=false, error=" + error + "}";

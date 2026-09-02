@@ -19,6 +19,9 @@
 
 package com.automq.stream.s3.model;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
+
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -32,13 +35,14 @@ import io.netty.buffer.Unpooled;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 public class StreamRecordBatchTest {
 
     @Test
     public void testOf() {
         byte[] payload = "hello".getBytes(StandardCharsets.UTF_8);
         ByteBuf payloadBuf = Unpooled.wrappedBuffer(payload);
-        StreamRecordBatch record = StreamRecordBatch.of(1L, 2L, 3L, 4, payloadBuf);
+        StreamRecordBatch record = StreamRecordBatch.of(1L, 2L, 3L, 4, payloadBuf, DefaultByteBufSupplier.INSTANCE);
         assertEquals(1, record.getStreamId());
         assertEquals(2, record.getEpoch());
         assertEquals(3, record.getBaseOffset());
@@ -48,8 +52,9 @@ public class StreamRecordBatchTest {
         byte[] realPayload = new byte[payload.length];
         record.getPayload().readBytes(realPayload);
         assertArrayEquals(payload, realPayload);
+        int refCnt = record.encoded.refCnt();
         record.release();
-        assertEquals(0, record.encoded.refCnt());
+        assertEquals(refCnt - 1, record.encoded.refCnt());
     }
 
     @ParameterizedTest
@@ -58,19 +63,21 @@ public class StreamRecordBatchTest {
         CompositeByteBuf buf = Unpooled.compositeBuffer();
         for (int i = 0; i < 10; i++) {
             ByteBuf payloadBuf = Unpooled.wrappedBuffer(("hello" + i).getBytes(StandardCharsets.UTF_8));
-            StreamRecordBatch record = StreamRecordBatch.of(1L, 2L, 3L + i, 4, payloadBuf);
+            StreamRecordBatch record = StreamRecordBatch.of(1L, 2L, 3L + i, 4, payloadBuf, DefaultByteBufSupplier.INSTANCE);
             buf.addComponent(true, record.encoded());
         }
         for (int i = 0; i < 10; i++) {
-            StreamRecordBatch record = StreamRecordBatch.parse(buf, duplicated);
+            StreamRecordBatch record = StreamRecordBatch.parse(buf, duplicated,
+                duplicated ? DefaultByteBufSupplier.INSTANCE : null);
             assertEquals(3 + i, record.getBaseOffset());
             ByteBuf payloadBuf = record.getPayload();
             byte[] payload = new byte[payloadBuf.readableBytes()];
             payloadBuf.readBytes(payload);
             assertArrayEquals(("hello" + i).getBytes(StandardCharsets.UTF_8), payload);
+            int refCnt = record.encoded.refCnt();
             record.release();
             if (duplicated) {
-                assertEquals(0, record.encoded.refCnt());
+                assertEquals(refCnt - 1, record.encoded.refCnt());
             }
         }
         assertEquals(0, buf.readableBytes());

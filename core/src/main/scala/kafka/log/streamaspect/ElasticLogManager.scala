@@ -117,6 +117,7 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
   }
 
   def shutdownNow(): Unit = {
+    openStreamChecker.close()
     client.shutdown()
   }
 

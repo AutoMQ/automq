@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.backpressure.BackPressureConfig
+import kafka.automq.metadata.KafkaGoMetadataResponseRewriter
 import kafka.automq.retrystorm.RetryStormBackoffConfig
 
 import java.util
@@ -105,7 +106,8 @@ object DynamicBrokerConfig {
     AutoBalancerControllerConfig.RECONFIGURABLE_CONFIGS.asScala ++
     AutoBalancerMetricsReporterConfig.RECONFIGURABLE_CONFIGS.asScala ++
     BackPressureConfig.RECONFIGURABLE_CONFIGS.asScala ++
-    RetryStormBackoffConfig.RECONFIGURABLE_CONFIGS.asScala
+    RetryStormBackoffConfig.RECONFIGURABLE_CONFIGS.asScala ++
+    KafkaGoMetadataResponseRewriter.RECONFIGURABLE_CONFIGS.asScala
 
   private val ClusterLevelListenerConfigs = Set(SocketServerConfigs.MAX_CONNECTIONS_CONFIG, SocketServerConfigs.MAX_CONNECTION_CREATION_RATE_CONFIG, SocketServerConfigs.NUM_NETWORK_THREADS_CONFIG)
   private val PerBrokerConfigs = (DynamicSecurityConfigs ++ DynamicListenerConfig.ReconfigurableConfigs).diff(

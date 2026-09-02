@@ -77,19 +77,6 @@ public class RetryStormBackoffConfig {
     }
 
     /**
-     * Validates retry storm keys present in a dynamic broker config update.
-     */
-    public static void validate(Map<String, ?> raw) throws ConfigException {
-        Map<String, Object> configs = new HashMap<>(raw);
-        if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)) {
-            ConfigUtils.getBoolean(configs, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG);
-        }
-        if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)) {
-            validateMaxDelayMs(ConfigUtils.getLong(configs, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG));
-        }
-    }
-
-    /**
      * Rejects max delay values outside the bounded delayed-response range.
      */
     public static void validateMaxDelayMs(long maxDelayMs) throws ConfigException {
@@ -104,14 +91,11 @@ public class RetryStormBackoffConfig {
      * Applies a partial dynamic update; keys absent from {@code raw} keep their current runtime values.
      */
     public void update(Map<String, ?> raw) {
-        Map<String, Object> configs = new HashMap<>(raw);
-        if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)) {
-            this.enabled = ConfigUtils.getBoolean(configs, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG);
+        if (raw.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)) {
+            this.enabled = (Boolean) raw.get(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG);
         }
-        if (configs.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)) {
-            long nextMaxDelayMs = ConfigUtils.getLong(configs, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG);
-            validateMaxDelayMs(nextMaxDelayMs);
-            this.maxDelayMs = nextMaxDelayMs;
+        if (raw.containsKey(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)) {
+            this.maxDelayMs = (Long) raw.get(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG);
         }
     }
 

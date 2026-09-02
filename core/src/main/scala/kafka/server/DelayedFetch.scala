@@ -21,16 +21,14 @@ import com.automq.stream.api.exceptions.FastReadFailFastException
 import com.automq.stream.utils.FutureUtil
 import com.yammer.metrics.core.Meter
 import kafka.log.streamaspect.ReadHint
-import kafka.server.DelayedFetch.DELAYED_FETCH_EXECUTOR
 import kafka.server.streamaspect.ElasticReplicaManager
 
-import java.util.concurrent.{ExecutorService, Executors, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.TimeUnit
 import org.apache.kafka.common.TopicIdPartition
 import org.apache.kafka.common.errors._
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
 import org.apache.kafka.common.requests.OffsetsForLeaderEpochResponse.{UNDEFINED_EPOCH, UNDEFINED_EPOCH_OFFSET}
-import org.apache.kafka.common.utils.ThreadUtils
 import org.apache.kafka.server.metrics.KafkaMetricsGroup
 import org.apache.kafka.storage.internals.log.{FetchIsolation, FetchParams, FetchPartitionData, LogOffsetMetadata}
 
@@ -45,22 +43,6 @@ case class FetchPartitionStatus(startOffsetMetadata: LogOffsetMetadata, fetchInf
       "]"
   }
 }
-
-// AutoMQ for Kafka inject start
-object DelayedFetch {
-  private var DELAYED_FETCH_EXECUTOR: ExecutorService = Executors.newFixedThreadPool(8, ThreadUtils.createThreadFactory("delayed-fetch-executor-%d", true))
-
-  def executorQueueSize: Int = DELAYED_FETCH_EXECUTOR match {
-    case tp: ThreadPoolExecutor => tp.getQueue.size
-    case _ => 0
-  }
-
-  // Used by test
-  def setFetchExecutor(executor: ExecutorService): Unit = {
-    DELAYED_FETCH_EXECUTOR = executor
-  }
-}
-// AutoMQ for Kafka inject end
 
 /**
  * A delayed fetch operation that can be created by the replica manager and watched
@@ -194,7 +176,7 @@ class DelayedFetch(
    */
   override def onComplete(): Unit = {
     // AutoMQ for Kafka inject start
-    DELAYED_FETCH_EXECUTOR.submit(new Runnable {
+    limiter.execute(params.connectionId, new Runnable {
       override def run(): Unit = {
         try {
           onComplete0()

@@ -19,76 +19,28 @@
 
 package com.automq.stream.s3.metrics;
 
-import com.automq.stream.s3.metrics.operations.S3ObjectStage;
-import com.automq.stream.s3.metrics.operations.S3Stage;
-import com.automq.stream.s3.network.ThrottleStrategy;
-
-import io.opentelemetry.api.common.Attributes;
-
 public class AttributesUtils {
-
-    public static Attributes buildOperationAttributes(String operationType, String operationName) {
-        return Attributes.builder()
-            .put(S3StreamMetricsConstant.LABEL_OPERATION_TYPE, operationType)
-            .put(S3StreamMetricsConstant.LABEL_OPERATION_NAME, operationName)
-            .build();
-    }
-
-    public static Attributes buildOperationAttributesWithStatus(String operationType, String operationName, String status) {
-        return Attributes.builder()
-            .putAll(buildOperationAttributes(operationType, operationName))
-            .put(S3StreamMetricsConstant.LABEL_STATUS, status)
-            .build();
-    }
-
-    public static Attributes buildAttributesStage(String stage) {
-        return Attributes.builder()
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage)
-                .build();
-    }
-
-    public static Attributes buildAttributes(String status) {
-        return Attributes.builder()
-                .put(S3StreamMetricsConstant.LABEL_STATUS, status)
-                .build();
-    }
-
-    public static Attributes buildAttributes(ThrottleStrategy strategy) {
-        return Attributes.builder()
-                .put(S3StreamMetricsConstant.LABEL_TYPE, strategy.getName())
-                .build();
-    }
-
-    public static Attributes buildStatusStageAttributes(String status, String stage) {
-        return Attributes.builder()
-                .put(S3StreamMetricsConstant.LABEL_STATUS, status)
-                .put(S3StreamMetricsConstant.LABEL_STAGE, stage)
-                .build();
-    }
-
-    public static Attributes buildAttributes(S3Stage stage) {
-        return Attributes.builder()
-            .putAll(buildOperationAttributes(stage.getOperation().getType().getName(), stage.getOperation().getName()))
-            .put(S3StreamMetricsConstant.LABEL_STAGE, stage.getName())
-            .build();
-    }
-
-    public static Attributes buildOperationAttributesWithStatusAndSize(String operationType, String operationName, String status, String sizeLabelName) {
-        return Attributes.builder()
-            .putAll(buildOperationAttributesWithStatus(operationType, operationName, status))
-            .put(S3StreamMetricsConstant.LABEL_SIZE_NAME, sizeLabelName)
-            .build();
-    }
-
-    public static Attributes buildAttributes(S3ObjectStage objectStage) {
-        return Attributes.builder()
-            .put(S3StreamMetricsConstant.LABEL_STAGE, objectStage.getName())
-            .build();
-    }
+    // value = 16KB * 2^i
+    private static final String[] OBJECT_SIZE_BUCKET_NAMES = {
+        "16KB",
+        "32KB",
+        "64KB",
+        "128KB",
+        "256KB",
+        "512KB",
+        "1MB",
+        "2MB",
+        "4MB",
+        "8MB",
+        "16MB",
+        "32MB",
+        "64MB",
+        "128MB",
+        "inf"};
 
     public static String getObjectBucketLabel(long objectSize) {
         int index = (int) Math.ceil(Math.log((double) objectSize / (16 * 1024)) / Math.log(2));
-        index = Math.min(S3StreamMetricsConstant.OBJECT_SIZE_BUCKET_NAMES.length - 1, Math.max(0, index));
-        return S3StreamMetricsConstant.OBJECT_SIZE_BUCKET_NAMES[index];
+        index = Math.min(OBJECT_SIZE_BUCKET_NAMES.length - 1, Math.max(0, index));
+        return OBJECT_SIZE_BUCKET_NAMES[index];
     }
 }

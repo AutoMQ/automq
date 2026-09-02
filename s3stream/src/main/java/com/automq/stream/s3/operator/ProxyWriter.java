@@ -21,96 +21,111 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
-import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3ObjectMetrics;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.S3ObjectStats;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
 import com.automq.stream.utils.FutureUtil;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 
 /**
- * If object data size is less than ObjectWriter.MAX_UPLOAD_SIZE, we should use single upload to upload it.
- * Else, we should use multi-part upload to upload it.
+ * Selects PutObject or multipart upload after observing the object operations. Before the selection is made,
+ * operations are retained in call order and their buffers are owned by this writer. Closing replays them to the
+ * PutObject path, while exceeding the multipart upload threshold replays them to a multipart writer.
+ *
+ * <p>This writer expects calls to be serialized. After {@link #copyOnWrite()} returns, callers may safely modify
+ * buffers passed to earlier {@link #write(ByteBuf)} calls. {@link #release()} releases every retained buffer that
+ * has not already been transferred to the selected writer.</p>
  */
-class ProxyWriter implements Writer {
-    final ObjectWriter objectWriter = new ObjectWriter();
+public class ProxyWriter implements Writer {
+    private static final long MULTIPART_UPLOAD_THRESHOLD = 32L * 1024 * 1024;
     private final WriteOptions writeOptions;
-    private final AbstractObjectStorage objectStorage;
+    private final ObjectStorage objectStorage;
     private final String path;
     private final long minPartSize;
-    Writer largeObjectWriter = null;
+    private final List<PendingOperation> pendingOperations = new ArrayList<>();
+    private final CompletableFuture<Void> objectCf = new CompletableFuture<>();
+    private final TimerUtil timerUtil = new TimerUtil();
+    private Writer multiPartObjectWriter = null;
+    private long size;
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path, long minPartSize) {
+    public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path, long minPartSize) {
         this.writeOptions = writeOptions;
         this.objectStorage = objectStorage;
         this.path = path;
         this.minPartSize = minPartSize;
     }
 
-    public ProxyWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
+    public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path) {
         this(writeOptions, objectStorage, path, Writer.MIN_PART_SIZE);
     }
 
     @Override
     public CompletableFuture<Void> write(ByteBuf part) {
-        if (largeObjectWriter != null) {
-            return largeObjectWriter.write(part);
-        } else {
-            objectWriter.write(part);
-            if (objectWriter.isFull()) {
-                newLargeObjectWriter(writeOptions, objectStorage, path);
-            }
-            return objectWriter.cf;
+        if (multiPartObjectWriter != null) {
+            return multiPartObjectWriter.write(part);
         }
+        size += part.readableBytes();
+        pendingOperations.add(new PendingWrite(part));
+        if (exceedsMultipartUploadThreshold()) {
+            newMultiPartObjectWriter();
+        }
+        return objectCf;
     }
 
     @Override
     public void copyOnWrite() {
-        if (largeObjectWriter != null) {
-            largeObjectWriter.copyOnWrite();
+        if (multiPartObjectWriter != null) {
+            multiPartObjectWriter.copyOnWrite();
         } else {
-            objectWriter.copyOnWrite();
+            pendingOperations.forEach(PendingOperation::copyOnWrite);
         }
     }
 
     @Override
     public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-        if (largeObjectWriter == null) {
-            newLargeObjectWriter(writeOptions, objectStorage, path);
+        if (multiPartObjectWriter != null) {
+            multiPartObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+            return;
         }
-        largeObjectWriter.copyWrite(s3ObjectMetadata, start, end);
+        size += end - start;
+        pendingOperations.add(new PendingCopyWrite(s3ObjectMetadata, start, end));
+        if (exceedsMultipartUploadThreshold()) {
+            newMultiPartObjectWriter();
+        }
     }
 
     @Override
     public boolean hasBatchingPart() {
-        if (largeObjectWriter != null) {
-            return largeObjectWriter.hasBatchingPart();
-        } else {
-            return objectWriter.hasBatchingPart();
+        if (multiPartObjectWriter != null) {
+            return multiPartObjectWriter.hasBatchingPart();
         }
+        return true;
     }
 
     @Override
     public CompletableFuture<Void> close() {
-        if (largeObjectWriter != null) {
-            return largeObjectWriter.close();
-        } else {
-            return objectWriter.close();
+        if (multiPartObjectWriter != null) {
+            return multiPartObjectWriter.close();
         }
+        return closeWithPutObject();
     }
 
     @Override
     public CompletableFuture<Void> release() {
-        if (largeObjectWriter != null) {
-            return largeObjectWriter.release();
-        } else {
-            return objectWriter.release();
+        if (multiPartObjectWriter != null) {
+            return multiPartObjectWriter.release();
         }
+        pendingOperations.forEach(PendingOperation::release);
+        pendingOperations.clear();
+        return CompletableFuture.completedFuture(null);
     }
 
     @Override
@@ -118,77 +133,128 @@ class ProxyWriter implements Writer {
         return writeOptions.bucketId();
     }
 
-    protected void newLargeObjectWriter(WriteOptions writeOptions, AbstractObjectStorage objectStorage, String path) {
-        this.largeObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
-        if (objectWriter.data.readableBytes() > 0) {
-            FutureUtil.propagate(largeObjectWriter.write(objectWriter.data), objectWriter.cf);
-        } else {
-            objectWriter.data.release();
-            objectWriter.cf.complete(null);
+    private void newMultiPartObjectWriter() {
+        this.multiPartObjectWriter = new MultiPartWriter(writeOptions, objectStorage, path, minPartSize);
+        List<CompletableFuture<Void>> writeCfs = new ArrayList<>();
+        for (PendingOperation operation : pendingOperations) {
+            writeCfs.add(operation.apply(multiPartObjectWriter));
+        }
+        pendingOperations.clear();
+        FutureUtil.propagate(CompletableFuture.allOf(writeCfs.toArray(new CompletableFuture[0])), objectCf);
+    }
+
+    private CompletableFuture<Void> closeWithPutObject() {
+        CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
+        CompletableFuture<Void> replayCf = CompletableFuture.completedFuture(null);
+        for (PendingOperation operation : pendingOperations) {
+            replayCf = operation.apply(replayCf, data);
+        }
+        pendingOperations.clear();
+        S3ObjectMetrics.recordReadyCloseStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        replayCf.whenComplete((nil, ex) -> {
+            if (ex != null) {
+                data.release();
+                objectCf.completeExceptionally(ex);
+            } else {
+                FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), objectCf);
+            }
+        });
+        objectCf.whenComplete((nil, e) -> {
+            S3ObjectMetrics.recordTotalStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            S3ObjectMetrics.recordObject();
+        });
+        return objectCf;
+    }
+
+    private boolean exceedsMultipartUploadThreshold() {
+        return size > MULTIPART_UPLOAD_THRESHOLD;
+    }
+
+    private interface PendingOperation {
+        CompletableFuture<Void> apply(Writer writer);
+
+        CompletableFuture<Void> apply(CompletableFuture<Void> previousCf, CompositeByteBuf data);
+
+        default void copyOnWrite() {
+        }
+
+        default void release() {
         }
     }
 
-    class ObjectWriter implements Writer {
-        // max upload size, when object data size is larger than MAX_UPLOAD_SIZE, we should use multi-part upload to upload it.
-        static final long MAX_UPLOAD_SIZE = 32L * 1024 * 1024;
-        CompletableFuture<Void> cf = new CompletableFuture<>();
-        CompositeByteBuf data = ByteBufAlloc.compositeByteBuffer();
-        TimerUtil timerUtil = new TimerUtil();
+    private class PendingWrite implements PendingOperation {
+        private ByteBuf part;
+
+        private PendingWrite(ByteBuf part) {
+            this.part = part;
+        }
 
         @Override
-        public CompletableFuture<Void> write(ByteBuf part) {
-            data.addComponent(true, part);
+        public CompletableFuture<Void> apply(Writer writer) {
+            CompletableFuture<Void> cf = writer.write(part);
+            part = null;
             return cf;
+        }
+
+        @Override
+        public CompletableFuture<Void> apply(CompletableFuture<Void> previousCf, CompositeByteBuf data) {
+            ByteBuf dataPart = part;
+            part = null;
+            return previousCf.handle((nil, ex) -> {
+                if (ex != null) {
+                    dataPart.release();
+                    throw new CompletionException(ex);
+                }
+                data.addComponent(true, dataPart);
+                return null;
+            });
         }
 
         @Override
         public void copyOnWrite() {
-            int size = data.readableBytes();
-            if (size > 0) {
-                ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.allocType());
-                buf.writeBytes(data.duplicate());
-                CompositeByteBuf copy = ByteBufAlloc.compositeByteBuffer().addComponent(true, buf);
-                this.data.release();
-                this.data = copy;
+            ByteBuf copy = ByteBufAlloc.byteBuffer(part.readableBytes(), writeOptions.allocType());
+            copy.writeBytes(part.duplicate());
+            part.release();
+            part = copy;
+        }
+
+        @Override
+        public void release() {
+            if (part != null) {
+                part.release();
+                part = null;
+            }
+        }
+    }
+
+    private class PendingCopyWrite implements PendingOperation {
+        private final S3ObjectMetadata s3ObjectMetadata;
+        private final long start;
+        private final long end;
+
+        private PendingCopyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
+            this.s3ObjectMetadata = s3ObjectMetadata;
+            this.start = start;
+            this.end = end;
+        }
+
+        @Override
+        public CompletableFuture<Void> apply(Writer writer) {
+            try {
+                writer.copyWrite(s3ObjectMetadata, start, end);
+                return CompletableFuture.completedFuture(null);
+            } catch (Throwable ex) {
+                return CompletableFuture.failedFuture(ex);
             }
         }
 
         @Override
-        public void copyWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
-            throw new UnsupportedOperationException();
-        }
-
-        @Override
-        public boolean hasBatchingPart() {
-            return true;
-        }
-
-        @Override
-        public CompletableFuture<Void> close() {
-            S3ObjectStats.getInstance().objectStageReadyCloseStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            int size = data.readableBytes();
-            FutureUtil.propagate(objectStorage.write(writeOptions, path, data).thenApply(rst -> null), cf);
-            cf.whenComplete((nil, e) -> {
-                S3ObjectStats.getInstance().objectStageTotalStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                S3ObjectStats.getInstance().objectNumInTotalStats.add(MetricsLevel.DEBUG, 1);
-                S3ObjectStats.getInstance().objectUploadSizeStats.record(size);
-            });
-            return cf;
-        }
-
-        @Override
-        public CompletableFuture<Void> release() {
-            data.release();
-            return CompletableFuture.completedFuture(null);
-        }
-
-        public boolean isFull() {
-            return data.readableBytes() > MAX_UPLOAD_SIZE;
-        }
-
-        @Override
-        public short bucketId() {
-            return writeOptions.bucketId();
+        public CompletableFuture<Void> apply(CompletableFuture<Void> previousCf, CompositeByteBuf data) {
+            return previousCf
+                .thenCompose(nil -> objectStorage.rangeRead(
+                    new ObjectStorage.ReadOptions().throttleStrategy(writeOptions.throttleStrategy()).bucket(s3ObjectMetadata.bucket()),
+                    s3ObjectMetadata.key(), start, end))
+                .thenAccept(buf -> data.addComponent(true, buf));
         }
     }
 }

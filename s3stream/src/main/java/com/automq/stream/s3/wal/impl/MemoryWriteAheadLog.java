@@ -95,7 +95,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
 
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
-        return CompletableFuture.completedFuture(StreamRecordBatch.parse(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), false));
+        return CompletableFuture.completedFuture(StreamRecordBatch.parse(dataMap.get(DefaultRecordOffset.of(recordOffset).offset()), false, null));
     }
 
     @Override
@@ -103,7 +103,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
         List<StreamRecordBatch> list = dataMap
             .subMap(DefaultRecordOffset.of(startOffset).offset(), true, DefaultRecordOffset.of(endOffset).offset(), false)
             .values().stream()
-            .map(buf -> StreamRecordBatch.parse(buf, false)).collect(Collectors.toList());
+            .map(buf -> StreamRecordBatch.parse(buf, false, null)).collect(Collectors.toList());
         return CompletableFuture.completedFuture(list);
     }
 
@@ -119,7 +119,7 @@ public class MemoryWriteAheadLog implements WriteAheadLog {
             .map(e -> (RecoverResult) new RecoverResult() {
                 @Override
                 public StreamRecordBatch record() {
-                    return StreamRecordBatch.parse(e.getValue(), false);
+                    return StreamRecordBatch.parse(e.getValue(), false, null);
                 }
 
                 @Override

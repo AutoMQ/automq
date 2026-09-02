@@ -31,6 +31,7 @@ import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.reassignment.FastPartitionReassignmentManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
@@ -223,17 +224,17 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       // ElasticLogManager should be marked before LogManager is created.
       ElasticLogManager.enable(config.elasticStreamEnabled)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
@@ -616,6 +617,7 @@ class BrokerServer(
       if (routerChannelProvider != null) {
         S3Storage.setLinkRecordDecoder(new DefaultLinkRecordDecoder(routerChannelProvider))
       }
+      FastPartitionReassignmentManager.initialize(config, metrics, metadataCache)
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
       val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
@@ -772,6 +774,7 @@ class BrokerServer(
         if (routerChannelProvider != null) {
           CoreUtils.swallow(routerChannelProvider.close(), this)
         }
+        CoreUtils.swallow(FastPartitionReassignmentManager.shutdown(), this)
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end

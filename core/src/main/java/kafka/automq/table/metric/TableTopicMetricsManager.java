@@ -29,7 +29,6 @@ import java.util.concurrent.ExecutionException;
 
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
-import io.opentelemetry.api.metrics.Meter;
 
 public final class TableTopicMetricsManager {
     private static final Cache<String, Attributes> TOPIC_ATTRIBUTE_CACHE = CacheBuilder.newBuilder()
@@ -37,15 +36,11 @@ public final class TableTopicMetricsManager {
     private static final Metrics.LongGaugeBundle DELAY_GAUGES = Metrics.instance()
         .longGauge("kafka_tabletopic_delay", "Table topic commit delay", "ms");
     private static final Metrics.DoubleGaugeBundle FIELDS_PER_SECOND_GAUGES = Metrics.instance()
-        .doubleGauge("kafka_tabletopic_fps", "Table topic fields per second", "fields/s");
+        .doubleGauge("kafka_tabletopic_fields", "Table topic fields per second", "1/s");
     private static final Metrics.DoubleGaugeBundle EVENT_LOOP_BUSY_GAUGES = Metrics.instance()
         .doubleGauge("kafka_tableworker_eventloop_busy_ratio", "Table worker event loop busy ratio", "%");
 
     private TableTopicMetricsManager() {
-    }
-
-    public static void initMetrics(Meter meter) {
-        // Metrics instruments are registered via Metrics.instance(); no additional setup required.
     }
 
     public static Metrics.LongGaugeBundle.LongGauge registerDelay(String topic) {

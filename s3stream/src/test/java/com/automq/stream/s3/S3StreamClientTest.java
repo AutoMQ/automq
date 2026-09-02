@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.api.OpenStreamOptions;
+import com.automq.stream.api.Stream;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -31,18 +32,28 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
+import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MINOR_V1;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -52,12 +63,15 @@ import static org.mockito.Mockito.when;
 public class S3StreamClientTest {
     private S3StreamClient client;
     private StreamManager streamManager;
+    private Storage storage;
     private ScheduledExecutorService scheduler;
 
     @BeforeEach
     void setup() {
         streamManager = mock(StreamManager.class);
-        client = spy(new S3StreamClient(streamManager, mock(Storage.class), mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
+        storage = mock(Storage.class);
+        when(storage.awaitUpload(anyLong())).thenReturn(CompletableFuture.completedFuture(null));
+        client = spy(new S3StreamClient(streamManager, storage, mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
         scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
@@ -88,6 +102,68 @@ public class S3StreamClientTest {
         assertEquals(0, client.openingStreams.size());
         assertEquals(0, client.openedStreams.size());
         assertEquals(0, client.closingStreams.size());
+    }
+
+    /**
+     * Given a local historical upload in progress, when the same stream is reopened,
+     * then Controller open starts only after the upload barrier completes.
+     */
+    @Test
+    public void testOpenWaitsForLocalUpload() {
+        CompletableFuture<Void> upload = new CompletableFuture<>();
+        when(storage.awaitUpload(1L)).thenReturn(upload);
+        when(streamManager.openStream(1L, 2L, Map.of())).thenReturn(CompletableFuture.completedFuture(
+            new StreamMetadata(1L, 2L, 100L, 200L, StreamState.OPENED)));
+
+        CompletableFuture<Stream> open = client.openStream(1L, OpenStreamOptions.builder().epoch(2L).build());
+
+        assertFalse(open.isDone());
+        verify(streamManager, never()).openStream(anyLong(), anyLong(), anyMap());
+
+        upload.complete(null);
+
+        assertTrue(open.isDone());
+        verify(streamManager).openStream(1L, 2L, Map.of());
+    }
+
+    /**
+     * Given a failed local historical upload, when the same stream is reopened,
+     * then the failure reaches the caller and Controller open is not attempted.
+     */
+    @Test
+    public void testUploadFailurePreventsOpen() {
+        RuntimeException uploadFailure = new RuntimeException("upload failed");
+        when(storage.awaitUpload(1L)).thenReturn(CompletableFuture.failedFuture(uploadFailure));
+
+        CompletableFuture<Stream> open = client.openStream(1L, OpenStreamOptions.builder().epoch(2L).build());
+
+        ExecutionException exception = assertThrows(ExecutionException.class, open::get);
+        assertEquals(uploadFailure, exception.getCause());
+        verify(streamManager, never()).openStream(anyLong(), anyLong(), anyMap());
+    }
+
+    /**
+     * Given the cluster object count approaches the hard major-v1 threshold,
+     * when deciding whether to run major-v1 compaction, then the soft threshold triggers early.
+     */
+    @Test
+    public void testMajorV1CompactionTriggeredAtSoftObjectThreshold() {
+        int hardThreshold = 100;
+        assertFalse(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(89, hardThreshold));
+        assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(90, hardThreshold));
+        assertTrue(S3StreamClient.shouldRunMajorV1CompactionByObjectCount(100, hardThreshold));
+    }
+
+    /**
+     * Given object-count pressure, when selecting V1 compactions, then pressure appends MAJOR_V1 after the regular task
+     * without duplicating an already scheduled MAJOR_V1.
+     */
+    @Test
+    public void testObjectCountPressureAppendsMajorV1AfterScheduledCompaction() {
+        assertEquals(List.of(MINOR_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, true, true));
+        assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
+        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
+        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
     }
 
 }

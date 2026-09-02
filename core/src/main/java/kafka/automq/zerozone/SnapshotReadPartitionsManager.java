@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.utils.AsyncSender;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.LazyStream;
@@ -96,7 +97,8 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
         this.replicaManager = replicaManager;
         this.metadataCache = metadataCache;
         this.replayer = replayer;
-        this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM, "AUTOMQ_SNAPSHOT_READ", new LogContext());
+        this.asyncSender = new AsyncSender.BrokersAsyncSender(config, metrics, "snapshot_read", Time.SYSTEM,
+            "AUTOMQ_SNAPSHOT_READ", new LogContext(), 30_000);
     }
 
     // test only
@@ -113,10 +115,14 @@ public class SnapshotReadPartitionsManager implements MetadataListener, ProxyTop
     }
 
     public synchronized void close() {
+        if (closed) {
+            return;
+        }
         closed = true;
         subscribers.forEach((k, s) -> s.close());
         CompletableFuture.allOf(closingSubscribers.toArray(new CompletableFuture[0])).join();
         subscribers.clear();
+        asyncSender.close();
     }
 
     @Override

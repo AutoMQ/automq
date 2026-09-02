@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Version;
+import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
 import java.util.List;
@@ -56,6 +57,7 @@ public class Config {
     private boolean mockEnable = false;
     // 1GBps/s
     private long networkBaselineBandwidth = 1024 * 1024 * 1024;
+    private NetworkBandwidthMode networkBandwidthMode = NetworkBandwidthMode.SEPARATE;
     private int refillPeriodMs = 10;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
@@ -166,6 +168,13 @@ public class Config {
 
     public long networkBaselineBandwidth() {
         return networkBaselineBandwidth;
+    }
+
+    /**
+     * Returns whether network bandwidth is limited by independent directional buckets or one shared bucket.
+     */
+    public NetworkBandwidthMode networkBandwidthMode() {
+        return networkBandwidthMode;
     }
 
     public int refillPeriodMs() {
@@ -299,6 +308,14 @@ public class Config {
 
     public Config networkBaselineBandwidth(long networkBaselineBandwidth) {
         this.networkBaselineBandwidth = networkBaselineBandwidth;
+        return this;
+    }
+
+    /**
+     * Sets the network bandwidth limiting mode.
+     */
+    public Config networkBandwidthMode(NetworkBandwidthMode networkBandwidthMode) {
+        this.networkBandwidthMode = networkBandwidthMode;
         return this;
     }
 

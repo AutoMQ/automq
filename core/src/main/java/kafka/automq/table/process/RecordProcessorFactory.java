@@ -65,7 +65,7 @@ public class RecordProcessorFactory {
 
         var transforms = createTransforms(config.transformType());
 
-        return new DefaultRecordProcessor(topic, keyConverter, valueConverter, transforms);
+        return new DefaultRecordProcessor(topic, keyConverter, valueConverter, transforms, config.idColumns());
     }
 
     private List<Transform> createTransforms(TableTopicTransformType transformType) {
