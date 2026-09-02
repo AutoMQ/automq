@@ -86,6 +86,7 @@ versions += [
   apacheds: "2.0.0-M24",
   argparse4j: "0.7.0",
   bcpkix: "1.75",
+  bcprov: "1.84",
   caffeine: "2.9.3", // 3.x supports JDK 11 and above
   // when updating checkstyle, check whether the exclusion of
   // CVE-2023-2976 and CVE-2020-8908 can be dropped from
@@ -99,15 +100,15 @@ versions += [
   grgit: "4.1.1",
   httpclient: "4.5.14",
   // AutoMQ inject start
-  jackson: "2.20.0",
-  // jackson-annotations uses "2.20" instead of "2.20.0"
-  jacksonAnnotationsVersion: "2.20",
+  jackson: "2.21.5",
+  // jackson-annotations uses a short version instead of the full Jackson version
+  jacksonAnnotationsVersion: "2.21",
   // AutoMQ inject end
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
   jetty: "9.4.58.v20250814",
   jersey: "2.39.1",
-  jline: "3.25.1",
+  jline: "3.30.14",
   jmh: "1.37",
   hamcrest: "2.2",
   scalaLogging: "3.9.5",
@@ -147,6 +148,7 @@ versions += [
   // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
   lz4: "1.10.1",
   mavenArtifact: "3.9.6",
+  plexusUtils: "3.6.1",
   metrics: "2.2.0",
   netty: "4.1.137.Final",
   opentelemetryProto: "1.0.0-alpha",
@@ -173,7 +175,7 @@ versions += [
   snappy: "1.1.10.5",
   spotbugs: "4.8.6",
   zinc: "1.9.2",
-  zookeeper: "3.8.4",
+  zookeeper: "3.8.6",
 
   // AutoMQ inject start
   commonLang: "3.18.0",

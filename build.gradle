@@ -985,6 +985,12 @@ project(':core') {
     // AutoMQ inject start
     // Keep table-topic transitive dependencies on supported patch versions at the core runtime boundary.
     constraints {
+      implementation("org.slf4j:slf4j-api:${versions.slf4j}") {
+        version {
+          strictly versions.slf4j
+        }
+        because('Kafka uses the SLF4J 1.7.x reload4j binding')
+      }
       implementation "org.apache.parquet:parquet-avro:${versions.parquet}"
       implementation "org.apache.parquet:parquet-column:${versions.parquet}"
       implementation "org.apache.parquet:parquet-common:${versions.parquet}"
@@ -999,6 +1005,7 @@ project(':core') {
       implementation "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
       implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
       implementation "commons-beanutils:commons-beanutils:${versions.beanutils}"
+      implementation "org.bouncycastle:bcprov-jdk18on:${versions.bcprov}"
     }
     // AutoMQ inject end
     implementation libs.metrics
@@ -3661,6 +3668,10 @@ project(':connect:runtime') {
     implementation libs.reflections
     implementation libs.mavenArtifact
     implementation libs.swaggerAnnotations
+
+    constraints {
+      implementation "org.codehaus.plexus:plexus-utils:${versions.plexusUtils}"
+    }
 
     // We use this library to generate OpenAPI docs for the REST API, but we don't want or need it at compile
     // or run time. So, we add it to a separate configuration, which we use later on during docs generation
