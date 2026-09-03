@@ -21,9 +21,15 @@ package com.automq.stream.s3.cache;
 
 import com.automq.stream.s3.ObjectReader;
 
-public class ObjectReaderLRUCache extends AsyncLRUCache<Long, ObjectReader> {
+public class ObjectReaderLRUCache extends AsyncLRUCache<ObjectReaderLRUCache.Key, ObjectReader> {
 
     public ObjectReaderLRUCache(String cacheName, int maxObjectSize) {
         super(cacheName, maxObjectSize);
+    }
+
+    /**
+     * Identifies the physical object represented by a reader.
+     */
+    public record Key(short bucketId, String objectKey) {
     }
 }

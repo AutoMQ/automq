@@ -19,8 +19,10 @@
 
 package com.automq.stream.s3;
 
+import com.automq.stream.Version;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
+import com.automq.stream.s3.compact.StreamObjectArchiveTask;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -164,6 +166,30 @@ public class S3StreamClientTest {
         assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
         assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
         assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
+    }
+
+    /**
+     * Given post-compaction global object counts, when selecting Archive pressure, then the MAJOR_V1 soft and hard
+     * thresholds define Low, Medium, and High.
+     */
+    @Test
+    public void testArchivePressureUsesPostCompactionGlobalThresholds() {
+        assertEquals(StreamObjectArchiveTask.Pressure.LOW, S3StreamClient.archivePressure(89, 100));
+        assertEquals(StreamObjectArchiveTask.Pressure.MEDIUM, S3StreamClient.archivePressure(90, 100));
+        assertEquals(StreamObjectArchiveTask.Pressure.HIGH, S3StreamClient.archivePressure(100, 100));
+    }
+
+    /**
+     * Given Archive feature finalization and a legacy configured 10 GiB compaction size, when MAJOR_V1 selects its
+     * layout target, then finalized Archive uses 512 MiB while the previous feature level keeps the legacy setting.
+     */
+    @Test
+    public void testArchiveFeatureFinalizationSelectsFixedCompositeTarget() {
+        Config legacy = new Config().version(() -> Version.V1).streamObjectCompactionMaxSizeBytes(10L << 30);
+        Config archive = new Config().version(() -> Version.V2).streamObjectCompactionMaxSizeBytes(10L << 30);
+
+        assertEquals(10L << 30, S3StreamClient.majorV1CompactionSize(legacy));
+        assertEquals(512L << 20, S3StreamClient.majorV1CompactionSize(archive));
     }
 
 }

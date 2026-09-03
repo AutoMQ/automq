@@ -189,7 +189,8 @@ public class ControllerRequestSender {
 
         synchronized void send0() {
             List<RequestTask> inflight = new ArrayList<>();
-            requestQueue.drainTo(inflight);
+            int maxBatchSize = ((BatchRequest) requestQueue.peek().request).maxBatchSize();
+            requestQueue.drainTo(inflight, maxBatchSize);
             Builder builder = inflight.get(0).request.toRequestBuilder();
             inflight.stream().map(task -> (BatchRequest) task.request).skip(1).forEach(req -> req.addSubRequest(builder));
             RequestCtx requestCtx = new RequestCtx() {
