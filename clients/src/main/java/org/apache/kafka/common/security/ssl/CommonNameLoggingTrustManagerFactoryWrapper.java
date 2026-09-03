@@ -320,9 +320,10 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
             return this.origCertificate.getBasicConstraints();
         }
 
+        @SuppressWarnings("deprecation")
         @Override
         public Principal getIssuerDN() {
-            return this.origCertificate.getIssuerDN();
+            return this.origCertificate.getIssuerX500Principal();
         }
 
         @Override
@@ -370,9 +371,10 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
             return this.origCertificate.getSignature();
         }
 
+        @SuppressWarnings("deprecation")
         @Override
         public Principal getSubjectDN() {
-            return this.origCertificate.getSubjectDN();
+            return this.origCertificate.getSubjectX500Principal();
         }
 
         @Override
