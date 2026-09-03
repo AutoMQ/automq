@@ -88,6 +88,8 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.metadata.AbortTransactionRecord;
 import org.apache.kafka.common.metadata.AccessControlEntryRecord;
 import org.apache.kafka.common.metadata.AssignedS3ObjectIdRecord;
@@ -117,12 +119,14 @@ import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -289,11 +293,11 @@ public final class QuorumController implements Controller {
         private long delegationTokenExpiryTimeMs;
         private long delegationTokenExpiryCheckIntervalMs;
 
-        // AutoMQ for Kafka inject start
+        // AutoMQ inject start
         private StreamClient streamClient;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
-        // AutoMQ for Kafka inject end
+        // AutoMQ inject end
 
         public Builder(int nodeId, String clusterId) {
             this.nodeId = nodeId;
@@ -449,7 +453,7 @@ public final class QuorumController implements Controller {
             return this;
         }
 
-        // AutoMQ for Kafka inject start
+        // AutoMQ inject start
         public Builder setStreamClient(StreamClient streamClient) {
             this.streamClient = streamClient;
             return this;
@@ -1620,7 +1624,7 @@ public final class QuorumController implements Controller {
      * @param snapshotId        The snapshotId if this record is from a snapshot
      * @param offset            The offset of the record
      */
-    @SuppressWarnings("checkstyle:javaNCSS")
+    @SuppressWarnings({"checkstyle:javaNCSS", "checkstyle:methodlength"})
     private void replay(ApiMessage message, Optional<OffsetAndEpoch> snapshotId, long offset) {
         if (log.isTraceEnabled()) {
             if (snapshotId.isPresent()) {
@@ -1782,6 +1786,12 @@ public final class QuorumController implements Controller {
                 break;
             case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
                 streamControlManager.replay((NodeWALUncommittedOffsetsRecord) message);
+                break;
+            case S3_STREAM_ARCHIVE_RECORD:
+                streamControlManager.replay((S3StreamArchiveRecord) message);
+                break;
+            case REMOVE_S3_STREAM_ARCHIVE_RECORD:
+                streamControlManager.replay((RemoveS3StreamArchiveRecord) message);
                 break;
             default:
                 if (!extensionMatch) {
@@ -2193,25 +2203,25 @@ public final class QuorumController implements Controller {
         this.recordRedactor = new RecordRedactor(configSchema);
         this.eligibleLeaderReplicasEnabled = eligibleLeaderReplicasEnabled;
 
-        // AutoMQ for Kafka inject start
+        // AutoMQ inject start
         this.streamClient = streamClient;
         this.s3ObjectControlManager = new S3ObjectControlManager(
             this, snapshotRegistry, logContext, clusterId, streamClient.streamConfig(), streamClient.objectStorage(),
             featureControl::autoMQVersion, time);
         this.streamControlManager = new StreamControlManager(this, snapshotRegistry, logContext,
-                this.s3ObjectControlManager, clusterControl, featureControl, replicationControl);
+                this.s3ObjectControlManager, clusterControl, featureControl, replicationControl,
+                streamClient.objectStorage(), time);
+        this.s3ObjectControlManager.setStreamArchiveSizeSupplier(this.streamControlManager::streamArchiveSize);
         this.topicDeletionManager = new TopicDeletionManager(snapshotRegistry, this, streamControlManager, kvControlManager);
         this.nodeControlManager = new NodeControlManager(snapshotRegistry, new DefaultNodeRuntimeInfoManager(clusterControl, streamControlManager));
         this.routerChannelEpochControlManager = new RouterChannelEpochControlManager(snapshotRegistry, this, nodeControlManager, time);
-        // AutoMQ inject start
         this.gentleControlledShutdownControl =
             new GentleControlledShutdownControlManager(this, clusterControl, replicationControl);
-        // AutoMQ inject end
         this.extension = extension.apply(this);
 
         // set the nodeControlManager here to avoid circular dependency
         this.replicationControl.setNodeControlManager(nodeControlManager);
-        // AutoMQ for Kafka inject end
+        // AutoMQ inject end
 
         log.info("Creating new QuorumController with clusterId {}.{}{}",
             clusterId, zkMigrationEnabled ? " ZK migration mode is enabled." : "",
@@ -2761,6 +2771,41 @@ public final class QuorumController implements Controller {
                 batchCf.stream().map(CompletableFuture::join).collect(Collectors.toList()))
         );
     }
+
+    // AutoMQ inject start
+    @Override
+    public CompletableFuture<UpdateStreamArchiveResponseData> updateStreamArchive(
+        ControllerRequestContext context, UpdateStreamArchiveRequestData request) {
+        if (!featureControl.autoMQVersion().isStreamArchiveSupported()) {
+            return CompletableFuture.completedFuture(new UpdateStreamArchiveResponseData()
+                .setUpdateStreamResponses(request.operations().stream()
+                    .map(ignored -> new UpdateStreamArchiveResponseData.UpdateStreamResponse()
+                        .setErrorCode(Errors.UNSUPPORTED_VERSION.code()))
+                    .collect(Collectors.toList())));
+        }
+        return appendWriteEvent("updateStreamArchive", context.deadlineNs(), () -> {
+            List<ApiMessageAndVersion> records = new ArrayList<>();
+            List<UpdateStreamArchiveResponseData.UpdateStreamResponse> responses = new ArrayList<>();
+            request.operations().forEach(update -> {
+                try {
+                    ControllerResult<UpdateStreamArchiveResponseData.UpdateStreamResponse> result =
+                        streamControlManager.updateStreamArchive(request.nodeId(), request.nodeEpoch(), update);
+                    records.addAll(result.records());
+                    responses.add(result.response());
+                } catch (Exception exception) {
+                    log.error("Unexpected error while updating Stream {} Archive for node {}",
+                        update.streamId(), request.nodeId(), exception);
+                    responses.add(new UpdateStreamArchiveResponseData.UpdateStreamResponse()
+                        .setErrorCode(Errors.forException(exception).code()));
+                }
+            });
+            return ControllerResult.atomicOf(records,
+                new UpdateStreamArchiveResponseData().setUpdateStreamResponses(responses));
+        }).exceptionally(exception -> new UpdateStreamArchiveResponseData()
+            .setErrorCode(Errors.forException(exception).code())
+            .setUpdateStreamResponses(Collections.emptyList()));
+    }
+    // AutoMQ inject end
 
     @Override
     public CompletableFuture<DeleteStreamsResponseData> deleteStreams(ControllerRequestContext context, DeleteStreamsRequestData request) {

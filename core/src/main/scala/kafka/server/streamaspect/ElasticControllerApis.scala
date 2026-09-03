@@ -41,11 +41,9 @@ class ElasticControllerApis(
 
   def handleExtensionRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     try {
-      // AutoMQ inject start
       if (!authorizeExtensionRequest(request)) {
         return
       }
-      // AutoMQ inject end
 
       val handlerFuture: CompletableFuture[Unit] = request.header.apiKey match {
         case ApiKeys.CREATE_STREAMS => handleCreateStream(request)
@@ -56,6 +54,7 @@ class ElasticControllerApis(
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
         case ApiKeys.COMMIT_STREAM_SET_OBJECT => handleCommitStreamSetObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
+        case ApiKeys.UPDATE_STREAM_ARCHIVE => handleUpdateStreamArchive(request)
         case ApiKeys.GET_OPENING_STREAMS => handleGetOpeningStreams(request)
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
@@ -126,6 +125,7 @@ class ElasticControllerApis(
            | ApiKeys.PREPARE_S3_OBJECT
            | ApiKeys.COMMIT_STREAM_SET_OBJECT
            | ApiKeys.COMMIT_STREAM_OBJECT
+           | ApiKeys.UPDATE_STREAM_ARCHIVE
            | ApiKeys.GET_OPENING_STREAMS
            | ApiKeys.GET_KVS
            | ApiKeys.PUT_KVS
@@ -292,6 +292,25 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new CommitStreamObjectResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  /**
+   * Applies ordered typed Archive operations and returns positional business results.
+   */
+  def handleUpdateStreamArchive(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val updateRequest = request.body[UpdateStreamArchiveRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.updateStreamArchive(context, updateRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new UpdateStreamArchiveResponse(result.setThrottleTimeMs(requestThrottleMs))
           })
         }
       }

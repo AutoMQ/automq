@@ -122,6 +122,30 @@ public class S3StreamTest {
     }
 
     /**
+     * Given a Fetch that started before trim, verify trim rejects new stale reads and waits for the pending Fetch
+     * before publishing the new start offset to the Controller.
+     */
+    @Test
+    public void testTrimWaitsForPendingFetchBeforeControllerUpdate() throws Exception {
+        CompletableFuture<ReadDataBlock> read = new CompletableFuture<>();
+        when(storage.read(any(), eq(233L), eq(110L), eq(120L), eq(100))).thenReturn(read);
+        when(streamManager.trimStream(233L, 1L, 120L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        CompletableFuture<FetchResult> fetch = stream.fetch(110L, 120L, 100);
+        CompletableFuture<Void> trim = stream.trim(120L);
+
+        assertFalse(trim.isDone());
+        verify(streamManager, never()).trimStream(233L, 1L, 120L);
+        assertThrows(ExecutionException.class, () -> stream.fetch(110L, 120L, 100).get());
+
+        read.complete(newReadDataBlock(110L, 120L, 110));
+
+        fetch.get(1, TimeUnit.SECONDS);
+        trim.get(1, TimeUnit.SECONDS);
+        verify(streamManager).trimStream(233L, 1L, 120L);
+    }
+
+    /**
      * Given a V6 stream with a blocked force upload, when close drains existing work, then Controller fast close
      * completes with the broker append tail without waiting for ObjectStorage.
      */
