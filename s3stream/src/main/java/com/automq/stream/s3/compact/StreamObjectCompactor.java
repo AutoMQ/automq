@@ -57,6 +57,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
@@ -180,7 +181,7 @@ public class StreamObjectCompactor {
             && current.endOffset() == next.startOffset();
     }
 
-    void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException {
+    void compact0(CompactionType compactionType) throws ExecutionException, InterruptedException, TimeoutException {
         long streamId = stream.streamId();
         long startOffset = stream.startOffset();
 
@@ -209,9 +210,7 @@ public class StreamObjectCompactor {
         if (CLEANUP_V1.equals(compactionType)) {
             objectGroups = cleanupV1Groups(livingObjects, startOffset);
         } else {
-            objectGroups = group0(livingObjects,
-                groupSizeThreshold,
-                compactionType,
+            objectGroups = group0(livingObjects, groupSizeThreshold, compactionType,
                 getObjectFilter(compactionType, majorV1MinNormalObjectSize));
         }
 
@@ -539,7 +538,7 @@ public class StreamObjectCompactor {
                 continue;
             }
 
-            int objectPartCount = (int) ((object.objectSize() + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
+            int objectPartCount = objectPartCount(object.objectSize());
             if (objectPartCount >= Writer.MAX_PART_COUNT) {
                 continue;
             }
@@ -551,14 +550,8 @@ public class StreamObjectCompactor {
             if (groupNextOffset != object.startOffset()
                 // MINOR_V1 allows crossing the threshold once so small objects can reach the minimum size consumed by
                 // MAJOR_V1. Once a group has reached the threshold, the next object starts a new group.
-                || (!group.isEmpty() && (softGroupSizeThreshold
-                    ? groupSize >= groupSizeThreshold
-                    : groupSize + object.objectSize() > groupSizeThreshold))
-                // object count in a group is larger than MAX_OBJECT_GROUP_COUNT
-                || group.size() >= MAX_OBJECT_GROUP_COUNT
-                || partCount + objectPartCount > Writer.MAX_PART_COUNT
-                // the group offset delta would exceed int32
-                || object.endOffset() - groupStartOffset > Integer.MAX_VALUE
+                || (!group.isEmpty() && cannotMergeIntoGroup(groupSize, groupStartOffset, group.size(), partCount,
+                    object, groupSizeThreshold, softGroupSizeThreshold))
             ) {
                 if (!group.isEmpty()) {
                     objectGroups.add(group);
@@ -577,6 +570,29 @@ public class StreamObjectCompactor {
             objectGroups.add(group);
         }
         return objectGroups;
+    }
+
+    /**
+     * Return whether adding an offset-continuous object would exceed a compaction group boundary.
+     */
+    static boolean cannotMergeIntoGroup(long groupSize, long groupStartOffset, int groupObjectCount,
+        int groupPartCount, S3ObjectMetadata nextObject, long groupSizeThreshold, boolean softGroupSizeThreshold) {
+        if (softGroupSizeThreshold ? groupSize >= groupSizeThreshold
+            : nextObject.objectSize() > groupSizeThreshold - groupSize) {
+            return true;
+        }
+        if (groupObjectCount >= MAX_OBJECT_GROUP_COUNT) {
+            return true;
+        }
+        int nextPartCount = objectPartCount(nextObject.objectSize());
+        if (nextPartCount > Writer.MAX_PART_COUNT - groupPartCount) {
+            return true;
+        }
+        return nextObject.endOffset() - groupStartOffset > Integer.MAX_VALUE;
+    }
+
+    static int objectPartCount(long objectSize) {
+        return Math.toIntExact((objectSize + Writer.MAX_PART_SIZE - 1) / Writer.MAX_PART_SIZE);
     }
 
     static boolean isSoftGroupSizeThreshold(CompactionType compactionType) {

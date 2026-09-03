@@ -19,37 +19,45 @@
 
 package org.apache.kafka.server.common.automq;
 
+import org.apache.kafka.server.common.FeatureVersion;
+import org.apache.kafka.server.common.MetadataVersion;
+
 import com.automq.stream.Version;
 
-public enum AutoMQVersion {
+import java.util.Map;
 
-    V0((short) 1),
+public enum AutoMQVersion implements FeatureVersion {
+
+    V0((short) 1, MetadataVersion.IBP_3_4_IV0),
     // Support reassignment v1: elect leader after partition open in the new broker
     // Support stream tags
-    V1((short) 2),
+    V1((short) 2, MetadataVersion.IBP_3_7_IV0),
     // Support composite object
     // Support object bucket index
     // Support huge cluster
     // Support node registration
-    V2((short) 3),
+    V2((short) 3, MetadataVersion.IBP_3_8_IV0),
     // Support zero zone v2
-    V3((short) 4),
+    V3((short) 4, MetadataVersion.IBP_3_9_IV0),
     // Support proxy-main dual mapping
-    V4((short) 5),
+    V4((short) 5, MetadataVersion.IBP_3_9_IV0),
     // Support KV namespace
-    V5((short) 6),
+    V5((short) 6, MetadataVersion.IBP_3_9_IV0),
     // Support fast partition reassignment
-    V6((short) 7);
+    // Support Infinite Storage Stream Archive
+    V6((short) 7, MetadataVersion.IBP_3_9_IV0);
 
     public static final String FEATURE_NAME = "automq.version";
     public static final AutoMQVersion LATEST = V6;
 
     private final short level;
     private final Version s3streamVersion;
+    private final MetadataVersion metadataVersion;
 
-    AutoMQVersion(short level) {
+    AutoMQVersion(short level, MetadataVersion metadataVersion) {
         this.level = level;
         s3streamVersion = mapS3StreamVersion(level);
+        this.metadataVersion = metadataVersion;
     }
 
     public static AutoMQVersion from(short level) {
@@ -67,6 +75,21 @@ public enum AutoMQVersion {
 
     public short featureLevel() {
         return level;
+    }
+
+    @Override
+    public String featureName() {
+        return FEATURE_NAME;
+    }
+
+    @Override
+    public MetadataVersion bootstrapMetadataVersion() {
+        return metadataVersion;
+    }
+
+    @Override
+    public Map<String, Short> dependencies() {
+        return Map.of();
     }
 
     public boolean isReassignmentV1Supported() {
@@ -120,6 +143,13 @@ public enum AutoMQVersion {
         return isAtLeast(V6);
     }
 
+    /**
+     * Returns whether the finalized feature level supports Stream Archive metadata and protocol.
+     */
+    public boolean isStreamArchiveSupported() {
+        return isAtLeast(V6);
+    }
+
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -167,7 +197,8 @@ public enum AutoMQVersion {
     private Version mapS3StreamVersion(short automqVersion) {
         return switch (automqVersion) {
             case 1, 2 -> Version.V0;
-            case 3, 4, 5, 6, 7 -> Version.V1;
+            case 3, 4, 5, 6 -> Version.V1;
+            case 7 -> Version.V2;
             default -> throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
         };
     }
