@@ -4,19 +4,27 @@
 
 package kafka.log.streamaspect;
 
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+
+import scala.Option;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -33,6 +41,61 @@ import static org.mockito.Mockito.when;
 @Timeout(60)
 @Tag("S3Unit")
 public class ElasticLogSegmentManagerTest {
+
+    /**
+     * Given a live version supplier, the next normal persistence must switch from JSON to the V6 envelope.
+     */
+    @Test
+    public void testPersistReadsAutoMQVersionDynamically() {
+        MetaStream metaStream = mock(MetaStream.class);
+        when(metaStream.append(any(MetaKeyValue.class))).thenReturn(CompletableFuture.completedFuture(null));
+        ElasticLogStreamManager streamManager = mock(ElasticLogStreamManager.class);
+        when(streamManager.streams()).thenReturn(Map.of());
+        AtomicReference<AutoMQVersion> version = new AtomicReference<>(AutoMQVersion.V5);
+        ElasticLogSegmentManager manager = new ElasticLogSegmentManager(
+            metaStream, streamManager, "testPersistReadsAutoMQVersionDynamically", version::get);
+
+        manager.persistLogMeta();
+        version.set(AutoMQVersion.V6);
+        manager.persistLogMeta();
+
+        ArgumentCaptor<MetaKeyValue> values = ArgumentCaptor.forClass(MetaKeyValue.class);
+        verify(metaStream, times(2)).append(values.capture());
+        assertNotEquals(ElasticLogMetaCodec.MAGIC, values.getAllValues().get(0).getValue().getInt());
+        assertEquals(ElasticLogMetaCodec.MAGIC, values.getAllValues().get(1).getValue().getInt());
+        assertEquals(MetaStream.LOG_META_KEY, values.getAllValues().get(0).getKey());
+        assertEquals(MetaStream.LOG_META_KEY, values.getAllValues().get(1).getKey());
+    }
+
+    /**
+     * Given a default manager created before ElasticLogManager initialization, its writer policy must become V6
+     * after the live manager is published.
+     */
+    @Test
+    public void testDefaultManagerObservesLateElasticLogManagerInitialization() {
+        Option<ElasticLogManager> originalManager = ElasticLogManager$.MODULE$.INSTANCE();
+        try {
+            ElasticLogManager$.MODULE$.INSTANCE_$eq(Option.empty());
+            MetaStream metaStream = mock(MetaStream.class);
+            when(metaStream.append(any(MetaKeyValue.class))).thenReturn(CompletableFuture.completedFuture(null));
+            ElasticLogStreamManager streamManager = mock(ElasticLogStreamManager.class);
+            when(streamManager.streams()).thenReturn(Map.of());
+            ElasticLogSegmentManager manager = new ElasticLogSegmentManager(
+                metaStream, streamManager, "testDefaultManagerObservesLateElasticLogManagerInitialization");
+
+            ElasticLogManager liveManager = new ElasticLogManager(
+                null, null, () -> AutoMQVersion.V6);
+            ElasticLogManager$.MODULE$.INSTANCE_$eq(Option.apply(liveManager));
+            manager.persistLogMeta();
+
+            ArgumentCaptor<MetaKeyValue> value = ArgumentCaptor.forClass(MetaKeyValue.class);
+            verify(metaStream).append(value.capture());
+            assertEquals(ElasticLogMetaCodec.MAGIC, value.getValue().getValue().getInt());
+        } finally {
+            ElasticLogManager$.MODULE$.INSTANCE_$eq(originalManager);
+        }
+    }
+
     @Test
     public void testSegmentDelete() {
         ElasticLogMeta logMeta = mock(ElasticLogMeta.class);
