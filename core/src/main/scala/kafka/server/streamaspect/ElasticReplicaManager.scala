@@ -1127,6 +1127,8 @@ class ElasticReplicaManager(
    *
    * @param delta    The delta to apply.
    * @param newImage The new metadata image.
+   * @param callback Invoked after applying a local partition state change that requires
+   *                 immediate per-partition notification.
    */
   def asyncApplyDelta(delta: TopicsDelta, newImage: MetadataImage,
     callback: TopicPartition => Unit): CompletableFuture[Void] = {
@@ -1160,19 +1162,6 @@ class ElasticReplicaManager(
         }
 
         doPartitionDeletion()
-
-        // Clean up the consumption offset for the deleted partitions that do not belong to the current broker.
-        delta.deletedTopicIds().forEach { id =>
-          val topicImage = delta.image().getTopic(id)
-          topicImage.partitions().entrySet().forEach { entry => {
-            val partitionId = entry.getKey
-            val partition = entry.getValue
-            if (partition.leader != config.nodeId) {
-              callback(new TopicPartition(topicImage.name(), partitionId))
-            }
-          }
-          }
-        }
 
       }
 
