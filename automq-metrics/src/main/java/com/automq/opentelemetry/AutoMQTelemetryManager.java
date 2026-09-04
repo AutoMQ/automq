@@ -23,6 +23,7 @@ import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
 import com.automq.opentelemetry.yammer.YammerMetricsReporter;
+import com.sun.net.httpserver.Authenticator;
 import com.yammer.metrics.core.MetricsRegistry;
 
 import org.apache.commons.lang3.StringUtils;
@@ -60,7 +61,6 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
-import io.opentelemetry.sdk.metrics.internal.SdkMeterProviderUtil;
 import io.opentelemetry.sdk.resources.Resource;
 
 /**
@@ -79,6 +79,7 @@ public class AutoMQTelemetryManager {
     private final String serviceName;
     private final String instanceId;
     private final MetricsExportConfig metricsExportConfig;
+    private final Authenticator prometheusAuthenticator;
     private final List<MetricReader> metricReaders = new ArrayList<>();
     private final List<AutoCloseable> autoCloseableList;
     private OpenTelemetrySdk openTelemetrySdk;
@@ -96,10 +97,16 @@ public class AutoMQTelemetryManager {
      * @param metricsExportConfig The metrics configuration.
      */
     public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId, MetricsExportConfig metricsExportConfig) {
+        this(exporterUri, serviceName, instanceId, metricsExportConfig, null);
+    }
+
+    public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId,
+                                  MetricsExportConfig metricsExportConfig, Authenticator prometheusAuthenticator) {
         this.exporterUri = exporterUri;
         this.serviceName = serviceName;
         this.instanceId = instanceId;
         this.metricsExportConfig = metricsExportConfig;
+        this.prometheusAuthenticator = prometheusAuthenticator;
         this.autoCloseableList = new ArrayList<>();
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -202,7 +209,8 @@ public class AutoMQTelemetryManager {
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
             MetricReader reader = exporter.asMetricReader();
             metricReaders.add(reader);
-            SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(meterProviderBuilder, reader,
+            meterProviderBuilder.registerMetricReader(
+                reader,
                 instrumentType -> metricCardinalityLimit);
         }
 
@@ -210,13 +218,13 @@ public class AutoMQTelemetryManager {
     }
 
     protected MetricsExporterURI buildMetricsExporterURI(String exporterUri, MetricsExportConfig metricsExportConfig) {
-        return MetricsExporterURI.parse(exporterUri, metricsExportConfig);
+        return MetricsExporterURI.parse(exporterUri, metricsExportConfig, prometheusAuthenticator);
     }
 
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {
         autoCloseableList.addAll(MemoryPools.registerObservers(openTelemetry));
         autoCloseableList.addAll(Cpu.registerObservers(openTelemetry));
-        autoCloseableList.addAll(GarbageCollector.registerObservers(openTelemetry));
+        autoCloseableList.addAll(GarbageCollector.registerObservers(openTelemetry, false));
         autoCloseableList.addAll(Threads.registerObservers(openTelemetry));
         LOGGER.info("JVM metrics registered.");
     }
@@ -245,7 +253,7 @@ public class AutoMQTelemetryManager {
             }
         }
 
-        jmxMetricInsight.start(metricConfig);
+        jmxMetricInsight.startLocal(metricConfig);
         // JmxMetricInsight doesn't implement Closeable, but we can create a wrapper
 
         LOGGER.info("JMX metrics registered with config paths: {}", jmxConfigPaths);
