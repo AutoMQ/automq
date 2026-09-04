@@ -60,7 +60,6 @@ import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.metrics.SdkMeterProvider;
 import io.opentelemetry.sdk.metrics.SdkMeterProviderBuilder;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
-import io.opentelemetry.sdk.metrics.internal.SdkMeterProviderUtil;
 import io.opentelemetry.sdk.resources.Resource;
 
 /**
@@ -202,7 +201,8 @@ public class AutoMQTelemetryManager {
         for (MetricsExporter exporter : exporterURI.getMetricsExporters()) {
             MetricReader reader = exporter.asMetricReader();
             metricReaders.add(reader);
-            SdkMeterProviderUtil.registerMetricReaderWithCardinalitySelector(meterProviderBuilder, reader,
+            meterProviderBuilder.registerMetricReader(
+                reader,
                 instrumentType -> metricCardinalityLimit);
         }
 
@@ -216,7 +216,7 @@ public class AutoMQTelemetryManager {
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {
         autoCloseableList.addAll(MemoryPools.registerObservers(openTelemetry));
         autoCloseableList.addAll(Cpu.registerObservers(openTelemetry));
-        autoCloseableList.addAll(GarbageCollector.registerObservers(openTelemetry));
+        autoCloseableList.addAll(GarbageCollector.registerObservers(openTelemetry, false));
         autoCloseableList.addAll(Threads.registerObservers(openTelemetry));
         LOGGER.info("JVM metrics registered.");
     }
@@ -245,7 +245,7 @@ public class AutoMQTelemetryManager {
             }
         }
 
-        jmxMetricInsight.start(metricConfig);
+        jmxMetricInsight.startLocal(metricConfig);
         // JmxMetricInsight doesn't implement Closeable, but we can create a wrapper
 
         LOGGER.info("JMX metrics registered with config paths: {}", jmxConfigPaths);

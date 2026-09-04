@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
 import io.opentelemetry.sdk.metrics.export.MetricReader;
+import io.opentelemetry.sdk.common.export.MemoryMode;
 
 public class PrometheusMetricsExporter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(PrometheusMetricsExporter.class);
@@ -56,6 +57,7 @@ public class PrometheusMetricsExporter implements MetricsExporter {
         return PrometheusHttpServer.builder()
             .setHost(host)
             .setPort(port)
+            .setMemoryMode(MemoryMode.IMMUTABLE_DATA)
             // This filter is to align with the original behavior, allowing only specific resource attributes
             // to be converted to prometheus labels.
             .setAllowedResourceAttributesFilter(resourceAttributeKey ->
