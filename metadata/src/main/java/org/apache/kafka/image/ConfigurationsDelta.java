@@ -74,7 +74,7 @@ public final class ConfigurationsDelta {
         // AutoMQ inject start
         if (image.resourceData().containsKey(resource) || changes.containsKey(resource)) {
             ConfigurationImage configImage = image.resourceData().getOrDefault(resource,
-                new ConfigurationImage(resource, Collections.emptyMap()));
+                new ConfigurationImage(resource, new HashMap<>()));
             ConfigurationDelta delta = changes.computeIfAbsent(resource,
                 __ -> new ConfigurationDelta(configImage));
             delta.deleteAll();
