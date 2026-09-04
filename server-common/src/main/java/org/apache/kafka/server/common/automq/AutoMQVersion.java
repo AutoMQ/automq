@@ -45,6 +45,7 @@ public enum AutoMQVersion implements FeatureVersion {
     V5((short) 6, MetadataVersion.IBP_3_9_IV0),
     // Support fast partition reassignment
     // Support Infinite Storage Stream Archive
+    // Support Avro-encoded ElasticLog metadata
     V6((short) 7, MetadataVersion.IBP_3_9_IV0);
 
     public static final String FEATURE_NAME = "automq.version";
@@ -147,6 +148,13 @@ public enum AutoMQVersion implements FeatureVersion {
      * Returns whether the finalized feature level supports Stream Archive metadata and protocol.
      */
     public boolean isStreamArchiveSupported() {
+        return isAtLeast(V6);
+    }
+
+    /**
+     * Returns whether ElasticLog metadata may be written using the Avro envelope.
+     */
+    public boolean isElasticLogMetaAvroSupported() {
         return isAtLeast(V6);
     }
 

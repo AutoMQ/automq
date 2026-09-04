@@ -55,4 +55,13 @@ public class AutoMQVersionTest {
         assertSame(Version.V1, AutoMQVersion.V5.s3streamVersion());
         assertSame(Version.V2, AutoMQVersion.V6.s3streamVersion());
     }
+
+    /**
+     * Given adjacent AutoMQ feature levels, Avro ElasticLog metadata starts at V6.
+     */
+    @Test
+    public void testElasticLogMetaAvroCapabilityStartsAtV6() {
+        assertFalse(AutoMQVersion.V5.isElasticLogMetaAvroSupported());
+        assertTrue(AutoMQVersion.V6.isElasticLogMetaAvroSupported());
+    }
 }
