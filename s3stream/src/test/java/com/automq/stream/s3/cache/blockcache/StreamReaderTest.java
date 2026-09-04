@@ -131,6 +131,30 @@ public class StreamReaderTest {
         streamReader = new StreamReader(STREAM_ID, 0, eventLoops[0], objectManager, objectReaderFactory, dataBlockCache);
     }
 
+    @Test
+    public void testClosePreventsInflightReadaheadFromRestoringBlocks() throws Exception {
+        CompletableFuture<List<S3ObjectMetadata>> getObjectsCf = new CompletableFuture<>();
+        when(objectManager.getObjects(STREAM_ID, 0L, -1L, GET_OBJECT_STEP))
+            .thenReturn(getObjectsCf);
+
+        eventLoops[0].submit(() -> streamReader.readahead.tryReadahead(false)).get();
+
+        CompletableFuture<Void> readaheadCf = streamReader.getReadaheadInflightReadaheadCf();
+        Assertions.assertNotNull(readaheadCf);
+
+        eventLoops[0].submit(streamReader::close).get();
+        eventLoops[0].submit(() -> Assertions.assertTrue(streamReader.blocksMap.isEmpty())).get();
+
+        getObjectsCf.complete(List.of(
+            objects.get(0L).metadata,
+            objects.get(1L).metadata,
+            objects.get(2L).metadata));
+
+        readaheadCf.get(5, TimeUnit.SECONDS);
+
+        eventLoops[0].submit(() -> Assertions.assertTrue(streamReader.blocksMap.isEmpty())).get();
+    }
+
     /**
      * Given a block-index load made discontinuous by an object compaction race, when the reader retries, then it
      * reloads the object metadata and completes the original read.
