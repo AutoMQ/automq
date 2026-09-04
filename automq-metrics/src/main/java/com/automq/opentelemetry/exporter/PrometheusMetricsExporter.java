@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
 
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServer;
 import io.opentelemetry.exporter.prometheus.PrometheusHttpServerBuilder;
-import io.opentelemetry.sdk.metrics.export.MetricReader;
 import io.opentelemetry.sdk.common.export.MemoryMode;
+import io.opentelemetry.sdk.metrics.export.MetricReader;
 
 public class PrometheusMetricsExporter implements MetricsExporter {
     private static final Logger LOGGER = LoggerFactory.getLogger(PrometheusMetricsExporter.class);
