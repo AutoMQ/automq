@@ -31,15 +31,19 @@ import kafka.server.{BrokerServer, BrokerTopicStats, KafkaConfig}
 import kafka.utils.Logging
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{TopicPartition, Uuid}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log.{LogConfig, LogDirFailureChannel, LogOffsetsListener, ProducerStateManagerConfig}
 import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
+import java.util.function.Supplier
 import scala.jdk.CollectionConverters.ConcurrentMapHasAsScala
 
-class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChecker) extends Logging {
+class ElasticLogManager(val client: Client,
+  val openStreamChecker: OpenStreamChecker,
+  val autoMQVersionSupplier: Supplier[AutoMQVersion] = () => AutoMQVersion.V0) extends Logging {
   this.logIdent = s"[ElasticLogManager] "
   private val elasticLogs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
 
@@ -125,7 +129,7 @@ class ElasticLogManager(val client: Client, val openStreamChecker: OpenStreamChe
 
 object ElasticLogManager {
   val LOGGER = LoggerFactory.getLogger(ElasticLogManager.getClass)
-  var INSTANCE: Option[ElasticLogManager] = None
+  @volatile var INSTANCE: Option[ElasticLogManager] = None
   var NAMESPACE = ""
   val INIT_FUTURE: CompletableFuture[Void] = new CompletableFuture[Void]()
   private var isEnabled = false
@@ -146,7 +150,13 @@ object ElasticLogManager {
     } else {
       OpenStreamChecker.NOOP
     }
-    INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context), openStreamChecker))
+    val autoMQVersionSupplier: Supplier[AutoMQVersion] = if (broker == null) {
+      () => AutoMQVersion.V0
+    } else {
+      () => broker.metadataCache.autoMQVersion()
+    }
+    INSTANCE = Some(new ElasticLogManager(ClientFactoryProxy.get(context), openStreamChecker,
+      autoMQVersionSupplier))
     INSTANCE.foreach(_.startup())
     ElasticLogSegment.txnCache = new FileCache(config.logDirs.head + "/" + "txnindex-cache", 100 * 1024 * 1024)
     ElasticLogSegment.timeCache = new FileCache(config.logDirs.head + "/" + "timeindex-cache", 100 * 1024 * 1024)
@@ -156,6 +166,10 @@ object ElasticLogManager {
   def instance(): Option[ElasticLogManager] = {
     INIT_FUTURE.get()
     INSTANCE
+  }
+
+  def autoMQVersionSupplier(): Supplier[AutoMQVersion] = {
+    () => INSTANCE.map(_.autoMQVersionSupplier.get()).getOrElse(AutoMQVersion.V0)
   }
 
   def enable(shouldEnable: Boolean): Unit = {
