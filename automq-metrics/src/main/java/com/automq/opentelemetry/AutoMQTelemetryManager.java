@@ -23,6 +23,7 @@ import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
 import com.automq.opentelemetry.yammer.YammerMetricsReporter;
+import com.sun.net.httpserver.Authenticator;
 import com.yammer.metrics.core.MetricsRegistry;
 
 import org.apache.commons.lang3.StringUtils;
@@ -78,6 +79,7 @@ public class AutoMQTelemetryManager {
     private final String serviceName;
     private final String instanceId;
     private final MetricsExportConfig metricsExportConfig;
+    private final Authenticator prometheusAuthenticator;
     private final List<MetricReader> metricReaders = new ArrayList<>();
     private final List<AutoCloseable> autoCloseableList;
     private OpenTelemetrySdk openTelemetrySdk;
@@ -95,10 +97,16 @@ public class AutoMQTelemetryManager {
      * @param metricsExportConfig The metrics configuration.
      */
     public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId, MetricsExportConfig metricsExportConfig) {
+        this(exporterUri, serviceName, instanceId, metricsExportConfig, null);
+    }
+
+    public AutoMQTelemetryManager(String exporterUri, String serviceName, String instanceId,
+                                  MetricsExportConfig metricsExportConfig, Authenticator prometheusAuthenticator) {
         this.exporterUri = exporterUri;
         this.serviceName = serviceName;
         this.instanceId = instanceId;
         this.metricsExportConfig = metricsExportConfig;
+        this.prometheusAuthenticator = prometheusAuthenticator;
         this.autoCloseableList = new ArrayList<>();
         // Redirect JUL from OpenTelemetry SDK to SLF4J for unified logging
         SLF4JBridgeHandler.removeHandlersForRootLogger();
@@ -210,7 +218,7 @@ public class AutoMQTelemetryManager {
     }
 
     protected MetricsExporterURI buildMetricsExporterURI(String exporterUri, MetricsExportConfig metricsExportConfig) {
-        return MetricsExporterURI.parse(exporterUri, metricsExportConfig);
+        return MetricsExporterURI.parse(exporterUri, metricsExportConfig, prometheusAuthenticator);
     }
 
     private void registerJvmMetrics(OpenTelemetry openTelemetry) {
