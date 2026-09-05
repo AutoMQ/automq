@@ -295,12 +295,12 @@ The system tests have unit tests! The various services in the python `kafkatest`
 for the system service classes.
 
 Where are the unit tests?
-* The kafkatest unit tests are located under kafka/tests/unit
+* The kafkatest unit tests are located under tests/unit
 
 How do I run the unit tests?
 ```bash
-$ cd kafka/tests # The base system test directory
-$ python3 setup.py test
+$ cd tests # The base system test directory
+$ pytest
 ```
 
 How can I add a unit test?
