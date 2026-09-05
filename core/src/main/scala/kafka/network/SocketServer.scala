@@ -1215,8 +1215,13 @@ private[kafka] class Processor(
               }
             }
           case None =>
-            // This should never happen since completed receives are processed immediately after `poll()`
-            throw new IllegalStateException(s"Channel ${receive.source} removed from selector before processing completed receive")
+            // AutoMQ inject start
+            // Channel was removed from selector before processing completed receive.
+            // This can happen when client disconnects abruptly or connection was expired/closed.
+            debug(s"Channel ${receive.source} removed from selector before processing completed receive")
+            removeChannelContext(receive.source)
+            CoreUtils.swallow(receive.close(), this, Level.WARN)
+            // AutoMQ inject end
         }
       } catch {
         // note that even though we got an exception, we can assume that receive.source is valid.
