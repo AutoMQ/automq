@@ -46,6 +46,7 @@ import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
 import org.apache.kafka.common.requests.s3.UpdateLicenseRequest;
+import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -367,6 +368,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return CommitStreamSetObjectRequest.parse(buffer, apiVersion);
             case COMMIT_STREAM_OBJECT:
                 return CommitStreamObjectRequest.parse(buffer, apiVersion);
+            case UPDATE_STREAM_ARCHIVE:
+                return UpdateStreamArchiveRequest.parse(buffer, apiVersion);
             case GET_OPENING_STREAMS:
                 return GetOpeningStreamsRequest.parse(buffer, apiVersion);
             case GET_KVS:

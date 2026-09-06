@@ -40,15 +40,19 @@ import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -57,6 +61,7 @@ import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.ThreadUtils;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerRequestContext;
 import org.apache.kafka.controller.ControllerResult;
@@ -67,6 +72,7 @@ import org.apache.kafka.image.DeltaList;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
@@ -88,7 +94,9 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.LocalFileObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.utils.AsyncLogger;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 
 import org.slf4j.Logger;
@@ -157,6 +165,7 @@ public class StreamControlManager {
     private static final Metrics.LongGaugeBundle STREAM_OBJECT_NUM = Metrics.instance()
         .longGauge("kafka_stream_stream_object_num", "The total number of stream objects", "");
     private static final AttributeKey<String> LABEL_NODE_ID = AttributeKey.stringKey("node_id");
+    private static final long ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES = 1L;
 
     private final Logger log;
 
@@ -182,6 +191,7 @@ public class StreamControlManager {
     private final SnapshotRegistry snapshotRegistry;
 
     private final S3ObjectControlManager s3ObjectControlManager;
+    private final StreamArchiveControlManager streamArchiveControlManager;
 
     private final ClusterControlManager clusterControlManager;
 
@@ -195,7 +205,9 @@ public class StreamControlManager {
         S3ObjectControlManager s3ObjectControlManager,
         ClusterControlManager clusterControlManager,
         FeatureControlManager featureControlManager,
-        ReplicationControlManager replicationControlManager) {
+        ReplicationControlManager replicationControlManager,
+        ObjectStorage objectStorage,
+        Time time) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = AsyncLogger.wrap(logContext.logger(StreamControlManager.class));
         this.nextAssignedStreamId = new TimelineLong(snapshotRegistry);
@@ -213,8 +225,16 @@ public class StreamControlManager {
         this.clusterControlManager = clusterControlManager;
         this.featureControlManager = featureControlManager;
         this.replicationControlManager = replicationControlManager;
+        this.streamArchiveControlManager = new StreamArchiveControlManager(logContext, quorumController,
+            s3ObjectControlManager, objectStorage, time, featureControlManager::autoMQVersion,
+            (nodeId, nodeEpoch) -> nodeEpochCheck(nodeId, nodeEpoch),
+            streamId -> streamsMetadata.get(streamId), snapshotRegistry);
 
         cleanupScheduler.scheduleWithFixedDelay(this::triggerCleanupScaleInNodes, 30, 30, TimeUnit.MINUTES);
+        cleanupScheduler.scheduleWithFixedDelay(streamArchiveControlManager::reconcile,
+            ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES,
+            ARCHIVE_METADATA_RECONCILIATION_INTERVAL_MINUTES,
+            TimeUnit.MINUTES);
 
         this.streamSetObjectNumMetric = STREAM_SET_OBJECT_NUM.register(MetricsLevel.INFO, Attributes.empty(), result -> {
             if (!quorumController.isActive()) {
@@ -266,6 +286,24 @@ public class StreamControlManager {
         resp.setStreamId(streamId);
         log.info("[CreateStream] successfully create a stream. streamId={}, nodeId={}, nodeEpoch={}", streamId, nodeId, nodeEpoch);
         return ControllerResult.atomicOf(Arrays.asList(record0, record), resp);
+    }
+
+    /**
+     * Validates and persists one complete Broker-proposed Stream Archive state.
+     *
+     * <p>Each invocation is one Controller event and one transaction. Archive prepare validates
+     * the complete current Composite sequence before its protected boundary is persisted.</p>
+     */
+    public ControllerResult<UpdateStreamResponse> updateStreamArchive(int nodeId, long nodeEpoch,
+        StreamArchiveOperation request) {
+        return streamArchiveControlManager.update(nodeId, nodeEpoch, request);
+    }
+
+    /**
+     * Returns the retained logical bytes represented by Stream Archive records.
+     */
+    public long streamArchiveSize() {
+        return streamArchiveControlManager.totalSize();
     }
 
     /**
@@ -1075,6 +1113,11 @@ public class StreamControlManager {
         CommitStreamObjectResponseData resp = new CommitStreamObjectResponseData();
         long committedTs = System.currentTimeMillis();
 
+        if (overlapsArchiveProtectedRange(data)) {
+            resp.setErrorCode(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code());
+            return ControllerResult.of(Collections.emptyList(), resp);
+        }
+
         if (data.sourceObjectIds().size() == 1 && streamObjectId == data.sourceObjectIds().get(0)) {
             return replace(data);
         }
@@ -1148,6 +1191,29 @@ public class StreamControlManager {
         log.info("[CommitStreamObject]: successfully commit stream object. streamObjectId={}, streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, compactedObjects={}",
             streamObjectId, streamId, streamEpoch, nodeId, nodeEpoch, sourceObjectIds);
         return ControllerResult.atomicOf(records, resp);
+    }
+
+    private boolean overlapsArchiveProtectedRange(CommitStreamObjectRequestData data) {
+        StreamRuntimeMetadata stream = streamsMetadata.get(data.streamId());
+        S3StreamArchiveMetadata archive = getStreamArchiveMetadata(data.streamId());
+        if (stream == null || archive == null
+            || archive.archiveMetadataEndOffset() == archive.archivePreparedEndOffset()) {
+            return false;
+        }
+        long protectedStart = archive.archiveMetadataEndOffset();
+        long protectedEnd = archive.archivePreparedEndOffset();
+        if (data.objectId() != NOOP_OBJECT_ID
+            && rangesOverlap(data.startOffset(), data.endOffset(), protectedStart, protectedEnd)) {
+            return true;
+        }
+        return data.sourceObjectIds().stream()
+            .map(stream.streamObjects()::get)
+            .filter(java.util.Objects::nonNull)
+            .anyMatch(object -> rangesOverlap(object.startOffset(), object.endOffset(), protectedStart, protectedEnd));
+    }
+
+    private boolean rangesOverlap(long firstStart, long firstEnd, long secondStart, long secondEnd) {
+        return firstStart < secondEnd && firstEnd > secondStart;
     }
 
     private ControllerResult<CommitStreamObjectResponseData> replace(CommitStreamObjectRequestData data) {
@@ -1605,6 +1671,7 @@ public class StreamControlManager {
                 record.tags().forEach(tag -> tags.put(tag.key(), tag.value()));
                 streamMetadata.setTags(tags);
             }
+            streamArchiveControlManager.onStreamCreated(streamId);
             return;
         }
         Map<String, String> tags = new HashMap<>();
@@ -1613,6 +1680,7 @@ public class StreamControlManager {
         StreamRuntimeMetadata streamMetadata = new StreamRuntimeMetadata(record.streamId(), record.epoch(), record.rangeIndex(),
             record.startOffset(), StreamState.fromByte(record.streamState()), tags, this.snapshotRegistry);
         this.streamsMetadata.put(streamId, streamMetadata);
+        streamArchiveControlManager.onStreamCreated(streamId);
 
     }
 
@@ -1629,6 +1697,7 @@ public class StreamControlManager {
                 return v;
             });
         });
+        streamArchiveControlManager.onStreamDeleted(streamId);
     }
 
     public void replay(RangeRecord record) {
@@ -1751,7 +1820,8 @@ public class StreamControlManager {
             log.error("streamId={} not exist when replay stream object record {}", streamId, record);
             return;
         }
-        streamMetadata.streamObjects().put(objectId, new S3StreamObject(objectId, streamId, startOffset, endOffset));
+        streamMetadata.streamObjects().put(objectId,
+            new S3StreamObject(objectId, streamId, startOffset, endOffset));
         // the offset continuous is ensured by the process layer
         // when replay from checkpoint, the record may be out of order, so we need to update the end offset to the largest end offset.
         streamMetadata.endOffset(endOffset);
@@ -1804,6 +1874,20 @@ public class StreamControlManager {
                 nodeMetadata.uncommittedOffsets().remove(entry.streamId());
             }
         }
+    }
+
+    /**
+     * Replaces the complete durable Archive state for a Stream.
+     */
+    public void replay(S3StreamArchiveRecord record) {
+        streamArchiveControlManager.replay(record);
+    }
+
+    /**
+     * Removes the durable Archive state for a Stream.
+     */
+    public void replay(RemoveS3StreamArchiveRecord record) {
+        streamArchiveControlManager.replay(record);
     }
 
     public TimelineHashMap<Long, StreamRuntimeMetadata> streamsMetadata() {
@@ -1935,5 +2019,20 @@ public class StreamControlManager {
                     LOGGER.info("[REASSIGN_PARTITION_BACK_TO_LOCKED_NODE],req={},resp={}", request, rst);
                 });
         });
+    }
+
+    @VisibleForTesting
+    ControllerResult<Void> cleanupStreamArchiveMetadata(long streamId) {
+        return streamArchiveControlManager.cleanupMetadata(streamId);
+    }
+
+    @VisibleForTesting
+    void reconcileStreamArchiveMetadataCleanup() {
+        streamArchiveControlManager.reconcile();
+    }
+
+    @VisibleForTesting
+    public S3StreamArchiveMetadata getStreamArchiveMetadata(long streamId) {
+        return streamArchiveControlManager.get(streamId);
     }
 }

@@ -19,6 +19,8 @@
 
 package org.apache.kafka.server.common.automq;
 
+import com.automq.stream.Version;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -33,13 +35,33 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class AutoMQVersionTest {
 
     /**
-     * Given every released AutoMQ feature level, only V6 enables fast partition reassignment.
+     * Given adjacent AutoMQ feature levels, fast partition reassignment starts at V6.
      */
     @Test
     public void testFastPartitionReassignmentCapabilityStartsAtV6() {
         assertFalse(AutoMQVersion.V5.isFastPartitionReassignmentSupported());
         assertTrue(AutoMQVersion.V6.isFastPartitionReassignmentSupported());
-        assertSame(AutoMQVersion.V6, AutoMQVersion.LATEST);
         assertSame(AutoMQVersion.V6, AutoMQVersion.from((short) 7));
+    }
+
+    /**
+     * Given the Archive feature level, verify finalized V6 enables Stream Archive.
+     */
+    @Test
+    public void testStreamArchiveCapabilityStartsAtV6() {
+        assertFalse(AutoMQVersion.V5.isStreamArchiveSupported());
+        assertTrue(AutoMQVersion.V6.isStreamArchiveSupported());
+        assertSame(AutoMQVersion.V6, AutoMQVersion.LATEST);
+        assertSame(Version.V1, AutoMQVersion.V5.s3streamVersion());
+        assertSame(Version.V2, AutoMQVersion.V6.s3streamVersion());
+    }
+
+    /**
+     * Given adjacent AutoMQ feature levels, Avro ElasticLog metadata starts at V6.
+     */
+    @Test
+    public void testElasticLogMetaAvroCapabilityStartsAtV6() {
+        assertFalse(AutoMQVersion.V5.isElasticLogMetaAvroSupported());
+        assertTrue(AutoMQVersion.V6.isElasticLogMetaAvroSupported());
     }
 }

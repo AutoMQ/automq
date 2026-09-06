@@ -21,6 +21,7 @@ package kafka.log.streamaspect;
 
 import kafka.cluster.LogEventListener;
 
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
@@ -41,6 +42,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class ElasticLogSegmentManager {
@@ -58,13 +60,30 @@ public class ElasticLogSegmentManager {
     private final MetaStream metaStream;
     private final ElasticLogStreamManager streamManager;
     private final String logIdent;
+    private final Supplier<AutoMQVersion> autoMQVersionSupplier;
 
     private volatile ElasticLogMeta logMeta;
 
     public ElasticLogSegmentManager(MetaStream metaStream, ElasticLogStreamManager streamManager, String logIdent) {
+        this(metaStream, streamManager, logIdent,
+            ElasticLogManager$.MODULE$.autoMQVersionSupplier());
+    }
+
+    /**
+     * Creates a manager whose writer policy follows the live finalized AutoMQ version.
+     * The supplier is evaluated for every metadata persistence and must be safe to call concurrently.
+     *
+     * @param metaStream metadata stream receiving complete log metadata values
+     * @param streamManager owner of the streams referenced by the metadata
+     * @param logIdent log prefix identifying the owning Partition
+     * @param autoMQVersionSupplier live finalized AutoMQ version supplier
+     */
+    public ElasticLogSegmentManager(MetaStream metaStream, ElasticLogStreamManager streamManager, String logIdent,
+        Supplier<AutoMQVersion> autoMQVersionSupplier) {
         this.metaStream = metaStream;
         this.streamManager = streamManager;
         this.logIdent = logIdent;
+        this.autoMQVersionSupplier = autoMQVersionSupplier;
     }
 
     public void put(long baseOffset, ElasticLogSegment segment) {
@@ -167,7 +186,8 @@ public class ElasticLogSegmentManager {
             segmentLock.unlock();
         }
 
-        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
+        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY,
+            ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
         return metaStream.append(kv).thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
             if (trimStreams) {

@@ -28,6 +28,7 @@ import kafka.log.streamaspect.reassignment.PartitionHandoffSendException;
 
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.Uuid;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.DefaultRecordBatch;
 import com.automq.stream.api.AppendResult;
@@ -170,6 +171,25 @@ public class MetaStreamTest {
         assertArrayEquals(new byte[] {7, 8}, bytes((ByteBuffer) replayed.get("UNKNOWN_FUTURE_KEY")));
         assertTrue(metaStream.get(MetaStream.PARTITION_META_KEY).isPresent());
         assertArrayEquals(new byte[] {7, 8}, bytes(metaStream.get("UNKNOWN_FUTURE_KEY").orElseThrow()));
+    }
+
+    /**
+     * Given V6 ElasticLog metadata in the stream, replay must decode the envelope without a version-side channel.
+     */
+    @Test
+    public void testReplayDecodesV6ElasticLogMeta() throws Exception {
+        ElasticLogMeta expected = new ElasticLogMeta();
+        expected.setStreamMap(Map.of("log0", 42L));
+        MemoryClient.StreamImpl innerStream = new MemoryClient.StreamImpl(1L);
+        appendRaw(innerStream, MetaKeyValue.of(MetaStream.LOG_META_KEY,
+            ElasticLogMetaCodec.encode(expected, AutoMQVersion.V6)));
+        MetaStream metaStream = ordinaryMetaStream(innerStream);
+
+        Map<String, Object> replayed = metaStream.replay();
+
+        ElasticLogMeta actual = (ElasticLogMeta) replayed.get(MetaStream.LOG_META_KEY);
+        assertEquals(expected.getStreamMap(), actual.getStreamMap());
+        assertEquals(0, actual.getSegmentMetas().size());
     }
 
     /**

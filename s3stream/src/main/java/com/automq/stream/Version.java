@@ -23,9 +23,11 @@ public enum Version {
     V0((short) 1),
     // Support StreamObjectCompactV1 (based on composite object)
     // Support wal registration
-    V1((short) 2);
+    V1((short) 2),
+    // Support Infinite Storage Stream Archive lifecycle
+    V2((short) 3);
 
-    public static final Version LATEST = V1;
+    public static final Version LATEST = V2;
     private final short level;
 
     Version(short level) {
@@ -38,6 +40,8 @@ public enum Version {
                 return V0;
             case 2:
                 return V1;
+            case 3:
+                return V2;
             default:
                 throw new IllegalArgumentException("Unknown Version level: " + level);
         }
@@ -53,6 +57,13 @@ public enum Version {
 
     public boolean isWalRegistrationSupported() {
         return isAtLeast(V1);
+    }
+
+    /**
+     * Returns whether finalized Stream Archive layout and lifecycle behavior is enabled.
+     */
+    public boolean isStreamArchiveSupported() {
+        return isAtLeast(V2);
     }
 
     public boolean isAtLeast(Version otherVersion) {

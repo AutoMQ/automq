@@ -1238,7 +1238,7 @@ class ElasticLogTest {
         val partitionMeta = new ElasticPartitionMeta(startOffset, startOffset + 1, startOffset + 2)
         partitionMeta.setCleanedShutdown(true)
         val records = List(
-            handoffRecord(0L, MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(new ElasticLogMeta()))),
+            handoffRecord(0L, MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMetaCodec.encodeJson(new ElasticLogMeta()))),
             handoffRecord(1L, MetaKeyValue.of(MetaStream.PARTITION_META_KEY, ElasticPartitionMeta.encode(partitionMeta))),
             handoffRecord(2L, MetaKeyValue.of(MetaStream.LEADER_EPOCH_CHECKPOINT_KEY,
                 ByteBuffer.wrap(new ElasticLeaderEpochCheckpointMeta(0, Collections.emptyList()).encode()))))

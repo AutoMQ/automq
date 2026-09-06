@@ -78,6 +78,7 @@ import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyPartResult;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
@@ -275,6 +276,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        CopyObjectRequest.Builder builder = CopyObjectRequest.builder()
+            .sourceBucket(sourceBucket)
+            .sourceKey(sourcePath)
+            .destinationBucket(bucket)
+            .destinationKey(destinationPath);
+        return writeS3Client.copyObject(builder.build()).thenApply(ignored -> null);
+    }
+
+    @Override
     CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path) {
         CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
         if (null != tagging) {
@@ -378,11 +389,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     private boolean isRetriableDeleteError(DeleteObjectError error) {
-        return isRetriableDeleteStatus(error.statusCode())
+        return isRetriableStatus(error.statusCode())
             || RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code());
     }
 
-    private boolean isRetriableDeleteStatus(int statusCode) {
+    private boolean isRetriableStatus(int statusCode) {
         return statusCode == HttpStatusCode.THROTTLING
             || statusCode == HttpStatusCode.REQUEST_TIMEOUT
             || statusCode == HttpStatusCode.INTERNAL_SERVER_ERROR
@@ -403,36 +414,40 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
         Throwable cause = cause(ex);
-        RetryStrategy strategy = RetryStrategy.RETRY;
-        if (cause instanceof S3Exception) {
-            S3Exception s3Ex = (S3Exception) cause;
-            switch (s3Ex.statusCode()) {
-                case HttpStatusCode.NOT_FOUND:
-                    strategy = RetryStrategy.ABORT;
-                    break;
-                default:
-                    strategy = RetryStrategy.RETRY;
-            }
-            if (cause instanceof NoSuchUploadException) {
-                if (COMPLETE_MULTI_PART_UPLOAD == operation) {
-                    strategy = RetryStrategy.VISIBILITY_CHECK;
-                } else if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
-                    // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
-                    // Retrying with a dead upload ID is futile and would loop until the broker crashes.
-                    strategy = RetryStrategy.ABORT;
-                }
-            }
-            if (GET_OBJECT == operation) {
-                if (cause instanceof NoSuchKeyException) {
-                    cause = new ObjectNotExistException(cause);
-                }
-            }
-        } else if (cause instanceof ApiCallAttemptTimeoutException) {
+        if (cause instanceof ApiCallAttemptTimeoutException) {
             cause = new TimeoutException(cause.getMessage());
         }
-        return Pair.of(strategy, cause);
+        // Common transport and service failures are retriable for every operation.
+        if (cause instanceof S3Exception s3Exception && isRetriableStatus(s3Exception.statusCode())
+            || cause instanceof SdkClientException || cause instanceof TimeoutException) {
+            return Pair.of(RetryStrategy.RETRY, cause);
+        }
+        if (cause instanceof IllegalArgumentException || cause instanceof ObjectNotExistException) {
+            return Pair.of(RetryStrategy.ABORT, cause);
+        }
+        if (cause instanceof NoSuchUploadException) {
+            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
+                return Pair.of(RetryStrategy.VISIBILITY_CHECK, cause);
+            }
+            if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
+                // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
+                // Retrying with a dead upload ID is futile and would loop until the broker crashes.
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        if (cause instanceof S3Exception s3Exception) {
+            if (GET_OBJECT == operation && cause instanceof NoSuchKeyException) {
+                return Pair.of(RetryStrategy.ABORT, new ObjectNotExistException(cause));
+            }
+            if (s3Exception.statusCode() == HttpStatusCode.NOT_FOUND
+                || operation == S3Operation.LIST_OBJECTS || operation == S3Operation.COPY_OBJECT) {
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        return Pair.of(RetryStrategy.RETRY, cause);
     }
 
     @Override
@@ -444,29 +459,41 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<List<ObjectInfo>> doList(String prefix) {
+    CompletableFuture<List<ObjectInfo>> doList(ListOptions options) {
+        if (options.maxKeys() == 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
         CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
         List<ObjectInfo> allObjects = new ArrayList<>();
-        listNextBatch(prefix, null, allObjects, resultFuture);
+        listNextBatch(options, null, allObjects, resultFuture);
         return resultFuture;
     }
 
-    private void listNextBatch(String prefix, String continuationToken, List<ObjectInfo> allObjects,
+    private void listNextBatch(ListOptions options, String continuationToken, List<ObjectInfo> allObjects,
         CompletableFuture<List<ObjectInfo>> resultFuture) {
         readS3Client.listObjectsV2(builder -> {
-            builder.bucket(bucket).prefix(prefix);
+            builder.bucket(bucket).prefix(options.prefix());
             if (continuationToken != null) {
                 builder.continuationToken(continuationToken);
+            } else if (options.startAfter() != null) {
+                builder.startAfter(options.startAfter());
+            }
+            if (options.maxKeys() != ListOptions.UNLIMITED) {
+                builder.maxKeys(options.maxKeys() - allObjects.size());
             }
         }).thenAccept(resp -> {
             resp.contents()
                 .stream()
                 .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
                 .forEach(allObjects::add);
-            if (resp.isTruncated()) {
-                listNextBatch(prefix, resp.nextContinuationToken(), allObjects, resultFuture);
+            boolean limitReached = options.maxKeys() != ListOptions.UNLIMITED
+                && allObjects.size() >= options.maxKeys();
+            if (resp.isTruncated() && !limitReached) {
+                listNextBatch(options, resp.nextContinuationToken(), allObjects, resultFuture);
             } else {
-                resultFuture.complete(allObjects);
+                int resultSize = options.maxKeys() == ListOptions.UNLIMITED
+                    ? allObjects.size() : Math.min(options.maxKeys(), allObjects.size());
+                resultFuture.complete(new ArrayList<>(allObjects.subList(0, resultSize)));
             }
         }).exceptionally(ex -> {
             resultFuture.completeExceptionally(ex);

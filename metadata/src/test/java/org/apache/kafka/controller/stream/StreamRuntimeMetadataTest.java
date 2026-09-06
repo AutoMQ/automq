@@ -35,10 +35,34 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @Timeout(60)
 @Tag("S3Unit")
 public class StreamRuntimeMetadataTest {
+
+    /**
+     * Given Stream Object replay and removal, verify lookup by exact start offset follows the
+     * current mapping without scanning all Stream Objects.
+     */
+    @Test
+    public void testStreamObjectMutation() {
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        StreamRuntimeMetadata metadata = new StreamRuntimeMetadata(
+            1L, 0L, 0, 0L, StreamState.OPENED, Collections.emptyMap(), registry);
+        S3StreamObject first = new S3StreamObject(10L, 1L, 0L, 50L);
+        S3StreamObject second = new S3StreamObject(11L, 1L, 50L, 100L);
+
+        metadata.streamObjects().put(first.objectId(), first);
+        metadata.streamObjects().put(second.objectId(), second);
+        assertEquals(first, metadata.streamObjects().get(10L));
+        assertEquals(second, metadata.streamObjects().get(11L));
+
+        metadata.streamObjects().remove(10L);
+        assertNull(metadata.streamObjects().get(10L));
+        assertEquals(second, metadata.streamObjects().get(11L));
+    }
+
     private static final long STREAM_ID = 233L;
     private static final long EPOCH = 1L;
     StreamRuntimeMetadata metadata;

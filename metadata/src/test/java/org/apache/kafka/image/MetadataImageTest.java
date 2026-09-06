@@ -17,11 +17,15 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
+import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -29,6 +33,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 
 @Timeout(value = 40)
@@ -125,6 +130,31 @@ public class MetadataImageTest {
     @Test
     public void testImage2RoundTrip() {
         testToImage(IMAGE2);
+    }
+
+    /**
+     * Given Archive records through the generic KRaft replay entry point, verify the complete
+     * metadata image applies both replacement and removal records.
+    */
+    @Tag("S3Unit")
+    @Test
+    public void testArchiveRecordReplay() {
+        MetadataDelta delta = new MetadataDelta(MetadataImage.EMPTY);
+        delta.replay((ApiMessage) new S3StreamArchiveRecord()
+            .setStreamId(7L)
+            .setArchiveStartOffset(10L)
+            .setArchiveMetadataEndOffset(20L)
+            .setArchiveEndOffset(30L)
+            .setArchivePreparedEndOffset(40L)
+            .setArchiveSize(500L)
+            .setArchiveCleanupEndOffset(25L)
+            .setArchiveCleanupSize(100L));
+        MetadataImage image = delta.apply(MetadataProvenance.EMPTY);
+        assertEquals(500L, image.streamsMetadata().getStreamArchiveMetadata(7L).archiveSize());
+
+        delta = new MetadataDelta(image);
+        delta.replay((ApiMessage) new RemoveS3StreamArchiveRecord().setStreamId(7L));
+        assertNull(delta.apply(MetadataProvenance.EMPTY).streamsMetadata().getStreamArchiveMetadata(7L));
     }
 
     private static void testToImage(MetadataImage image) {

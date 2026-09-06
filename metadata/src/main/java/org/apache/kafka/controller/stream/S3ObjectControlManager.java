@@ -71,6 +71,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -133,6 +134,8 @@ public class S3ObjectControlManager {
     private final TimelineLong s3ObjectSize;
     private final Metrics.LongGaugeBundle.LongGauge s3ObjectCountMetric;
     private final Metrics.LongGaugeBundle.LongGauge s3ObjectSizeMetric;
+    // The metric callback may run outside the Controller event thread.
+    private volatile LongSupplier streamArchiveSizeSupplier = () -> 0L;
 
     private long lastCleanStartTimestamp = 0;
     private CompletableFuture<Void> lastCleanCf = CompletableFuture.completedFuture(null);
@@ -189,8 +192,17 @@ public class S3ObjectControlManager {
             if (!quorumController.isActive()) {
                 return;
             }
-            result.record(s3ObjectSize.get());
+            result.record(Math.addExact(s3ObjectSize.get(), streamArchiveSizeSupplier.getAsLong()));
         });
+    }
+
+    /**
+     * Sets the Stream Archive-size supplier included in the S3 object-size metric.
+     *
+     * @param supplier Stream Archive-size supplier
+     */
+    public void setStreamArchiveSizeSupplier(LongSupplier supplier) {
+        this.streamArchiveSizeSupplier = supplier;
     }
 
     private void triggerCheckEvent() {

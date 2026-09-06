@@ -18,3 +18,4 @@ automq_test_suite:
   included:
     - ../kafkatest/automq/automq_zerozone_test.py
     - ../kafkatest/automq/retry_storm_backoff_test.py
+    - ../kafkatest/automq/archive_e2e_test.py

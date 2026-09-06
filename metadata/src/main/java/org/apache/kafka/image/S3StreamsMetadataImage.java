@@ -26,6 +26,7 @@ import org.apache.kafka.metadata.stream.InRangeObjects;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
@@ -97,6 +98,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
     private final TimelineHashMap<Long, TopicIdPartition> stream2partition;
 
     private final TimelineHashMap<Long, Long> streamEndOffsets;
+    private final TimelineHashMap<Long, S3StreamArchiveMetadata> streamArchiveMetadata;
     private final RegistryRef registryRef;
 
     public S3StreamsMetadataImage(
@@ -109,6 +111,22 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         TimelineHashMap<Long, TopicIdPartition> stream2partition,
         TimelineHashMap<Long, Long> streamEndOffsets
     ) {
+        this(assignedStreamId, registryRef, streamMetadataMap, nodeMetadataMap, uncommittedOffsets,
+            partition2streams, stream2partition, streamEndOffsets,
+            new TimelineHashMap<>(registryRef.registry(), 0));
+    }
+
+    S3StreamsMetadataImage(
+        long assignedStreamId,
+        RegistryRef registryRef,
+        TimelineHashMap<Long, S3StreamMetadataImage> streamMetadataMap,
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> nodeMetadataMap,
+        TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> uncommittedOffsets,
+        TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams,
+        TimelineHashMap<Long, TopicIdPartition> stream2partition,
+        TimelineHashMap<Long, Long> streamEndOffsets,
+        TimelineHashMap<Long, S3StreamArchiveMetadata> streamArchiveMetadata
+    ) {
         this.nextAssignedStreamId = assignedStreamId + 1;
         this.streamMetadataMap = streamMetadataMap;
         this.nodeMetadataMap = nodeMetadataMap;
@@ -116,6 +134,7 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         this.partition2streams = partition2streams;
         this.stream2partition = stream2partition;
         this.streamEndOffsets = streamEndOffsets;
+        this.streamArchiveMetadata = streamArchiveMetadata;
         this.registryRef = registryRef;
     }
 
@@ -124,7 +143,9 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             return true;
         }
         return registryRef.inLock(() ->
-            this.nodeMetadataMap.isEmpty(registryRef.epoch()) && this.streamMetadataMap.isEmpty(registryRef.epoch())
+            this.nodeMetadataMap.isEmpty(registryRef.epoch())
+                && this.streamMetadataMap.isEmpty(registryRef.epoch())
+                && this.streamArchiveMetadata.isEmpty(registryRef.epoch())
         );
     }
 
@@ -135,6 +156,8 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
 
         List<S3StreamMetadataImage> streamMetadataList = this.streamMetadataList();
         streamMetadataList.forEach(v -> v.write(writer, options));
+
+        archiveMetadataList().forEach(archive -> writer.write(archive.toRecord()));
 
         List<NodeS3StreamSetObjectMetadataImage> nodeMetadataList = this.nodeMetadataList();
         nodeMetadataList.forEach(v -> v.write(writer, options));
@@ -584,6 +607,24 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return registryRef.inLock(() -> streamMetadataMap.get(streamId, registryRef.epoch()));
     }
 
+    /**
+     * Returns materialized Archive state, or the non-materialized default at the current Stream
+     * start offset. Returns null when neither a Stream nor an Archive record exists.
+     */
+    public S3StreamArchiveMetadata getStreamArchiveMetadata(long streamId) {
+        if (registryRef == RegistryRef.NOOP) {
+            return null;
+        }
+        return registryRef.inLock(() -> {
+            S3StreamArchiveMetadata archive = streamArchiveMetadata.get(streamId, registryRef.epoch());
+            if (archive != null) {
+                return archive;
+            }
+            S3StreamMetadataImage stream = streamMetadataMap.get(streamId, registryRef.epoch());
+            return stream == null ? null : S3StreamArchiveMetadata.defaultAt(streamId, stream.startOffset());
+        });
+    }
+
     public NodeS3StreamSetObjectMetadataImage getNodeMetadata(int nodeId) {
         if (registryRef == RegistryRef.NOOP) {
             return null;
@@ -647,13 +688,14 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             && this.streamMetadataList().equals(other.streamMetadataList())
             && this.nodeMetadataList().equals(other.nodeMetadataList())
             && this.uncommittedOffsets().equals(other.uncommittedOffsets())
-            && this.streamEndOffsets().equals(other.streamEndOffsets());
+            && this.streamEndOffsets().equals(other.streamEndOffsets())
+            && this.archiveMetadataMap().equals(other.archiveMetadataMap());
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(nextAssignedStreamId, streamMetadataList(), nodeMetadataList(), uncommittedOffsets(),
-            streamEndOffsets());
+            streamEndOffsets(), archiveMetadataMap());
     }
 
     // caller use this value should be protected by registryRef lock
@@ -756,6 +798,28 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
             Map<Long, Long> map = new HashMap<>(streamEndOffsets.size());
             streamEndOffsets.entrySet(registryRef.epoch()).forEach(e -> map.put(e.getKey(), e.getValue()));
             return map;
+        });
+    }
+
+    TimelineHashMap<Long, S3StreamArchiveMetadata> timelineStreamArchiveMetadata() {
+        return streamArchiveMetadata;
+    }
+
+    private List<S3StreamArchiveMetadata> archiveMetadataList() {
+        List<S3StreamArchiveMetadata> archives = new ArrayList<>(archiveMetadataMap().values());
+        archives.sort(Comparator.comparingLong(S3StreamArchiveMetadata::streamId));
+        return archives;
+    }
+
+    Map<Long, S3StreamArchiveMetadata> archiveMetadataMap() {
+        if (registryRef == RegistryRef.NOOP) {
+            return Collections.emptyMap();
+        }
+        return registryRef.inLock(() -> {
+            Map<Long, S3StreamArchiveMetadata> archives = new HashMap<>(streamArchiveMetadata.size());
+            streamArchiveMetadata.entrySet(registryRef.epoch()).forEach(entry ->
+                archives.put(entry.getKey(), entry.getValue()));
+            return archives;
         });
     }
 

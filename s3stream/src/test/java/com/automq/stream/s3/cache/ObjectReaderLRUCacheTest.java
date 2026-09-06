@@ -75,11 +75,11 @@ public class ObjectReaderLRUCacheTest {
         Assertions.assertEquals(108000, objectReader3.basicObjectInfo().get().size());
 
         ObjectReaderLRUCache cache = new ObjectReaderLRUCache("", 100000);
-        cache.put(235L, objectReader3);
-        cache.put(234L, objectReader2);
-        cache.put(233L, objectReader);
+        cache.put(new ObjectReaderLRUCache.Key((short) 0, "235"), objectReader3);
+        cache.put(new ObjectReaderLRUCache.Key((short) 0, "234"), objectReader2);
+        cache.put(new ObjectReaderLRUCache.Key((short) 0, "233"), objectReader);
         Assertions.assertEquals(1, cache.size());
-        Map.Entry<Long, ObjectReader> entry = cache.pop();
+        Map.Entry<ObjectReaderLRUCache.Key, ObjectReader> entry = cache.pop();
         Assertions.assertNotNull(entry);
         Assertions.assertEquals(objectReader, entry.getValue());
     }
@@ -95,7 +95,7 @@ public class ObjectReaderLRUCacheTest {
                 CompletableFuture.delayedExecutor(r.nextInt(1000), TimeUnit.MILLISECONDS));
             cfs.add(cf);
             Mockito.doAnswer(invocation -> cf).when(reader).size();
-            cache.put((long) i, reader);
+            cache.put(new ObjectReaderLRUCache.Key((short) 0, String.valueOf(i)), reader);
         }
         CompletableFuture.allOf(cfs.toArray(new CompletableFuture[0])).join();
         Thread.sleep(1000);

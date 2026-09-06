@@ -106,6 +106,24 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        if (!bucketURI.bucket().equals(sourceBucket)) {
+            return FutureUtil.failedFuture(new IllegalArgumentException("Memory copy requires one bucket"));
+        }
+        ByteBuf source = storage.get(sourcePath);
+        if (source == null) {
+            return FutureUtil.failedFuture(new ObjectNotExistException("object not exist"));
+        }
+        ByteBuf copy = Unpooled.buffer(source.readableBytes());
+        copy.writeBytes(source.duplicate());
+        ByteBuf previous = storage.put(destinationPath, copy);
+        if (previous != null) {
+            previous.release();
+        }
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
     public boolean readinessCheck() {
         return true;
     }
@@ -212,11 +230,16 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    CompletableFuture<List<ObjectInfo>> doList(String prefix) {
-        return CompletableFuture.completedFuture(storage.entrySet()
-            .stream()
-            .filter(entry -> entry.getKey().startsWith(prefix))
-            .map(entry -> new ObjectInfo((short) 0, entry.getKey(), 0L, entry.getValue().readableBytes()))
+    CompletableFuture<List<ObjectInfo>> doList(ListOptions options) {
+        java.util.stream.Stream<Map.Entry<String, ByteBuf>> stream = storage.entrySet().stream()
+            .filter(entry -> entry.getKey().startsWith(options.prefix()))
+            .filter(entry -> options.startAfter() == null || entry.getKey().compareTo(options.startAfter()) > 0)
+            .sorted(Map.Entry.comparingByKey());
+        if (options.maxKeys() != ListOptions.UNLIMITED) {
+            stream = stream.limit(options.maxKeys());
+        }
+        return CompletableFuture.completedFuture(stream
+            .map(entry -> new ObjectInfo(bucketId, entry.getKey(), 0L, entry.getValue().readableBytes()))
             .collect(Collectors.toList()));
     }
 

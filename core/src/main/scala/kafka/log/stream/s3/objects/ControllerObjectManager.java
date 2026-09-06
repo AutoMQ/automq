@@ -244,6 +244,8 @@ public class ControllerObjectManager implements ObjectManager {
                     throw new CompactedObjectsNotFoundException();
                 case OBJECT_NOT_COMMITED:
                     throw new ObjectNotCommittedException();
+                case STREAM_ARCHIVE_STATE_CONFLICT:
+                    throw code.exception();
                 case STREAM_NOT_EXIST:
                 case STREAM_FENCED:
                     LOGGER.warn("Stream fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));

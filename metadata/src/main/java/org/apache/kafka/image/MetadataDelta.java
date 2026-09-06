@@ -42,12 +42,14 @@ import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -374,6 +376,12 @@ public final class MetadataDelta {
             case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
                 replay((NodeWALUncommittedOffsetsRecord) record);
                 break;
+            case S3_STREAM_ARCHIVE_RECORD:
+                replay((S3StreamArchiveRecord) record);
+                break;
+            case REMOVE_S3_STREAM_ARCHIVE_RECORD:
+                replay((RemoveS3StreamArchiveRecord) record);
+                break;
                 // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -554,6 +562,20 @@ public final class MetadataDelta {
      * Replay node WAL responsibility entry upserts and tombstones into the streams image delta.
      */
     public void replay(NodeWALUncommittedOffsetsRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    /**
+     * Replays a complete per-Stream Archive state replacement into the streams image delta.
+     */
+    public void replay(S3StreamArchiveRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    /**
+     * Replays a per-Stream Archive state removal into the streams image delta.
+     */
+    public void replay(RemoveS3StreamArchiveRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
     // AutoMQ for Kafka inject end
