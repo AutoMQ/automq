@@ -3,13 +3,11 @@
 Thank you for your interest in contributing! We love community contributions.
 Read on to learn how to contribute to AutoMQ.
 We appreciate first-time contributors, and we are happy to assist you in getting started. In case of questions, just
-reach out to us via [Wechat Group](https://www.automq.com/img/----------------------------1.png)
+reach out to us via [Wechat Group](docs/images/automq-wechat.png)
 or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL9oXuRdACnOIA)!
 
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or WeChat
 follow [Code of Conduct](CODE_OF_CONDUCT.md).
-
-## Suggested Onboarding Path for New Contributors
 
 ## Quick Start for First-Time Contributors (Recommended)
 
@@ -37,20 +35,12 @@ If you are new to AutoMQ, we recommend starting with the simplest path before di
 
 > Tip: If you encounter setup issues, check [devkit/README.md](devkit/README.md), “Local Debug with IDEA”, and S3 configuration sections below.
 
-
-If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
-This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
-
-After gaining familiarity, contributors who want to work on code can follow the steps in this guide to build and run AutoMQ locally.
-For most contributors, we recommend starting with DevKit (`devkit/README.md`) and using the manual setup only when deeper environment customization is needed.
-
-
 ## Code Contributions
 
 ### Finding or Reporting Issues
 
 -   **Find an existing issue:** Look through the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often tagged with `good first issue`. To claim an issue, simply reply with '/assign', and the GitHub bot will assign it to you. Start with
-    this [tagged good first issue](https://github.com/AutoMQ/automq-for-kafka/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+    this [tagged good first issue](https://github.com/AutoMQ/automq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
 -   **Report a new issue:** If you've found a bug or have a feature request, please [create a new issue](https://github.com/AutoMQ/automq/issues/new/choose). Select the appropriate template (Bug Report or Feature Request) and fill out the form provided.
 
 If you have any questions about an issue, please feel free to ask in the issue comments. We will do our best to clarify any doubts you may have.
@@ -92,7 +82,7 @@ Pull Request reviews are done on a regular basis.
 > Note: At least 8GB RAM is recommended for local development and debugging.
 
 
-> Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
+> Tips: You can refer to the [documentation](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
 
 ## Local Debug with IDEA
 
