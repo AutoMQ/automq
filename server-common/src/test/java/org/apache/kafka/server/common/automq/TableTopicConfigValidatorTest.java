@@ -20,6 +20,7 @@
 package org.apache.kafka.server.common.automq;
 
 import org.apache.kafka.common.config.ConfigException;
+import org.apache.kafka.server.common.automq.TableTopicConfigValidator.IcebergAutoCreatePropertiesValidator;
 import org.apache.kafka.server.common.automq.TableTopicConfigValidator.IdColumnsValidator;
 import org.apache.kafka.server.common.automq.TableTopicConfigValidator.PartitionValidator;
 
@@ -71,5 +72,42 @@ public class TableTopicConfigValidatorTest {
         Assertions.assertEquals(List.of("a", "b", "c"), TableTopicConfigValidator.stringToList("[a, b, c]", COMMA_NO_PARENS_REGEX));
         Assertions.assertEquals(List.of(), TableTopicConfigValidator.stringToList("", COMMA_NO_PARENS_REGEX));
         Assertions.assertEquals(List.of(), TableTopicConfigValidator.stringToList("[]", COMMA_NO_PARENS_REGEX));
+    }
+    
+    /**
+     * IcebergAutoCreatePropertiesValidator should accept well-formed unique KV pairs
+     * and reject malformed or duplicate entries at config time.
+     */
+    @Test
+    public void testIcebergAutoCreatePropertiesValidator() {
+        // valid: standard defaults
+        IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+            List.of("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true"));
+
+        // valid: single entry
+        IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+            List.of("write.metadata.delete-after-commit.enabled=true"));
+
+        // valid: value itself contains '=' (only first '=' is the delimiter)
+        IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+            List.of("my.key=value=with=equals"));
+
+        // invalid: entry has no '='
+        assertThrowsExactly(ConfigException.class, () ->
+            IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+                List.of("write.object-storage.enabled")));
+
+        // invalid: entry starts with '=' (blank key)
+        assertThrowsExactly(ConfigException.class, () ->
+            IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+                List.of("=true")));
+
+        // invalid: duplicate key
+        assertThrowsExactly(ConfigException.class, () ->
+            IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p",
+                List.of("write.object-storage.enabled=true", "write.object-storage.enabled=false")));
+
+        // null is treated as no-op (config not set)
+        IcebergAutoCreatePropertiesValidator.INSTANCE.ensureValid("p", null);
     }
 }

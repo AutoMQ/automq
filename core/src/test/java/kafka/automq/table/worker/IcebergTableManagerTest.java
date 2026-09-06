@@ -23,6 +23,7 @@ import com.google.common.collect.ImmutableMap;
 
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
+import org.apache.iceberg.TableProperties;
 import org.apache.iceberg.UpdateSchema;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -523,8 +524,44 @@ public class IcebergTableManagerTest {
         return catalog.loadTable(manager.tableId());
     }
 
+    @Test
+    public void shouldSetAutoCreatePropertiesWhenConfigured() {
+        TableIdentifier tableId = randomTableId();
+        List<String> props = List.of("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true");
+        IcebergTableManager manager = newManager(tableId, props);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        assertEquals("true", table.properties().get(TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED));
+        assertEquals("true", table.properties().get(TableProperties.OBJECT_STORE_ENABLED));
+    }
+
+    @Test
+    public void shouldOmitObjectStoreEnabledWhenExcludedFromProperties() {
+        TableIdentifier tableId = randomTableId();
+        List<String> props = List.of("write.metadata.delete-after-commit.enabled=true");
+        IcebergTableManager manager = newManager(tableId, props);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertNotNull(table);
+        assertEquals("true", table.properties().get(TableProperties.METADATA_DELETE_AFTER_COMMIT_ENABLED));
+        assertNull(table.properties().get(TableProperties.OBJECT_STORE_ENABLED));
+    }
+
     private IcebergTableManager newManager(TableIdentifier tableId) {
-        return new IcebergTableManager(catalog, tableId, mock(WorkerConfig.class));
+        return newManager(tableId, List.of("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true"));
+    }
+
+    private IcebergTableManager newManager(TableIdentifier tableId, List<String> autoCreateProperties) {
+        WorkerConfig config = mock(WorkerConfig.class);
+        when(config.icebergAutoCreateProperties()).thenReturn(autoCreateProperties);
+        return new IcebergTableManager(catalog, tableId, config);
     }
 
     private TableIdentifier randomTableId() {
