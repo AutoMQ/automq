@@ -69,5 +69,7 @@ jobs:
         with:
           context: ./docker
           push: true
+          provenance: mode=max
+          sbom: true
           tags: ${{ steps.image_tags.outputs.tags }}
           platforms: linux/amd64,linux/arm64
