@@ -5,6 +5,19 @@ set dotenv-load := false
 export AUTOMQ_DEV_HOME := justfile_directory() + "/.."
 export KAFKA_S3_ACCESS_KEY := S3_ACCESS_KEY
 export KAFKA_S3_SECRET_KEY := S3_SECRET_KEY
+[private]
+validate-env:
+    #!/usr/bin/env bash
+    if [ -z "{{AUTOMQ_DEV_HOME}}" ]; then
+      echo "✗ AUTOMQ_DEV_HOME is not set"
+      exit 1
+    fi
+
+    if [ ! -f "{{justfile_directory()}}/docker-compose.yml" ]; then
+      echo "✗ docker-compose.yml not found"
+      exit 1
+    fi
+    
 
 DEVKIT := justfile_directory() + "/.devkit"
 _ENV_FILE_FLAG := if path_exists(justfile_directory() + "/.devkit/compose.env") == "true" { "--env-file " + justfile_directory() + "/.devkit/compose.env" } else { "" }
@@ -234,7 +247,7 @@ start nodes="1" *FEATURES: ensure-cluster-id
     just wait
 
 [doc("Build image & code, then start. Example: just start-build 3 tabletopic")]
-start-build nodes="1" *FEATURES: build (start nodes FEATURES)
+start-build nodes="1" *FEATURES: validate-env build (start nodes FEATURES)
 
 [doc("Stop all services (keep data)")]
 stop:

@@ -440,3 +440,26 @@ my.node.label=node-${NODE_ID}
 ```bash
 just start 1 my-feature
 ```
+
+## Windows Troubleshooting
+
+### Git Bash Path Issues
+
+If `just start-build` fails on Windows Git Bash due to Docker path conversion issues, try:
+
+```bash
+export AUTOMQ_DEV_HOME=/c/automq/devkit
+docker compose up -d
+```
+
+Alternatively, running Docker Compose directly may work better than `just start-build` on Windows environments.
+
+### Docker Engine Errors
+
+If Docker commands fail with:
+
+```text
+failed to connect to the docker API
+```
+
+Restart Docker Desktop and verify the engine is running before starting the devkit.
