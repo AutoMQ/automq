@@ -73,7 +73,7 @@ public class IncrementalAlterConfigsRequest extends AbstractRequest {
 
         @Override
         public String toString() {
-            return data.toString();
+            return maskData(data);
         }
     }
 
@@ -106,5 +106,21 @@ public class IncrementalAlterConfigsRequest extends AbstractRequest {
                     .setErrorMessage(apiError.message()));
         }
         return new IncrementalAlterConfigsResponse(response);
+    }
+
+    // It is not safe to print all config values
+    private static String maskData(IncrementalAlterConfigsRequestData data) {
+        IncrementalAlterConfigsRequestData tempData = data.duplicate();
+        tempData.resources().forEach(resource -> {
+            resource.configs().forEach(config -> {
+                config.setValue("REDACTED");
+            });
+        });
+        return tempData.toString();
+    }
+
+    @Override
+    public String toString() {
+        return maskData(data);
     }
 }

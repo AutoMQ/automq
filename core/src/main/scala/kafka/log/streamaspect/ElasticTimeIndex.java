@@ -99,7 +99,7 @@ public class ElasticTimeIndex extends TimeIndex {
 
     @Override
     public TimestampOffset lookup(long targetTimestamp) {
-        return maybeLock(lock, () -> {
+        return inRemapReadLock(() -> {
             int slot = largestLowerBoundSlotFor(null, targetTimestamp, IndexSearchType.KEY);
             if (slot == -1)
                 return new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
@@ -110,8 +110,7 @@ public class ElasticTimeIndex extends TimeIndex {
 
     @Override
     public void maybeAppend(long timestamp, long offset, boolean skipFullCheck) {
-        lock.lock();
-        try {
+        inLock(() -> {
             if (!skipFullCheck && isFull()) {
                 throw new IllegalArgumentException("Attempt to append to a full time index (size = " + entries() + ").");
             }
@@ -150,10 +149,7 @@ public class ElasticTimeIndex extends TimeIndex {
                 incrementEntries();
                 lastEntry(new TimestampOffset(timestamp, offset));
             }
-
-        } finally {
-            lock.unlock();
-        }
+        });
     }
 
     @Override
@@ -168,8 +164,7 @@ public class ElasticTimeIndex extends TimeIndex {
      */
     @Override
     public boolean resize(int newSize) {
-        lock.lock();
-        try {
+        return inLock(() -> {
             int roundedNewMaxEntries = roundDownToExactMultiple(newSize, ENTRY_SIZE) / ENTRY_SIZE;
 
             if (maxEntries() == roundedNewMaxEntries) {
@@ -181,9 +176,7 @@ public class ElasticTimeIndex extends TimeIndex {
                 setMaxEntries(roundedNewMaxEntries);
                 return true;
             }
-        } finally {
-            lock.unlock();
-        }
+        });
     }
 
     @Override

@@ -68,7 +68,7 @@ class ElasticLogCleanerTest extends LogCleanerTest {
     // there is hollow between segment 0.clean and next segment
     val segments = log.logSegments.asScala.take(1).toSeq
     val stats = new CleanerStats()
-    cleaner.cleanSegments(log, segments, map, 0L, stats, new CleanedTransactionMetadata, -1)
+    cleaner.cleanSegments(log, segments, map, 0L, stats, new CleanedTransactionMetadata, -1, log.logEndOffset)
 
     var offset = 0L
     while (offset < log.logEndOffset) {
@@ -106,8 +106,8 @@ class ElasticLogCleanerTest extends LogCleanerTest {
     map.put(key(3L), log.logEndOffset - 1)
 
     // create an empty segment in between first and last segment
-    cleaner.cleanSegments(log, log.logSegments.asScala.take(1).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1)
-    cleaner.cleanSegments(log, log.logSegments.asScala.slice(1, 2).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1)
+    cleaner.cleanSegments(log, log.logSegments.asScala.take(1).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1, log.logEndOffset)
+    cleaner.cleanSegments(log, log.logSegments.asScala.slice(1, 2).toSeq, map, 0L, new CleanerStats, new CleanedTransactionMetadata, -1, log.logEndOffset)
 
     log.logSegments.asScala.slice(1, 2).foreach(s => {
       Assertions.assertEquals(0, s.size())
