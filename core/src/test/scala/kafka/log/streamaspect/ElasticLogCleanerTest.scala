@@ -2,7 +2,7 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import kafka.log.streamaspect.client.Context
-import kafka.log.{CleanedTransactionMetadata, CleanerStats, FakeOffsetMap, LogCleanerTest}
+import kafka.log.{CleanedTransactionMetadata, CleanerStats, FakeOffsetMap, LogCleanerTest, LogTestUtils}
 import kafka.server.BrokerTopicStats
 import org.apache.kafka.common.Uuid
 import org.apache.kafka.common.config.TopicConfig
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.{Assertions, BeforeEach, Tag, Test, Timeout}
 
 import java.io.File
 import java.util.Properties
-import scala.jdk.CollectionConverters.CollectionHasAsScala
+import scala.jdk.CollectionConverters._
 
 @Timeout(60)
 @Tag("S3Unit")
@@ -45,6 +45,42 @@ class ElasticLogCleanerTest extends LogCleanerTest {
 
   override def testMessageLargerThanMaxMessageSizeWithCorruptHeader(): Unit = {
     // AutoMQ don't have local file
+  }
+
+  /**
+   * Given all records in the cleanable range are obsolete, verifies that cleaning retains the final empty batch so
+   * the log end offset remains discoverable.
+   */
+  @Test
+  override def testCleanSegmentsRetainingLastEmptyBatch(): Unit = {
+    val cleaner = makeCleaner(Int.MaxValue)
+    val logProps = new Properties()
+    logProps.put(TopicConfig.SEGMENT_BYTES_CONFIG, 1024: java.lang.Integer)
+    val log = makeLog(config = LogConfig.fromProps(logConfig.originals, logProps))
+
+    while (log.numberOfSegments < 4)
+      log.appendAsLeader(record(log.logEndOffset.toInt, log.logEndOffset.toInt), leaderEpoch = 0)
+    val keysFound = LogTestUtils.keysInLog(log)
+    Assertions.assertEquals(0L until log.logEndOffset, keysFound)
+
+    val map = new FakeOffsetMap(Int.MaxValue)
+    keysFound.foreach(k => map.put(key(k), Long.MaxValue))
+
+    val segments = log.logSegments.asScala.take(3).toSeq
+    val stats = new CleanerStats()
+    cleaner.cleanSegments(log, segments, map, 0L, stats, new CleanedTransactionMetadata, -1,
+      segments.last.readNextOffset)
+
+    Assertions.assertEquals(2, log.logSegments.size)
+    val cleanedSegment = log.logSegments.asScala.head
+    val fetchDataInfo = cleanedSegment.read(cleanedSegment.baseOffset, Int.MaxValue)
+    Assertions.assertNotNull(fetchDataInfo)
+    val retainedBatches = fetchDataInfo.records.batches.asScala.toSeq
+    Assertions.assertEquals(1, retainedBatches.size, "one batch should be retained in the cleaned segment")
+    val retainedBatch = retainedBatches.head
+    Assertions.assertEquals(log.logSegments.asScala.last.baseOffset - 1, retainedBatch.lastOffset,
+      "the retained batch should be the last batch")
+    Assertions.assertFalse(retainedBatch.iterator.hasNext, "the retained batch should be empty")
   }
 
   @Test

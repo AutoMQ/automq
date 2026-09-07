@@ -687,9 +687,9 @@ private[log] class Cleaner(val id: Int,
           // AutoMQ inject start
           currentSegment match {
             case segment: ElasticLogSegment =>
-                  // TODO: support upperBoundOffsetOfCleaningRound
                   cleanIntoV2(log.topicPartition, segment, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
-                    log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, stats, currentTime = currentTime)
+                    log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, upperBoundOffsetOfCleaningRound,
+                    stats, currentTime = currentTime)
             case _ => cleanInto(log.topicPartition, currentSegment.log, cleaned, map, retainLegacyDeletesAndTxnMarkers, log.config.deleteRetentionMs,
                     log.config.maxMessageSize, transactionMetadata, lastOffsetOfActiveProducers, upperBoundOffsetOfCleaningRound, stats, currentTime = currentTime)
           }
@@ -1188,6 +1188,7 @@ private[log] class Cleaner(val id: Int,
       maxLogMessageSize: Int,
       transactionMetadata: CleanedTransactionMetadata,
       lastRecordsOfActiveProducers: mutable.Map[Long, LastRecord],
+      upperBoundOffsetOfCleaningRound: Long,
       stats: CleanerStats,
       currentTime: Long): Unit = {
     val logCleanerFilter: RecordFilter = new RecordFilter(currentTime, deleteRetentionMs) {
@@ -1222,7 +1223,10 @@ private[log] class Cleaner(val id: Int,
         val batchRetention: BatchRetention =
           if (batch.hasProducerId && isBatchLastRecordOfProducer)
             BatchRetention.RETAIN_EMPTY
-          else if (discardBatchRecords)
+          else if (batch.nextOffset == upperBoundOffsetOfCleaningRound) {
+            // Retain the last batch of the cleaning round so its last offset is not lost after cleaning.
+            BatchRetention.RETAIN_EMPTY
+          } else if (discardBatchRecords)
             BatchRetention.DELETE
           else
             BatchRetention.DELETE_EMPTY
