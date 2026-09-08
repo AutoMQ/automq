@@ -63,7 +63,7 @@ String mockitoVersion
 if (scalaVersion == "2.12")
   mockitoVersion = "4.9.0"
 else if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_11))
-  mockitoVersion = "5.14.2"
+  mockitoVersion = "5.20.0"
 else
   mockitoVersion = "4.11.0"
 
@@ -94,7 +94,8 @@ versions += [
   checkstyle: "8.36.2",
   commonsCli: "1.4",
   commonsIo: "2.14.0", // ZooKeeper dependency. Do not use, this is going away.
-  commonsValidator: "1.7",
+  commonsLang: "3.18.0",
+  commonsValidator: "1.10.1",
   dropwizardMetrics: "4.1.12.1",
   gradle: "8.10.2",
   grgit: "4.1.1",
@@ -107,7 +108,7 @@ versions += [
   jacoco: "0.8.10",
   javassist: "3.29.2-GA",
   jetty: "9.4.58.v20250814",
-  jersey: "2.39.1",
+  jersey: "2.47",
   jline: "3.30.14",
   jmh: "1.37",
   hamcrest: "2.2",
@@ -146,6 +147,8 @@ versions += [
   kafka_37: "3.7.2",
   kafka_38: "3.8.1",
   // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
+  // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/CompressionType.java#L73-L74
+  // https://github.com/yawkat/lz4-java/blob/main/src/java/net/jpountz/lz4/LZ4Constants.java#L23-L24
   lz4: "1.10.1",
   mavenArtifact: "3.9.6",
   plexusUtils: "3.6.1",
@@ -228,6 +231,7 @@ libs += [
   caffeine: "com.github.ben-manes.caffeine:caffeine:$versions.caffeine",
   commonsCli: "commons-cli:commons-cli:$versions.commonsCli",
   commonsIo: "commons-io:commons-io:$versions.commonsIo",
+  commonsLang: "org.apache.commons:commons-lang3:$versions.commonsLang",
   commonsValidator: "commons-validator:commons-validator:$versions.commonsValidator",
   // AutoMQ inject start
   jacksonAnnotations: "com.fasterxml.jackson.core:jackson-annotations:$versions.jacksonAnnotationsVersion",

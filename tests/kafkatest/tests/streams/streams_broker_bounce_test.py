@@ -17,7 +17,6 @@ from ducktape.utils.util import wait_until
 from ducktape.tests.test import Test
 from ducktape.mark.resource import cluster
 from ducktape.mark import matrix
-from ducktape.mark import ignore
 from kafkatest.services.kafka import KafkaService, quorum
 from kafkatest.services.zookeeper import ZookeeperService
 from kafkatest.services.streams import StreamsSmokeTestDriverService, StreamsSmokeTestJobRunnerService
@@ -239,30 +238,6 @@ class StreamsBrokerBounceTest(Test):
 
         return self.collect_results(sleep_time_secs)
 
-    @ignore
-    @cluster(num_nodes=7)
-    @matrix(failure_mode=["clean_shutdown"],
-            broker_type=["controller"],
-            sleep_time_secs=[0])
-    def test_broker_type_bounce_at_start(self, failure_mode, broker_type, sleep_time_secs):
-        """
-        Start a smoke test client, then kill one particular broker immediately before streams stats
-        Streams should throw an exception since it cannot create topics with the desired
-        replication factor of 3
-        """
-        self.setup_system(start_processor=False)
-
-        # Sleep to allow test to run for a bit
-        time.sleep(sleep_time_secs)
-
-        # Fail brokers
-        self.fail_broker_type(failure_mode, broker_type)
-
-        self.processor1.start()
-
-        return self.collect_results(sleep_time_secs)
-
-    @ignore  # AutoMQ E2E need clean shutdown, the test case is duplicated to test_all_brokers_bounce
     @cluster(num_nodes=7)
     @matrix(failure_mode=["clean_shutdown", "hard_shutdown", "clean_bounce", "hard_bounce"],
             num_failures=[2],
