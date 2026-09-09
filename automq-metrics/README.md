@@ -198,14 +198,16 @@ AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
 
 #### S3 Metrics Exporter
 ```java
-// Use s3:// URI scheme
+// Use ops:// URI scheme
 AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
-    "s3://access-key:secret-key@my-bucket.s3.amazonaws.com",
+    "ops://?",
     "automq-kafka",
     "broker-1",
     config // config.clusterId(), nodeId(), isLeader() used for S3 export
 );
 ```
+
+The `ops://?` URI selects the object-storage exporter. The bucket, endpoint, and credentials are provided by `MetricsExportConfig.objectStorage()`.
 
 Example usage with S3 exporter:
 
@@ -247,7 +249,7 @@ ObjectStorage objectStorage = // Create your object storage instance
 MetricsExportConfig config = new S3MetricsExportConfig(objectStorage);
 
 AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
-    "s3://access-key:secret-key@my-bucket.s3.amazonaws.com",
+    "ops://?",
     "automq-kafka",
     "broker-1", 
     config
