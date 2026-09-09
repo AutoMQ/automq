@@ -92,7 +92,7 @@ Pull Request reviews are done on a regular basis.
 > Note: At least 8GB RAM is recommended for local development and debugging.
 
 
-> Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
+> Tips: You can refer to the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
 
 ## Local Debug with IDEA
 
