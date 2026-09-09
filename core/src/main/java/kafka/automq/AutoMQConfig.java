@@ -178,6 +178,22 @@ public class AutoMQConfig {
         " - protocol: the protocol to use when exporting metrics to endpoint, valid values: grpc, http. Default: grpc" +
         " - compression: compression type, value values: gzip, none. Default: none";
 
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_CONFIG =
+        "s3.telemetry.metrics.prometheus.auth.type";
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_DOC =
+        "Authentication type for the built-in Prometheus metrics endpoint. Valid values: none, basic.";
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_DEFAULT = "none";
+
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_USERNAME_CONFIG =
+        "s3.telemetry.metrics.prometheus.auth.username";
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_USERNAME_DOC =
+        "Username used for Basic authentication on the built-in Prometheus metrics endpoint.";
+
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_PASSWORD_CONFIG =
+        "s3.telemetry.metrics.prometheus.auth.password";
+    public static final String S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_PASSWORD_DOC =
+        "Password used for Basic authentication on the built-in Prometheus metrics endpoint.";
+
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG = "s3.telemetry.exporter.report.interval.ms";
     public static final String S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC = "This configuration controls how often the metrics should be exported.";
     public static final int S3_METRICS_EXPORTER_REPORT_INTERVAL_MS = 30000; // 30s
@@ -320,6 +336,9 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG, PASSWORD, null, HIGH, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_CONFIG, STRING, AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_DEFAULT, ConfigDef.ValidString.in("none", "basic"), MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_USERNAME_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_USERNAME_DOC)
+            .define(AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_PASSWORD_CONFIG, PASSWORD, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_PASSWORD_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, atLeast(0), MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
