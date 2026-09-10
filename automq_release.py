@@ -196,4 +196,4 @@ if __name__ == '__main__':
     branch = do_release(tag, s3stream_tag)
     print(f"=== release {tag} done ===")
     print(f"Please create a PR to merge release branch to {main_branch} visiting:")
-    print(f"    https://github.com/AutoMQ/automq-for-kafka/pull/new/{main_branch}...{branch}")
+    print(f"    https://github.com/AutoMQ/automq/pull/new/{main_branch}...{branch}")
