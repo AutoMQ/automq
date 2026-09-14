@@ -32,6 +32,8 @@ import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
@@ -41,12 +43,45 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class AwsObjectStorageTest {
+
+    /**
+     * Given CopyObject permission is missing, when readiness is checked, then the check fails and still deletes both
+     * probe paths so repeated checks do not leak objects.
+     */
+    @Test
+    void testReadinessCheckFailsAndCleansUpWhenCopyFails() {
+        S3AsyncClient s3 = mock(S3AsyncClient.class);
+        when(s3.headObject(any(HeadObjectRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(HeadObjectResponse.builder().build()));
+        AwsObjectStorage storage = spy(new AwsObjectStorage(s3, "bucket"));
+        doReturn(CompletableFuture.completedFuture(null)).when(storage)
+            .doWrite(any(), anyString(), any(ByteBuf.class));
+        doReturn(CompletableFuture.failedFuture(new RuntimeException("copy denied"))).when(storage)
+            .doCopy(eq("bucket"), anyString(), anyString());
+        doReturn(CompletableFuture.completedFuture(null)).when(storage).doDeleteObjects(anyList());
+
+        Assertions.assertFalse(storage.readinessCheck());
+
+        verify(storage).doCopy(eq("bucket"),
+            argThat(path -> path.startsWith("__automq/readiness_check/normal_obj/")),
+            argThat(path -> path.startsWith("__automq/readiness_check/copy_obj/")));
+        verify(storage).doDeleteObjects(argThat(paths -> paths.size() == 2
+            && paths.stream().anyMatch(path -> path.startsWith("__automq/readiness_check/normal_obj/"))
+            && paths.stream().anyMatch(path -> path.startsWith("__automq/readiness_check/copy_obj/"))));
+    }
 
     /**
      * Given LIST and COPY failures, when the storage layer classifies them, then only transport and transient service
