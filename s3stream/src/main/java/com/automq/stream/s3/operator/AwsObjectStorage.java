@@ -738,10 +738,23 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 return false;
             }
 
+            String copyPath = String.format("__automq/readiness_check/copy_obj/%d", System.nanoTime());
+            boolean copySuccess = true;
             try {
-                doDeleteObjects(List.of(normalPath)).get();
+                doCopy(bucket, normalPath, copyPath).get();
+            } catch (Throwable e) {
+                READINESS_CHECK_LOGGER.error(
+                    "Please check the identity have the permission to do Copy Object operation", FutureUtil.cause(e));
+                copySuccess = false;
+            }
+
+            try {
+                doDeleteObjects(List.of(normalPath, copyPath)).get();
             } catch (Throwable e) {
                 READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                return false;
+            }
+            if (!copySuccess) {
                 return false;
             }
 
