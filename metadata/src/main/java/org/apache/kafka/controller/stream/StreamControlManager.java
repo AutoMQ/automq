@@ -541,7 +541,7 @@ public class StreamControlManager {
         Errors nodeEpochCheckResult = nodeEpochCheck(nodeId, nodeEpoch, false);
         if (nodeEpochCheckResult != Errors.NONE) {
             resp.setErrorCode(nodeEpochCheckResult.code());
-            log.warn("[CloseStream] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
+            log.warn("[CLOSE_STREAM] invalid node epoch. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, error={}",
                 streamId, epoch, nodeId, nodeEpoch, nodeEpochCheckResult);
             return ControllerResult.of(Collections.emptyList(), resp);
         }
@@ -595,8 +595,8 @@ public class StreamControlManager {
             records.addAll(NodeWALUncommittedOffsetsRecords.create(nodeId, List.of(
                 new NodeWALUncommittedOffset(streamId, streamMetadata.endOffset(), closeEndOffset))));
         }
-        log.info("[CloseStream] successfully close the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}",
-            streamId, epoch, nodeId, nodeEpoch);
+        log.info("[CLOSE_STREAM] successfully close the stream. streamId={}, streamEpoch={}, nodeId={}, nodeEpoch={}, endOffset={}",
+            streamId, epoch, nodeId, nodeEpoch, closeEndOffset);
         return ControllerResult.atomicOf(records, resp);
     }
 
