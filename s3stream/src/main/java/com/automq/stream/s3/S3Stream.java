@@ -451,7 +451,13 @@ public class S3Stream implements Stream, StreamMetadataListener {
             CompletableFuture<Void> awaitPendingRequestsCf = CompletableFuture.allOf(pendingRequests.toArray(new CompletableFuture[0]));
             CompletableFuture<Void> closeCf = new CompletableFuture<>();
 
-            awaitPendingRequestsCf.whenComplete((nil, ex) -> propagate(exec(this::close0, LOGGER, "close"), closeCf));
+            awaitPendingRequestsCf.whenComplete((nil, ex) -> {
+                boolean fastClose = streamManager.isFastCloseSupported()
+                    && ex == null
+                    && !status.isFenced()
+                    && confirmOffset.get() == nextOffset.get();
+                propagate(exec(() -> close0(fastClose), LOGGER, "close"), closeCf);
+            });
 
             closeCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
@@ -471,15 +477,19 @@ public class S3Stream implements Stream, StreamMetadataListener {
         }
     }
 
-    private CompletableFuture<Void> close0() {
+    private CompletableFuture<Void> close0(boolean fastClose) {
+        long confirmOffset = this.confirmOffset.get();
+        long nextOffset = this.nextOffset.get();
+        LOGGER.info("{} close stream, fastClose={}, confirmOffset={}, nextOffset={}, fenced={}", logIdent,
+            fastClose, confirmOffset, nextOffset, status.isFenced());
         CompletableFuture<Void> forceUploadCf = storage.forceUpload(streamId);
-        if (streamManager.isFastCloseSupported()) {
+        if (fastClose) {
             forceUploadCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
                     LOGGER.error("{} background force upload after fast close failed", logIdent, ex);
                 }
             });
-            return streamManager.closeStream(streamId, epoch, nextOffset.get());
+            return streamManager.closeStream(streamId, epoch, confirmOffset);
         }
         return forceUploadCf
             .thenCompose(nil -> streamManager.closeStream(streamId, epoch));
@@ -648,6 +658,10 @@ public class S3Stream implements Stream, StreamMetadataListener {
 
         public boolean isClosed() {
             return (status.get() & CLOSED_MARK) != 0;
+        }
+
+        public boolean isFenced() {
+            return (status.get() & FENCED_MARK) != 0;
         }
 
         public boolean isWritable() {
