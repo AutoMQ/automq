@@ -7,13 +7,13 @@ to observe and monitor AutoMQ for Kafka.
 1. S3Stream module utilizes OpenTelemetry for instrumenting (including metrics and traces). AutoMQ for Kafka supports different methods to export them:
    - Metrics:
      - Prometheus: Metrics can be exposed via Prometheus HTTP server, which can be scraped by your own Prometheus backend.  
-     - OTLP: Metrics can be exported to OTel Collector via OTLP protocol, which can be then exported to multiple backend as configured.
+     - OTLP: Metrics can be exported to OTel Collector via OTLP protocol, which can then be exported to multiple backends as configured.
      - Logs: Metrics can be directly logged to file system (logs/s3stream-metrics.log)
    - Traces: Traces are only supported to be exported via OTLP protocol to OTel Collector.
 2. The original JMX metrics from Apache Kafka remain unchanged, you can observe them via JMX exporter or JConsole.
 In addition, we also provide the ability to transform selected JMX metrics to OTLP protocol, which can be exported via the above methods.
 Supported transformed JMX metrics can be found at `core/src/main/resources/jmx/rules`.
-3. The deployment configuration contained in this module is only meant for preview purpose, and should not be used in production environment
+3. The deployment configuration contained in this module is only meant for preview purposes, and should not be used in a production environment
 due to performance and security concerns.
 
 
