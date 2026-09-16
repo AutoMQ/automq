@@ -23,6 +23,7 @@ import kafka.server.DynamicBrokerConfig;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.Reconfigurable;
+import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 
@@ -50,7 +51,7 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     public static final ConfigDef CONFIG_DEF = new ConfigDef();
 
     private final KafkaConfig kafkaConfig;
-    private CIDRMatcher cidrMatcher = new CIDRMatcher("");
+    private volatile CIDRMatcher cidrMatcher = new CIDRMatcher("");
     private volatile Set<String> excludeZones = Collections.emptySet();
     private final List<Consumer<Set<String>>> listeners = new CopyOnWriteArrayList<>();
 
@@ -119,31 +120,20 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     }
 
     private void config(Map<String, ?> map, boolean validate) {
-        String zoneCidrBlocksConfig = (String) map.get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
-        if (zoneCidrBlocksConfig != null) {
-            CIDRMatcher matcher = new CIDRMatcher(zoneCidrBlocksConfig);
-            if (!validate) {
-                cidrMatcher = matcher;
-                LOGGER.info("apply new zone CIDR blocks {}", zoneCidrBlocksConfig);
-            }
+        // Kafka supplies the full effective configuration, including defaults after deletion.
+        AbstractConfig config = new AbstractConfig(CONFIG_DEF, map, false);
+        String zoneCidrBlocksConfig = config.getString(ZONE_CIDR_BLOCKS_CONFIG_KEY);
+        CIDRMatcher matcher = new CIDRMatcher(zoneCidrBlocksConfig == null ? "" : zoneCidrBlocksConfig);
+        Set<String> zones = Set.copyOf(config.getList(EXCLUDE_ZONES_CONFIG_KEY));
+        if (validate) {
+            return;
         }
-        if (map.containsKey(EXCLUDE_ZONES_CONFIG_KEY)) {
-            Set<String> zones = new HashSet<>();
-            Object rawZones = map.get(EXCLUDE_ZONES_CONFIG_KEY);
-            if (rawZones instanceof List<?>) {
-                ((List<?>) rawZones).forEach(zone -> zones.add(zone.toString()));
-            } else if (rawZones != null) {
-                for (String zone : rawZones.toString().split(",")) {
-                    if (!zone.isBlank()) {
-                        zones.add(zone.trim());
-                    }
-                }
-            }
-            if (!validate) {
-                excludeZones = Collections.unmodifiableSet(zones);
-                LOGGER.info("apply new ZeroZone excluded zones {}", excludeZones);
-                listeners.forEach(listener -> listener.accept(excludeZones));
-            }
+        cidrMatcher = matcher;
+        LOGGER.info("apply new zone CIDR blocks {}", zoneCidrBlocksConfig);
+        if (!zones.equals(excludeZones)) {
+            excludeZones = zones;
+            LOGGER.info("apply new ZeroZone excluded zones {}", zones);
+            listeners.forEach(listener -> listener.accept(zones));
         }
     }
 
