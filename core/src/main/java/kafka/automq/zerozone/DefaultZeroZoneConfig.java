@@ -35,26 +35,36 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.HashSet;
+import java.util.Collections;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
-public class DefaultClientRackProvider implements ClientRackProvider, Reconfigurable {
-    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultClientRackProvider.class);
+public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultZeroZoneConfig.class);
     private static final String ZONE_CIDR_BLOCKS_CONFIG_KEY = "automq.zone.cidr.blocks";
     private static final String ZONE_CIDR_BLOCKS_CONFIG_DOC = "The mapping of zone to CIDR blocks. Format: zone1@cidr1,cidr2<>zone2@cidr3,cidr4";
+    public static final String EXCLUDE_ZONES_CONFIG_KEY = "automq.zerozone.exclude.zones";
+    public static final String EXCLUDE_ZONES_CONFIG_DOC = "The availability zones excluded from ZeroZone proxying. Format: zone1,zone2";
     private static final Set<String> RECONFIGURABLE_CONFIGS;
     public static final ConfigDef CONFIG_DEF = new ConfigDef();
 
     private final KafkaConfig kafkaConfig;
     private CIDRMatcher cidrMatcher = new CIDRMatcher("");
+    private volatile Set<String> excludeZones = Collections.emptySet();
+    private final List<Consumer<Set<String>>> listeners = new CopyOnWriteArrayList<>();
 
     static {
         RECONFIGURABLE_CONFIGS = Set.of(
-            ZONE_CIDR_BLOCKS_CONFIG_KEY
+            ZONE_CIDR_BLOCKS_CONFIG_KEY,
+            EXCLUDE_ZONES_CONFIG_KEY
         );
         RECONFIGURABLE_CONFIGS.forEach(DynamicBrokerConfig.AllDynamicConfigs()::add);
         CONFIG_DEF.define(ZONE_CIDR_BLOCKS_CONFIG_KEY, ConfigDef.Type.STRING, null, ConfigDef.Importance.MEDIUM, ZONE_CIDR_BLOCKS_CONFIG_DOC);
+        CONFIG_DEF.define(EXCLUDE_ZONES_CONFIG_KEY, ConfigDef.Type.LIST, Collections.emptyList(), ConfigDef.Importance.MEDIUM, EXCLUDE_ZONES_CONFIG_DOC);
     }
 
-    public DefaultClientRackProvider(KafkaConfig kafkaConfig) {
+    public DefaultZeroZoneConfig(KafkaConfig kafkaConfig) {
         this.kafkaConfig = kafkaConfig;
         // Read static config from server.properties on initialization
         final String staticValue = (String) kafkaConfig.originals().get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
@@ -62,6 +72,7 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
             this.cidrMatcher = new CIDRMatcher(staticValue);
             LOGGER.info("Initialized with static zone CIDR blocks: {}", staticValue);
         }
+        this.excludeZones = Collections.unmodifiableSet(new HashSet<>(kafkaConfig.getList(EXCLUDE_ZONES_CONFIG_KEY)));
     }
 
     @Override
@@ -78,8 +89,18 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
     }
 
     @Override
+    public Set<String> excludeZones() {
+        return excludeZones;
+    }
+
+    @Override
+    public void registerListener(Consumer<Set<String>> listener) {
+        listeners.add(listener);
+    }
+
+    @Override
     public Set<String> reconfigurableConfigs() {
-        return Set.of(ZONE_CIDR_BLOCKS_CONFIG_KEY);
+        return RECONFIGURABLE_CONFIGS;
     }
 
     @Override
@@ -104,6 +125,24 @@ public class DefaultClientRackProvider implements ClientRackProvider, Reconfigur
             if (!validate) {
                 cidrMatcher = matcher;
                 LOGGER.info("apply new zone CIDR blocks {}", zoneCidrBlocksConfig);
+            }
+        }
+        if (map.containsKey(EXCLUDE_ZONES_CONFIG_KEY)) {
+            Set<String> zones = new HashSet<>();
+            Object rawZones = map.get(EXCLUDE_ZONES_CONFIG_KEY);
+            if (rawZones instanceof List<?>) {
+                ((List<?>) rawZones).forEach(zone -> zones.add(zone.toString()));
+            } else if (rawZones != null) {
+                for (String zone : rawZones.toString().split(",")) {
+                    if (!zone.isBlank()) {
+                        zones.add(zone.trim());
+                    }
+                }
+            }
+            if (!validate) {
+                excludeZones = Collections.unmodifiableSet(zones);
+                LOGGER.info("apply new ZeroZone excluded zones {}", excludeZones);
+                listeners.forEach(listener -> listener.accept(excludeZones));
             }
         }
     }

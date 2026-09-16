@@ -19,7 +19,7 @@
 
 package kafka.automq.zerozone;
 
-import kafka.automq.zerozone.DefaultClientRackProvider.CIDRMatcher;
+import kafka.automq.zerozone.DefaultZeroZoneConfig.CIDRMatcher;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 @Timeout(60)
 @Tag("S3Unit")
-public class DefaultClientRackProviderTest {
+public class DefaultZeroZoneConfigTest {
 
     @Test
     public void testCIDRFind() {
