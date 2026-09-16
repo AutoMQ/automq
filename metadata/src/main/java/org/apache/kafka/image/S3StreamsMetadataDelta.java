@@ -285,6 +285,12 @@ public final class S3StreamsMetadataDelta {
                     // skip
                 }
             }
+            // Remove empty mappings only after additions, since a delta can replace a partition's last stream.
+            newPartition2streams.forEach((tp, streams) -> {
+                if (streams.isEmpty()) {
+                    partition2streams.remove(tp);
+                }
+            });
         });
         registry = registry.next();
         return new S3StreamsMetadataImage(currentAssignedStreamId, registry, newStreamMetadataMap, newNodeMetadataMap,

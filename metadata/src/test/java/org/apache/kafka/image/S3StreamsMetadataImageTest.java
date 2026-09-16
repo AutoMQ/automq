@@ -620,6 +620,63 @@ public class S3StreamsMetadataImageTest {
         });
     }
 
+    /**
+     * Given repeated topic recreation, deleting the last stream removes the partition mapping
+     * while historical snapshots retain their original stream sets until released.
+     */
+    @Test
+    public void testPartitionStreamMappingCleanup() {
+        S3StreamsMetadataImage image = S3StreamsMetadataImage.EMPTY;
+        for (long streamId = 0; streamId < 20; streamId++) {
+            Uuid topicId = new Uuid(0, streamId + 1);
+            TopicIdPartition tp = new TopicIdPartition(topicId, 10);
+            S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(image);
+            delta.replay(partitionStreamRecord(streamId, topicId));
+            S3StreamsMetadataImage createdImage = delta.apply();
+            if (image != S3StreamsMetadataImage.EMPTY) {
+                image.release();
+            }
+            delta = new S3StreamsMetadataDelta(createdImage);
+            delta.replay(new RemoveS3StreamRecord().setStreamId(streamId));
+            image = delta.apply();
+            assertTrue(image.getTopicPartitionStreams(topicId, 10).isEmpty());
+            assertNull(image.getStreamTopicPartition(streamId));
+            assertFalse(image.partition2streams().containsKey(tp));
+            assertEquals(Set.of(streamId), createdImage.partition2streams()
+                .get(tp, createdImage.registryRef().epoch()));
+            createdImage.release();
+            assertEquals(0, image.partition2streams().size());
+            assertEquals(0, image.stream2partition().size());
+        }
+    }
+
+    /**
+     * Given deletion and replacement in one delta, the partition mapping keeps the new stream.
+     */
+    @Test
+    public void testPartitionStreamReplacementInSameDelta() {
+        Uuid topicId = new Uuid(0, 1);
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(partitionStreamRecord(STREAM0, topicId));
+        S3StreamsMetadataImage image = delta.apply();
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        delta.replay(partitionStreamRecord(STREAM1, topicId));
+        S3StreamsMetadataImage replacement = delta.apply();
+        image.release();
+        assertEquals(Set.of(STREAM1), replacement.getTopicPartitionStreams(topicId, 10));
+        assertEquals(1, replacement.partition2streams().size());
+        assertNull(replacement.getStreamTopicPartition(STREAM0));
+        assertEquals(new TopicIdPartition(topicId, 10), replacement.getStreamTopicPartition(STREAM1));
+    }
+
+    private static S3StreamRecord partitionStreamRecord(long streamId, Uuid topicId) {
+        S3StreamRecord.TagCollection tags = new S3StreamRecord.TagCollection();
+        tags.add(new S3StreamRecord.Tag().setKey(StreamTags.Topic.KEY).setValue(StreamTags.Topic.encode(topicId)));
+        tags.add(new S3StreamRecord.Tag().setKey(StreamTags.Partition.KEY).setValue(StreamTags.Partition.encode(10)));
+        return new S3StreamRecord().setStreamId(streamId).setTags(tags);
+    }
+
     @Test
     public void testGetTopicPartitionStreamRelation() {
         Uuid topicId = Uuid.randomUuid();
