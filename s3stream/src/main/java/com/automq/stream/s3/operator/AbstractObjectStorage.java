@@ -45,9 +45,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
@@ -92,6 +96,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final HashedWheelTimer fastRetryTimer;
 
     private final DeleteObjectsAccumulator deleteObjectsAccumulator;
+    private final Set<CompletableFuture<List<ObjectInfo>>> pendingLists = ConcurrentHashMap.newKeySet();
     final boolean checkS3ApiMode;
     protected final BucketURI bucketURI;
 
@@ -651,19 +656,62 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return cf;
     }
 
+    /**
+     * Lists a prefix, retrying recoverable failures with backoff until the complete listing succeeds.
+     * Check mode and errors classified as ABORT fail immediately. Cancellation or storage shutdown stops retries.
+     */
     @Override
     public CompletableFuture<List<ObjectInfo>> list(String prefix) {
-        TimerUtil timerUtil = new TimerUtil();
-        CompletableFuture<List<ObjectInfo>> cf = doList(prefix);
-        cf.thenAccept(keyList -> {
-            ObjectStorageMetrics.recordListObjects(true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            logger.info("List objects finished, count: {}, cost: {}ms", keyList.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-        }).exceptionally(ex -> {
-            ObjectStorageMetrics.recordListObjects(false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            logger.info("List objects failed, cost: {}, ex: {}", timerUtil.elapsedAs(TimeUnit.NANOSECONDS), ex.getMessage());
-            return null;
-        });
+        CompletableFuture<List<ObjectInfo>> cf = new CompletableFuture<>();
+        pendingLists.add(cf);
+        cf.whenComplete((result, ex) -> pendingLists.remove(cf));
+        list0(prefix, 0, cf);
         return cf;
+    }
+
+    private void list0(String prefix, int retryCount, CompletableFuture<List<ObjectInfo>> cf) {
+        if (cf.isDone()) {
+            return;
+        }
+        if (scheduler.isShutdown()) {
+            cf.completeExceptionally(new CancellationException("Object storage is closed"));
+            return;
+        }
+        TimerUtil timerUtil = new TimerUtil();
+        CompletableFuture<List<ObjectInfo>> attempt;
+        try {
+            attempt = doList(prefix);
+        } catch (Exception ex) {
+            attempt = CompletableFuture.failedFuture(ex);
+        }
+        attempt.whenComplete((keyList, ex) -> {
+            if (ex == null) {
+                ObjectStorageMetrics.recordListObjects(true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                logger.info("List objects finished, count: {}, cost: {}ms", keyList.size(), timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                cf.complete(keyList);
+                return;
+            }
+            ObjectStorageMetrics.recordListObjects(false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (cf.isDone()) {
+                return;
+            }
+            Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.LIST_OBJECTS);
+            Throwable cause = strategyAndCause.getRight();
+            if (strategyAndCause.getLeft() == RetryStrategy.ABORT || checkS3ApiMode) {
+                logger.error("List objects for prefix {} fail", prefix, cause);
+                cf.completeExceptionally(cause);
+                return;
+            }
+            int delay = retryDelay(S3Operation.LIST_OBJECTS, retryCount);
+            logger.warn("List objects for prefix {} fail, cost: {}ms, retry in {}ms", prefix,
+                timerUtil.elapsedAs(TimeUnit.MILLISECONDS), delay, cause);
+            try {
+                // A fresh doList discards any partial pages from the failed attempt.
+                scheduler.schedule(() -> list0(prefix, retryCount + 1, cf), delay, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException rejected) {
+                cf.completeExceptionally(rejected);
+            }
+        });
     }
 
     @Override
@@ -677,6 +725,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
+        pendingLists.forEach(cf -> cf.completeExceptionally(new CancellationException("Object storage is closed")));
         fastRetryTimer.stop();
         doClose();
     }
