@@ -290,4 +290,16 @@ public class S3StorageTest {
         lazyCommit.get(1, TimeUnit.SECONDS);
     }
 
+    /**
+     * Given an empty WAL, when a global lazy commit is followed by an upload attempt, then the commit completes.
+     */
+    @Test
+    public void testEmptyWALCompletesGlobalLazyCommit() throws Exception {
+        CompletableFuture<Void> lazyCommit = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1));
+
+        storage.uploadDeltaWAL();
+
+        lazyCommit.get(1, TimeUnit.SECONDS);
+    }
+
 }
