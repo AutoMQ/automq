@@ -709,6 +709,11 @@ public class S3Storage implements Storage {
                 cf = uploadDeltaWAL(context);
             } else {
                 cf = CompletableFuture.completedFuture(null);
+                if (streamId == LogCache.MATCH_ALL_STREAMS) {
+                    List<LazyCommit> lazyUploadTasks = new ArrayList<>();
+                    lazyUploadQueue.drainTo(lazyUploadTasks);
+                    notifyLazyUpload(lazyUploadTasks, new ArrayList<>(inflightWALUploadTasks));
+                }
             }
             if (force) {
                 burstInflightUploadTasks();
