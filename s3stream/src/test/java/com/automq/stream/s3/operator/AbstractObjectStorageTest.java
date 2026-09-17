@@ -22,9 +22,12 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -34,6 +37,7 @@ import org.junit.jupiter.api.Timeout;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -46,17 +50,24 @@ import io.netty.buffer.ByteBuf;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
 
 @Tag("S3Unit")
 @Timeout(10)
@@ -72,6 +83,105 @@ class AbstractObjectStorageTest {
     @AfterEach
     public void tearDown() {
         objectStorage.close();
+    }
+
+    /**
+     * Given repeated recoverable failures, a listing stays pending until a complete attempt succeeds.
+     */
+    @Test
+    void testListRetriesRecoverableFailures() throws Exception {
+        objectStorage = spy(objectStorage);
+        List<ObjectStorage.ObjectInfo> expected = List.of(new ObjectStorage.ObjectInfo((short) 0, "prefix/key", 0, 1));
+        doReturn(0).when(objectStorage).retryDelay(eq(S3Operation.LIST_OBJECTS), anyInt());
+        doReturn(CompletableFuture.failedFuture(new TimeoutException()),
+            CompletableFuture.failedFuture(new TimeoutException()), CompletableFuture.completedFuture(expected))
+            .when(objectStorage).doList("prefix/");
+
+        assertEquals(expected, objectStorage.list("prefix/").get(1, TimeUnit.SECONDS));
+        verify(objectStorage, times(3)).doList("prefix/");
+        verify(objectStorage).retryDelay(S3Operation.LIST_OBJECTS, 0);
+        verify(objectStorage).retryDelay(S3Operation.LIST_OBJECTS, 1);
+    }
+
+    /**
+     * Given a synchronously thrown recoverable error, listing retries just as it does for a failed future.
+     */
+    @Test
+    void testListRetriesSynchronousFailure() throws Exception {
+        objectStorage = spy(objectStorage);
+        doReturn(0).when(objectStorage).retryDelay(eq(S3Operation.LIST_OBJECTS), anyInt());
+        doThrow(new RuntimeException("temporary failure")).doReturn(CompletableFuture.completedFuture(List.of()))
+            .when(objectStorage).doList("prefix/");
+
+        assertEquals(List.of(), objectStorage.list("prefix/").get(1, TimeUnit.SECONDS));
+        verify(objectStorage, times(2)).doList("prefix/");
+    }
+
+    /**
+     * Given an error classified as ABORT, listing returns the original cause without another attempt.
+     */
+    @Test
+    void testListDoesNotRetryAbort() {
+        objectStorage = spy(objectStorage);
+        IllegalArgumentException failure = new IllegalArgumentException("invalid prefix");
+        doReturn(CompletableFuture.failedFuture(failure)).when(objectStorage).doList("prefix/");
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> objectStorage.list("prefix/").get());
+        assertSame(failure, ex.getCause());
+        verify(objectStorage).doList("prefix/");
+    }
+
+    /**
+     * Given API check mode, even a recoverable error fails immediately instead of hanging readiness checks.
+     */
+    @Test
+    void testListDoesNotRetryInCheckMode() {
+        objectStorage.close();
+        objectStorage = mock(AbstractObjectStorage.class, withSettings().useConstructor(
+            BucketURI.parse("0@s3://bucket"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP,
+            true, true, "list-check").defaultAnswer(CALLS_REAL_METHODS));
+        TimeoutException failure = new TimeoutException("temporary failure");
+        doReturn(CompletableFuture.failedFuture(failure)).when(objectStorage).doList("prefix/");
+        doReturn(Pair.of(RetryStrategy.RETRY, failure)).when(objectStorage)
+            .toRetryStrategyAndCause(any(), eq(S3Operation.LIST_OBJECTS));
+
+        ExecutionException ex = assertThrows(ExecutionException.class, () -> objectStorage.list("prefix/").get());
+        assertSame(failure, ex.getCause());
+        verify(objectStorage).doList("prefix/");
+    }
+
+    /**
+     * Given a cancelled listing, a late SDK failure must not start another request.
+     */
+    @Test
+    void testListCancellationStopsRetries() {
+        objectStorage = spy(objectStorage);
+        CompletableFuture<List<ObjectStorage.ObjectInfo>> attempt = new CompletableFuture<>();
+        doReturn(attempt).when(objectStorage).doList("prefix/");
+
+        CompletableFuture<List<ObjectStorage.ObjectInfo>> listing = objectStorage.list("prefix/");
+        listing.cancel(false);
+        attempt.completeExceptionally(new TimeoutException());
+
+        assertTrue(listing.isCancelled());
+        verify(objectStorage).doList("prefix/");
+    }
+
+    /**
+     * Given an in-flight listing, closing storage terminates it and rejects subsequent list calls.
+     */
+    @Test
+    void testListCloseCompletesPendingRequests() {
+        objectStorage = spy(objectStorage);
+        CompletableFuture<List<ObjectStorage.ObjectInfo>> attempt = new CompletableFuture<>();
+        doReturn(attempt).when(objectStorage).doList("prefix/");
+
+        CompletableFuture<List<ObjectStorage.ObjectInfo>> listing = objectStorage.list("prefix/");
+        objectStorage.close();
+        assertThrows(CancellationException.class, listing::join);
+        assertThrows(CancellationException.class, () -> objectStorage.list("prefix/").join());
+        attempt.completeExceptionally(new TimeoutException());
+        verify(objectStorage).doList("prefix/");
     }
 
     @Test
