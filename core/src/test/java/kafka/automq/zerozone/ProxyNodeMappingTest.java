@@ -42,6 +42,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -61,7 +62,9 @@ public class ProxyNodeMappingTest {
     @BeforeEach
     public void setup() {
         metadataCache = mock(MetadataCache.class);
-        proxyNodeMapping = new ProxyNodeMapping(new Node(1, "127.0.0.1", 9092), "az1", LISTENER_NAME, metadataCache);
+        ZeroZoneConfig zeroZoneConfig = mock(ZeroZoneConfig.class);
+        when(zeroZoneConfig.excludeZones()).thenReturn(Set.of());
+        proxyNodeMapping = new ProxyNodeMapping(new Node(1, "127.0.0.1", 9092), "az1", LISTENER_NAME, metadataCache, zeroZoneConfig);
 
         Map<String, Map<Integer, BrokerRegistration>> main2proxyByRack = new HashMap<>();
         HashMap<Integer, BrokerRegistration> az1 = new HashMap<>();
