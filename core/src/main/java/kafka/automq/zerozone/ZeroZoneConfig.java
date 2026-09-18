@@ -21,8 +21,15 @@ package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ClientIdMetadata;
 
-public interface ClientRackProvider {
+import java.util.Set;
+import java.util.function.Consumer;
+
+public interface ZeroZoneConfig {
 
     String rack(ClientIdMetadata clientId);
+
+    Set<String> excludeZones();
+
+    void registerListener(Consumer<Set<String>> listener);
 
 }
