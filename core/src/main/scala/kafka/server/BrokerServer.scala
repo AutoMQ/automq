@@ -24,7 +24,7 @@ import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
 import kafka.automq.retrystorm.{RetryStormBackoffConfig, RetryStormBackoffManager, RetryStormBackoffStateStore}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultZeroZoneConfig, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
@@ -173,9 +173,9 @@ class BrokerServer(
   var backPressureManager: BackPressureManager = _
   var retryStormBackoffManager: RetryStormBackoffManager = _
 
-  val clientRackProvider = new DefaultClientRackProvider(config)
+  val zeroZoneConfig = new DefaultZeroZoneConfig(config)
   // init reconfigurable before startup
-  config.addReconfigurable(clientRackProvider)
+  config.addReconfigurable(zeroZoneConfig)
 
   var tableManager: TableManager = _
   var requestErrorAccumulator: RequestErrorAccumulator = _
@@ -923,7 +923,7 @@ class BrokerServer(
     val trafficInterceptor = if (config.automq.zoneRouterChannels().isEmpty) {
       new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     } else {
-      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, confirmWALProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config)
+      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, confirmWALProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, zeroZoneConfig, config)
       metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
       zeroZoneRouter
     }

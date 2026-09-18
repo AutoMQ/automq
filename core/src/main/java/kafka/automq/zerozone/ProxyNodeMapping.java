@@ -27,7 +27,6 @@ import org.apache.kafka.common.message.MetadataResponseData;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.metadata.BrokerRegistration;
-import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.utils.Threads;
 
@@ -62,18 +61,22 @@ class ProxyNodeMapping {
     private final String currentRack;
     private final String interBrokerListenerName;
     private final MetadataCache metadataCache;
+    private final ZeroZoneConfig zeroZoneConfig;
     private final List<ProxyTopologyChangeListener> listeners = new CopyOnWriteArrayList<>();
 
     volatile Map<String /* proxy rack */, Map<Integer /* main nodeId */, BrokerRegistration /* proxy */>> main2proxyByRack = new HashMap<>();
     volatile boolean inited = false;
     volatile boolean dualMapping = false;
+    private volatile Map<String, List<BrokerRegistration>> latestRack2Brokers = Collections.emptyMap();
 
     public ProxyNodeMapping(Node currentNode, String currentRack, String interBrokerListenerName,
-        MetadataCache metadataCache) {
+        MetadataCache metadataCache, ZeroZoneConfig zeroZoneConfig) {
         this.interBrokerListenerName = interBrokerListenerName;
         this.currentNode = currentNode;
         this.currentRack = currentRack;
         this.metadataCache = metadataCache;
+        this.zeroZoneConfig = zeroZoneConfig;
+        zeroZoneConfig.registerListener(ignored -> onExcludeZonesChange());
         Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(() -> logMapping(main2proxyByRack), 1, 1, TimeUnit.MINUTES);
     }
 
@@ -200,35 +203,56 @@ class ProxyNodeMapping {
         return topics;
     }
 
-    public void onChange(MetadataDelta delta, MetadataImage image) {
-        AutoMQVersion version = image.features().autoMQVersion();
+    public synchronized void onChange(MetadataDelta delta, MetadataImage image) {
+        boolean newDualMapping = image.features().autoMQVersion().isDualMappingSupported();
         if (!inited) {
             // When the main2proxyByRack is un-inited, we should force update.
             inited = true;
         } else {
             if ((delta.clusterDelta() == null || delta.clusterDelta().changedBrokers().isEmpty())
-                && version.isDualMappingSupported() == dualMapping) {
+                && newDualMapping == dualMapping) {
                 return;
             }
         }
-        dualMapping = version.isDualMappingSupported();
-        // categorize the brokers by rack
+        dualMapping = newDualMapping;
+        latestRack2Brokers = buildRack2Brokers(image);
+        updateMapping(filteredRack2Brokers(latestRack2Brokers));
+    }
+
+    private synchronized void onExcludeZonesChange() {
+        if (!inited) {
+            return;
+        }
+        updateMapping(filteredRack2Brokers(latestRack2Brokers));
+    }
+
+    private synchronized void updateMapping(Map<String, List<BrokerRegistration>> rack2brokers) {
+        inited = true;
+        this.main2proxyByRack = dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
+        logMapping(main2proxyByRack);
+        notifyListeners(this.main2proxyByRack);
+    }
+
+    private Map<String, List<BrokerRegistration>> buildRack2Brokers(MetadataImage image) {
         Map<String, List<BrokerRegistration>> rack2brokers = new HashMap<>();
         image.cluster().brokers().forEach((nodeId, node) -> {
             if (node.fenced() || node.inControlledShutdown()) {
                 return;
             }
-            rack2brokers.compute(node.rack().orElse(NOOP_RACK), (rack, list) -> {
-                if (list == null) {
-                    list = new ArrayList<>();
-                }
-                list.add(node);
-                return list;
-            });
+            rack2brokers.computeIfAbsent(node.rack().orElse(NOOP_RACK), rack -> new ArrayList<>()).add(node);
         });
-        this.main2proxyByRack = dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
-        logMapping(main2proxyByRack);
-        notifyListeners(this.main2proxyByRack);
+        return rack2brokers;
+    }
+
+    private Map<String, List<BrokerRegistration>> filteredRack2Brokers(
+        Map<String, List<BrokerRegistration>> rack2brokers) {
+        Map<String, List<BrokerRegistration>> filtered = new HashMap<>();
+        rack2brokers.forEach((rack, brokers) -> {
+            if (!zeroZoneConfig.excludeZones().contains(rack)) {
+                filtered.put(rack, new ArrayList<>(brokers));
+            }
+        });
+        return filtered;
     }
 
     public void registerListener(ProxyTopologyChangeListener listener) {
