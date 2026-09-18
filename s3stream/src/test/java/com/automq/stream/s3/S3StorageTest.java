@@ -570,4 +570,88 @@ public class S3StorageTest {
         lazyCommit.get(1, TimeUnit.SECONDS);
     }
 
+    /**
+     * Given a committed upload with pending trim, an empty-cache lazy commit waits for that trim and its failure.
+     */
+    @Test
+    public void testLazyCommitWaitsForCommittedUploadTrim() throws Exception {
+        checkLazyCommitWaitsForCommittedUploadTrim(false);
+    }
+
+    /**
+     * Given a committed upload with pending trim, a lazy commit propagates the trim failure.
+     */
+    @Test
+    public void testLazyCommitPropagatesCommittedUploadTrimFailure() throws Exception {
+        checkLazyCommitWaitsForCommittedUploadTrim(true);
+    }
+
+    private void checkLazyCommitWaitsForCommittedUploadTrim(boolean failTrim) throws Exception {
+        CompletableFuture<Void> trimCf = new CompletableFuture<>();
+        Mockito.doReturn(trimCf).when(wal).trim(any());
+        Mockito.when(objectManager.prepareObject(anyInt(), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(16L));
+        Mockito.when(objectManager.commitStreamSetObject(any()))
+            .thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+        storage.append(newRecord(233L, 10L)).get(1, TimeUnit.SECONDS);
+        storage.uploadDeltaWAL().get(1, TimeUnit.SECONDS);
+
+        CompletableFuture<Void> commit = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1), false);
+        CompletableFuture<Void> trim = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1), true);
+        storage.uploadDeltaWAL();
+
+        commit.get(1, TimeUnit.SECONDS);
+        assertFalse(trim.isDone());
+        if (failTrim) {
+            RuntimeException failure = new RuntimeException("trim failure");
+            trimCf.completeExceptionally(failure);
+            assertEquals(failure, assertThrows(ExecutionException.class, () -> trim.get(1, TimeUnit.SECONDS)).getCause());
+        } else {
+            trimCf.complete(null);
+            trim.get(1, TimeUnit.SECONDS);
+        }
+
+        CompletableFuture<Void> nextTrim = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1));
+        storage.uploadDeltaWAL();
+        nextTrim.get(1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Given preparation fails, both lazy commit futures fail through the upload context's commit future.
+     */
+    @Test
+    public void testPrepareFailurePropagatesToLazyCommitAndTrim() throws Exception {
+        CompletableFuture<Long> prepareCf = new CompletableFuture<>();
+        Mockito.when(objectManager.prepareObject(anyInt(), anyLong())).thenReturn(prepareCf);
+        storage.append(newRecord(233L, 10L)).get(1, TimeUnit.SECONDS);
+        CompletableFuture<Void> commit = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1), false);
+        CompletableFuture<Void> trim = Context.instance().confirmWAL().commit(TimeUnit.MINUTES.toMillis(1), true);
+        storage.uploadDeltaWAL();
+
+        prepareCf.completeExceptionally(new RuntimeException("prepare failure"));
+
+        assertThrows(ExecutionException.class, () -> commit.get(1, TimeUnit.SECONDS));
+        assertThrows(ExecutionException.class, () -> trim.get(1, TimeUnit.SECONDS));
+        verify(storageFailureHandler, timeout(1000)).handle(any());
+    }
+
+    /**
+     * Given an upload has no WAL offset, its trim future completes after commit without trimming the WAL.
+     */
+    @Test
+    public void testUploadWithoutWALOffsetCompletesTrim() throws Exception {
+        Mockito.when(objectManager.prepareObject(anyInt(), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(16L));
+        Mockito.when(objectManager.commitStreamSetObject(any()))
+            .thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+        LogCache.LogCacheBlock block = new LogCache.LogCacheBlock(1024);
+        block.put(newRecord(233L, 10L));
+        S3Storage.DeltaWALUploadTaskContext context = new S3Storage.DeltaWALUploadTaskContext(block);
+
+        storage.uploadDeltaWAL(context).get(1, TimeUnit.SECONDS);
+
+        context.trimCf.get(1, TimeUnit.SECONDS);
+        verify(wal, never()).trim(any());
+    }
+
 }
