@@ -823,15 +823,17 @@ public class S3Storage implements Storage {
         long size = context.cache.size();
         pendingUploadBytes.addAndGet(size);
 
-        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
+        // Keep committed uploads visible to later lazy commits until their WAL trim completes.
+        context.trimCf.whenComplete((nil, ex) -> inflightWALUploadTasks.remove(context));
         cf.whenComplete((nil, ex) -> {
             UPLOAD_WAL_COMPLETE_LATENCY.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             pendingUploadBytes.addAndGet(-size);
-            inflightWALUploadTasks.remove(context);
             if (ex != null) {
+                context.trimCf.completeExceptionally(ex);
                 LOGGER.error("upload delta WAL fail", ex);
             }
         });
+        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         return cf;
     }
 
@@ -899,6 +901,8 @@ public class S3Storage implements Storage {
             walCommitQueue.poll();
             if (context.cache.lastRecordOffset() != null) {
                 delayTrim.trim(context.cache.lastRecordOffset(), context.trimCf);
+            } else {
+                context.trimCf.complete(null);
             }
             // transfer records ownership to block cache.
             freeCache(context.cache);
