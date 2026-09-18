@@ -5041,11 +5041,22 @@ public class KafkaAdminClient extends AdminClient {
         return new UpdateGroupResult(future.get(CoordinatorKey.byGroupId(groupId)));
     }
 
-    private <K, V> void invokeDriver(
+    // AutoMQ inject start
+    /**
+     * Submits an extended admin operation using this client's routing, retry, and network infrastructure.
+     *
+     * @param handler operation-specific request construction and response handling
+     * @param future per-key futures completed by the operation
+     * @param timeoutMs operation timeout, or null to use the client's default API timeout
+     * @param <K> resource key type
+     * @param <V> operation result type
+     */
+    protected <K, V> void invokeDriver(
         AdminApiHandler<K, V> handler,
         AdminApiFuture<K, V> future,
         Integer timeoutMs
     ) {
+        // AutoMQ inject end
         long currentTimeMs = time.milliseconds();
         long deadlineMs = calcDeadlineMs(currentTimeMs, timeoutMs);
 
