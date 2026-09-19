@@ -114,7 +114,7 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
     - High throughput: Leverage pre-fetching, batch processing, and parallel technologies to maximize the capabilities of cloud object storage. Refer to the [AutoMQ Performance White Paper](https://www.automq.com/docs/automq/benchmarks/automq-vs-apache-kafka-benchmarks-and-cost?utm_source=github_automq) to see how we achieve this.
     - Low Latency: AutoMQ defaults to running on S3 directly, resulting in hundreds of milliseconds of latency. The enterprise version offers single-digit millisecond latency. [Contact us](https://www.automq.com/contact?utm_source=github_automq) for more details.
 - **Built-in Metrics Export**: Natively export Prometheus and OpenTelemetry metrics, supporting both push and pull. Ditch inefficient JMX and monitor your cluster with modern tools. Refer to [full metrics list](https://www.automq.com/docs/automq/observability/metrics?utm_source=github_automq) provided by AutoMQ.
-- **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
+- **100% Kafka Compatible**: Built on Apache Kafka 3.9.x. Fully compatible with Apache Kafka protocols and features, including Kafka Client, Connector, and other ecosystem components (backward compatible with Kafka 0.9.x through 3.9.x). See [COMPATIBILITY.md](COMPATIBILITY.md) for the detailed version mapping.
 
 ## ✨Architecture
 AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). We've introduced a new storage engine based on object storage, transforming the classic shared-nothing architecture into a shared storage architecture.
