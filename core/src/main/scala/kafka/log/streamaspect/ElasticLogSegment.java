@@ -424,7 +424,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         // Get the index entry with a timestamp less than or equal to the target timestamp
         TimestampOffset timestampOffset = timeIndex.lookup(timestampMs);
         // Search the timestamp
-        return Optional.ofNullable(log.searchForTimestamp(timestampMs, timestampOffset.offset));
+        return Optional.ofNullable(log.searchForTimestamp(timestampMs, Math.max(startingOffset, timestampOffset.offset)));
     }
 
     @Override
