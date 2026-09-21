@@ -927,8 +927,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private static boolean isThrottled(Throwable ex, int retryCount) {
-        if (ex instanceof S3Exception) {
-            S3Exception s3Ex = (S3Exception) ex;
+        if (ex instanceof S3Exception s3Ex) {
             return s3Ex.statusCode() == HttpStatusCode.THROTTLING || s3Ex.statusCode() == HttpStatusCode.SERVICE_UNAVAILABLE;
         }
         // regard timeout as throttled except for the first try
