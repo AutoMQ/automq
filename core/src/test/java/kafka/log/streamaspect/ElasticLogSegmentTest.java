@@ -192,6 +192,24 @@ public class ElasticLogSegmentTest {
         assertEquals(40, seg.findOffsetByTimestamp(399, 0).get().offset);
     }
 
+    /**
+     * Given a sealed segment whose timestamp index points below the requested starting offset, verify timestamp
+     * searches begin at that offset for both the boundary timestamp and the following millisecond.
+     */
+    @Test
+    public void testFindOffsetByTimestampRespectsStartingOffsetInSealedSegment() throws IOException {
+        int messageSize = records(0, "msg00").sizeInBytes();
+        ElasticLogSegment seg = createOrLoadSegment(40, messageSize * 2 - 1, Time.SYSTEM);
+        for (int i = 40; i < 50; i++) {
+            seg.append(i, i * 10, i, records(i, "msg" + i));
+        }
+        seg.onBecomeInactiveSegment();
+
+        long startingOffset = 44;
+        assertEquals(startingOffset, seg.findOffsetByTimestamp(400, startingOffset).orElseThrow().offset);
+        assertEquals(startingOffset, seg.findOffsetByTimestamp(401, startingOffset).orElseThrow().offset);
+    }
+
     @Test
     public void testNextOffsetCalculation() throws IOException {
         ElasticLogSegment seg = createOrLoadSegment(40);
