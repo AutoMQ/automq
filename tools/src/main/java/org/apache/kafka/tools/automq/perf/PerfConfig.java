@@ -58,6 +58,7 @@ public class PerfConfig {
     public final String topicPrefix;
     public final int topics;
     public final int partitionsPerTopic;
+    public final int replicationFactor;
     public final int producersPerTopic;
     public final int groupsPerTopic;
     public final int consumersPerGroup;
@@ -102,6 +103,7 @@ public class PerfConfig {
         topicPrefix = ns.getString("topicPrefix") == null ? randomTopicPrefix() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
+        replicationFactor = ns.getInt("replicationFactor");
         producersPerTopic = ns.getInt("producersPerTopic");
         groupsPerTopic = ns.getInt("groupsPerTopic");
         consumersPerGroup = ns.getInt("consumersPerGroup");
@@ -212,6 +214,12 @@ public class PerfConfig {
             .dest("partitionsPerTopic")
             .metavar("PARTITIONS_PER_TOPIC")
             .help("The number of partitions per topic.");
+        parser.addArgument("--replication-factor")
+            .setDefault(1)
+            .type(between(1, Short.MAX_VALUE))
+            .dest("replicationFactor")
+            .metavar("REPLICATION_FACTOR")
+            .help("The replication factor for each topic.");
     }
     
     private static void addConsumerArguments(ArgumentParser parser) {
@@ -350,6 +358,7 @@ public class PerfConfig {
             topicPrefix,
             topics,
             partitionsPerTopic,
+            replicationFactor,
             topicConfigs
         );
     }
