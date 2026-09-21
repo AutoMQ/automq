@@ -201,7 +201,7 @@ public class ElasticLogSegmentTest {
         int messageSize = records(0, "msg00").sizeInBytes();
         ElasticLogSegment seg = createOrLoadSegment(40, messageSize * 2 - 1, Time.SYSTEM);
         for (int i = 40; i < 50; i++) {
-            seg.append(i, i * 10, i, records(i, "msg" + i));
+            seg.append(i, records(i, "msg" + i));
         }
         seg.onBecomeInactiveSegment();
 
