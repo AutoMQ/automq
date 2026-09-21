@@ -71,10 +71,7 @@ public class TopicService implements AutoCloseable {
      * Note: If the topic already exists, it will not be created again.
      */
     public List<Topic> createTopics(TopicsConfig config) {
-        List<NewTopic> newTopics = IntStream.range(0, config.topics)
-                .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
-                .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) 1).configs(config.topicConfigs))
-                .collect(Collectors.toList());
+        List<NewTopic> newTopics = newTopics(config);
 
         int topicsPerBatch = MAX_PARTITIONS_PER_BATCH / config.partitionsPerTopic;
         List<List<NewTopic>> requests = Lists.partition(newTopics, topicsPerBatch);
@@ -88,6 +85,14 @@ public class TopicService implements AutoCloseable {
 
         return results.keySet().stream()
                 .map(name -> new Topic(name, config.partitionsPerTopic))
+                .collect(Collectors.toList());
+    }
+
+    static List<NewTopic> newTopics(TopicsConfig config) {
+        return IntStream.range(0, config.topics)
+                .mapToObj(i -> generateTopicName(config.topicPrefix, config.partitionsPerTopic, i))
+                .map(name -> new NewTopic(name, config.partitionsPerTopic, (short) config.replicationFactor)
+                        .configs(config.topicConfigs))
                 .collect(Collectors.toList());
     }
 
@@ -128,7 +133,7 @@ public class TopicService implements AutoCloseable {
         }
     }
 
-    private String generateTopicName(String topicPrefix, int partitions, int index) {
+    private static String generateTopicName(String topicPrefix, int partitions, int index) {
         return String.format("%s%s_%04d_%07d", COMMON_TOPIC_PREFIX, topicPrefix, partitions, index);
     }
 
@@ -187,12 +192,39 @@ public class TopicService implements AutoCloseable {
         final String topicPrefix;
         final int topics;
         final int partitionsPerTopic;
+        final int replicationFactor;
         final Map<String, String> topicConfigs;
 
+        /**
+         * Create topic settings with the default replication factor of one.
+         *
+         * @param topicPrefix the prefix used to generate topic names
+         * @param topics the number of topics
+         * @param partitionsPerTopic the number of partitions in each topic
+         * @param topicConfigs Kafka topic-level configurations
+         */
         public TopicsConfig(String topicPrefix, int topics, int partitionsPerTopic, Map<String, String> topicConfigs) {
+            this(topicPrefix, topics, partitionsPerTopic, 1, topicConfigs);
+        }
+
+        /**
+         * Create topic settings with an explicit replication factor.
+         *
+         * @param topicPrefix the prefix used to generate topic names
+         * @param topics the number of topics
+         * @param partitionsPerTopic the number of partitions in each topic
+         * @param replicationFactor the replication factor, from 1 through {@link Short#MAX_VALUE}
+         * @param topicConfigs Kafka topic-level configurations
+         */
+        public TopicsConfig(String topicPrefix, int topics, int partitionsPerTopic, int replicationFactor,
+            Map<String, String> topicConfigs) {
+            if (replicationFactor < 1 || replicationFactor > Short.MAX_VALUE) {
+                throw new IllegalArgumentException("Invalid replication factor: " + replicationFactor);
+            }
             this.topicPrefix = topicPrefix;
             this.topics = topics;
             this.partitionsPerTopic = partitionsPerTopic;
+            this.replicationFactor = replicationFactor;
             this.topicConfigs = topicConfigs;
         }
     }
