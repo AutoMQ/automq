@@ -1433,8 +1433,17 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     // Cache to avoid race conditions. `toBuffer` is faster than most alternatives and provides
     // constant time access while being safe to use with concurrent collections unlike `toArray`.
     val segmentsCopy = logSegments.asScala.toBuffer
-    val targetSeg = segmentsCopy.find(_.largestTimestamp >= targetTimestamp)
-    targetSeg.flatMap(_.findOffsetByTimestamp(targetTimestamp, startOffset).asScala)
+    // AutoMQ inject start
+    // Retention can advance logStartOffset before old segments are physically removed. Start with
+    // the segment whose base-offset range contains startOffset, avoiding a tail read per segment.
+    val firstSegmentIndex = math.max(segmentsCopy.lastIndexWhere(_.baseOffset <= startOffset), 0)
+    val targetOffset = segmentsCopy.iterator
+      .drop(firstSegmentIndex)
+      .filter(_.largestTimestamp >= targetTimestamp)
+      .flatMap(_.findOffsetByTimestamp(targetTimestamp, startOffset).asScala)
+      .nextOption()
+    // AutoMQ inject end
+    targetOffset
   }
 
   def legacyFetchOffsetsBefore(timestamp: Long, maxNumOffsets: Int): Seq[Long] = {
