@@ -19,17 +19,85 @@
 
 package com.automq.stream.s3.operator;
 
+import com.automq.stream.utils.IdURI;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 import java.util.List;
 
+import static com.automq.stream.s3.operator.BucketURI.SECRET_KEY_KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 
 @Tag("S3Unit")
 public class BucketURITest {
+
+    /**
+     * Conversion preserves encoded paths, repeated values and credentials through an IdURI round trip.
+     */
+    @Test
+    public void testToIdURIRoundTrip() {
+        IdURI original = IdURI.parse("7@s3://bucket/prefix%2Fpart?endpoint=https%3A%2F%2Fexample.com%3A9443%2Fs3"
+            + "&region=us-west-2&tag=first%2Bvalue&tag=second%26value&accessKey=test-access"
+            + "&secretKey=test%2Bsecret%2Fwith%3Dsymbols&flag");
+        BucketURI bucket = BucketURI.parse(original);
+
+        IdURI converted = IdURI.parse(bucket.toIdURI().encode());
+
+        assertEquals(original.id(), converted.id());
+        assertEquals(original.protocol(), converted.protocol());
+        assertEquals(original.path(), converted.path());
+        assertEquals(original.extension(), converted.extension());
+        BucketURI roundTrip = BucketURI.parse(converted);
+        assertEquals(bucket.bucketId(), roundTrip.bucketId());
+        assertEquals(bucket.bucket(), roundTrip.bucket());
+        assertEquals(bucket.endpoint(), roundTrip.endpoint());
+        assertEquals(bucket.region(), roundTrip.region());
+        assertEquals(bucket.extensionStringList("tag"), roundTrip.extensionStringList("tag"));
+        assertEquals(bucket.extensionString(SECRET_KEY_KEY), roundTrip.extensionString(SECRET_KEY_KEY));
+        assertFalse(bucket.toString().contains("test+secret/with=symbols"));
+    }
+
+    /**
+     * Conversion uses the current endpoint and isolates the snapshot from later bucket mutations.
+     */
+    @Test
+    public void testToIdURISnapshot() {
+        BucketURI bucket = BucketURI.parse("3@s3://bucket?tag=first&tag=second");
+        bucket.endpoint("https://replacement.example.com");
+        IdURI snapshot = bucket.toIdURI();
+
+        bucket.endpoint("https://later.example.com");
+        bucket.extensionStringList("tag").add("third");
+        bucket.addExtension("new", "value");
+
+        assertEquals("https://replacement.example.com", snapshot.extensionString("endpoint"));
+        assertEquals(List.of("first", "second"), snapshot.extensionStringList("tag"));
+        assertFalse(snapshot.extension().containsKey("new"));
+        assertFalse(snapshot.extension().containsKey("region"));
+    }
+
+    /**
+     * A bucket with no query parameters keeps its identity and does not invent optional settings.
+     */
+    @Test
+    public void testToIdURIWithoutOptions() {
+        assertEquals("-2@file:///path/to/wal", BucketURI.parse("-2@file:///path/to/wal").toIdURI().encode());
+    }
+
+    /**
+     * Explicitly empty parameters retain their parsed null values, including endpoint and region.
+     */
+    @Test
+    public void testToIdURIWithEmptyOptions() {
+        IdURI original = IdURI.parse("4@s3://bucket?endpoint=&region=&empty%20key=&tag=one&tag=");
+        IdURI converted = IdURI.parse(BucketURI.parse(original).toIdURI().encode());
+
+        assertEquals(original.extension(), converted.extension());
+    }
 
     @Test
     public void testParse_valid() {

@@ -76,6 +76,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         synchronized (this) {
             if (routerChannel == null) {
                 ObjectWALConfig config = ObjectWALConfig.builder()
+                    .withURI(bucketURI.toIdURI())
                     .withClusterId(clusterId)
                     .withNodeId(nodeId)
                     .withEpoch(nodeEpoch)
