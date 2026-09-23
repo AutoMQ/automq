@@ -118,10 +118,10 @@ class ElasticLog(val metaStream: MetaStream,
     private val _confirmOffset: AtomicReference[LogOffsetMetadata] = new AtomicReference(_nextOffsetMetadata)
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
+    private val truncateEpoch = new AtomicLong()
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
     @volatile private[log] var lastAppendAckFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
-
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
 
@@ -209,6 +209,7 @@ class ElasticLog(val metaStream: MetaStream,
     override private[log] def append(lastOffset: Long, largestTimestamp: Long, offsetOfMaxTimestamp: Long,
         records: MemoryRecords): Unit = {
         val activeSegment = segments.activeSegment
+        val appendEpoch = truncateEpoch.get()
         val startTimestamp = time.nanoseconds()
 
         val permit = records.sizeInBytes()
@@ -246,18 +247,25 @@ class ElasticLog(val metaStream: MetaStream,
             // append callback executor is single thread executor, so the callback will be executed in order.
             val startNanos = System.nanoTime()
             var notify = false
-            breakable {
-                while (true) {
-                    val offset = _confirmOffset.get()
-                    if (offset.messageOffset < endOffset) {
-                        _confirmOffset.compareAndSet(offset, newConfirmOffset)
-                        notify = true
-                    } else {
-                        break()
+            var stale = false
+            truncateEpoch.synchronized {
+                if (appendEpoch == truncateEpoch.get()) {
+                    breakable {
+                        while (true) {
+                            val offset = _confirmOffset.get()
+                            if (offset.messageOffset < endOffset) {
+                                _confirmOffset.compareAndSet(offset, newConfirmOffset)
+                                notify = true
+                            } else {
+                                break()
+                            }
+                        }
                     }
+                } else {
+                    stale = true
                 }
             }
-            if (notify) {
+            if (notify || stale) {
                 appendAckQueue.offer(endOffset)
                 CompletableFuture.runAsync(new Runnable {
                     override def run(): Unit = {
@@ -694,6 +702,63 @@ class ElasticLog(val metaStream: MetaStream,
         _confirmOffset.set(logEndOffsetMetadata)
         rst
     }
+
+    /**
+     * Truncates this log at an S3Stream batch boundary under the caller's log mutation lock. The replacement segment
+     * persists the complete segment snapshot before it is installed as active. A persistence failure fences the log.
+     * Returned removed segments remain owned by the caller for the existing delayed-deletion lifecycle.
+     */
+    // AutoMQ inject start
+    override private[log] def truncateTo(targetOffset: Long): Iterable[LogSegment] = {
+        if (targetOffset < 0) {
+            throw new IllegalArgumentException(s"Cannot truncate partition $topicPartition to a negative offset ($targetOffset).")
+        }
+        try {
+            truncateTo0(targetOffset)
+        } catch {
+            case e: IOException =>
+                throw e
+            case e: Throwable =>
+                throw new IOException(s"Failed to truncate $topicPartition to offset $targetOffset",
+                    FutureUtil.cause(e))
+        }
+    }
+
+    private def truncateTo0(targetOffset: Long): Iterable[LogSegment] = {
+        if (targetOffset >= logEndOffset) {
+            return Iterable.empty
+        }
+        truncateEpoch.synchronized {
+            truncateEpoch.incrementAndGet()
+        }
+        segments.activeSegment.asInstanceOf[ElasticLogSegment].asyncLogFlush().get()
+        val removed = ListBuffer.empty[LogSegment]
+
+        def detach(segment: LogSegment): Unit = {
+            segments.remove(segment.baseOffset)
+            logSegmentManager.remove(segment.baseOffset, segment.asInstanceOf[ElasticLogSegment], false)
+            removed += segment
+        }
+
+        segments.filter(_.baseOffset >= targetOffset).asScala.foreach(detach)
+        segments.lowerSegment(targetOffset).ifPresent { segment =>
+            val retainedSegment = segment.asInstanceOf[ElasticLogSegment]
+            if (targetOffset < retainedSegment.readNextOffset) {
+                retainedSegment.truncateTo(targetOffset)
+                if (retainedSegment.size == 0) {
+                    detach(retainedSegment)
+                }
+            }
+        }
+
+        val replacement = newSegment(targetOffset, time)
+        segments.add(replacement)
+        updateLogEndOffset(targetOffset)
+        _confirmOffset.set(logEndOffsetMetadata)
+        recoveryPoint = targetOffset
+        removed.toSeq
+    }
+    // AutoMQ inject end
 
     def snapshot(snapshot: PartitionSnapshot.Builder): Unit = {
         snapshot.logMeta(logSegmentManager.logMeta())

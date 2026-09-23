@@ -32,6 +32,7 @@ import com.automq.stream.utils.FutureUtil;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -75,7 +76,12 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
     @Override
     public CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint) {
         long fixedStartOffset = Utils.max(startOffset, 0);
-        return stream.fetch(context, startOffsetInStream + fixedStartOffset, startOffsetInStream + endOffset, maxBytesHint)
+        long fixedEndOffset = sealed ? Utils.min(endOffset, this.endOffset) : endOffset;
+        if (fixedStartOffset >= fixedEndOffset) {
+            return CompletableFuture.completedFuture(Collections::emptyList);
+        }
+        return stream.fetch(context, startOffsetInStream + fixedStartOffset,
+                startOffsetInStream + fixedEndOffset, maxBytesHint)
                 .thenApply(FetchResultWrapper::new);
     }
 
@@ -100,10 +106,18 @@ public class DefaultElasticStreamSlice implements ElasticStreamSlice {
 
     @Override
     public void seal() {
-        if (!sealed) {
-            sealed = true;
-            endOffset = stream.nextOffset() - startOffsetInStream;
+        seal(nextOffset());
+    }
+
+    @Override
+    public void seal(long endOffset) {
+        long currentEndOffset = nextOffset();
+        if (endOffset < 0 || endOffset > currentEndOffset) {
+            throw new IllegalArgumentException("end offset " + endOffset
+                + " is outside the slice range [0, " + currentEndOffset + "]");
         }
+        sealed = true;
+        this.endOffset = endOffset;
     }
 
     @Override
