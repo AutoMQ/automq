@@ -76,7 +76,22 @@ public class ElasticTimeIndex extends TimeIndex {
 
     @Override
     public void truncateTo(long offset) {
-        throw new UnsupportedOperationException("truncateTo() is not supported in ElasticTimeIndex");
+        inLock(() -> {
+            int retainedEntries = 0;
+            TimestampOffset lastRetainedEntry = new TimestampOffset(RecordBatch.NO_TIMESTAMP, baseOffset());
+            for (int i = 0; i < entries(); i++) {
+                TimestampOffset entry = entry(i);
+                if (entry.offset < offset) {
+                    retainedEntries++;
+                    lastRetainedEntry = entry;
+                } else {
+                    break;
+                }
+            }
+            stream.seal((long) retainedEntries * ENTRY_SIZE);
+            setEntries(retainedEntries);
+            lastEntry(lastRetainedEntry);
+        });
     }
 
     @Override

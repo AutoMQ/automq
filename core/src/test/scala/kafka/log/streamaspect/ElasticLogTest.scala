@@ -43,7 +43,7 @@ import java.nio.charset.StandardCharsets
 import java.nio.ByteBuffer
 import java.nio.file.Files
 import java.util.{Collections, Optional}
-import java.util.concurrent.{CompletableFuture, CountDownLatch, TimeUnit}
+import java.util.concurrent.{CompletableFuture, CompletionException, CountDownLatch, TimeUnit}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
 import java.util.regex.Pattern
 import scala.jdk.CollectionConverters._
@@ -106,6 +106,13 @@ class ElasticLogTest {
 
     private def recordsToKvs(records: Iterable[Record]): Iterable[KeyValue] = {
         records.map(r => KeyValue.fromRecord(r))
+    }
+
+    private def combineMemoryRecords(batches: MemoryRecords*): MemoryRecords = {
+        val buffer = ByteBuffer.allocate(batches.map(_.sizeInBytes()).sum)
+        batches.foreach(batch => buffer.put(batch.buffer().duplicate()))
+        buffer.flip()
+        MemoryRecords.readableRecords(buffer)
     }
 
     private def appendRecords(records: Iterable[SimpleRecord],
@@ -231,6 +238,37 @@ class ElasticLogTest {
             assertFalse(delayedLog.lastAppendAckFuture.isDone)
             client.completeDataAppend()
             delayedLog.lastAppendAckFuture.get(10, TimeUnit.SECONDS)
+            assertEquals(1, callbackCount.get())
+        } finally {
+            client.completeDataAppend()
+            delayedLog.close()
+        }
+    }
+
+    /** A truncation waits for inflight data and its stale callback cannot restore the old confirm offset. */
+    @Test
+    def testTruncateWaitsForInflightAppendWithoutStaleConfirmOffsetUpdate(): Unit = {
+        val client = new DelayedDataAppendClient()
+        val dir = TestUtils.randomPartitionLogDir(tmpDir)
+        val delayedLog = createElasticLogWithActiveSegment(
+            dir = dir,
+            config = LogTestUtils.createLogConfig(),
+            topicPartition = LocalLog.parseTopicPartitionName(dir),
+            client = client)
+        val callbackCount = new AtomicInteger()
+        delayedLog.confirmOffsetChangeListener = Some(() => callbackCount.incrementAndGet())
+
+        try {
+            appendRecords(Seq(new SimpleRecord(mockTime.milliseconds(), "value".getBytes)), delayedLog)
+            val truncation = CompletableFuture.runAsync(() => delayedLog.truncateTo(0L))
+
+            assertFalse(truncation.isDone)
+            client.completeDataAppend()
+            truncation.get(10, TimeUnit.SECONDS)
+            delayedLog.lastAppendAckFuture.get(10, TimeUnit.SECONDS)
+
+            assertEquals(0L, delayedLog.logEndOffset)
+            assertEquals(0L, delayedLog.confirmOffset.messageOffset)
             assertEquals(1, callbackCount.get())
         } finally {
             client.completeDataAppend()
@@ -863,6 +901,183 @@ class ElasticLogTest {
         assertTrue(fetchDataInfo.records.records.asScala.isEmpty)
     }
 
+    /**
+     * Given an active segment with records on both sides of a truncation target, when it is truncated, then the
+     * retained records and timestamp lookup stop at the S3Stream batch boundary and the requested offset remains the
+     * logical end for the first subsequent append.
+     */
+    @Test
+    def testTruncateActiveSegmentRetainsPrefixAndAllowsAppendAtRequestedOffset(): Unit = {
+        val retainedTimestamp = 100L
+        val discardedTimestamp = 200L
+        appendRecords(Seq(new SimpleRecord(retainedTimestamp, "retained".getBytes)), initialOffset = 0)
+        val firstDiscardedBatch = MemoryRecords.withRecords(1L, Compression.NONE, 0,
+            new SimpleRecord(150L, "discarded-1".getBytes))
+        val secondDiscardedBatch = MemoryRecords.withRecords(2L, Compression.NONE, 0,
+            new SimpleRecord(discardedTimestamp, "discarded-2".getBytes))
+        log.append(lastOffset = 2L, records = combineMemoryRecords(firstDiscardedBatch, secondDiscardedBatch))
+        assertEquals(3L, log.logEndOffset)
+
+        log.truncateTo(2L)
+
+        assertEquals(2L, log.logEndOffset)
+        assertEquals(1L, readRecords(startOffset = 0L, maxLength = 1024).records.records.asScala.size)
+        assertTrue(readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.isEmpty)
+        val segment = log.segments.values.asScala.head.asInstanceOf[ElasticLogSegment]
+        assertEquals(0L, segment.findOffsetByTimestamp(retainedTimestamp, 0L).get().offset)
+        assertTrue(segment.findOffsetByTimestamp(discardedTimestamp, 0L).isEmpty)
+
+        appendRecords(Seq(new SimpleRecord(300L, "after-truncate".getBytes)), initialOffset = 2)
+        assertEquals(3L, log.logEndOffset)
+        assertEquals("after-truncate", KeyValue.fromRecord(
+            readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.head).value)
+    }
+
+    /**
+     * Given one S3Stream batch containing two Kafka record batches, when truncation intersects the second Kafka batch,
+     * then the complete S3Stream batch is removed and the new active segment starts at the requested offset.
+     */
+    @Test
+    def testTruncateRemovesAllKafkaBatchesInHitS3StreamBatch(): Unit = {
+        val firstBatch = MemoryRecords.withRecords(0L, Compression.NONE, 0, new SimpleRecord(10L, "first".getBytes))
+        val secondBatch = MemoryRecords.withRecords(1L, Compression.NONE, 0, new SimpleRecord(20L, "second".getBytes))
+        log.append(lastOffset = 1L, records = combineMemoryRecords(firstBatch, secondBatch))
+        assertEquals(2L, log.logEndOffset)
+
+        log.truncateTo(1L)
+
+        assertEquals(1L, log.logEndOffset)
+        assertEquals(1, log.segments.numberOfSegments)
+        assertEquals(1L, log.segments.activeSegment.baseOffset)
+        assertTrue(readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.isEmpty)
+        appendRecords(Seq(new SimpleRecord(30L, "new".getBytes)), initialOffset = 1L)
+        assertEquals(2L, log.logEndOffset)
+        assertEquals("new", KeyValue.fromRecord(
+            readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.head).value)
+    }
+
+    /** Metadata reconstruction preserves the shortened logical view after a clean reload. */
+    @Test
+    def testTruncateReloadKeepsDiscardedRecordsInvisible(): Unit = {
+        log.close()
+        val client = new PersistentMemoryClient()
+        log = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+        appendRecords(Seq(new SimpleRecord(100L, "retained".getBytes)), initialOffset = 0)
+        appendRecords(Seq(new SimpleRecord(200L, "discarded".getBytes)), initialOffset = 1)
+        log.truncateTo(1L)
+        log.close()
+
+        log = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+        assertEquals(1L, log.logEndOffset)
+        assertEquals(1L, readRecords(startOffset = 0L, maxLength = 1024).records.records.asScala.size)
+        assertTrue(readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.isEmpty)
+        assertTrue(log.segments.values.asScala.head.asInstanceOf[ElasticLogSegment]
+            .findOffsetByTimestamp(200L, 0L).isEmpty)
+    }
+
+    /** An immediate unclean reload keeps the persisted recovery point and recovers sealed segments without rewriting indexes. */
+    @Test
+    def testTruncateAcknowledgementMakesRecoveryPointDurableBeforeImmediateReload(): Unit = {
+        log.close()
+        val client = new PersistentMemoryClient()
+        val crashedLog = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+        log = crashedLog
+        appendRecords(Seq(new SimpleRecord(100L, "retained".getBytes)), initialOffset = 0L)
+        appendRecords(Seq(new SimpleRecord(200L, "discarded".getBytes)), initialOffset = 1L)
+        log.updateRecoveryPoint(2L)
+        log.truncateTo(1L)
+        assertEquals(1L, log.recoveryPoint)
+        val committedRetained = log.logSegmentManager.logMeta().getSegmentMetas.get(0)
+
+        log = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+
+        assertEquals(1L, log.segments.activeSegment.baseOffset)
+        assertEquals(0L, log.recoveryPoint)
+        val reloadedRetained = log.logSegmentManager.logMeta().getSegmentMetas.get(0)
+        assertEquals(committedRetained.log().start(), reloadedRetained.log().start())
+        assertEquals(committedRetained.log().end(), reloadedRetained.log().end())
+        assertEquals(committedRetained.time().start(), reloadedRetained.time().start())
+        assertEquals(committedRetained.time().end(), reloadedRetained.time().end())
+        assertEquals(committedRetained.txn().start(), reloadedRetained.txn().start())
+        assertEquals(committedRetained.txn().end(), reloadedRetained.txn().end())
+        assertEquals(1, readRecords(startOffset = 0L, maxLength = 1024).records.records.asScala.size)
+        assertTrue(readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.isEmpty)
+    }
+
+    /** A replacement active segment is installed only after its complete metadata snapshot is acknowledged. */
+    @Test
+    def testTruncateWaitsForMetadataAcknowledgementBeforeInstallingReplacement(): Unit = {
+        log.close()
+        val client = new ControlledMetadataAppendClient()
+        log = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+        appendRecords(Seq(new SimpleRecord(100L, "retained".getBytes)), initialOffset = 0L)
+        appendRecords(Seq(new SimpleRecord(200L, "discarded".getBytes)), initialOffset = 1L)
+        val acknowledgedBefore = log.logSegmentManager.logMeta()
+        client.armNextAppend()
+
+        val truncation = CompletableFuture.runAsync(() => log.truncateTo(1L))
+        assertTrue(client.awaitBlockedAppend())
+        assertSame(acknowledgedBefore, log.logSegmentManager.logMeta())
+        assertEquals(0L, log.segments.activeSegment.baseOffset)
+
+        client.completeBlockedAppend()
+        truncation.join()
+        assertEquals(Seq(0L, 1L), log.logSegmentManager.logMeta().getSegmentMetas.asScala.map(_.baseOffset).toSeq)
+        assertTrue(log.recoveryPoint >= log.segments.activeSegment.baseOffset)
+        appendRecords(Seq(new SimpleRecord(300L, "committed".getBytes)), initialOffset = 1L)
+        assertEquals(2L, log.logEndOffset)
+    }
+
+    /** A reload while the log metadata append is pending reconstructs the complete acknowledged old log. */
+    @Test
+    def testTruncateCrashBeforeMetadataAcknowledgementReloadsOldState(): Unit = {
+        log.close()
+        val client = new ControlledMetadataAppendClient()
+        val truncatingLog = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+        log = truncatingLog
+        appendRecords(Seq(new SimpleRecord(100L, "old-0".getBytes)), initialOffset = 0L)
+        appendRecords(Seq(new SimpleRecord(200L, "old-1".getBytes)), initialOffset = 1L)
+        client.armNextAppend()
+
+        val truncation = CompletableFuture.runAsync(() => truncatingLog.truncateTo(1L))
+        assertTrue(client.awaitBlockedAppend())
+        val reloaded = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
+
+        assertEquals(2L, reloaded.logEndOffset)
+        assertEquals(Seq(0L), reloaded.segments.values.asScala.map(_.baseOffset).toSeq)
+        assertEquals(2, reloaded.read(0L, 1024, true, reloaded.logEndOffsetMetadata, false)
+            .records.records.asScala.size)
+        client.failBlockedAppend()
+        assertThrows(classOf[CompletionException], () => truncation.join())
+        log = reloaded
+    }
+
+    /** Historical truncation shortens the selected sealed segment and removes its divergent suffix. */
+    @Test
+    def testTruncateHistoricalSegmentRemovesLaterSegmentsAndAppendsAtRequestedOffset(): Unit = {
+        appendRecords(Seq(new SimpleRecord(10L, "zero".getBytes)), initialOffset = 0L)
+        appendRecords(Seq(new SimpleRecord(11L, "retained".getBytes)), initialOffset = 1L)
+        log.roll()
+        appendRecords(Seq(new SimpleRecord(20L, "one".getBytes)), initialOffset = 2L)
+        log.roll()
+        appendRecords(Seq(new SimpleRecord(30L, "two".getBytes)), initialOffset = 3L)
+        assertEquals(3, log.segments.numberOfSegments)
+
+        log.truncateTo(1L)
+
+        assertEquals(2, log.segments.numberOfSegments)
+        assertEquals(1L, log.segments.activeSegment.baseOffset)
+        assertEquals(1L, log.logEndOffset)
+        assertEquals(0L, log.segments.values.asScala.toSeq.head.baseOffset)
+        assertEquals(1, readRecords(startOffset = 0L, maxLength = 1024).records.records.asScala.size)
+        appendRecords(Seq(new SimpleRecord(40L, "after-history".getBytes)), initialOffset = 1L)
+        assertEquals("after-history", KeyValue.fromRecord(
+            readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.head).value)
+
+        log.truncateTo(1L)
+        assertTrue(readRecords(startOffset = 1L, maxLength = 1024).records.records.asScala.isEmpty)
+    }
+
     @Test
     def testNonActiveSegmentsFrom(): Unit = {
         for (i <- 0 until 5) {
@@ -1323,6 +1538,79 @@ class ElasticLogTest {
         override def streamClient(): StreamClient = delayedStreamClient
 
         def completeDataAppend(): Unit = dataAppendCompletion.complete(null)
+    }
+
+    private class PersistentMemoryClient extends MemoryClient {
+        private val streamId = new AtomicLong()
+        private val streams = new java.util.concurrent.ConcurrentHashMap[Long, Stream]()
+        private val persistentStreamClient = new StreamClient {
+            override def createAndOpenStream(options: CreateStreamOptions): CompletableFuture[Stream] = {
+                val stream = new PersistentMemoryStream(streamId.incrementAndGet())
+                streams.put(stream.streamId(), stream)
+                CompletableFuture.completedFuture(stream)
+            }
+
+            override def openStream(id: Long, options: OpenStreamOptions): CompletableFuture[Stream] =
+                CompletableFuture.completedFuture(streams.get(id))
+
+            override def getStream(id: Long): Optional[Stream] = Optional.ofNullable(streams.get(id))
+
+            override def shutdown(): Unit = {}
+        }
+
+        override def streamClient(): StreamClient = persistentStreamClient
+    }
+
+    private class ControlledMetadataAppendClient extends MemoryClient {
+        private val streamId = new AtomicLong()
+        private val streams = new java.util.concurrent.ConcurrentHashMap[Long, Stream]()
+        private val armed = new AtomicBoolean()
+        private val blocked = new CountDownLatch(1)
+        private val completion = new CompletableFuture[Void]()
+        private val controlledStreamClient = new StreamClient {
+            override def createAndOpenStream(options: CreateStreamOptions): CompletableFuture[Stream] = {
+                val stream = new PersistentMemoryStream(streamId.incrementAndGet()) {
+                    override def append(context: AppendContext, batch: RecordBatch): CompletableFuture[AppendResult] = {
+                        if (armed.compareAndSet(true, false)) {
+                            blocked.countDown()
+                            completion.thenCompose(_ => super.append(context, batch))
+                        } else {
+                            super.append(context, batch)
+                        }
+                    }
+                }
+                streams.put(stream.streamId(), stream)
+                CompletableFuture.completedFuture(stream)
+            }
+
+            override def openStream(id: Long, options: OpenStreamOptions): CompletableFuture[Stream] =
+                CompletableFuture.completedFuture(streams.get(id))
+
+            override def getStream(id: Long): Optional[Stream] = Optional.ofNullable(streams.get(id))
+
+            override def shutdown(): Unit = {}
+        }
+
+        override def streamClient(): StreamClient = controlledStreamClient
+
+        def armNextAppend(): Unit = armed.set(true)
+
+        def awaitBlockedAppend(): Boolean = blocked.await(10, TimeUnit.SECONDS)
+
+        def completeBlockedAppend(): Unit = completion.complete(null)
+
+        def failBlockedAppend(): Unit = completion.completeExceptionally(new IOException("injected metadata failure"))
+    }
+
+    private class PersistentMemoryStream(streamId: Long) extends MemoryClient.StreamImpl(streamId) {
+        private val trimmedStartOffset = new AtomicLong()
+
+        override def startOffset(): Long = trimmedStartOffset.get()
+
+        override def trim(newStartOffset: Long): CompletableFuture[Void] = {
+            trimmedStartOffset.set(newStartOffset)
+            super.trim(newStartOffset)
+        }
     }
 
     private class CloseTrackingStream(streamId: Long, failCloseOnce: AtomicBoolean, failAppendOnce: AtomicBoolean,
