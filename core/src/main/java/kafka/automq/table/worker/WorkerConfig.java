@@ -120,6 +120,10 @@ public class WorkerConfig {
         return config.errorsTolerance;
     }
 
+    public List<String> icebergAutoCreateProperties() {
+        return config.tableTopicIcebergAutoCreateProperties;
+    }
+
     public void refresh() {
         this.config = log.config();
     }
