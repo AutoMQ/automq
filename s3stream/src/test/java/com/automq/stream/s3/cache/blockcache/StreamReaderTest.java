@@ -54,6 +54,7 @@ import static com.automq.stream.s3.cache.blockcache.StreamReader.READAHEAD_SIZE_
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -305,6 +306,44 @@ public class StreamReaderTest {
         if (inflightReadaheadCf != null) {
             inflightReadaheadCf.get();
         }
+    }
+
+    /**
+     * Given a block-index load in flight, when the reader is closed before the metadata
+     * load completes, then the late continuation must not restore block state.
+     */
+    @Test
+    public void testClosePreventsInflightReadaheadFromRestoringBlocks() throws Exception {
+        CompletableFuture<List<S3ObjectMetadata>> getObjectsFuture = new CompletableFuture<>();
+        when(objectManager.getObjects(eq(STREAM_ID), anyLong(), anyLong(), eq(GET_OBJECT_STEP)))
+            .thenReturn(getObjectsFuture);
+
+        eventLoops[0].submit(() -> streamReader.readahead.tryReadahead(false));
+        verify(objectManager, timeout(5000)).getObjects(eq(STREAM_ID), eq(0L), eq(-1L), eq(GET_OBJECT_STEP));
+
+        eventLoops[0].submit(streamReader::close).get();
+        eventLoops[0].submit(() -> assertTrue(streamReader.blocksMap.isEmpty())).get();
+
+        getObjectsFuture.complete(List.of(objects.get(0L).metadata));
+        CompletableFuture<Void> inflight = streamReader.getReadaheadInflightReadaheadCf();
+        if (inflight != null) {
+            inflight.get(10, TimeUnit.SECONDS);
+        }
+        eventLoops[0].submit(() -> assertTrue(streamReader.blocksMap.isEmpty())).get();
+    }
+
+    /**
+     * Given a closed reader, when readahead is triggered afterwards, then no new
+     * block-index metadata load must be started and no block state restored.
+     */
+    @Test
+    public void testClosedReaderDoesNotStartNewReadaheadLoad() throws Exception {
+        eventLoops[0].submit(streamReader::close).get();
+
+        eventLoops[0].submit(() -> streamReader.readahead.tryReadahead(false)).get();
+
+        verify(objectManager, times(0)).getObjects(anyLong(), anyLong(), anyLong(), anyInt());
+        eventLoops[0].submit(() -> assertTrue(streamReader.blocksMap.isEmpty())).get();
     }
 
 }
