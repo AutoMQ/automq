@@ -322,7 +322,12 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
 
         @Override
         public Principal getIssuerDN() {
-            return this.origCertificate.getIssuerDN();
+            return getIssuerX500Principal();
+        }
+
+        @Override
+        public X500Principal getIssuerX500Principal() {
+            return this.origCertificate.getIssuerX500Principal();
         }
 
         @Override
@@ -372,7 +377,12 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
 
         @Override
         public Principal getSubjectDN() {
-            return this.origCertificate.getSubjectDN();
+            return getSubjectX500Principal();
+        }
+
+        @Override
+        public X500Principal getSubjectX500Principal() {
+            return this.origCertificate.getSubjectX500Principal();
         }
 
         @Override
