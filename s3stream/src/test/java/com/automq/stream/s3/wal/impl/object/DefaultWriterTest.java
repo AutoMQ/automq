@@ -19,6 +19,12 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.AfterEach;
@@ -27,12 +33,16 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.TimeUnit;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("S3Unit")
 public class DefaultWriterTest {
@@ -81,6 +91,102 @@ public class DefaultWriterTest {
         writer.start();
 
         assertThrows(IllegalStateException.class, writer::objectList);
+    }
+
+    /**
+     * Given a started writer, when a record is appended and uploaded, then the buffered size returns to zero and the
+     * retained object size grows by the uploaded object length.
+     */
+    @Test
+    public void testUsageTracksBufferedAndUploadedBytes() throws Exception {
+        objectStorage.markManualWrite();
+        StreamRecordBatch record = newRecord(50);
+        int dataSize = record.encoded().readableBytes() + RecordHeader.RECORD_HEADER_SIZE;
+
+        CompletableFuture<AppendResult> cf = writer.append(record);
+        assertEquals(dataSize, writer.bufferedDataBytes());
+        assertEquals(0, writer.objectDataBytes());
+
+        writer.flush();
+        completePendingWrites(cf);
+
+        assertEquals(0, writer.bufferedDataBytes());
+        long objectBytes = writer.objectList().stream().mapToLong(WALObject::length).sum();
+        assertTrue(objectBytes > dataSize);
+        assertEquals(objectBytes, writer.objectDataBytes());
+    }
+
+    /**
+     * Given a writer whose buffered size exceeds the limit, when another record is appended, then the append is
+     * rejected with OverCapacityException and counted.
+     */
+    @Test
+    public void testAppendRejectedWhenBufferedSizeExceedsLimit() throws Exception {
+        objectStorage.markManualWrite();
+        DefaultWriter limitedWriter = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withMaxUnflushedBytes(1)
+            .withNodeId(101)
+            .withEpoch(1000)
+            .withBatchInterval(Long.MAX_VALUE)
+            .build());
+        limitedWriter.start();
+        CompletableFuture<AppendResult> accepted = limitedWriter.append(newRecord(50));
+        try {
+            assertTrue(limitedWriter.bufferedDataBytes() > 1);
+            assertEquals(0, limitedWriter.overCapacityCount());
+
+            StreamRecordBatch rejected = newRecord(50);
+            assertThrows(OverCapacityException.class, () -> limitedWriter.append(rejected));
+            assertEquals(1, limitedWriter.overCapacityCount());
+        } finally {
+            // close() waits for the in-flight upload, so release the manual write first.
+            limitedWriter.flush();
+            completePendingWrites(accepted);
+            limitedWriter.close();
+        }
+    }
+
+    /**
+     * Given a READ_WRITE writer, when it is started and then closed, then its metrics are registered and released.
+     */
+    @Test
+    public void testMetricsRegisteredOnStartAndReleasedOnClose() {
+        assertEquals(5, writer.registeredMetricCount());
+        writer.close();
+        assertEquals(0, writer.registeredMetricCount());
+    }
+
+    /**
+     * Given a FAILOVER writer for another node's WAL, when it is started, then it does not register metrics.
+     */
+    @Test
+    public void testFailoverWriterDoesNotRegisterMetrics() {
+        DefaultWriter failoverWriter = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withNodeId(102)
+            .withEpoch(1000)
+            .withOpenMode(OpenMode.FAILOVER)
+            .build());
+        failoverWriter.start();
+        try {
+            assertEquals(0, failoverWriter.registeredMetricCount());
+        } finally {
+            failoverWriter.close();
+        }
+    }
+
+    /**
+     * Uploads run on a background executor, so keep releasing manual writes until the append completes.
+     */
+    private void completePendingWrites(CompletableFuture<?> cf) throws Exception {
+        for (int i = 0; i < 500 && !cf.isDone(); i++) {
+            objectStorage.triggerAll();
+            Thread.sleep(10);
+        }
+        cf.get(5, TimeUnit.SECONDS);
+    }
+
+    private StreamRecordBatch newRecord(int size) {
+        return StreamRecordBatch.of(233L, 0, 0L, 1, generateByteBuf(size), DefaultByteBufSupplier.INSTANCE);
     }
 
     // TODO: fix the test
