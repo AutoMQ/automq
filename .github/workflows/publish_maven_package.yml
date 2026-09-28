@@ -15,6 +15,10 @@
 
 name: Publish Maven Package
 
+concurrency:
+  group: publish-maven-${{ github.event.inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 on:
   workflow_dispatch:
     inputs:
@@ -28,6 +32,10 @@ on:
 
 env:
   VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   publish:
@@ -51,6 +59,30 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10'
+      - name: Refuse an already published version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_OWNER: ${{ github.repository_owner }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          existing=0
+          while IFS= read -r package; do
+            encoded_package=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$package")
+            if gh api --paginate \
+              "orgs/${PACKAGE_OWNER}/packages/maven/${encoded_package}/versions?per_page=100" \
+              --jq '.[].name' | grep -Fxq "$VERSION"; then
+              echo "Found existing Maven package version: ${package}:${VERSION}"
+              existing=$((existing + 1))
+            fi
+          done < <(gh api --paginate \
+            "orgs/${PACKAGE_OWNER}/packages?package_type=maven&per_page=100" \
+            --jq '.[].name')
+
+          if [ "$existing" -gt 0 ]; then
+            echo "::error::GitHub Packages is immutable for an existing version (${VERSION}); refusing a retry that would return HTTP 409. Delete the partial package versions with an explicit cleanup approval, or publish a new version."
+            exit 1
+          fi
       - name: Publish
         run: |
           gradle publish -PmavenUrl='https://maven.pkg.github.com/AutoMQ/automq' \
