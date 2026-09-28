@@ -50,7 +50,11 @@ public class IdURI {
         this.extension = URIUtils.splitQuery(uri);
     }
 
-    private IdURI(short id, String protocol, String path, Map<String, List<String>> extension) {
+    /**
+     * Creates a URI from its parsed components without encoding or reparsing them.
+     * The caller owns the supplied extension map and must not modify it after construction.
+     */
+    public IdURI(short id, String protocol, String path, Map<String, List<String>> extension) {
         this.id = id;
         this.protocol = protocol;
         this.path = path;
@@ -127,7 +131,11 @@ public class IdURI {
         raw.append("?");
         for (Map.Entry<String, List<String>> entry : extension().entrySet()) {
             for (String value : entry.getValue()) {
-                raw.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)).append("=").append(URLEncoder.encode(value, StandardCharsets.UTF_8)).append("&");
+                raw.append(URLEncoder.encode(entry.getKey(), StandardCharsets.UTF_8)).append("=");
+                if (value != null) {
+                    raw.append(URLEncoder.encode(value, StandardCharsets.UTF_8));
+                }
+                raw.append("&");
             }
         }
         return raw.substring(0, raw.length() - 1);
