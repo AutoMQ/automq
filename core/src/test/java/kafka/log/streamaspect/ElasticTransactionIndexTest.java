@@ -135,4 +135,46 @@ public class ElasticTransactionIndexTest {
         // get from read cache
         assertEquals(abortedTxns, index.allAbortedTxns());
     }
+
+    /** Given a retained boundary, entries at and after it are hidden and the last offset cache follows the slice. */
+    @Test
+    public void testTruncateToUsesRetainedBoundaryAndClearsCache() throws IOException {
+        String indexFile = TestUtils.tempFile().getPath();
+        ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1),
+            SliceRange.of(0, Offsets.NOOP_OFFSET));
+        ElasticTransactionIndex index = new ElasticTransactionIndex(0, new File(indexFile), new IStreamSliceSupplier(slice),
+            new FileCache(TestUtils.tempFile().getPath(), 10 * 1024));
+        AbortedTxn retained = new AbortedTxn(1L, 0, 9, 8);
+        AbortedTxn discarded = new AbortedTxn(2L, 10, 19, 18);
+        index.append(retained);
+        index.append(discarded);
+
+        index.truncateTo(10);
+
+        assertEquals(List.of(retained), index.allAbortedTxns());
+        assertEquals(java.util.OptionalLong.of(retained.lastOffset()), index.loadLastOffset());
+        assertEquals(AbortedTxn.TOTAL_SIZE, slice.nextOffset());
+
+        // A newly opened index must observe the shortened logical range as well.
+        ElasticTransactionIndex reloaded = new ElasticTransactionIndex(0, new File(indexFile),
+            new IStreamSliceSupplier(slice), new FileCache(TestUtils.tempFile().getPath(), 10 * 1024));
+        assertEquals(List.of(retained), reloaded.allAbortedTxns());
+        assertEquals(java.util.OptionalLong.of(retained.lastOffset()), reloaded.loadLastOffset());
+    }
+
+    /** Truncating before every entry leaves an empty index and an empty last-offset cache. */
+    @Test
+    public void testTruncateToCanEmptyIndex() throws IOException {
+        ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1),
+            SliceRange.of(0, Offsets.NOOP_OFFSET));
+        ElasticTransactionIndex index = new ElasticTransactionIndex(0, TestUtils.tempFile(),
+            new IStreamSliceSupplier(slice), new FileCache(TestUtils.tempFile().getPath(), 10 * 1024));
+        index.append(new AbortedTxn(1L, 0, 9, 8));
+
+        index.truncateTo(0);
+
+        assertEquals(List.of(), index.allAbortedTxns());
+        assertEquals(java.util.OptionalLong.empty(), index.loadLastOffset());
+        assertEquals(0, slice.nextOffset());
+    }
 }

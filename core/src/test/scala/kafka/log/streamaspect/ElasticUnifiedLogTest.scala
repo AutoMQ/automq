@@ -18,16 +18,17 @@
  */
 package kafka.log.streamaspect
 
-import com.automq.stream.api.Client
+import com.automq.stream.api.{Client, CreateStreamOptions, OpenStreamOptions, Stream, StreamClient}
 import kafka.log._
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.client.Context
 import kafka.server.{BrokerTopicStats, KafkaConfig}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.Uuid
+import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.config.TopicConfig
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.record.{MemoryRecords, SimpleRecord}
+import org.apache.kafka.common.record.{ControlRecordType, MemoryRecords, SimpleRecord}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.log._
@@ -39,6 +40,9 @@ import org.junit.jupiter.params.provider.ValueSource
 
 import java.io.File
 import java.util.Optional
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
 @Timeout(60)
@@ -194,6 +198,114 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         val retainedLastSeqOpt = log.activeProducersWithLastSequence.get(pid2)
         assertTrue(retainedLastSeqOpt.isDefined)
         assertEquals(0, retainedLastSeqOpt.get)
+    }
+
+    /** A truncation removing a transaction marker rebuilds producer state from retained transactional records. */
+    @Test
+    def testTruncateRemovesTxnMarkerAndAllowsContinuedTransactionalAppend(): Unit = {
+        val log = createLog(logDir, LogTestUtils.createLogConfig())
+        val producerId = 42L
+        val producerEpoch = 0.toShort
+        log.appendAsLeader(MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, producerEpoch, 0,
+            new SimpleRecord(mockTime.milliseconds(), "before".getBytes)), leaderEpoch = 0)
+        LogTestUtils.appendEndTxnMarkerAsLeader(log, producerId, producerEpoch, ControlRecordType.ABORT,
+            mockTime.milliseconds())
+        assertEquals(2L, log.logEndOffset)
+
+        log.truncateTo(1L)
+
+        assertEquals(1L, log.logEndOffset)
+        assertTrue(log.activeProducersWithLastSequence.contains(producerId))
+        log.updateHighWatermark(log.logEndOffset)
+        assertEquals(0, log.read(0L, 1024, FetchIsolation.TXN_COMMITTED, minOneMessage = true).records.records.asScala.size)
+        log.appendAsLeader(MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, producerEpoch, 1,
+            new SimpleRecord(mockTime.milliseconds(), "after".getBytes)), leaderEpoch = 0)
+        assertEquals(2L, log.logEndOffset)
+    }
+
+    /** Transaction visibility and producer state survive an immediate unclean reload after truncation. */
+    @Test
+    def testTransactionalTruncationSurvivesImmediateReload(): Unit = {
+        client = new PersistentMemoryClient()
+        val original = createLog(logDir, LogTestUtils.createLogConfig())
+        val producerId = 42L
+        val producerEpoch = 0.toShort
+        original.appendAsLeader(MemoryRecords.withTransactionalRecords(Compression.NONE, producerId, producerEpoch, 0,
+            new SimpleRecord(mockTime.milliseconds(), "before".getBytes)), leaderEpoch = 0)
+        LogTestUtils.appendEndTxnMarkerAsLeader(original, producerId, producerEpoch, ControlRecordType.ABORT,
+            mockTime.milliseconds())
+        original.truncateTo(1L)
+
+        val reloaded = createLog(logDir, LogTestUtils.createLogConfig())
+
+        assertEquals(1L, reloaded.logEndOffset)
+        assertTrue(reloaded.activeProducersWithLastSequence.contains(producerId))
+        reloaded.updateHighWatermark(reloaded.logEndOffset)
+        assertEquals(0, reloaded.read(0L, 1024, FetchIsolation.TXN_COMMITTED, minOneMessage = true)
+            .records.records.asScala.size)
+        reloaded.appendAsLeader(MemoryRecords.withTransactionalRecords(
+            Compression.NONE, producerId, producerEpoch, 1,
+            new SimpleRecord(mockTime.milliseconds(), "after".getBytes)), leaderEpoch = 0)
+        assertEquals(2L, reloaded.logEndOffset)
+    }
+
+    /** Reopening a truncated inactive segment restores its logical maximum timestamp for timestamp lookup. */
+    @Test
+    def testTruncatedSegmentTimestampLookupSurvivesReload(): Unit = {
+        client = new PersistentMemoryClient()
+        val config = LogTestUtils.createLogConfig(segmentBytes = 1024 * 1024, indexIntervalBytes = 1024 * 1024)
+        val original = createLog(logDir, config)
+        val retainedTimestamp = mockTime.milliseconds + 1000
+        original.appendAsLeader(TestUtils.records(List(new SimpleRecord(retainedTimestamp, "retained".getBytes))), leaderEpoch = 0)
+        original.appendAsLeader(TestUtils.records(List(new SimpleRecord(retainedTimestamp - 100, "discarded".getBytes))), leaderEpoch = 0)
+        original.roll()
+        original.truncateTo(1L)
+
+        val reloaded = createLog(logDir, config)
+
+        assertEquals(0L, reloaded.fetchOffsetByTimestamp(retainedTimestamp).get.offset)
+    }
+
+    /** Active-segment producer state remains intact when unclean recovery also rebuilds sealed retained state. */
+    @Test
+    def testUncleanReloadPreservesNonEmptyActiveSegmentProducerState(): Unit = {
+        client = new PersistentMemoryClient()
+        val original = createLog(logDir, LogTestUtils.createLogConfig())
+        val producerId = 43L
+        val producerEpoch = 0.toShort
+        original.appendAsLeader(TestUtils.records(
+            List(new SimpleRecord(mockTime.milliseconds(), "sealed".getBytes)),
+            producerId = producerId, producerEpoch = producerEpoch, sequence = 0), leaderEpoch = 0)
+        original.roll()
+        original.appendAsLeader(TestUtils.records(
+            List(new SimpleRecord(mockTime.milliseconds(), "active".getBytes)),
+            producerId = producerId, producerEpoch = producerEpoch, sequence = 1), leaderEpoch = 0)
+
+        val reloaded = createLog(logDir, LogTestUtils.createLogConfig())
+
+        assertEquals(Some(1), reloaded.activeProducersWithLastSequence.get(producerId))
+        assertEquals(2L, reloaded.logEndOffset)
+    }
+
+    private class PersistentMemoryClient extends MemoryClient {
+        private val streamId = new AtomicLong()
+        private val streams = new ConcurrentHashMap[Long, Stream]()
+        private val persistentStreamClient = new StreamClient {
+            override def createAndOpenStream(options: CreateStreamOptions): CompletableFuture[Stream] = {
+                val stream = new MemoryClient.StreamImpl(streamId.incrementAndGet())
+                streams.put(stream.streamId(), stream)
+                CompletableFuture.completedFuture(stream)
+            }
+
+            override def openStream(id: Long, options: OpenStreamOptions): CompletableFuture[Stream] =
+                CompletableFuture.completedFuture(streams.get(id))
+
+            override def getStream(id: Long): Optional[Stream] = Optional.ofNullable(streams.get(id))
+
+            override def shutdown(): Unit = {}
+        }
+
+        override def streamClient(): StreamClient = persistentStreamClient
     }
 
     @Test

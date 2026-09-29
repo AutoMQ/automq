@@ -116,10 +116,6 @@ public class ElasticLogSegmentTest {
         checkEquals(ms.records().iterator(), read.records.records().iterator());
     }
 
-    /**
-     * This test was intended to test truncation and rolling in LogSegment. However, truncation is not supported in
-     * ElasticLogSegment. Therefore, we cut this test down to just verify the rolling and leave the test name as is.
-     */
     @Test
     public void testTruncateEmptySegment() throws IOException {
         // This tests the scenario in which the follower truncates to an empty segment. In this
@@ -151,6 +147,24 @@ public class ElasticLogSegmentTest {
         rollParams = new RollParams(maxSegmentMs, Integer.MAX_VALUE, RecordBatch.NO_TIMESTAMP,
             Integer.MAX_VALUE + 200L, 1024, time.milliseconds());
         assertTrue(reopened.shouldRoll(rollParams));
+    }
+
+    /**
+     * Given a segment containing retained and discarded records, truncation returns the discarded payload size and
+     * leaves the retained record and timestamp state visible.
+     */
+    @Test
+    public void testTruncateReturnsDiscardedBytes() throws IOException {
+        ElasticLogSegment segment = createOrLoadSegment(0);
+        MemoryRecords retained = records(0, "retained");
+        MemoryRecords discarded = records(1, "discarded");
+        segment.append(0L, retained);
+        segment.append(1L, discarded);
+
+        assertEquals(discarded.sizeInBytes(), segment.truncateTo(1L));
+        assertEquals(retained.sizeInBytes(), segment.size());
+        assertEquals(0L, segment.readMaxTimestampAndOffsetSoFar().offset);
+        assertEquals(0L, segment.readMaxTimestampAndOffsetSoFar().timestamp);
     }
 
     @Test
@@ -277,6 +291,26 @@ public class ElasticLogSegmentTest {
 //        assertEquals(75L, abortedTxn.firstOffset)
 //        assertEquals(106L, abortedTxn.lastOffset)
 //        assertEquals(100L, abortedTxn.lastStableOffset)
+    }
+
+    /** A truncation that removes an abort marker must also hide its transaction-index entry. */
+    @Test
+    public void testTruncateRemovesCompletionMarkerFromTransactionIndex() throws IOException {
+        ElasticLogSegment segment = createOrLoadSegment(0);
+        long producerId = 11L;
+        short producerEpoch = 0;
+        segment.append(1L, MemoryRecords.withTransactionalRecords(0L, Compression.NONE,
+            producerId, producerEpoch, 0, 0, new SimpleRecord("txn".getBytes())));
+        segment.append(2L, endTxnRecords(ControlRecordType.ABORT, producerId, producerEpoch, 1L));
+        segment.append(3L, MemoryRecords.withRecords(2L, Compression.NONE, 0,
+            new SimpleRecord("after".getBytes())));
+
+        segment.recover(newProducerStateManager(), Optional.empty());
+        assertEquals(1, segment.txnIndex().allAbortedTxns().size());
+
+        segment.truncateTo(1L);
+
+        assertTrue(segment.txnIndex().allAbortedTxns().isEmpty());
     }
 
     @Test

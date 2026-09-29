@@ -87,6 +87,17 @@ public class ElasticLogSegmentManager {
     }
 
     public void put(long baseOffset, ElasticLogSegment segment) {
+        put(baseOffset, segment, true);
+    }
+
+    /**
+     * Adds a segment to the in-memory manager and optionally emits the segment-create event.
+     *
+     * @param baseOffset segment base offset
+     * @param segment segment to add
+     * @param notify whether to notify segment listeners after the map update
+     */
+    public void put(long baseOffset, ElasticLogSegment segment, boolean notify) {
         segmentLock.lock();
         try {
             segments.put(baseOffset, segment);
@@ -94,7 +105,9 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
+        if (notify) {
+            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
+        }
     }
 
     public void putInflightCleaned(long baseOffset, ElasticLogSegment segment) {
@@ -119,10 +132,21 @@ public class ElasticLogSegmentManager {
     }
 
     public ElasticLogSegment remove(long baseOffset) {
+        return remove(baseOffset, true);
+    }
+
+    /**
+     * Removes a segment from the in-memory manager and optionally emits the segment-delete event.
+     *
+     * @param baseOffset segment base offset
+     * @param notify whether to notify segment listeners after the map update
+     * @return the removed segment, or {@code null} when no segment has this base offset
+     */
+    public ElasticLogSegment remove(long baseOffset, boolean notify) {
         segmentLock.lock();
         try {
             ElasticLogSegment segment = segments.remove(baseOffset);
-            if (segment != null) {
+            if (notify && segment != null) {
                 notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
             }
             return segment;
@@ -132,10 +156,22 @@ public class ElasticLogSegmentManager {
     }
 
     public boolean remove(long baseOffset, ElasticLogSegment segment) {
+        return remove(baseOffset, segment, true);
+    }
+
+    /**
+     * Removes a specific segment from the in-memory manager and optionally emits the segment-delete event.
+     *
+     * @param baseOffset segment base offset
+     * @param segment expected segment instance
+     * @param notify whether to notify segment listeners after the map update
+     * @return whether the expected segment was removed
+     */
+    public boolean remove(long baseOffset, ElasticLogSegment segment, boolean notify) {
         segmentLock.lock();
         try {
             boolean removed = segments.remove(baseOffset, segment);
-            if (removed) {
+            if (notify && removed) {
                 notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
             }
             return removed;
@@ -172,10 +208,10 @@ public class ElasticLogSegmentManager {
             List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
                 .sorted()
                 .map(ElasticLogSegment::meta)
+                .map(ElasticStreamSegmentMeta::copy)
                 .collect(Collectors.toList());
 
             meta = logMeta(streams, segmentList);
-            this.logMeta = meta;
             // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
             trimOffsets = calTrimOffset(
                 streams,
@@ -189,6 +225,7 @@ public class ElasticLogSegmentManager {
         MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY,
             ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
         return metaStream.append(kv).thenApply(nil -> {
+            this.logMeta = meta;
             LOGGER.info("{} save log meta {}", logIdent, meta);
             if (trimStreams) {
                 trimStream(trimOffsets);
@@ -291,6 +328,7 @@ public class ElasticLogSegmentManager {
         List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
             .sorted()
             .map(ElasticLogSegment::meta)
+            .map(ElasticStreamSegmentMeta::copy)
             .collect(Collectors.toList());
         return logMeta(streams, segmentList);
     }
