@@ -21,7 +21,7 @@ import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.AutoMQConfig
-import kafka.automq.zerozone.DefaultClientRackProvider
+import kafka.automq.zerozone.DefaultZeroZoneConfig
 
 import java.util
 import java.util.concurrent.TimeUnit
@@ -100,7 +100,7 @@ object KafkaConfig {
   AutoMQConfig.define(configDef)
   AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
-  DefaultClientRackProvider.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  DefaultZeroZoneConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   // AutoMQ inject end
 
 

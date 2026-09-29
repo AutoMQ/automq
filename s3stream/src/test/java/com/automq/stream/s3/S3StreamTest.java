@@ -122,6 +122,30 @@ public class S3StreamTest {
     }
 
     /**
+     * Given a Fetch that started before trim, verify trim rejects new stale reads and waits for the pending Fetch
+     * before publishing the new start offset to the Controller.
+     */
+    @Test
+    public void testTrimWaitsForPendingFetchBeforeControllerUpdate() throws Exception {
+        CompletableFuture<ReadDataBlock> read = new CompletableFuture<>();
+        when(storage.read(any(), eq(233L), eq(110L), eq(120L), eq(100))).thenReturn(read);
+        when(streamManager.trimStream(233L, 1L, 120L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        CompletableFuture<FetchResult> fetch = stream.fetch(110L, 120L, 100);
+        CompletableFuture<Void> trim = stream.trim(120L);
+
+        assertFalse(trim.isDone());
+        verify(streamManager, never()).trimStream(233L, 1L, 120L);
+        assertThrows(ExecutionException.class, () -> stream.fetch(110L, 120L, 100).get());
+
+        read.complete(newReadDataBlock(110L, 120L, 110));
+
+        fetch.get(1, TimeUnit.SECONDS);
+        trim.get(1, TimeUnit.SECONDS);
+        verify(streamManager).trimStream(233L, 1L, 120L);
+    }
+
+    /**
      * Given a V6 stream with a blocked force upload, when close drains existing work, then Controller fast close
      * completes with the broker append tail without waiting for ObjectStorage.
      */
@@ -204,6 +228,54 @@ public class S3StreamTest {
         assertTrue(close.isDone());
         verify(storage).forceUpload(233L);
         verify(streamManager).closeStream(233L, 1L, 234L);
+    }
+
+    /**
+     * Given a V6 stream whose pending append fails while close is draining it, verify close falls back to the legacy
+     * path and does not publish the unconfirmed append tail to the Controller.
+     */
+    @Test
+    public void testV6CloseFallsBackWhenPendingAppendFails() {
+        CompletableFuture<Void> append = new CompletableFuture<>();
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(1);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(append);
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(CompletableFuture.completedFuture(null));
+        when(streamManager.closeStream(233L, 1L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.append(recordBatch);
+        CompletableFuture<Void> close = stream.close();
+
+        append.completeExceptionally(new RuntimeException("append failed"));
+
+        assertTrue(close.isDone());
+        verify(streamManager).closeStream(233L, 1L);
+        verify(streamManager, never()).closeStream(233L, 1L, 234L);
+    }
+
+    /**
+     * Given a V6 append that failed before close snapshots pending work, verify the sticky fenced state still prevents
+     * publishing the unconfirmed append tail through fast close.
+     */
+    @Test
+    public void testV6CloseFallsBackAfterCompletedAppendFailure() {
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(1);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(CompletableFuture.failedFuture(
+            new RuntimeException("append failed")));
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(CompletableFuture.completedFuture(null));
+        when(streamManager.closeStream(233L, 1L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.append(recordBatch);
+        CompletableFuture<Void> close = stream.close();
+
+        assertTrue(close.isDone());
+        verify(streamManager).closeStream(233L, 1L);
+        verify(streamManager, never()).closeStream(233L, 1L, 234L);
     }
 
     /**

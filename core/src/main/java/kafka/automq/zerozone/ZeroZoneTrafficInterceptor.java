@@ -69,7 +69,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
     private final ElasticKafkaApis kafkaApis;
-    private final ClientRackProvider clientRackProvider;
+    private final ZeroZoneConfig zeroZoneConfig;
     private final List<BucketURI> config;
     private final BucketURI bucketURI;
 
@@ -93,7 +93,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         ConfirmWALProvider confirmWALProvider,
         ElasticKafkaApis kafkaApis,
         MetadataCache metadataCache,
-        ClientRackProvider clientRackProvider,
+        ZeroZoneConfig zeroZoneConfig,
         KafkaConfig kafkaConfig) {
         this.routerChannelProvider = routerChannelProvider;
         this.kafkaApis = kafkaApis;
@@ -110,7 +110,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
             .map(endpoint -> new Node(nodeId, endpoint.host(), endpoint.port()))
             .get();
 
-        this.mapping = new ProxyNodeMapping(currentNode, kafkaConfig.rack().get(), interBrokerListenerName, metadataCache);
+        this.mapping = new ProxyNodeMapping(currentNode, kafkaConfig.rack().get(), interBrokerListenerName, metadataCache, zeroZoneConfig);
 
         Time time = Time.SYSTEM;
 
@@ -121,7 +121,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         //noinspection OptionalGetWithoutIsPresent
         this.bucketURI = kafkaConfig.automq().zoneRouterChannels().get().get(0);
-        this.clientRackProvider = clientRackProvider;
+        this.zeroZoneConfig = zeroZoneConfig;
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
             .readWriteIsolate(true)
             .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
@@ -260,7 +260,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     private void fillRackIfMissing(ClientIdMetadata clientId) {
         if (clientId.rack() == null) {
-            String rack = clientRackProvider.rack(clientId);
+            String rack = zeroZoneConfig.rack(clientId);
             if (rack != null) {
                 clientId.metadata(ClientIdKey.AVAILABILITY_ZONE, List.of(rack));
             }

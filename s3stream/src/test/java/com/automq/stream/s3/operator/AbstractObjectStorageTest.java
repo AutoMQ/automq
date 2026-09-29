@@ -20,6 +20,7 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
@@ -49,12 +50,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -435,5 +439,47 @@ class AbstractObjectStorageTest {
         }
 
         assertTrue(cf4.isDone() && cf4.isCompletedExceptionally());
+    }
+
+    /**
+     * Given LIST and COPY fail transiently, when they are invoked through AbstractObjectStorage, then the storage
+     * boundary retries each operation until it succeeds.
+     */
+    @Test
+    void testListAndCopyRetryTransientFailures() throws Exception {
+        objectStorage = spy(objectStorage);
+        doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
+        ObjectStorage.ObjectInfo object = new ObjectStorage.ObjectInfo(objectStorage.bucketId(), "prefix/key", 0, 1);
+        doReturn(CompletableFuture.failedFuture(new IllegalStateException("LIST unavailable")),
+            CompletableFuture.completedFuture(List.of(object))).when(objectStorage).doList(any());
+        doReturn(CompletableFuture.failedFuture(new IllegalStateException("COPY unavailable")),
+            CompletableFuture.completedFuture(null)).when(objectStorage).doCopy(any(), anyString(), anyString());
+
+        assertEquals(List.of(object), objectStorage.list(new ObjectStorage.ListOptions("prefix/")).get());
+        objectStorage.copy(objectStorage.bucketURI(objectStorage.bucketId()).bucket(), "source", "destination").get();
+
+        verify(objectStorage, times(2)).doList(any());
+        verify(objectStorage, times(2)).doCopy(any(), eq("source"), eq("destination"));
+    }
+
+    /**
+     * Given LIST and COPY fail permanently, when they are invoked through AbstractObjectStorage, then the storage
+     * boundary returns each failure without retrying.
+     */
+    @Test
+    void testListAndCopyDoNotRetryPermanentFailures() {
+        objectStorage = spy(objectStorage);
+        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("invalid LIST")))
+            .when(objectStorage).doList(any());
+        doReturn(CompletableFuture.failedFuture(new ObjectNotExistException("missing source")))
+            .when(objectStorage).doCopy(any(), anyString(), anyString());
+
+        assertThrows(ExecutionException.class,
+            () -> objectStorage.list(new ObjectStorage.ListOptions("prefix/")).get());
+        assertThrows(ExecutionException.class, () -> objectStorage.copy(
+            objectStorage.bucketURI(objectStorage.bucketId()).bucket(), "source", "destination").get());
+
+        verify(objectStorage).doList(any());
+        verify(objectStorage).doCopy(any(), eq("source"), eq("destination"));
     }
 }

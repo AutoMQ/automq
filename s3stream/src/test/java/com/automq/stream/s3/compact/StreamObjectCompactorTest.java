@@ -481,6 +481,25 @@ class StreamObjectCompactorTest {
     }
 
     /**
+     * Given legacy Composite objects larger than the finalized MAJOR_V1 target, when grouping runs, then each legacy
+     * object remains a valid singleton and is not selected for a rewrite merely to satisfy the smaller target.
+     */
+    @Test
+    public void testMajorV1DoesNotRewriteLegacyOversizedComposites() {
+        long legacySize = 10L * 1024 * 1024 * 1024;
+        List<S3ObjectMetadata> objects = List.of(
+            s3ObjectMetadata(1, 0, 1, legacySize, Composite),
+            s3ObjectMetadata(2, 1, 2, legacySize, Composite));
+
+        List<List<S3ObjectMetadata>> groups = group0(objects, 512L * 1024 * 1024, MAJOR_V1,
+            getObjectFilter(MAJOR_V1, 0));
+
+        assertEquals(List.of(List.of(objects.get(0)), List.of(objects.get(1))), groups);
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(groups.get(0), 0L, MAJOR_V1));
+        assertFalse(StreamObjectCompactor.checkObjectGroupCouldBeCompact(groups.get(1), 0L, MAJOR_V1));
+    }
+
+    /**
      * Given a small normal object continuously bridging two composite objects, when MAJOR_V1 filters candidates, then
      * the bridge remains eligible so filtering does not create an artificial offset gap between the composites.
      */

@@ -435,7 +435,8 @@ public class FeatureControlManagerTest {
                 + "Direct downgrade from AutoMQVersion V6 is not supported.");
 
         for (FeatureUpdate.UpgradeType downgradeType : List.of(
-            FeatureUpdate.UpgradeType.SAFE_DOWNGRADE, FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
+            FeatureUpdate.UpgradeType.UPGRADE, FeatureUpdate.UpgradeType.SAFE_DOWNGRADE,
+            FeatureUpdate.UpgradeType.UNSAFE_DOWNGRADE)) {
             ControllerResult<Map<String, ApiError>> result = manager.updateFeatures(
                 singletonMap(AutoMQVersion.FEATURE_NAME, AutoMQVersion.V5.featureLevel()),
                 singletonMap(AutoMQVersion.FEATURE_NAME, downgradeType), false);

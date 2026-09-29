@@ -1082,8 +1082,19 @@ class UnifiedLog(@volatile var logStartOffset: Long,
           // transaction is completed or aborted. We can guarantee the transaction coordinator knows about the transaction given step 1 and that the transaction is still
           // ongoing. If the transaction is expected to be ongoing, we will not set a VerificationGuard. If the transaction is aborted, hasOngoingTransaction is false and
           // requestVerificationGuard is the sentinel, so we will throw an error. A subsequent produce request (retry) should create verification state and return to phase 1.
-          if (batch.isTransactional && !hasOngoingTransaction(batch.producerId) && batchMissingRequiredVerification(batch, requestVerificationGuard))
-            throw new InvalidTxnStateException("Record was not part of an ongoing transaction")
+          if (batch.isTransactional && !hasOngoingTransaction(batch.producerId)) {
+            // Check epoch first: if producer epoch is stale, throw recoverable InvalidProducerEpochException.
+            val entry = producerStateManager.activeProducers.get(batch.producerId)
+            if (entry != null && batch.producerEpoch < entry.producerEpoch) {
+              val message = s"Epoch of producer ${batch.producerId} is ${batch.producerEpoch}, which is smaller than the last seen epoch ${entry.producerEpoch}"
+              throw new InvalidProducerEpochException(message)
+            }
+            
+            // Only check verification if epoch is current
+            if (batchMissingRequiredVerification(batch, requestVerificationGuard)) {
+              throw new InvalidTxnStateException("Record was not part of an ongoing transaction")
+            }
+          }
         }
 
         // We cache offset metadata for the start of each transaction. This allows us to
@@ -1433,8 +1444,17 @@ class UnifiedLog(@volatile var logStartOffset: Long,
     // Cache to avoid race conditions. `toBuffer` is faster than most alternatives and provides
     // constant time access while being safe to use with concurrent collections unlike `toArray`.
     val segmentsCopy = logSegments.asScala.toBuffer
-    val targetSeg = segmentsCopy.find(_.largestTimestamp >= targetTimestamp)
-    targetSeg.flatMap(_.findOffsetByTimestamp(targetTimestamp, startOffset).asScala)
+    // AutoMQ inject start
+    // Retention can advance logStartOffset before old segments are physically removed. Start with
+    // the segment whose base-offset range contains startOffset, avoiding a tail read per segment.
+    val firstSegmentIndex = math.max(segmentsCopy.lastIndexWhere(_.baseOffset <= startOffset), 0)
+    val targetOffset = segmentsCopy.iterator
+      .drop(firstSegmentIndex)
+      .filter(_.largestTimestamp >= targetTimestamp)
+      .flatMap(_.findOffsetByTimestamp(targetTimestamp, startOffset).asScala)
+      .nextOption()
+    // AutoMQ inject end
+    targetOffset
   }
 
   def legacyFetchOffsetsBefore(timestamp: Long, maxNumOffsets: Int): Seq[Long] = {

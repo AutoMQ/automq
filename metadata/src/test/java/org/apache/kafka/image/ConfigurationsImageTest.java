@@ -17,13 +17,16 @@
 
 package org.apache.kafka.image;
 
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.metadata.ConfigRecord;
+import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -35,6 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.apache.kafka.common.config.ConfigResource.Type.BROKER;
+import static org.apache.kafka.common.config.ConfigResource.Type.TOPIC;
 import static org.apache.kafka.common.metadata.MetadataRecordType.CONFIG_RECORD;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -116,6 +120,39 @@ public class ConfigurationsImageTest {
     @Test
     public void testImage2RoundTrip() {
         testToImage(IMAGE2);
+    }
+
+    /** Verifies that removing a topic clears pending configuration before same-name recreation. */
+    @Tag("S3Unit")
+    @Test
+    public void testRemoveTopicRecordClearsPendingTopicConfig() {
+        String topicName = "topic";
+        ConfigurationsDelta delta = new ConfigurationsDelta(ConfigurationsImage.EMPTY);
+        delta.replay(new ConfigRecord().setResourceType(TOPIC.id()).setResourceName(topicName).
+            setName("old.key").setValue("old-value"));
+        delta.replay(new RemoveTopicRecord().setTopicId(Uuid.ZERO_UUID), topicName);
+        delta.replay(new ConfigRecord().setResourceType(TOPIC.id()).setResourceName(topicName).
+            setName("new.key").setValue("new-value"));
+
+        assertEquals(Collections.singletonMap("new.key", "new-value"),
+            delta.apply().configMapForResource(new ConfigResource(TOPIC, topicName)));
+    }
+
+    /** Verifies that removing a topic still clears configuration already present in the image. */
+    @Tag("S3Unit")
+    @Test
+    public void testRemoveTopicRecordClearsBaseTopicConfig() {
+        String topicName = "topic";
+        ConfigResource resource = new ConfigResource(TOPIC, topicName);
+        ConfigurationsImage baseImage = new ConfigurationsImage(Collections.singletonMap(resource,
+            new ConfigurationImage(resource, Collections.singletonMap("old.key", "old-value"))));
+        ConfigurationsDelta delta = new ConfigurationsDelta(baseImage);
+        delta.replay(new RemoveTopicRecord().setTopicId(Uuid.ZERO_UUID), topicName);
+        delta.replay(new ConfigRecord().setResourceType(TOPIC.id()).setResourceName(topicName).
+            setName("new.key").setValue("new-value"));
+
+        assertEquals(Collections.singletonMap("new.key", "new-value"),
+            delta.apply().configMapForResource(resource));
     }
 
     private static void testToImage(ConfigurationsImage image) {

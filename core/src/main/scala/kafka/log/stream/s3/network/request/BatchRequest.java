@@ -34,4 +34,11 @@ public abstract class BatchRequest implements WrapRequest {
     public Object batchKey() {
         return apiKey();
     }
+
+    /**
+     * Returns the maximum number of subrequests emitted in one RPC.
+     */
+    public int maxBatchSize() {
+        return Integer.MAX_VALUE;
+    }
 }

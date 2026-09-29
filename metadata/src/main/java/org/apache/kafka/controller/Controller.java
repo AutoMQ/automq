@@ -78,6 +78,8 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
@@ -478,7 +480,7 @@ public interface Controller extends AclMutator, AutoCloseable {
      */
     void close() throws InterruptedException;
 
-    // AutoMQ for Kafka inject start
+    // AutoMQ inject start
 
     /**
      * Attempt to get the next available node id.
@@ -538,6 +540,14 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<TrimStreamsResponseData> trimStreams(
         ControllerRequestContext context,
         TrimStreamsRequestData request
+    );
+
+    /**
+     * Apply ordered, independently transactional typed Stream Archive operations.
+     */
+    CompletableFuture<UpdateStreamArchiveResponseData> updateStreamArchive(
+        ControllerRequestContext context,
+        UpdateStreamArchiveRequestData request
     );
 
     /**
@@ -653,5 +663,5 @@ public interface Controller extends AclMutator, AutoCloseable {
 
     default void onBrokerFenced(int brokerId) {
     }
-    // AutoMQ for Kafka inject end
+    // AutoMQ inject end
 }

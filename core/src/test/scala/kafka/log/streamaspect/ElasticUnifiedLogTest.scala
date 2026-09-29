@@ -117,6 +117,39 @@ class ElasticUnifiedLogTest extends UnifiedLogTest {
         // AutoMQ embedded tiered storage in S3Stream
     }
 
+    /**
+     * Given two sealed segments and a log start offset inside the first segment, verify timestamp lookups continue
+     * past a non-monotonic timestamp below the start offset and never return an expired offset.
+     */
+    @Test
+    def testFetchOffsetByTimestampAfterLogStartOffsetTrim(): Unit = {
+        val logConfig = LogTestUtils.createLogConfig(segmentBytes = 1024 * 1024, indexIntervalBytes = 1)
+        val log = createLog(logDir, logConfig)
+        val boundaryTimestamp = mockTime.milliseconds
+
+        log.appendAsLeader(TestUtils.records(List(
+            new SimpleRecord(boundaryTimestamp + 100, "expired-max".getBytes),
+            new SimpleRecord(boundaryTimestamp - 1, "retained-low-timestamp".getBytes))), leaderEpoch = 0)
+        log.roll()
+        log.appendAsLeader(TestUtils.records(List(
+            new SimpleRecord(boundaryTimestamp, "boundary".getBytes),
+            new SimpleRecord(boundaryTimestamp + 1, "after-boundary".getBytes))), leaderEpoch = 0)
+        log.roll()
+
+        assertEquals(4, log.logEndOffset)
+        assertEquals(3, log.numberOfSegments)
+        log.updateHighWatermark(log.logEndOffset)
+        log.maybeIncrementLogStartOffset(1L, LogStartOffsetIncrementReason.ClientRecordDeletion)
+
+        val atBoundary = log.fetchOffsetByTimestamp(boundaryTimestamp).get
+        val afterBoundary = log.fetchOffsetByTimestamp(boundaryTimestamp + 1).get
+        assertTrue(atBoundary.offset >= log.logStartOffset)
+        assertTrue(afterBoundary.offset >= log.logStartOffset)
+        assertTrue(afterBoundary.offset >= atBoundary.offset)
+        assertEquals(2L, atBoundary.offset)
+        assertEquals(3L, afterBoundary.offset)
+    }
+
     override def testAsyncDelete(): Unit = {
         // AutoMQ don't have local file
     }

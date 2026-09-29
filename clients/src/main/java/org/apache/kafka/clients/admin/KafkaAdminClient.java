@@ -5041,7 +5041,7 @@ public class KafkaAdminClient extends AdminClient {
         return new UpdateGroupResult(future.get(CoordinatorKey.byGroupId(groupId)));
     }
 
-    private <K, V> void invokeDriver(
+    protected <K, V> void invokeDriver(
         AdminApiHandler<K, V> handler,
         AdminApiFuture<K, V> future,
         Integer timeoutMs

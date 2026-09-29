@@ -156,6 +156,7 @@ import org.apache.kafka.common.errors.s3.ObjectNotCommittedException;
 import org.apache.kafka.common.errors.s3.ObjectNotExistException;
 import org.apache.kafka.common.errors.s3.OffsetNotMatchedException;
 import org.apache.kafka.common.errors.s3.RedundantOperationException;
+import org.apache.kafka.common.errors.s3.StreamArchiveStateConflictException;
 import org.apache.kafka.common.errors.s3.StreamExistException;
 import org.apache.kafka.common.errors.s3.StreamFencedException;
 import org.apache.kafka.common.errors.s3.StreamInnerErrorException;
@@ -439,6 +440,8 @@ public enum Errors {
     NODE_FENCED(514, "The node is fenced.", NodeFencedException::new),
     NODE_LOCKED(515, "The node is locked", NodeLockedException::new),
     OBJECT_NOT_COMMITED(516, "The object is not commited.", ObjectNotCommittedException::new),
+    STREAM_ARCHIVE_STATE_CONFLICT(517, "The Stream Archive state conflicts with Controller metadata.",
+            StreamArchiveStateConflictException::new),
     STREAM_INNER_ERROR(599, "The stream inner error.", StreamInnerErrorException::new),
     // AutoMQ inject end
 

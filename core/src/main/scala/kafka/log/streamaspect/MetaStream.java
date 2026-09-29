@@ -438,7 +438,7 @@ public class MetaStream implements Stream {
         metadataCache.forEach((key, value) -> {
             switch (key) {
                 case LOG_META_KEY:
-                    metaMap.put(key, ElasticLogMeta.decode(value.value()));
+                    metaMap.put(key, ElasticLogMetaCodec.decode(value.value()));
                     break;
                 case PARTITION_META_KEY:
                     metaMap.put(key, ElasticPartitionMeta.decode(value.value()));

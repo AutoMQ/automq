@@ -71,12 +71,15 @@ public final class ConfigurationsDelta {
     public void replay(RemoveTopicRecord record, String topicName) {
         ConfigResource resource =
             new ConfigResource(Type.TOPIC, topicName);
-        if (image.resourceData().containsKey(resource)) {
-            ConfigurationImage configImage = image.resourceData().get(resource);
+        // AutoMQ inject start
+        if (image.resourceData().containsKey(resource) || changes.containsKey(resource)) {
+            ConfigurationImage configImage = image.resourceData().getOrDefault(resource,
+                new ConfigurationImage(resource, new HashMap<>()));
             ConfigurationDelta delta = changes.computeIfAbsent(resource,
                 __ -> new ConfigurationDelta(configImage));
             delta.deleteAll();
         }
+        // AutoMQ inject end
     }
 
     public ConfigurationsImage apply() {

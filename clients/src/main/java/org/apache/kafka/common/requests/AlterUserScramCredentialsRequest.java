@@ -44,7 +44,7 @@ public class AlterUserScramCredentialsRequest extends AbstractRequest {
 
         @Override
         public String toString() {
-            return data.toString();
+            return maskData(data);
         }
     }
 
@@ -81,5 +81,20 @@ public class AlterUserScramCredentialsRequest extends AbstractRequest {
                                 .setErrorMessage(errorMessage))
                         .collect(Collectors.toList());
         return new AlterUserScramCredentialsResponse(new AlterUserScramCredentialsResponseData().setResults(results));
+    }
+
+    private static String maskData(AlterUserScramCredentialsRequestData data) {
+        AlterUserScramCredentialsRequestData tempData = data.duplicate();
+        tempData.upsertions().forEach(upsertion -> {
+            upsertion.setSalt(new byte[0]);
+            upsertion.setSaltedPassword(new byte[0]);
+        });
+        return tempData.toString();
+    }
+
+    // Do not print salt or saltedPassword
+    @Override
+    public String toString() {
+        return maskData(data);
     }
 }

@@ -42,6 +42,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
@@ -143,10 +144,35 @@ public class LocalFileObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public CompletableFuture<List<ObjectInfo>> list(String prefix) {
+    public CompletableFuture<Void> copy(String sourceBucket, String sourcePath, String destinationPath) {
+        if (!bucketURI.bucket().equals(sourceBucket)) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException("Local copy requires one bucket"));
+        }
+        CompletableFuture<Void> cf = new CompletableFuture<>();
+        ioExecutor.submit(() -> {
+            try {
+                Path destination = dataPath(destinationPath);
+                Files.createDirectories(destination.getParent());
+                Files.copy(dataPath(sourcePath), destination, StandardCopyOption.REPLACE_EXISTING);
+                cf.complete(null);
+            } catch (NoSuchFileException e) {
+                cf.completeExceptionally(new ObjectNotExistException());
+            } catch (Throwable e) {
+                cf.completeExceptionally(e);
+            }
+        });
+        return cf;
+    }
+
+    @Override
+    public CompletableFuture<List<ObjectInfo>> list(ListOptions options) {
         CompletableFuture<List<ObjectInfo>> cf = new CompletableFuture<>();
+        if (options.maxKeys() == 0) {
+            cf.complete(List.of());
+            return cf;
+        }
         try {
-            Path path = dataPath(prefix);
+            Path path = dataPath(options.prefix());
             String pathPrefix = path.toString();
             if (!Files.isDirectory(path)) {
                 path = path.getParent();
@@ -171,7 +197,13 @@ public class LocalFileObjectStorage implements ObjectStorage {
                     }
                 });
             }
-            cf.complete(list);
+            java.util.stream.Stream<ObjectInfo> stream = list.stream()
+                .filter(object -> options.startAfter() == null || object.key().compareTo(options.startAfter()) > 0)
+                .sorted(Comparator.comparing(ObjectPath::key));
+            if (options.maxKeys() != ListOptions.UNLIMITED) {
+                stream = stream.limit(options.maxKeys());
+            }
+            cf.complete(stream.toList());
         } catch (Throwable e) {
             cf.completeExceptionally(e);
         }
@@ -203,6 +235,14 @@ public class LocalFileObjectStorage implements ObjectStorage {
     @Override
     public short bucketId() {
         return bucketURI.bucketId();
+    }
+
+    @Override
+    public BucketURI bucketURI(short bucketId) {
+        if (bucketId != bucketURI.bucketId()) {
+            throw new IllegalArgumentException("Unknown bucket " + bucketId);
+        }
+        return bucketURI;
     }
 
     private Path atomicWritePath() {
