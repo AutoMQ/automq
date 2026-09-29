@@ -2919,6 +2919,22 @@ class KafkaApisTest extends Logging {
   }
 
   @Test
+  def shouldCompleteSkippedTransactionMarkersWithoutAppend(): Unit = {
+    val topicPartition = new TopicPartition("mirror", 0)
+    val (_, request) = createWriteTxnMarkersRequest(asList(topicPartition))
+    val capturedResponse = ArgumentCaptor.forClass(classOf[WriteTxnMarkersResponse])
+    when(replicaManager.getMagic(topicPartition)).thenReturn(Some(RecordBatch.MAGIC_VALUE_V2))
+    kafkaApis = spy(createKafkaApis())
+    doReturn(Some(Errors.NONE)).when(kafkaApis).transactionMarkerAppendResult(topicPartition)
+    clearInvocations(replicaManager)
+    kafkaApis.handleWriteTxnMarkersRequest(request, RequestLocal.withThreadConfinedCaching)
+    verify(requestChannel).sendResponse(ArgumentMatchers.eq(request), capturedResponse.capture(), ArgumentMatchers.eq(None))
+    assertEquals(Errors.NONE, capturedResponse.getValue.errorsByProducerId.get(1L).get(topicPartition))
+    verify(replicaManager).getMagic(topicPartition)
+    verifyNoMoreInteractions(replicaManager)
+  }
+
+  @Test
   def shouldRespondWithUnsupportedForMessageFormatOnHandleWriteTxnMarkersWhenMagicLowerThanRequired(): Unit = {
     val topicPartition = new TopicPartition("t", 0)
     val (_, request) = createWriteTxnMarkersRequest(asList(topicPartition))
