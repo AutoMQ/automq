@@ -80,6 +80,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     private final String logIdent;
 
+    // A segment is writable only while its stream slices are unsealed. Persisted slice metadata is the source of truth
+    // when a segment is loaded after restart; lifecycle transitions keep this value current in memory.
+    private boolean active;
     private boolean forceRoll;
 
     public ElasticLogSegment(
@@ -93,12 +96,19 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
     ) throws IOException {
         super(null, null, null, null, meta.baseOffset(), logConfig.indexInterval, logConfig.segmentJitterMs, time);
         this.meta = meta;
+        this.active = meta.log().end() == Offsets.NOOP_OFFSET;
         baseOffset = meta.baseOffset();
         String suffix = meta.streamSuffix();
 
         log = new ElasticLogFileRecords(sm.loadOrCreateSlice("log" + suffix, meta.log()), baseOffset, meta.logSize());
 
         TimestampOffset lastTimeIndexEntry = meta.timeIndexLastEntry().toTimestampOffset();
+        // For an inactive segment, metadata stores the retained records' logical maximum timestamp. This may not be
+        // the physical sparse-index tail after truncation, so restore it separately from the time-index slice. Empty
+        // active segments keep UNKNOWN because the default metadata value (0, 0) is not a valid timestamp state.
+        if (log.sizeInBytes() > 0) {
+            maxTimestampAndOffsetSoFar = lastTimeIndexEntry;
+        }
         timeIndex = new ElasticTimeIndex(
             LogFileUtils.timeIndexFile(dir, baseOffset, suffix),
             baseOffset,
@@ -343,7 +353,24 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     @Override
     public int truncateTo(long offset) throws IOException {
-        throw new UnsupportedOperationException();
+        int bytesTruncated = log.truncateTo(offset);
+        long retainedEndOffset = log.nextOffset();
+        timeIndex.truncateTo(retainedEndOffset);
+        txnIndex.truncateTo(retainedEndOffset);
+        bytesSinceLastIndexEntry = 0;
+        maxTimestampAndOffsetSoFar = readLargestTimestamp();
+        active = false;
+        return bytesTruncated;
+    }
+
+    private TimestampOffset readLargestTimestamp() {
+        TimestampOffset lastTimeIndexEntry = timeIndex.lastEntry();
+        FileRecords.TimestampAndOffset maxTimestampAfterLastEntry =
+            log.largestTimestampAfter(lastTimeIndexEntry.offset);
+        if (maxTimestampAfterLastEntry.timestamp > lastTimeIndexEntry.timestamp) {
+            return new TimestampOffset(maxTimestampAfterLastEntry.timestamp, maxTimestampAfterLastEntry.offset);
+        }
+        return lastTimeIndexEntry;
     }
 
     @Override
@@ -393,6 +420,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         meta.timeIndexLastEntry(timeIndex.lastEntry());
         txnIndex.seal();
         meta.txn(txnIndex.stream.sliceRange());
+        active = false;
     }
 
     @Override
@@ -429,9 +457,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
 
     @Override
     public void close() throws IOException {
-        meta(); // fill the metadata
-        if (maxTimestampAndOffsetSoFar != TimestampOffset.UNKNOWN)
+        if (active && maxTimestampAndOffsetSoFar != TimestampOffset.UNKNOWN)
             Utils.swallow(LOGGER, Level.WARN, "maybeAppend", () -> timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true));
+        meta(); // fill the metadata after the final active index entry
         Utils.closeQuietly(timeIndex, "timeIndex", LOGGER);
         Utils.closeQuietly(log, "log", LOGGER);
         Utils.closeQuietly(txnIndex, "txnIndex", LOGGER);
@@ -465,7 +493,9 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         meta.logSize(log.sizeInBytes());
         meta.time(timeIndex.stream.sliceRange());
         meta.txn(txnIndex.stream.sliceRange());
-        meta.timeIndexLastEntry(timeIndex.lastEntry());
+        // An inactive segment can be shortened without appending a terminal sparse-index entry. Persist its logical
+        // maximum timestamp so reopening the segment does not make timestamp lookup skip it in favor of a later one.
+        meta.timeIndexLastEntry(active ? timeIndex.lastEntry() : maxTimestampAndOffsetSoFar);
         meta.streamSuffix(meta.streamSuffix());
         return meta;
     }
@@ -508,7 +538,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
             producerStateManager.update(appendInfo);
             maybeCompletedTxn.ifPresent(completedTxn -> {
                 long lastStableOffset = producerStateManager.lastStableOffset(completedTxn);
-                if (txnIndexCheckpoint.isEmpty() || txnIndexCheckpoint.getAsLong() < completedTxn.lastOffset) {
+                if (active && (txnIndexCheckpoint.isEmpty() || txnIndexCheckpoint.getAsLong() < completedTxn.lastOffset)) {
                     updateTxnIndex(completedTxn, lastStableOffset);
                 }
                 producerStateManager.completeTxn(completedTxn);
@@ -521,7 +551,11 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         Optional<LeaderEpochFileCache> leaderEpochCache) throws IOException {
         int validBytes = 0;
         int lastIndexEntry = 0;
-        maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
+        // Inactive segments restore their logical maximum timestamp from metadata. Recovery may visit one of them
+        // for producer state without scanning any records, so do not erase that value before the metadata snapshot.
+        if (active) {
+            maxTimestampAndOffsetSoFar = TimestampOffset.UNKNOWN;
+        }
         // exclusive recover from the checkpoint cause the offset the offset of record in batch
         long timeIndexCheckpoint = timeIndex.loadLastEntry().offset;
         // exclusive recover from the checkpoint
@@ -539,8 +573,8 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
                     maxTimestampAndOffsetSoFar = new TimestampOffset(batch.maxTimestamp(), batch.lastOffset());
                 }
 
-                // Build offset index
-                if (validBytes - lastIndexEntry > indexIntervalBytes && batch.baseOffset() > timeIndexCheckpoint) {
+                // Sealed inactive segments are scanned for producer state only; their indexes are already complete.
+                if (active && validBytes - lastIndexEntry > indexIntervalBytes && batch.baseOffset() > timeIndexCheckpoint) {
                     timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar());
                     lastIndexEntry = validBytes;
                 }
@@ -562,7 +596,8 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         }
         // won't have record corrupted cause truncate
         // A normally closed segment always appends the biggest timestamp ever seen into log segment, we do this as well.
-        timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
+        if (active)
+            timeIndex.maybeAppend(maxTimestampSoFar(), shallowOffsetOfMaxTimestampSoFar(), true);
         return 0;
     }
 

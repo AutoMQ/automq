@@ -120,7 +120,18 @@ public class ElasticTransactionIndex extends TransactionIndex {
 
     @Override
     public void truncateTo(long offset) throws IOException {
-        throw new UnsupportedOperationException("truncateTo() is not supported");
+        List<AbortedTxn> entries = super.allAbortedTxns();
+        int retainedEntries = 0;
+        long retainedLastOffset = -1L;
+        for (AbortedTxn txn : entries) {
+            if (txn.lastOffset() >= offset) {
+                break;
+            }
+            retainedEntries++;
+            retainedLastOffset = txn.lastOffset();
+        }
+        stream.seal((long) retainedEntries * AbortedTxn.TOTAL_SIZE);
+        lastOffset = retainedEntries == 0 ? OptionalLong.empty() : OptionalLong.of(retainedLastOffset);
     }
 
     @Override
