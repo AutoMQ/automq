@@ -21,6 +21,8 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -68,6 +70,8 @@ import java.util.stream.Collectors;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
@@ -85,6 +89,19 @@ public class DefaultWriter implements Writer {
     private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
     private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
     private static final ScheduledExecutorService SCHEDULE = Threads.newSingleThreadScheduledExecutor("S3_WAL_SCHEDULE", true, LOGGER);
+
+    private static final AttributeKey<String> LABEL_TYPE = AttributeKey.stringKey("type");
+    private static final String DEFAULT_TYPE_LABEL = "main";
+    private static final Metrics.LongGaugeBundle WAL_OBJECT_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_wal_object_size", "Total size of the WAL objects retained in object storage", "bytes");
+    private static final Metrics.LongGaugeBundle WAL_BUFFERED_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_wal_buffered_size", "Size of the WAL records appended but not yet persisted to object storage", "bytes");
+    private static final Metrics.LongGaugeBundle WAL_BUFFERED_LIMIT = Metrics.instance()
+        .longGauge("kafka_stream_wal_buffered_limit", "Buffered size above which WAL appends are rejected", "bytes");
+    private static final Metrics.LongGaugeBundle WAL_INFLIGHT_UPLOAD_COUNT = Metrics.instance()
+        .longGauge("kafka_stream_wal_inflight_upload_count", "Number of WAL objects being uploaded to object storage", "");
+    private static final Metrics.ObservableLongCounterBundle WAL_OVER_CAPACITY_COUNT = Metrics.instance()
+        .observableLongCounter("kafka_stream_wal_over_capacity_count", "Number of WAL appends rejected because the buffered size exceeded the limit", "");
 
     protected final ObjectWALConfig config;
     protected final Time time;
@@ -119,6 +136,9 @@ public class DefaultWriter implements Writer {
     private final AtomicLong flushedOffset = new AtomicLong();
     private final AtomicLong trimOffset = new AtomicLong(-1);
     private CompletableFuture<Void> lastTrimCf = CompletableFuture.completedFuture(null);
+
+    private final AtomicLong overCapacityCount = new AtomicLong();
+    private final List<AutoCloseable> metricHandles = new ArrayList<>();
 
     public DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
         this.time = time;
@@ -175,6 +195,7 @@ public class DefaultWriter implements Writer {
         nextOffset.set(flushedOffset.get());
 
         startMonitor();
+        registerMetrics();
 
         state = State.STARTED;
     }
@@ -198,6 +219,7 @@ public class DefaultWriter implements Writer {
             }
         }
         FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
+        unregisterMetrics();
         state = State.CLOSED;
 
         LOGGER.info("S3WAL Writer is closed.");
@@ -248,6 +270,7 @@ public class DefaultWriter implements Writer {
         checkWriteStatus();
 
         if (bufferedDataBytes.get() > config.maxUnflushedBytes()) {
+            overCapacityCount.incrementAndGet();
             throw new OverCapacityException(String.format("Max unflushed bytes exceeded %s > %s.", bufferedDataBytes.get(), config.maxUnflushedBytes()));
         }
 
@@ -556,6 +579,58 @@ public class DefaultWriter implements Writer {
             // Try to delete the objects again to avoid an object leak after a fast retry failure.
             objectStorage.delete(objectPaths);
         }
+    }
+
+    /**
+     * Expose the WAL usage so operators can alert before appends are rejected. Only the READ_WRITE writer owned by
+     * this node registers metrics; a FAILOVER writer is short-lived and would report another node's WAL.
+     */
+    private void registerMetrics() {
+        if (config.openMode() != OpenMode.READ_WRITE) {
+            return;
+        }
+        Attributes attributes = Attributes.of(LABEL_TYPE, config.type().isEmpty() ? DEFAULT_TYPE_LABEL : config.type());
+        Metrics.LongGaugeBundle.LongGauge objectSize = WAL_OBJECT_SIZE.register(MetricsLevel.INFO, attributes);
+        objectSize.record(objectDataBytes::get);
+        metricHandles.add(objectSize);
+        Metrics.LongGaugeBundle.LongGauge bufferedSize = WAL_BUFFERED_SIZE.register(MetricsLevel.INFO, attributes);
+        bufferedSize.record(bufferedDataBytes::get);
+        metricHandles.add(bufferedSize);
+        Metrics.LongGaugeBundle.LongGauge bufferedLimit = WAL_BUFFERED_LIMIT.register(MetricsLevel.INFO, attributes);
+        bufferedLimit.record(config.maxUnflushedBytes());
+        metricHandles.add(bufferedLimit);
+        Metrics.LongGaugeBundle.LongGauge inflightUploadCount = WAL_INFLIGHT_UPLOAD_COUNT.register(MetricsLevel.DEBUG, attributes);
+        inflightUploadCount.record(() -> uploadingBulks.size());
+        metricHandles.add(inflightUploadCount);
+        metricHandles.add(WAL_OVER_CAPACITY_COUNT.register(MetricsLevel.INFO, attributes,
+            measurement -> measurement.record(overCapacityCount.get())));
+    }
+
+    private void unregisterMetrics() {
+        for (AutoCloseable handle : metricHandles) {
+            FutureUtil.suppress(handle::close, LOGGER);
+        }
+        metricHandles.clear();
+    }
+
+    @VisibleForTesting
+    long objectDataBytes() {
+        return objectDataBytes.get();
+    }
+
+    @VisibleForTesting
+    long bufferedDataBytes() {
+        return bufferedDataBytes.get();
+    }
+
+    @VisibleForTesting
+    long overCapacityCount() {
+        return overCapacityCount.get();
+    }
+
+    @VisibleForTesting
+    int registeredMetricCount() {
+        return metricHandles.size();
     }
 
     private void startMonitor() {
