@@ -184,12 +184,22 @@ import static com.automq.stream.utils.FutureUtil.exec;
         return lastAccessTimestamp;
     }
 
+    /**
+     * Close the reader and release all cached block state.
+     *
+     * <p>After close returns, the reader must not restore or start loading block-index
+     * state: in-flight metadata loads are dropped and later readahead is disabled,
+     * so {@code blocksMap} remains empty.
+     */
     public void close() {
         closed = true;
         List<Block> blocks = new ArrayList<>(blocksMap.values());
         // The Block#markRead will immediately invoke after the Block is removed.
         blocksMap.clear();
         blocks.forEach(Block::markReadCompleted);
+        // Bump the epoch so in-flight block-index loads observe the close and stop
+        // before restoring any block state (see loadMoreBlocksWithoutData0).
+        blocksEpoch++;
     }
 
     void read0(ReadContext ctx, final long startOffset, final long endOffset, final int maxBytes) {
@@ -421,6 +431,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     private CompletableFuture<Void> loadMoreBlocksWithoutData0(long endOffset) {
+        if (closed) {
+            return CompletableFuture.completedFuture(null);
+        }
         if (inflightLoadIndexCf != null) {
             return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData0(endOffset));
         }
@@ -446,13 +459,13 @@ import static com.automq.stream.utils.FutureUtil.exec;
                 // invoke basicObjectInfo to warm up the objectReader
                 objectReader.basicObjectInfo();
                 prevCf = prevCf.thenCompose(nil -> {
-                    if (currentBlocksEpoch != blocksEpoch) {
-                        // The blocks are reset, we need to stop the load
+                    if (closed || currentBlocksEpoch != blocksEpoch) {
+                        // The reader is closed or the blocks are reset, we need to stop the load
                         return CompletableFuture.completedFuture(null);
                     }
                     return objectReader.find(streamId, nextFindStartOffset.get(), -1L, Integer.MAX_VALUE).thenAcceptAsync(findRst -> {
-                        if (currentBlocksEpoch != blocksEpoch) {
-                            // The blocks are reset, we need to stop the load
+                        if (closed || currentBlocksEpoch != blocksEpoch) {
+                            // The reader is closed or the blocks are reset, we need to stop the load
                             return;
                         }
                         findRst.streamDataBlocks().forEach(streamDataBlock -> {
@@ -471,6 +484,11 @@ import static com.automq.stream.utils.FutureUtil.exec;
         }, eventLoop);
         findBlockIndexesCf.whenCompleteAsync((nil, ex) -> {
             inflightLoadIndexCf = null;
+            if (closed) {
+                // Drop in-flight results: a closed reader must not restore block state.
+                loadIndexCf.complete(null);
+                return;
+            }
             if (ex != null) {
                 loadIndexCf.completeExceptionally(ex);
                 return;
@@ -660,6 +678,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
         private int cacheMissCount;
 
         public void tryReadahead(boolean cacheMiss) {
+            if (closed) {
+                return;
+            }
             if (time.milliseconds() - resetTimestamp < READAHEAD_RESET_COLD_DOWN_MILLS) {
                 // skip readahead when readahead is in cold down
                 return;
