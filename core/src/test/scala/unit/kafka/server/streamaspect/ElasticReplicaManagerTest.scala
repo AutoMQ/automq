@@ -21,6 +21,8 @@ import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{DirectoryId, Node, TopicPartition, Uuid}
+import org.apache.kafka.common.metadata.{PartitionRecord, RemoveTopicRecord, TopicRecord}
+import org.apache.kafka.image.{MetadataImage, TopicsDelta, TopicsImage}
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
 import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.common.{DirectoryEventHandler, OffsetAndEpoch}
@@ -28,7 +30,7 @@ import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.util.timer.MockTimer
 import org.apache.kafka.server.util.{MockScheduler, Scheduler}
 import org.apache.kafka.storage.internals.log._
-import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
 import org.junit.jupiter.api.{BeforeEach, Disabled, Tag, Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
@@ -38,8 +40,8 @@ import org.mockito.Mockito.{mock, when}
 
 import java.io.File
 import java.nio.file.Files
-import java.util.Properties
-import java.util.concurrent.CountDownLatch
+import java.util.{Collections, Properties}
+import java.util.concurrent.{ConcurrentHashMap, CountDownLatch}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.{Map, Seq}
 import scala.compat.java8.OptionConverters.RichOptionForJava8
@@ -770,6 +772,68 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
   @ValueSource(booleans = Array(true, false))
   @Disabled
   override def testPartitionFetchStateUpdatesWithTopicIdChanges(startsWithTopicId: Boolean): Unit = {
+  }
+
+  @Test
+  def testAsyncApplyDeltaDoesNotCallbackForNonLocalPartitionsOfDeletedTopic(): Unit = {
+    val localId = 1
+    val otherId = 2
+    val thirdId = 3
+    val topicId = Uuid.randomUuid()
+
+    val localPartition = new TopicPartition("foo", 0)
+    val nonLocalPartition = new TopicPartition("foo", 1)
+
+    val createDelta = new TopicsDelta(TopicsImage.EMPTY)
+    createDelta.replay(new TopicRecord()
+      .setName("foo")
+      .setTopicId(topicId))
+
+    createDelta.replay(new PartitionRecord()
+      .setPartitionId(0)
+      .setTopicId(topicId)
+      .setReplicas(java.util.Arrays.asList[Integer](localId, otherId))
+      .setIsr(java.util.Arrays.asList[Integer](localId, otherId))
+      .setRemovingReplicas(Collections.emptyList())
+      .setAddingReplicas(Collections.emptyList())
+      .setLeader(localId)
+      .setLeaderEpoch(0)
+      .setPartitionEpoch(0))
+
+    createDelta.replay(new PartitionRecord()
+      .setPartitionId(1)
+      .setTopicId(topicId)
+      .setReplicas(java.util.Arrays.asList[Integer](otherId, thirdId))
+      .setIsr(java.util.Arrays.asList[Integer](otherId, thirdId))
+      .setRemovingReplicas(Collections.emptyList())
+      .setAddingReplicas(Collections.emptyList())
+      .setLeader(otherId)
+      .setLeaderEpoch(0)
+      .setPartitionEpoch(0))
+
+    val deleteDelta = new TopicsDelta(createDelta.apply())
+    deleteDelta.replay(new RemoveTopicRecord().setTopicId(topicId))
+
+    val replicaManager = setupReplicaManagerWithMockedPurgatories(
+      new MockTimer(time),
+      localId,
+      aliveBrokerIds = Seq(localId, otherId, thirdId),
+      shouldMockLog = true
+    )
+
+    val callbacks = ConcurrentHashMap.newKeySet[TopicPartition]()
+
+    try {
+      replicaManager
+        .asyncApplyDelta(deleteDelta, MetadataImage.EMPTY, tp => callbacks.add(tp))
+        .get()
+
+      assertTrue(callbacks.contains(localPartition))
+      assertFalse(callbacks.contains(nonLocalPartition))
+      assertEquals(1, callbacks.size())
+    } finally {
+      replicaManager.shutdown(checkpointHW = false)
+    }
   }
 
   @Test
