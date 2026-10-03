@@ -321,8 +321,9 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
         }
 
         @Override
+        @SuppressWarnings("deprecation") // must override the deprecated X509Certificate#getIssuerDN
         public Principal getIssuerDN() {
-            return this.origCertificate.getIssuerDN();
+            return this.origCertificate.getIssuerX500Principal();
         }
 
         @Override
@@ -371,8 +372,9 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
         }
 
         @Override
+        @SuppressWarnings("deprecation") // must override the deprecated X509Certificate#getSubjectDN
         public Principal getSubjectDN() {
-            return this.origCertificate.getSubjectDN();
+            return this.origCertificate.getSubjectX500Principal();
         }
 
         @Override
