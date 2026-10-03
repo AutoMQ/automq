@@ -186,6 +186,7 @@ import static com.automq.stream.utils.FutureUtil.exec;
 
     public void close() {
         closed = true;
+        blocksEpoch++;
         List<Block> blocks = new ArrayList<>(blocksMap.values());
         // The Block#markRead will immediately invoke after the Block is removed.
         blocksMap.clear();
@@ -421,6 +422,9 @@ import static com.automq.stream.utils.FutureUtil.exec;
     }
 
     private CompletableFuture<Void> loadMoreBlocksWithoutData0(long endOffset) {
+        if (closed) {
+            return CompletableFuture.completedFuture(null);
+        }
         if (inflightLoadIndexCf != null) {
             return inflightLoadIndexCf.thenCompose(rst -> loadMoreBlocksWithoutData0(endOffset));
         }
