@@ -1719,6 +1719,32 @@ class SocketServerTest {
   }
 
   /**
+   * AutoMQ test for Issue #2094:
+   * Tests that when a completed receive exists for a channel that has already been removed
+   * from the selector (e.g. client abrupt disconnect or timeout), processCompletedReceives
+   * handles it gracefully without throwing an IllegalStateException or killing the processor.
+   */
+  @Test
+  def testCompletedReceiveWithRemovedChannel(): Unit = {
+    withTestableServer(testWithServer = { testableServer =>
+      val (socket, _) = connectAndProcessRequest(testableServer)
+      val testableSelector = testableServer.testableSelector
+
+      // Inject a completed receive for an unknown/already-removed connection ID
+      val removedConnectionId = "127.0.0.1:9092-127.0.0.1:65535-999"
+      val dummyReceive = new NetworkReceive(removedConnectionId, ByteBuffer.allocate(100))
+      testableSelector.cachedCompletedReceives.deferredValues += dummyReceive
+      testableSelector.cachedCompletedReceives.minPerPoll = 1
+
+      // Trigger a poll cycle to process the completed receive
+      testableSelector.waitForOperations(SelectorOperation.Poll, 1)
+
+      // Processor remains healthy and no uncaught exceptions occurred
+      assertProcessorHealthy(testableServer, Seq(socket))
+    })
+  }
+
+  /**
    * Tests exception handling in [[Processor.processCompletedSends]]. Exception is
    * injected into [[Selector.unmute]] which is used to unmute the channel after send is complete.
    * Test creates two completed sends in a single iteration by caching completed sends until two
@@ -2324,8 +2350,7 @@ class SocketServerTest {
         val currentReceives = update(selector.completedReceives.asScala.toBuffer)
         completedReceivesMap.clear()
         currentReceives.foreach { receive =>
-          val channelOpt = Option(selector.channel(receive.source)).orElse(Option(selector.closingChannel(receive.source)))
-          channelOpt.foreach { channel => completedReceivesMap.put(channel.id, receive) }
+          completedReceivesMap.put(receive.source, receive)
         }
       }
     }
