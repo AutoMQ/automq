@@ -67,6 +67,9 @@ public class CommonNameLoggingTrustManagerFactoryWrapperTest {
     }
 
     @Test
+    // getIssuerDN()/getSubjectDN() are deprecated but are exercised here on purpose, to verify
+    // that the wrapper preserves the original certificate's (deprecated) behavior unchanged.
+    @SuppressWarnings("deprecation")
     void testNeverExpiringX509Certificate() throws Exception {
         final KeyPair keyPair = TestSslUtils.generateKeyPair("RSA");
         final String dn = "CN=Test, L=London, C=GB";
