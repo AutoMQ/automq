@@ -122,6 +122,37 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
     }
 
     /**
+     * Given a legacy cluster default value shadowed by a valid per-broker override, when the override is deleted,
+     * then the fallback to the cluster default still passes validation and applies its usable blocks.
+     */
+    @Test
+    public void testFallbackToLegacyClusterDefaultIsStillApplied() throws Exception {
+        Properties clusterDefault = new Properties();
+        clusterDefault.put(ZONE_CIDR_BLOCKS_CONFIG_KEY, MIXED_BLOCKS);
+        kafkaConfig.dynamicConfig().updateDefaultConfig(clusterDefault, false);
+        assertEquals("az-a", zeroZoneConfig.rack(client("10.0.1.5")));
+
+        Properties perBroker = new Properties();
+        perBroker.put(ZONE_CIDR_BLOCKS_CONFIG_KEY, "az-1@192.0.2.0/24");
+        assertDoesNotThrow(() -> kafkaConfig.dynamicConfig().validate(perBroker, true));
+        kafkaConfig.dynamicConfig().updateBrokerConfig(kafkaConfig.brokerId(), perBroker, false);
+        assertEquals("az-1", zeroZoneConfig.rack(client("192.0.2.5")));
+        assertNull(zeroZoneConfig.rack(client("10.0.1.5")));
+
+        // Deleting the override brings the legacy cluster default back as the effective value.
+        Properties deletion = new Properties();
+        assertDoesNotThrow(() -> kafkaConfig.dynamicConfig().validate(deletion, true));
+        kafkaConfig.dynamicConfig().updateBrokerConfig(kafkaConfig.brokerId(), deletion, false);
+
+        KafkaConfig currentConfig = kafkaConfig.dynamicConfig().currentKafkaConfig();
+        assertEquals(MIXED_BLOCKS, currentConfig.originals().get(ZONE_CIDR_BLOCKS_CONFIG_KEY));
+        assertEquals("az-a", zeroZoneConfig.rack(client("10.0.1.5")));
+        assertEquals("az-b", zeroZoneConfig.rack(client("2001:db8:1:a01::5")));
+        assertNull(zeroZoneConfig.rack(client("10.0.0.5")));
+        assertNull(zeroZoneConfig.rack(client("192.0.2.5")));
+    }
+
+    /**
      * Given a block that the previous IPv4-only parser rejected as well, when it is validated, then the update is
      * rejected and the active mapping is left untouched.
      */

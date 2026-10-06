@@ -47,7 +47,9 @@ import java.util.function.Consumer;
 public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultZeroZoneConfig.class);
     private static final String ZONE_CIDR_BLOCKS_CONFIG_KEY = "automq.zone.cidr.blocks";
-    private static final String ZONE_CIDR_BLOCKS_CONFIG_DOC = "The mapping of zone to IPv4 or IPv6 CIDR blocks. Format: zone1@cidr1,cidr2<>zone2@cidr3,cidr4";
+    private static final String ZONE_CIDR_BLOCKS_CONFIG_DOC = "The mapping of zone to IPv4 or IPv6 CIDR blocks. "
+        + "Format: zone1@cidr1,cidr2<>zone2@cidr3,cidr4. IPv6 blocks must only be configured once every broker runs "
+        + "a release that supports them, and must be removed before downgrading to an earlier release.";
     public static final String EXCLUDE_ZONES_CONFIG_KEY = "automq.zerozone.exclude.zones";
     public static final String EXCLUDE_ZONES_CONFIG_DOC = "The availability zones excluded from ZeroZone proxying. Format: zone1,zone2";
     private static final Set<String> RECONFIGURABLE_CONFIGS;
@@ -155,6 +157,45 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     }
 
     /**
+     * Validates the broker configs an AlterConfigs or IncrementalAlterConfigs request alters. Such a request is the
+     * only moment at which a value can still be refused, so the compatibility fallbacks of {@link CIDRMatcher} are
+     * not accepted here, unlike on the replay path where the value is already persisted.
+     *
+     * @param alteredConfigs  each explicitly altered key mapped to its new value, {@code null} for a deletion
+     * @param existingConfigs the configs persisted for the resource before the request
+     * @throws ConfigException if the request sets a zone CIDR blocks value that is not fully supported
+     */
+    public static void validateAlteredConfigs(Map<String, String> alteredConfigs, Map<String, String> existingConfigs) {
+        if (!alteredConfigs.containsKey(ZONE_CIDR_BLOCKS_CONFIG_KEY)) {
+            return;
+        }
+        String value = alteredConfigs.get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
+        // A deletion is always allowed, and so is a value that does not change: the legacy AlterConfigs API re-sends
+        // every key, and for broker resources a record is generated even for an unchanged value (KAFKA-14136).
+        if (value == null || value.equals(existingConfigs.get(ZONE_CIDR_BLOCKS_CONFIG_KEY))) {
+            return;
+        }
+        validateStrict(value);
+    }
+
+    /**
+     * Validates a zone CIDR blocks value that is being set.
+     *
+     * @throws ConfigException if the value is malformed, or if any of its blocks or zone segments only parses
+     *                         through a compatibility fallback, in which case every such part is reported
+     */
+    static void validateStrict(String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        List<String> rejections = new CIDRMatcher(value).rejections();
+        if (!rejections.isEmpty()) {
+            throw new ConfigException(ZONE_CIDR_BLOCKS_CONFIG_KEY, value, String.join("; ", rejections)
+                + "; earlier releases tolerated such forms in persisted values, but they cannot be set");
+        }
+    }
+
+    /**
      * Matches a client address against the configured zone CIDR blocks.
      *
      * <p>IPv4 and IPv6 blocks are both supported and are matched on the raw address bytes, so an IPv4 address
@@ -163,20 +204,23 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     public static class CIDRMatcher {
         private final Map<Integer, List<CIDRBlock>> maskLength2blocks = new HashMap<>();
         private final List<Integer> reverseMaskLengthList = new ArrayList<>();
-        private final List<String> warnings = new ArrayList<>();
+        private final List<Problem> problems = new ArrayList<>();
 
         /**
          * Parses an {@code automq.zone.cidr.blocks} value. A zone segment that does not split into exactly one
-         * zone and one block list is skipped without notice, as in previous releases.
+         * zone and one block list is skipped, as in previous releases, and reported as a {@link Problem}.
          *
          * @throws ConfigException if a block is malformed in a way that previous releases rejected as well.
          *                         Blocks that previous releases accepted but that do not mean what they look
-         *                         like are handled for compatibility and reported by {@link #warnings()}.
+         *                         like are handled for compatibility and reported as a {@link Problem}.
          */
         public CIDRMatcher(String config) {
             for (String cidrBlocksOfZone : config.split("<>")) {
                 String[] parts = cidrBlocksOfZone.split("@");
                 if (parts.length != 2) {
+                    if (!cidrBlocksOfZone.isBlank()) {
+                        problems.add(Problem.ignoredZoneSegment(cidrBlocksOfZone));
+                    }
                     continue;
                 }
                 String zone = parts[0];
@@ -203,11 +247,19 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
         }
 
         /**
-         * Returns the messages describing the blocks that needed a compatibility fallback. They are meant to be
+         * Returns the messages describing the parts that needed a compatibility fallback. They are meant to be
          * logged when a value is applied, not when it is validated.
          */
         public List<String> warnings() {
-            return Collections.unmodifiableList(warnings);
+            return problems.stream().map(problem -> problem.warning).toList();
+        }
+
+        /**
+         * Returns the messages describing the parts that needed a compatibility fallback, as fragments of the
+         * reason a request that tries to set the value is refused.
+         */
+        List<String> rejections() {
+            return problems.stream().map(problem -> problem.rejection).toList();
         }
 
         /**
@@ -259,17 +311,17 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
                 }
                 CIDRBlock block = newBlock(cidr, zone, parts[0], parts[1]);
                 if (extraComponents) {
-                    warnings.add("Zone CIDR block " + zone + "@" + cidr + " has extra '/' components, only "
-                        + parts[0] + "/" + parts[1] + " is used");
+                    problems.add(Problem.extraPrefixComponents(zone, cidr, parts[0] + "/" + parts[1]));
+                }
+                if (hasZeroPaddedOctet(parts[0])) {
+                    problems.add(Problem.zeroPaddedOctets(zone, cidr));
                 }
                 return block;
             } catch (IllegalArgumentException e) {
                 if (!legacy) {
                     throw new ConfigException(ZONE_CIDR_BLOCKS_CONFIG_KEY, cidr, e.getMessage());
                 }
-                warnings.add("Ignoring zone CIDR block " + zone + "@" + cidr + " (" + e.getMessage()
-                    + "): previous releases accepted it, so the rest of the value still applies, but this block"
-                    + " never matches a client");
+                problems.add(Problem.ignoredBlock(zone, cidr, e.getMessage()));
                 return null;
             }
         }
@@ -376,6 +428,78 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
                 address[i] = (byte) value;
             }
             return address;
+        }
+
+        /**
+         * Tells whether a dotted quad holds a zero-padded octet, which {@link #parseDottedQuad} reads as decimal
+         * but which other parsers read as octal or reject as ambiguous.
+         */
+        private static boolean hasZeroPaddedOctet(String ip) {
+            String[] octets = ip.split("\\.");
+            if (octets.length != 4) {
+                return false;
+            }
+            for (String octet : octets) {
+                if (octet.length() > 1 && octet.charAt(0) == '0') {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * A block or zone segment that only parsed because previous releases accepted it, holding the message to
+         * log when the value is applied and the fragment to report when a request tries to set the value.
+         */
+        private static final class Problem {
+            private final String warning;
+            private final String rejection;
+
+            private Problem(String warning, String rejection) {
+                this.warning = warning;
+                this.rejection = rejection;
+            }
+
+            /**
+             * A block previous releases built but that can never match a client, so it is dropped.
+             */
+            static Problem ignoredBlock(String zone, String cidr, String reason) {
+                return new Problem("Ignoring zone CIDR block " + zone + "@" + cidr + " (" + reason
+                    + "): previous releases accepted it, so the rest of the value still applies, but this block"
+                    + " never matches a client", unsupportedBlock(zone, cidr, reason));
+            }
+
+            /**
+             * A block holding components past the prefix length, which previous releases ignored.
+             */
+            static Problem extraPrefixComponents(String zone, String cidr, String used) {
+                String reason = "extra '/' components, only " + used + " is used";
+                return new Problem("Zone CIDR block " + zone + "@" + cidr + " has " + reason,
+                    unsupportedBlock(zone, cidr, reason));
+            }
+
+            /**
+             * A block holding octets that only the compatibility parser reads the way they look.
+             */
+            static Problem zeroPaddedOctets(String zone, String cidr) {
+                return new Problem("Zone CIDR block " + zone + "@" + cidr + " has zero-padded octets, which are"
+                    + " read as decimal", unsupportedBlock(zone, cidr,
+                    "zero-padded octets, which other parsers read as octal"));
+            }
+
+            /**
+             * A segment that does not split into exactly one zone and one block list.
+             */
+            static Problem ignoredZoneSegment(String segment) {
+                String reason = "expected the form <zone>@<block>,<block>";
+                return new Problem("Ignoring zone segment " + segment + " (" + reason + "): previous releases"
+                    + " skipped it as well, so the rest of the value still applies, but none of its blocks ever"
+                    + " matches a client", "Zone segment " + segment + " is not supported (" + reason + ")");
+            }
+
+            private static String unsupportedBlock(String zone, String cidr, String reason) {
+                return "Block " + zone + "@" + cidr + " is not a supported CIDR block (" + reason + ")";
+            }
         }
     }
 

@@ -38,6 +38,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -193,6 +194,8 @@ public class DefaultZeroZoneConfigTest {
         assertEquals("az-a", matcher.find("10.0.15.255").zone());
         assertNull(matcher.find("10.0.7.255"));
         assertNull(matcher.find("8.0.0.1"));
+        assertEquals(List.of("Zone CIDR block az-a@010.000.008.000/21 has zero-padded octets, which are read as decimal"),
+            matcher.warnings());
     }
 
     /**
@@ -203,6 +206,8 @@ public class DefaultZeroZoneConfigTest {
         CIDRMatcher matcher = new CIDRMatcher("az-a@0010.0.0.0/8");
         assertEquals("az-a", matcher.find("10.1.2.3").zone());
         assertNull(matcher.find("11.1.2.3"));
+        assertEquals(List.of("Zone CIDR block az-a@0010.0.0.0/8 has zero-padded octets, which are read as decimal"),
+            matcher.warnings());
     }
 
     /**
@@ -242,15 +247,38 @@ public class DefaultZeroZoneConfigTest {
     }
 
     /**
-     * Given a zone segment holding more than one separator, when it is parsed, then it is skipped without notice and
+     * Given a zone segment holding more than one separator, when it is parsed, then it is skipped and reported while
      * the other segments still apply, which is the behavior of previous releases.
      */
     @Test
-    public void testZoneSegmentWithSeveralSeparatorsIsSkipped() {
+    public void testZoneSegmentWithSeveralSeparatorsIsSkipped() throws Exception {
         CIDRMatcher matcher = new CIDRMatcher("az-a@10.0.0.0/24@extra<>az-b@10.0.1.0/24");
         assertNull(matcher.find("10.0.0.5"));
         assertEquals("az-b", matcher.find("10.0.1.5").zone());
-        assertEquals(List.of(), matcher.warnings());
+        assertEquals(1, matcher.warnings().size());
+        assertTrue(matcher.warnings().get(0).startsWith("Ignoring zone segment az-a@10.0.0.0/24@extra "));
+
+        DefaultZeroZoneConfig config = newConfig(Map.of());
+        Map<String, Object> effective = new HashMap<>();
+        effective.put("automq.zone.cidr.blocks", "az-a@10.0.0.0/24@extra<>az-b@10.0.1.0/24");
+        config.validateReconfiguration(effective);
+        config.reconfigure(effective);
+        assertEquals("az-b", config.rack(ClientIdMetadata.of("c", InetAddress.getByName("10.0.1.5"), null)));
+        assertNull(config.rack(ClientIdMetadata.of("c", InetAddress.getByName("10.0.0.5"), null)));
+    }
+
+    /**
+     * Given a zone segment without a separator, when it is parsed, then it is skipped and reported, while a value
+     * holding no segment at all is not reported.
+     */
+    @Test
+    public void testZoneSegmentWithoutSeparatorIsReported() {
+        CIDRMatcher matcher = new CIDRMatcher("10.0.0.0/24<>az-b@10.0.1.0/24");
+        assertEquals("az-b", matcher.find("10.0.1.5").zone());
+        assertEquals(1, matcher.warnings().size());
+        assertTrue(matcher.warnings().get(0).startsWith("Ignoring zone segment 10.0.0.0/24 "));
+        assertEquals(List.of(), new CIDRMatcher("").warnings());
+        assertEquals(List.of(), new CIDRMatcher("<>").warnings());
     }
 
     /**
@@ -335,6 +363,110 @@ public class DefaultZeroZoneConfigTest {
         assertThrows(ConfigException.class, () -> config.validateReconfiguration(effective));
         assertEquals("az-a", config.rack(ClientIdMetadata.of("c", InetAddress.getByName("10.0.0.1"), null)));
         assertEquals(Set.of(), config.excludeZones());
+    }
+
+    /**
+     * Given a value holding a block that only the previous IPv4-only parser accepted, when a new request sets it,
+     * then strict validation rejects it instead of silently skipping the block.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {
+        "az-a@10.0.0/24",
+        "az-a@1.2.3.4.5/8",
+        "az-a@300.0.0.0/8",
+        "az-a@10.0.0.0/33",
+        "az-a@10.0.0.0/65",
+        "az-a@10.0.0.0/-1",
+        "az-a@10.0.0.0/8/9",
+        "az-a@010.0.0.0/8",
+        "az-a@0010.0.0.0/8",
+        "az-a@10.0.0/24,10.0.1.0/24",
+        "az-a@10.0.0.0/24@extra",
+    })
+    public void testStrictValidationRejectsLegacyBlocks(String blocks) {
+        assertThrows(ConfigException.class, () -> DefaultZeroZoneConfig.validateStrict(blocks));
+    }
+
+    /**
+     * Given a value holding several parts that need a compatibility fallback, when a new request sets it, then the
+     * rejection reports every one of them.
+     */
+    @Test
+    public void testStrictValidationReportsEveryProblem() {
+        ConfigException exception = assertThrows(ConfigException.class,
+            () -> DefaultZeroZoneConfig.validateStrict("az-a@10.0.0/24,010.0.1.0/24"));
+        assertEquals("Invalid value az-a@10.0.0/24,010.0.1.0/24 for configuration automq.zone.cidr.blocks: "
+                + "Block az-a@10.0.0/24 is not a supported CIDR block (the address is not an IPv4 or IPv6 literal); "
+                + "Block az-a@010.0.1.0/24 is not a supported CIDR block (zero-padded octets, which other parsers "
+                + "read as octal); earlier releases tolerated such forms in persisted values, but they cannot be set",
+            exception.getMessage());
+    }
+
+    /**
+     * Given a malformed zone segment, when a new request sets the value, then the rejection names the segment.
+     */
+    @Test
+    public void testStrictValidationReportsMalformedZoneSegments() {
+        ConfigException exception = assertThrows(ConfigException.class,
+            () -> DefaultZeroZoneConfig.validateStrict("az-a@10.0.0.0/24@extra"));
+        assertEquals("Invalid value az-a@10.0.0.0/24@extra for configuration automq.zone.cidr.blocks: "
+                + "Zone segment az-a@10.0.0.0/24@extra is not supported (expected the form <zone>@<block>,<block>); "
+                + "earlier releases tolerated such forms in persisted values, but they cannot be set",
+            exception.getMessage());
+    }
+
+    /**
+     * Given a value the previous IPv4-only parser rejected as well, when a new request sets it, then strict
+     * validation rejects it too.
+     */
+    @Test
+    public void testStrictValidationRejectsMalformedBlocks() {
+        assertThrows(ConfigException.class, () -> DefaultZeroZoneConfig.validateStrict("az-a@10.0.0.0"));
+        assertThrows(ConfigException.class, () -> DefaultZeroZoneConfig.validateStrict("az-a@2001:db8::/129"));
+    }
+
+    /**
+     * Given a value holding only fully supported blocks, when a new request sets it, then strict validation accepts
+     * it, as it does for an unset or blank value.
+     */
+    @Test
+    public void testStrictValidationAcceptsSupportedBlocks() {
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateStrict(
+            "az-a@10.0.0.0/19,2001:db8:1:a00::/64<>az-b@192.0.2.0/24,2001:db8:1:a01::/64"));
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateStrict(null));
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateStrict(""));
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateStrict("  "));
+    }
+
+    /**
+     * Given a request that leaves the persisted zone CIDR blocks as they are, when its alterations are validated,
+     * then a value only earlier releases accepted does not make the request fail.
+     */
+    @Test
+    public void testAlteredConfigsAcceptUnchangedLegacyBlocks() {
+        Map<String, String> existing = Map.of("automq.zone.cidr.blocks", "az-a@10.0.0/24");
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateAlteredConfigs(
+            Map.of(DefaultZeroZoneConfig.EXCLUDE_ZONES_CONFIG_KEY, "az-c"), existing));
+        Map<String, String> deletion = new HashMap<>();
+        deletion.put("automq.zone.cidr.blocks", null);
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateAlteredConfigs(deletion, existing));
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateAlteredConfigs(
+            Map.of("automq.zone.cidr.blocks", "az-a@10.0.0/24"), existing));
+    }
+
+    /**
+     * Given a request that changes the zone CIDR blocks, when its alterations are validated, then a value only
+     * earlier releases accepted is rejected while a fully supported one is accepted.
+     */
+    @Test
+    public void testAlteredConfigsRejectChangedLegacyBlocks() {
+        Map<String, String> existing = Map.of("automq.zone.cidr.blocks", "az-a@10.0.0/24");
+        assertThrows(ConfigException.class, () -> DefaultZeroZoneConfig.validateAlteredConfigs(
+            Map.of("automq.zone.cidr.blocks", "az-a@10.0.0/24,192.0.2.0/24"), existing));
+        assertThrows(ConfigException.class, () -> DefaultZeroZoneConfig.validateAlteredConfigs(
+            Map.of("automq.zone.cidr.blocks", "az-a@10.0.0/24"), Map.of()));
+        assertDoesNotThrow(() -> DefaultZeroZoneConfig.validateAlteredConfigs(
+            Map.of("automq.zone.cidr.blocks", "az-a@192.0.2.0/24"), existing));
     }
 
     /**
