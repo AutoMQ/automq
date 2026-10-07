@@ -19,9 +19,11 @@ package org.apache.kafka.controller;
 
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.es.ElasticStreamSwitch;
+import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.metadata.LeaderRecoveryState;
 import org.apache.kafka.metadata.PartitionRegistration;
 import org.apache.kafka.metadata.Replicas;
+import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
 
 import org.junit.jupiter.api.AfterEach;
@@ -30,7 +32,11 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
+import java.util.List;
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 // TODO: add test for AutoMQ partition change
 @Timeout(60)
@@ -58,8 +64,18 @@ public class ElasticPartitionChangeBuilderTest {
         assertElectLeaderEquals(createRecoveringFOOBuilder().setElection(PartitionChangeBuilder.Election.PREFERRED).setTargetNode(100), 100, false);
         assertElectLeaderEquals(createRecoveringFOOBuilder().setTargetNode(101), 101, false);
         assertElectLeaderEquals(createRecoveringFOOBuilder().setElection(PartitionChangeBuilder.Election.UNCLEAN).setTargetNode(102), 102, false);
+    }
 
+    @Test
+    public void testBuildWithTargetNodeProducesSingleReplicaChangeRecord() {
+        Optional<ApiMessageAndVersion> change = createFooBuilder().setTargetNode(100).build();
 
+        assertTrue(change.isPresent());
+        PartitionChangeRecord record = (PartitionChangeRecord) change.get().message();
+        assertEquals(100, record.leader());
+        assertEquals(List.of(100), record.isr());
+        assertEquals(List.of(100), record.replicas());
+        assertEquals(LeaderRecoveryState.RECOVERED.value(), record.leaderRecoveryState());
     }
 
     private static final PartitionRegistration FOO = new PartitionRegistration.Builder()
