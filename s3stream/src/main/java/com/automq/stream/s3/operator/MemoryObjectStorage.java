@@ -52,14 +52,14 @@ public class MemoryObjectStorage extends AbstractObjectStorage {
     public MemoryObjectStorage(boolean manualMergeRead, short bucketId) {
         super(BucketURI.parse(bucketId + "@s3://b"),
             new RecordTestNetworkBandwidthLimiter(), new RecordTestNetworkBandwidthLimiter(),
-            50, 0, true, false, manualMergeRead, "memory");
+            50, 0, true, false, manualMergeRead, false, "memory");
         this.bucketId = bucketId;
     }
 
     public MemoryObjectStorage(int concurrencyCount) {
         super(BucketURI.parse(0 + "@s3://b"),
             new RecordTestNetworkBandwidthLimiter(), new RecordTestNetworkBandwidthLimiter(),
-            concurrencyCount, 0, true, false, false, "memory");
+            concurrencyCount, 0, true, false, false, false, "memory");
         this.bucketId = 0;
     }
 

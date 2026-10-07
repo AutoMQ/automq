@@ -156,6 +156,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (objectStorage == null) {
             this.objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
                 .readWriteIsolate(true)
+                .fastRetry(true)
                 .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
                 .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
                 .build();

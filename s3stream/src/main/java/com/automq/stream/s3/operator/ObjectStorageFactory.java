@@ -50,6 +50,7 @@ public class ObjectStorageFactory {
                     .outboundLimiter(builder.outboundLimiter)
                     .readWriteIsolate(builder.readWriteIsolate)
                     .checkS3ApiModel(builder.checkS3ApiModel)
+                    .fastRetry(builder.fastRetry)
                     .threadPrefix(builder.threadPrefix)
                     .build())
             .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucket.bucketId()))
@@ -96,6 +97,7 @@ public class ObjectStorageFactory {
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
+        private boolean fastRetry;
         private String threadPrefix = "";
         private final Map<String, Object> extensions = new HashMap<>();
 
@@ -163,6 +165,12 @@ public class ObjectStorageFactory {
 
         public boolean checkS3ApiModel() {
             return checkS3ApiModel;
+        }
+
+        // Enable fast retry for slow reads.
+        public Builder fastRetry(boolean fastRetry) {
+            this.fastRetry = fastRetry;
+            return this;
         }
 
         public Builder threadPrefix(String prefix) {
