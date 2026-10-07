@@ -42,6 +42,14 @@ import static com.automq.stream.s3.wal.impl.object.RecoverIterator.getContinuous
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Timeout(120)
 @Tag("S3Unit")
@@ -96,6 +104,32 @@ public class ObjectWALServiceTest {
             closeCount.incrementAndGet();
             super.close();
         }
+    }
+
+    /**
+     * Given a router-channel WAL, a single Get opts into fast read retry.
+     */
+    @Test
+    public void testRouterChannelGetEnablesFastReadRetry() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.rangeRead(any(), anyString(), anyLong(), anyLong())).thenReturn(new CompletableFuture<>());
+        new DefaultReader(storage, "cluster", 1, "rc", time).get(DefaultRecordOffset.of(1, 0, 4));
+
+        verify(storage, timeout(1000).times(1)).rangeRead(
+            argThat(ObjectStorage.ReadOptions::enableFastRetry), anyString(), anyLong(), anyLong());
+    }
+
+    /**
+     * Given another WAL type, a single Get leaves fast read retry disabled.
+     */
+    @Test
+    public void testOtherWalGetDoesNotEnableFastReadRetry() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.rangeRead(any(), anyString(), anyLong(), anyLong())).thenReturn(new CompletableFuture<>());
+        new DefaultReader(storage, "cluster", 1, "wal", time).get(DefaultRecordOffset.of(1, 0, 4));
+
+        verify(storage, timeout(1000).times(1)).rangeRead(
+            argThat(options -> !options.enableFastRetry()), anyString(), anyLong(), anyLong());
     }
 
     @Test

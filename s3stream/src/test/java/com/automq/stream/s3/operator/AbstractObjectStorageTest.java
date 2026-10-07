@@ -47,13 +47,16 @@ import io.netty.buffer.ByteBuf;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -110,6 +113,19 @@ class AbstractObjectStorageTest {
         assertEquals(0.125, mergedReadTask.dataSparsityRate, 0.01);
         assertEquals(0, mergedReadTask.start);
         assertEquals(4096, mergedReadTask.end);
+    }
+
+    /**
+     * Given different fast retry settings, adjacent reads remain separate so opt-in does not spread.
+     */
+    @Test
+    void testMergeReadKeepsFastRetryScope() {
+        AbstractObjectStorage.MergedReadTask merged = new AbstractObjectStorage.MergedReadTask(
+            new AbstractObjectStorage.ReadTask(new ReadOptions().enableFastRetry(true), "key", 0, 4,
+                new CompletableFuture<>()), 0);
+
+        assertFalse(merged.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions(), "key", 4, 8, new CompletableFuture<>())));
     }
 
     @Test
@@ -220,6 +236,103 @@ class AbstractObjectStorageTest {
         firstFuture.complete(null);
         await().atMost(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
+    }
+
+    /**
+     * Given a slow primary Get, the fast retry wins and the later primary buffer is released.
+     */
+    @Test
+    void testFastReadRetryWins() throws Exception {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> primary = new CompletableFuture<>();
+        ByteBuf fastData = TestUtils.randomPooled(4);
+        ByteBuf lateData = TestUtils.randomPooled(4);
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(invocation -> attempts.getAndIncrement() == 0
+            ? primary : CompletableFuture.completedFuture(fastData))
+            .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+
+        CompletableFuture<ByteBuf> read = objectStorage.mergedRangeRead(
+            new ReadOptions().enableFastRetry(true), "key", 0, 4);
+        assertSame(fastData, read.get(2, TimeUnit.SECONDS));
+        assertEquals(2, attempts.get());
+        primary.complete(lateData);
+        await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(0, lateData.refCnt()));
+        assertEquals(1, fastData.refCnt());
+        fastData.release();
+    }
+
+    /**
+     * Given a failed primary Get and an in-flight fast retry, a successful retry completes the read.
+     */
+    @Test
+    void testFastReadRetrySurvivesPrimaryFailure() throws Exception {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> primary = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> fastRetry = new CompletableFuture<>();
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(invocation -> attempts.getAndIncrement() == 0 ? primary : fastRetry)
+            .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+
+        ReadOptions options = new ReadOptions().enableFastRetry(true);
+        CompletableFuture<ByteBuf> read = objectStorage.mergedRangeRead(options, "key", 0, 4);
+        await().atMost(2, TimeUnit.SECONDS).until(() -> attempts.get() == 2);
+        primary.completeExceptionally(new TimeoutException());
+        assertFalse(read.isDone());
+        ByteBuf data = TestUtils.randomPooled(4);
+        fastRetry.complete(data);
+        assertSame(data, read.get(1, TimeUnit.SECONDS));
+        assertEquals(0, options.retryCount());
+        assertEquals(2, attempts.get());
+        data.release();
+    }
+
+    /**
+     * Given two failed concurrent Gets, the existing normal retry runs without another fast retry.
+     */
+    @Test
+    void testFastReadRetryFallsBackToNormalRetry() throws Exception {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> primary = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> fastRetry = new CompletableFuture<>();
+        ByteBuf retriedData = TestUtils.randomPooled(4);
+        AtomicInteger attempts = new AtomicInteger();
+        doAnswer(invocation -> {
+            int attempt = attempts.getAndIncrement();
+            return attempt == 0 ? primary : attempt == 1 ? fastRetry : CompletableFuture.completedFuture(retriedData);
+        }).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
+
+        ReadOptions options = new ReadOptions().enableFastRetry(true);
+        CompletableFuture<ByteBuf> read = objectStorage.mergedRangeRead(options, "key", 0, 4);
+        await().atMost(2, TimeUnit.SECONDS).until(() -> attempts.get() == 2);
+        primary.completeExceptionally(new TimeoutException());
+        fastRetry.completeExceptionally(new TimeoutException());
+        assertSame(retriedData, read.get(1, TimeUnit.SECONDS));
+        assertEquals(1, options.retryCount());
+        verify(objectStorage, after(200).times(3)).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        retriedData.release();
+    }
+
+    /**
+     * Given ordinary read options, a slow Get does not start a concurrent attempt.
+     */
+    @Test
+    void testFastReadRetryIsOptIn() throws Exception {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> primary = new CompletableFuture<>();
+        doReturn(primary).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+
+        CompletableFuture<ByteBuf> read = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 4);
+        verify(objectStorage, after(200).times(1)).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        ByteBuf data = TestUtils.randomPooled(4);
+        primary.complete(data);
+        assertSame(data, read.get(1, TimeUnit.SECONDS));
+        data.release();
     }
 
     @Test

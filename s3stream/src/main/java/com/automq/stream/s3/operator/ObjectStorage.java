@@ -424,6 +424,7 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private short bucket = UNSET_BUCKET;
+        private boolean enableFastRetry;
         private int retryCount;
 
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
@@ -436,12 +437,30 @@ public interface ObjectStorage {
             return this;
         }
 
+        /**
+         * Allow one bounded, concurrent retry when a range read exceeds the observed latency threshold.
+         *
+         * @param enableFastRetry whether to enable the retry for this read
+         * @return these options
+         */
+        public ReadOptions enableFastRetry(boolean enableFastRetry) {
+            this.enableFastRetry = enableFastRetry;
+            return this;
+        }
+
         public ThrottleStrategy throttleStrategy() {
             return throttleStrategy;
         }
 
         public short bucket() {
             return bucket;
+        }
+
+        /**
+         * Return whether this read permits a concurrent fast retry.
+         */
+        public boolean enableFastRetry() {
+            return enableFastRetry;
         }
 
         public int retryCountGetAndAdd() {

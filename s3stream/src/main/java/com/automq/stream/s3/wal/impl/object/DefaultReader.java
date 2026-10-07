@@ -52,6 +52,7 @@ import static com.automq.stream.s3.wal.impl.object.ObjectUtils.genObjectPathV1;
 public class DefaultReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultReader.class);
     private static final EventLoop[] EVENT_LOOPS = new EventLoop[4];
+    private static final String ROUTER_CHANNEL_WAL_TYPE = "rc";
 
     static {
         for (int i = 0; i < EVENT_LOOPS.length; i++) {
@@ -62,6 +63,7 @@ public class DefaultReader {
     private final ObjectStorage objectStorage;
     private final String nodePrefix;
     private final Time time;
+    private final boolean enableFastReadRetry;
 
     private final Queue<SingleReadTask> singleReadTasks = new ConcurrentLinkedQueue<>();
     private final Queue<BatchReadTask> batchReadTasks = new ConcurrentLinkedQueue<>();
@@ -79,6 +81,7 @@ public class DefaultReader {
         this.objectStorage = objectStorage;
         this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
         this.time = time;
+        this.enableFastReadRetry = ROUTER_CHANNEL_WAL_TYPE.equals(type);
         this.eventLoop = EVENT_LOOPS[Math.abs(nodeId % EVENT_LOOPS.length)];
     }
 
@@ -110,7 +113,8 @@ public class DefaultReader {
             String objectPath = genObjectPathV1(nodePrefix, readTask.epoch, objectStartObject);
             long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
             objectStorage.rangeRead(
-                new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
+                new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS)
+                    .enableFastRetry(enableFastReadRetry),
                 objectPath,
                 relativeStartOffset,
                 relativeStartOffset + readTask.size
