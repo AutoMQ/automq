@@ -194,7 +194,7 @@ class AbstractObjectStorageTest {
             .retry(false);
 
         // Mock S3 latency calculator via reflection to force fast retry condition
-        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3LatencyCalculator");
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3WriteLatencyCalculator");
         latencyCalculatorField.setAccessible(true);
         S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
         when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(100L); // Force low latency to trigger fast retry

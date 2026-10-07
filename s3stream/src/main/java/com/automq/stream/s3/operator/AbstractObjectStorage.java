@@ -100,7 +100,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final boolean fastRetry;
     protected final BucketURI bucketURI;
 
-    private final S3LatencyCalculator s3LatencyCalculator;
+    private final S3LatencyCalculator s3WriteLatencyCalculator;
     private final S3LatencyCalculator s3ReadLatencyCalculator;
     private final Semaphore fastRetryPermit = new Semaphore(MAX_INFLIGHT_FAST_RETRY_COUNT);
 
@@ -183,7 +183,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         this.deleteObjectsAccumulator = newDeleteObjectsAccumulator();
 
-        s3LatencyCalculator = new S3LatencyCalculator(LATENCY_SIZE_BUCKETS, Duration.ofSeconds(3).toMillis());
+        s3WriteLatencyCalculator = new S3LatencyCalculator(LATENCY_SIZE_BUCKETS, Duration.ofSeconds(3).toMillis());
         s3ReadLatencyCalculator = new S3LatencyCalculator(LATENCY_SIZE_BUCKETS, Duration.ofSeconds(3).toMillis());
 
         writeRateLimiter = new TrafficRateLimiter(scheduler);
@@ -323,7 +323,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private void recordWriteStats(String path, long objectSize, TimerUtil timerUtil) {
-        s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+        s3WriteLatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         ObjectStorageMetrics.recordUploadSize(objectSize);
         ObjectStorageMetrics.recordPutObject(objectSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         successWriteMonitor.record(objectSize);
@@ -358,7 +358,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         WriteOptions retryOptions = options.copy().retry(true);
 
         // Fast retry should only be triggered by the original request.
-        long delayMillis = s3LatencyCalculator.valueAtPercentile(objectSize, 99);
+        long delayMillis = s3WriteLatencyCalculator.valueAtPercentile(objectSize, 99);
 
         if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
             data.retain();
