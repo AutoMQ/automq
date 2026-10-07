@@ -886,6 +886,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         fastRetryPermit.release();
                         ObjectStorageMetrics.recordGetObject(size, ex == null, retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
                         if (ex == null) {
+                            ObjectStorageMetrics.recordDownloadSize(buf.readableBytes());
                             s3ReadLatencyCalculator.record(size, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS));
                             logger.info("Fast retry: get object {} [{}, {}), cost {}ms, delay {}ms", path, start, end, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
                             if (!cf.complete(buf)) {
