@@ -54,5 +54,10 @@ class S3LatencyCalculatorTest {
         assertEquals(10, calculator.valueAtPercentile(5, 75));
         assertEquals(10, calculator.valueAtPercentile(15, 75));
         assertEquals(10, calculator.valueAtPercentile(25, 75));
+
+        // Sizes equal to a bucket key use that bucket directly
+        assertEquals(10, calculator.valueAtPercentile(0, 75));
+        assertEquals(10, calculator.valueAtPercentile(10, 75));
+        assertEquals(10, calculator.valueAtPercentile(20, 75));
     }
 }

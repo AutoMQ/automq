@@ -78,7 +78,8 @@ public class S3LatencyCalculator {
     public long valueAtPercentile(long dataSizeInBytes, long percentile) {
         Map.Entry<Long, ConcurrentHistogram> floorEntry = histogramMap.floorEntry(dataSizeInBytes);
         Map.Entry<Long, ConcurrentHistogram> ceilingEntry = histogramMap.ceilingEntry(dataSizeInBytes);
-        if (ceilingEntry == null) {
+        // An exact bucket match has no range to interpolate over.
+        if (ceilingEntry == null || floorEntry.getKey().equals(ceilingEntry.getKey())) {
             return floorEntry.getValue().getValueAtPercentile(percentile);
         }
 
