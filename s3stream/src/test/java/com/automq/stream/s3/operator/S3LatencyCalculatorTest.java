@@ -19,11 +19,21 @@
 
 package com.automq.stream.s3.operator;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@Tag("S3Unit")
 class S3LatencyCalculatorTest {
+
+    /** Given an exact size bucket, its P99 must be returned without interpolation. */
+    @Test
+    void testExactBucketPercentile() {
+        S3LatencyCalculator calculator = new S3LatencyCalculator(new long[] {1024, 4096}, 3000);
+        calculator.record(1024, 100);
+        assertEquals(100, calculator.valueAtPercentile(1024, 99));
+    }
 
     @Test
     public void test() {

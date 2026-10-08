@@ -346,6 +346,15 @@ public interface ObjectStorage {
         public int retryCount() {
             return retryCount;
         }
+
+        /** Returns an independent copy of the read settings and current retry count. */
+        public ReadOptions copy() {
+            ReadOptions copy = new ReadOptions();
+            copy.throttleStrategy = throttleStrategy;
+            copy.bucket = bucket;
+            copy.retryCount = retryCount;
+            return copy;
+        }
     }
 
     class WriteResult {

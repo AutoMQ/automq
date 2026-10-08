@@ -285,6 +285,106 @@ class AbstractObjectStorageTest {
             }).get();
     }
 
+    private void prepareReadFastRetry() throws Exception {
+        objectStorage = spy(new MemoryObjectStorage());
+        Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
+        field.setAccessible(true);
+        S3LatencyCalculator calculator = mock(S3LatencyCalculator.class);
+        when(calculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(50L);
+        field.set(objectStorage, calculator);
+    }
+
+    /** Given a stalled original read, the fast retry wins and the late original buffer is released. */
+    @Test
+    void testReadFastRetryWins() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        ByteBuf retryBuffer = TestUtils.randomPooled(1024);
+        doReturn(original, CompletableFuture.completedFuture(retryBuffer))
+            .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        ByteBuf result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024)
+            .get(1, TimeUnit.SECONDS);
+        assertSame(retryBuffer, result);
+        result.release();
+        ByteBuf lateBuffer = TestUtils.randomPooled(1024);
+        original.complete(lateBuffer);
+        assertEquals(0, lateBuffer.refCnt());
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** Given both reads in flight, the original wins and the late retry buffer is released. */
+    @Test
+    void testReadOriginalWinsAfterFastRetryStarts() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        ByteBuf originalBuffer = TestUtils.randomPooled(1024);
+        original.complete(originalBuffer);
+        assertSame(originalBuffer, result.get(1, TimeUnit.SECONDS));
+        originalBuffer.release();
+        ByteBuf lateBuffer = TestUtils.randomPooled(1024);
+        retry.complete(lateBuffer);
+        assertEquals(0, lateBuffer.refCnt());
+    }
+
+    /** A failed speculative read leaves the original read pending and does not start normal retries. */
+    @Test
+    void testReadFastRetryFailureDoesNotFailRequest() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        retry.completeExceptionally(new TimeoutException());
+        assertFalse(result.isDone());
+        ByteBuf originalBuffer = TestUtils.randomPooled(1024);
+        original.complete(originalBuffer);
+        assertSame(originalBuffer, result.get(1, TimeUnit.SECONDS));
+        originalBuffer.release();
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** A normal retry scheduled before speculative success must not issue another network request. */
+    @Test
+    void testReadFastRetryStopsScheduledNormalRetry() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        doReturn(Pair.of(RetryStrategy.RETRY, new TimeoutException()))
+            .when(objectStorage).toRetryStrategyAndCause(any(), eq(S3Operation.GET_OBJECT));
+        doReturn(50).when(objectStorage).retryDelay(eq(S3Operation.GET_OBJECT), anyInt());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        original.completeExceptionally(new TimeoutException());
+        ByteBuf retryBuffer = TestUtils.randomPooled(1024);
+        retry.complete(retryBuffer);
+        assertSame(retryBuffer, result.get(1, TimeUnit.SECONDS));
+        retryBuffer.release();
+        objectStorage.scheduler.schedule(() -> { }, 100, TimeUnit.MILLISECONDS).get(1, TimeUnit.SECONDS);
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** An unknown read-to-end size must not schedule speculative reads. */
+    @Test
+    void testReadToEndSkipsFastRetry() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        doReturn(original).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, -1);
+        Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
+        field.setAccessible(true);
+        verify((S3LatencyCalculator) field.get(objectStorage), times(0)).valueAtPercentile(anyLong(), anyLong());
+        ByteBuf buf = TestUtils.randomPooled(1024);
+        original.complete(buf);
+        result.get(1, TimeUnit.SECONDS).release();
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("key"), eq(0L), eq(-1L));
+    }
+
     @Test
     void testFastRetry() throws Throwable {
         // Initialize memory storage and spy to track method calls
