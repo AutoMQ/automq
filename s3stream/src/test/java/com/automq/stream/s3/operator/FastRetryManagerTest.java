@@ -86,6 +86,25 @@ class FastRetryManagerTest {
         }
     }
 
+    /** A full bounded queue discards the new task without waiting or executing it. */
+    @Test
+    void testFullQueueDiscardsTask() {
+        try (FastRetryManager manager = new FastRetryManager("test-")) {
+            CompletableFuture<Void> activeRetry = new CompletableFuture<>();
+            FastRetryTask active = task(activeRetry);
+            manager.schedule(active, 1);
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(active).execute());
+            for (int i = 0; i < 4096; i++) {
+                manager.schedule(task(new CompletableFuture<>()), 1);
+            }
+            FastRetryTask overflow = task(new CompletableFuture<>());
+            manager.schedule(overflow, 1);
+            await().atMost(2, TimeUnit.SECONDS).untilAsserted(() -> verify(overflow).discard());
+            verify(overflow, never()).execute();
+            activeRetry.complete(null);
+        }
+    }
+
     /** Closing before the timer expires releases the write task's pre-retained buffer exactly once. */
     @Test
     void testCloseDiscardsPendingTimer() {

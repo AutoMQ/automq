@@ -25,8 +25,8 @@ import com.automq.stream.utils.threads.EventLoop;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,9 +39,10 @@ import io.netty.util.HashedWheelTimer;
  */
 final class FastRetryManager implements AutoCloseable {
     private static final int MAX_INFLIGHT_RETRY_COUNT = 1;
+    private static final int MAX_PENDING_RETRY_COUNT = 4096;
     private final HashedWheelTimer timer;
     private final EventLoop worker;
-    private final Queue<FastRetryTask> tasks = new ConcurrentLinkedQueue<>();
+    private final Queue<FastRetryTask> tasks = new ArrayBlockingQueue<>(MAX_PENDING_RETRY_COUNT);
     private final Set<FastRetryTask> pendingTimers = ConcurrentHashMap.newKeySet();
     private final AtomicBoolean workScheduled = new AtomicBoolean(false);
     private final Semaphore permit = new Semaphore(MAX_INFLIGHT_RETRY_COUNT);
@@ -66,8 +67,11 @@ final class FastRetryManager implements AutoCloseable {
                     task.discard();
                 } else {
                     task.markEnqueued();
-                    tasks.offer(task);
-                    submitWork();
+                    if (tasks.offer(task)) {
+                        submitWork();
+                    } else {
+                        task.discard();
+                    }
                 }
             }, delayMillis, TimeUnit.MILLISECONDS);
         } catch (RuntimeException e) {
