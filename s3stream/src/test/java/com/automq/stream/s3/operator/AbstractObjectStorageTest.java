@@ -38,6 +38,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -263,6 +264,44 @@ class AbstractObjectStorageTest {
         verify(objectStorage, after(300).times(3)).doRangeRead(any(), anyString(), anyLong(), anyLong());
         slowFuture.complete(TestUtils.randomPooled(4));
         cf.get(1, TimeUnit.SECONDS).release();
+    }
+
+    @Test
+    void testFastReadRetryKeepsSlowReadPermit() throws Throwable {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage(10));
+        S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
+        when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(20L);
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3ReadLatencyCalculator");
+        latencyCalculatorField.setAccessible(true);
+        latencyCalculatorField.set(objectStorage, mockCalculator);
+        Field fastRetryField = AbstractObjectStorage.class.getDeclaredField("fastRetry");
+        fastRetryField.setAccessible(true);
+        fastRetryField.set(objectStorage, true);
+        Field limiterField = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
+        limiterField.setAccessible(true);
+        Semaphore readLimiter = (Semaphore) limiterField.get(objectStorage);
+
+        // Original reads hang, fast retries complete immediately
+        List<CompletableFuture<ByteBuf>> originals = new ArrayList<>();
+        AtomicInteger callCount = new AtomicInteger();
+        doAnswer(inv -> {
+            if (callCount.getAndIncrement() % 2 == 0) {
+                CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+                originals.add(original);
+                return original;
+            }
+            return CompletableFuture.completedFuture(TestUtils.randomPooled(4));
+        }).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+
+        for (int i = 0; i < 3; i++) {
+            objectStorage.mergedRangeRead(new ReadOptions(), "key-" + i, 0, 4).get(1, TimeUnit.SECONDS).release();
+        }
+        // Each slow original still holds a read permit after its fast retry completed the read
+        await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> assertEquals(7, readLimiter.availablePermits()));
+
+        originals.forEach(original -> original.complete(TestUtils.randomPooled(4)));
+        assertEquals(10, readLimiter.availablePermits());
     }
 
     @Test

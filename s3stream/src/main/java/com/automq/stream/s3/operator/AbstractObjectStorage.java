@@ -879,23 +879,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         boolean readFastRetry = fastRetry && options.retryCount() == 0 && end != RANGE_READ_TO_END;
         long delayMillis = readFastRetry ? s3ReadLatencyCalculator.valueAtPercentile(size, 99) : 0;
         if (delayMillis > 0) {
-            fastRetryTimer.newTimeout(timeout -> {
-                if (!readCf.isDone() && fastRetryPermit.tryAcquire()) {
-                    TimerUtil retryTimerUtil = new TimerUtil();
-                    doRangeRead(options, path, start, end).whenComplete((buf, ex) -> {
-                        fastRetryPermit.release();
-                        ObjectStorageMetrics.recordGetObject(size, ex == null, retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                        if (ex == null) {
-                            ObjectStorageMetrics.recordDownloadSize(buf.readableBytes());
-                            s3ReadLatencyCalculator.record(size, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS));
-                            logger.info("Fast retry: get object {} [{}, {}), cost {}ms, delay {}ms", path, start, end, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
-                            if (!cf.complete(buf)) {
-                                buf.release();
-                            }
-                        }
-                    });
-                }
-            }, delayMillis, TimeUnit.MILLISECONDS);
+            fastRetryTimer.newTimeout(timeout -> fastRetryRead(options, path, start, end, readCf, cf, delayMillis),
+                delayMillis, TimeUnit.MILLISECONDS);
         }
 
         readCf.thenAccept(buf -> {
@@ -934,6 +919,33 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
             ObjectStorageMetrics.recordGetObject(size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
+        });
+    }
+
+    private void fastRetryRead(ReadOptions options, String path, long start, long end, CompletableFuture<ByteBuf> readCf,
+        CompletableFuture<ByteBuf> cf, long delayMillis) {
+        if (readCf.isDone() || !fastRetryPermit.tryAcquire()) {
+            return;
+        }
+        // Hold a read permit for the original GET, which may still run after the fast retry completes the read.
+        if (!inflightReadLimiter.tryAcquire()) {
+            fastRetryPermit.release();
+            return;
+        }
+        readCf.whenComplete((rst, ex) -> inflightReadLimiter.release());
+        long size = end - start;
+        TimerUtil retryTimerUtil = new TimerUtil();
+        doRangeRead(options, path, start, end).whenComplete((buf, ex) -> {
+            fastRetryPermit.release();
+            ObjectStorageMetrics.recordGetObject(size, ex == null, retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            if (ex == null) {
+                ObjectStorageMetrics.recordDownloadSize(buf.readableBytes());
+                s3ReadLatencyCalculator.record(size, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                logger.info("Fast retry: get object {} [{}, {}), cost {}ms, delay {}ms", path, start, end, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                if (!cf.complete(buf)) {
+                    buf.release();
+                }
+            }
         });
     }
 
