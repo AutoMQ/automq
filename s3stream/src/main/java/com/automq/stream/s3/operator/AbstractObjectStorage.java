@@ -821,8 +821,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (!checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
             long delayMillis = readLatencyCalculator.valueAtPercentile(end - start, 99);
             if (delayMillis > 0) {
-                ReadOptions retryOptions = new ReadOptions().bucket(options.bucket())
-                    .throttleStrategy(options.throttleStrategy());
+                ReadOptions retryOptions = options.copy();
                 readFastRetryManager.schedule(new FastRetryReadTask(readCf, cf,
                     () -> doFastRetryRead(retryOptions, path, start, end, cf),
                     (isUsefulRetry, apiCostMillis, limiterAwaitTimeMillis) -> logger.info(
