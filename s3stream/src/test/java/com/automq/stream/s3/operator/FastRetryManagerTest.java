@@ -25,8 +25,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,7 +37,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,29 +49,22 @@ class FastRetryManagerTest {
         return task;
     }
 
-    /** Given five active retries, the sixth remains queued and starts after a permit is released. */
+    /** Given one active retry, the second remains queued and starts after the permit is released. */
     @Test
     void testPermitExhaustionQueuesRetry() {
         try (FastRetryManager manager = new FastRetryManager("test-")) {
-            List<CompletableFuture<Void>> retries = new ArrayList<>();
-            List<FastRetryTask> tasks = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
-                CompletableFuture<Void> retry = new CompletableFuture<>();
-                retries.add(retry);
-                FastRetryTask task = task(retry);
-                tasks.add(task);
-                manager.schedule(task, 1);
-                await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(task).execute());
-            }
+            CompletableFuture<Void> retry = new CompletableFuture<>();
+            FastRetryTask active = task(retry);
+            manager.schedule(active, 1);
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(active).execute());
             FastRetryTask queued = task(CompletableFuture.completedFuture(null));
             manager.schedule(queued, 1);
-            // The timer checks the sixth task before enqueuing it.
+            // The timer checks the second task before enqueuing it.
             await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(queued).isDone());
             verify(queued, never()).execute();
-            retries.get(0).completeExceptionally(new RuntimeException("retry failed"));
+            retry.completeExceptionally(new RuntimeException("retry failed"));
             await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(queued).execute());
-            retries.forEach(retry -> retry.complete(null));
-            tasks.forEach(task -> verify(task, times(1)).execute());
+            verify(active).execute();
         }
     }
 
@@ -82,22 +72,17 @@ class FastRetryManagerTest {
     @Test
     void testQueuedCompletedRequestIsDiscarded() {
         try (FastRetryManager manager = new FastRetryManager("test-")) {
-            List<CompletableFuture<Void>> retries = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
-                CompletableFuture<Void> retry = new CompletableFuture<>();
-                retries.add(retry);
-                FastRetryTask task = task(retry);
-                manager.schedule(task, 1);
-                await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(task).execute());
-            }
+            CompletableFuture<Void> retry = new CompletableFuture<>();
+            FastRetryTask active = task(retry);
+            manager.schedule(active, 1);
+            await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(active).execute());
             FastRetryTask queued = task(CompletableFuture.completedFuture(null));
             manager.schedule(queued, 1);
             await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(queued).isDone());
             when(queued.isDone()).thenReturn(true);
-            retries.get(0).complete(null);
+            retry.complete(null);
             await().atMost(1, TimeUnit.SECONDS).untilAsserted(() -> verify(queued).discard());
             verify(queued, never()).execute();
-            retries.forEach(retry -> retry.complete(null));
         }
     }
 

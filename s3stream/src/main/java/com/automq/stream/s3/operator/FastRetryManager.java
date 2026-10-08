@@ -35,10 +35,10 @@ import io.netty.util.HashedWheelTimer;
 
 /**
  * Schedules speculative requests without coupling scheduling to read or write semantics.
- * Owns pending tasks until execution starts, and limits concurrent retries to five.
+ * Owns pending tasks until execution starts, and runs at most one retry at a time.
  */
 final class FastRetryManager implements AutoCloseable {
-    private static final int MAX_INFLIGHT_RETRY_COUNT = 5;
+    private static final int MAX_INFLIGHT_RETRY_COUNT = 1;
     private final HashedWheelTimer timer;
     private final EventLoop worker;
     private final Queue<FastRetryTask> tasks = new ConcurrentLinkedQueue<>();
