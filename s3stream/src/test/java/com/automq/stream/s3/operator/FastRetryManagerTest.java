@@ -120,6 +120,27 @@ class FastRetryManagerTest {
         data.release();
     }
 
+    /** A discarded write task releases its retained input once and never starts the operation. */
+    @Test
+    void testDiscardedWriteTaskCannotExecute() throws Exception {
+        ByteBuf data = TestUtils.randomPooled(1024);
+        AtomicBoolean operationStarted = new AtomicBoolean();
+        FastRetryWriteTask task = new FastRetryWriteTask(new CompletableFuture<>(), new CompletableFuture<>(),
+            () -> {
+                operationStarted.set(true);
+                return CompletableFuture.completedFuture(null);
+            }, data, (isUsefulRetry, apiCostMillis, limiterAwaitTimeMillis) -> { });
+        assertEquals(2, data.refCnt());
+
+        task.discard();
+        task.discard();
+        task.execute().get(1, TimeUnit.SECONDS);
+
+        assertEquals(false, operationStarted.get());
+        assertEquals(1, data.refCnt());
+        data.release();
+    }
+
     /** Only the first successful result is useful; the callback receives the task's timing measurements. */
     @Test
     void testReadResultCallbackAndDuplicateCleanup() throws Exception {

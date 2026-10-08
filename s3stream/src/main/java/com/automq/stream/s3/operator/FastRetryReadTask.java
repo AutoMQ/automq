@@ -21,6 +21,7 @@ package com.automq.stream.s3.operator;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
@@ -31,6 +32,7 @@ final class FastRetryReadTask implements FastRetryTask {
     private final CompletableFuture<ByteBuf> finalCf;
     private final Supplier<CompletableFuture<ByteBuf>> operation;
     private final FastRetryResultCallback resultCallback;
+    private final AtomicBoolean claimed = new AtomicBoolean();
     private volatile long enqueuedNanos;
 
     FastRetryReadTask(CompletableFuture<ByteBuf> attemptCf, CompletableFuture<ByteBuf> finalCf,
@@ -53,6 +55,9 @@ final class FastRetryReadTask implements FastRetryTask {
 
     @Override
     public CompletableFuture<Void> execute() {
+        if (!claimed.compareAndSet(false, true)) {
+            return CompletableFuture.completedFuture(null);
+        }
         long startNanos = System.nanoTime();
         long limiterAwaitTimeMillis = TimeUnit.NANOSECONDS.toMillis(startNanos - enqueuedNanos);
         CompletableFuture<ByteBuf> retryCf;
