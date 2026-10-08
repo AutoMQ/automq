@@ -127,8 +127,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
-        boolean readWriteIsolate, boolean checkMode, String threadPrefix) {
-        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, threadPrefix);
+        boolean readWriteIsolate, boolean checkMode, boolean fastRetry, String threadPrefix) {
+        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, fastRetry, threadPrefix);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
@@ -159,7 +159,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, String bucket, ChecksumAlgorithm checksumAlgorithm) {
-        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -792,6 +792,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
+        private boolean fastRetry;
         private String threadPrefix = "";
 
         public Builder bucket(BucketURI bucketURI) {
@@ -824,13 +825,18 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return this;
         }
 
+        public Builder fastRetry(boolean fastRetry) {
+            this.fastRetry = fastRetry;
+            return this;
+        }
+
         public Builder threadPrefix(String threadPrefix) {
             this.threadPrefix = threadPrefix;
             return this;
         }
 
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, fastRetry, threadPrefix);
         }
     }
 }

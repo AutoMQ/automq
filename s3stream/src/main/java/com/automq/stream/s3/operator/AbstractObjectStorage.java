@@ -70,6 +70,10 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final int MAX_INFLIGHT_FAST_RETRY_COUNT = 5;
+    private static final long[] LATENCY_SIZE_BUCKETS = {
+        1024, 16 * 1024, 64 * 1024, 256 * 1024, 512 * 1024,
+        1024 * 1024, 2 * 1024 * 1024, 3 * 1024 * 1024, 4 * 1024 * 1024, 5 * 1024 * 1024, 8 * 1024 * 1024,
+        12 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024};
 
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
@@ -93,9 +97,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     private final DeleteObjectsAccumulator deleteObjectsAccumulator;
     final boolean checkS3ApiMode;
+    private final boolean fastRetry;
     protected final BucketURI bucketURI;
 
-    private final S3LatencyCalculator s3LatencyCalculator;
+    private final S3LatencyCalculator s3WriteLatencyCalculator;
+    private final S3LatencyCalculator s3ReadLatencyCalculator;
     private final Semaphore fastRetryPermit = new Semaphore(MAX_INFLIGHT_FAST_RETRY_COUNT);
 
     /**
@@ -143,6 +149,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         boolean readWriteIsolate,
         boolean checkS3ApiMode,
         boolean manualMergeRead,
+        boolean fastRetry,
         String threadPrefix) {
         this.threadPrefix = threadPrefix;
         this.logger = new LogContext(String.format("[ObjectStorage-%s-%s] ", threadPrefix, currentIndex)).logger(AbstractObjectStorage.class);
@@ -154,6 +161,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter != null ? networkInboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.networkOutboundBandwidthLimiter = networkOutboundBandwidthLimiter != null ? networkOutboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
         this.checkS3ApiMode = checkS3ApiMode;
+        this.fastRetry = fastRetry;
 
         String prefix = threadPrefix + "-" + currentIndex + "-";
         writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
@@ -175,12 +183,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
         this.deleteObjectsAccumulator = newDeleteObjectsAccumulator();
 
-        s3LatencyCalculator = new S3LatencyCalculator(
-            new long[] {
-                1024, 16 * 1024, 64 * 1024, 256 * 1024, 512 * 1024,
-                1024 * 1024, 2 * 1024 * 1024, 3 * 1024 * 1024, 4 * 1024 * 1024, 5 * 1024 * 1024, 8 * 1024 * 1024,
-                12 * 1024 * 1024, 16 * 1024 * 1024, 32 * 1024 * 1024},
-            Duration.ofSeconds(3).toMillis());
+        s3WriteLatencyCalculator = new S3LatencyCalculator(LATENCY_SIZE_BUCKETS, Duration.ofSeconds(3).toMillis());
+        s3ReadLatencyCalculator = new S3LatencyCalculator(LATENCY_SIZE_BUCKETS, Duration.ofSeconds(3).toMillis());
 
         writeRateLimiter = new TrafficRateLimiter(scheduler);
         writeVolumeLimiter = new TrafficVolumeLimiter();
@@ -193,9 +197,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate,
         boolean checkS3ApiMode,
+        boolean fastRetry,
         String threadPrefix) {
         this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
-            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false, threadPrefix);
+            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false, fastRetry, threadPrefix);
     }
 
     @Override
@@ -318,7 +323,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private void recordWriteStats(String path, long objectSize, TimerUtil timerUtil) {
-        s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+        s3WriteLatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         ObjectStorageMetrics.recordUploadSize(objectSize);
         ObjectStorageMetrics.recordPutObject(objectSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         successWriteMonitor.record(objectSize);
@@ -353,7 +358,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         WriteOptions retryOptions = options.copy().retry(true);
 
         // Fast retry should only be triggered by the original request.
-        long delayMillis = s3LatencyCalculator.valueAtPercentile(objectSize, 99);
+        long delayMillis = s3WriteLatencyCalculator.valueAtPercentile(objectSize, 99);
 
         if (options.enableFastRetry() && delayMillis > 0 && !options.retry()) {
             data.retain();
@@ -868,16 +873,46 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         CompletableFuture<ByteBuf> cf) {
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
-        doRangeRead(options, path, start, end).thenAccept(buf -> {
+        CompletableFuture<ByteBuf> readCf = doRangeRead(options, path, start, end);
+
+        // Fast retry should only be triggered by the original request.
+        boolean readFastRetry = fastRetry && options.retryCount() == 0 && end != RANGE_READ_TO_END;
+        long delayMillis = readFastRetry ? s3ReadLatencyCalculator.valueAtPercentile(size, 99) : 0;
+        if (delayMillis > 0) {
+            fastRetryTimer.newTimeout(timeout -> {
+                if (!readCf.isDone() && fastRetryPermit.tryAcquire()) {
+                    TimerUtil retryTimerUtil = new TimerUtil();
+                    doRangeRead(options, path, start, end).whenComplete((buf, ex) -> {
+                        fastRetryPermit.release();
+                        ObjectStorageMetrics.recordGetObject(size, ex == null, retryTimerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                        if (ex == null) {
+                            ObjectStorageMetrics.recordDownloadSize(buf.readableBytes());
+                            s3ReadLatencyCalculator.record(size, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+                            logger.info("Fast retry: get object {} [{}, {}), cost {}ms, delay {}ms", path, start, end, retryTimerUtil.elapsedAs(TimeUnit.MILLISECONDS), delayMillis);
+                            if (!cf.complete(buf)) {
+                                buf.release();
+                            }
+                        }
+                    });
+                }
+            }, delayMillis, TimeUnit.MILLISECONDS);
+        }
+
+        readCf.thenAccept(buf -> {
             // the end may be RANGE_READ_TO_END (-1) for read all object
             long dataSize = buf.readableBytes();
             if (logger.isDebugEnabled()) {
                 logger.debug("GetObject for object {} [{}, {}), size: {}, cost: {} ms",
                     path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
             }
+            if (readFastRetry) {
+                s3ReadLatencyCalculator.record(size, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
+            }
             ObjectStorageMetrics.recordDownloadSize(dataSize);
             ObjectStorageMetrics.recordGetObject(dataSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-            cf.complete(buf);
+            if (!cf.complete(buf)) {
+                buf.release();
+            }
         }).exceptionally(ex -> {
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.GET_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
@@ -890,7 +925,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             } else {
                 int delay = retryDelay(S3Operation.GET_OBJECT, options.retryCountGetAndAdd());
                 logger.warn("GetObject for object {} [{}, {}) fail, retry in {}ms", path, start, end, delay, cause);
-                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), delay, TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> {
+                    // Skip the retry if a fast retry has completed the read.
+                    if (!cf.isDone()) {
+                        mergedRangeRead0(options, path, start, end, cf);
+                    }
+                }, delay, TimeUnit.MILLISECONDS);
             }
             ObjectStorageMetrics.recordGetObject(size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;

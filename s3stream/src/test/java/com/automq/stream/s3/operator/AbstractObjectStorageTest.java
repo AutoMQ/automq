@@ -47,13 +47,16 @@ import io.netty.buffer.ByteBuf;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -191,7 +194,7 @@ class AbstractObjectStorageTest {
             .retry(false);
 
         // Mock S3 latency calculator via reflection to force fast retry condition
-        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3LatencyCalculator");
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3WriteLatencyCalculator");
         latencyCalculatorField.setAccessible(true);
         S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
         when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(100L); // Force low latency to trigger fast retry
@@ -220,6 +223,46 @@ class AbstractObjectStorageTest {
         firstFuture.complete(null);
         await().atMost(1, TimeUnit.SECONDS)
             .untilAsserted(() -> assertEquals(0, data.refCnt())); // Ensure buffer released
+    }
+
+    @Test
+    void testFastReadRetry() throws Throwable {
+        objectStorage.close();
+        objectStorage = spy(new MemoryObjectStorage());
+        S3LatencyCalculator mockCalculator = mock(S3LatencyCalculator.class);
+        when(mockCalculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(100L);
+        Field latencyCalculatorField = AbstractObjectStorage.class.getDeclaredField("s3ReadLatencyCalculator");
+        latencyCalculatorField.setAccessible(true);
+        latencyCalculatorField.set(objectStorage, mockCalculator);
+        Field fastRetryField = AbstractObjectStorage.class.getDeclaredField("fastRetry");
+        fastRetryField.setAccessible(true);
+        fastRetryField.set(objectStorage, true);
+
+        // First read hangs, fast retry completes immediately
+        CompletableFuture<ByteBuf> firstFuture = new CompletableFuture<>();
+        ByteBuf retryData = TestUtils.randomPooled(4);
+        AtomicInteger callCount = new AtomicInteger();
+        doAnswer(inv -> callCount.getAndIncrement() == 0 ? firstFuture : CompletableFuture.completedFuture(retryData))
+            .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+
+        ByteBuf rst = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 4).get(1, TimeUnit.SECONDS);
+        assertSame(retryData, rst);
+        assertEquals(2, callCount.get());
+
+        // The late original read is released
+        ByteBuf lateData = TestUtils.randomPooled(4);
+        firstFuture.complete(lateData);
+        assertEquals(0, lateData.refCnt());
+        rst.release();
+
+        // Fast retry is opt-in
+        fastRetryField.set(objectStorage, false);
+        CompletableFuture<ByteBuf> slowFuture = new CompletableFuture<>();
+        doReturn(slowFuture).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> cf = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 4);
+        verify(objectStorage, after(300).times(3)).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        slowFuture.complete(TestUtils.randomPooled(4));
+        cf.get(1, TimeUnit.SECONDS).release();
     }
 
     @Test
