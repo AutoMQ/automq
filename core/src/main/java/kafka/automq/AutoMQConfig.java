@@ -220,8 +220,9 @@ public class AutoMQConfig {
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX = "automq.table.topic.schema.registry.config.";
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
-    public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
-        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw]'."
+        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching.";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
         + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
