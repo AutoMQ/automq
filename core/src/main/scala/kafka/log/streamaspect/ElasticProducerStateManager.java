@@ -42,12 +42,39 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 
 public class ElasticProducerStateManager extends ProducerStateManager {
     public static final long AWAIT_SEQ_ZERO_TIMEOUT = 120000L;
+    private static final long PROMOTE_BOOTSTRAP_TIMEOUT_MS = 60000L;
+    private volatile long promoteBootstrapDeadline = Long.MIN_VALUE;
+    private final Map<Long, Short> routedProducers = new ConcurrentHashMap<>();
+
+    public void registerRoutedProducer(long producerId, short producerEpoch) {
+        routedProducers.merge(producerId, producerEpoch, (previous, incoming) -> (short) Math.max(previous, incoming));
+    }
+
+    public boolean shouldSkipPromoteMarker(long producerId, short producerEpoch) {
+        Short routedEpoch = routedProducers.get(producerId);
+        return isPromoteBootstrapEnabled() && routedEpoch != null && routedEpoch == producerEpoch
+            && lastEntry(producerId).map(entry -> entry.isEmpty()
+                && entry.producerEpoch() == org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_EPOCH).orElse(true);
+    }
     private final PersistSnapshots persistSnapshots;
     private final long createTimestamp;
+
+    public void enablePromoteBootstrap() {
+        promoteBootstrapDeadline = time.milliseconds() + PROMOTE_BOOTSTRAP_TIMEOUT_MS;
+    }
+
+    public void disablePromoteBootstrap() {
+        promoteBootstrapDeadline = Long.MIN_VALUE;
+    }
+
+    public boolean isPromoteBootstrapEnabled() {
+        return time.milliseconds() < promoteBootstrapDeadline;
+    }
 
     public ElasticProducerStateManager(
         TopicPartition topicPartition,
@@ -243,7 +270,11 @@ public class ElasticProducerStateManager extends ProducerStateManager {
 
         @Override
         protected void checkSequence(short producerEpoch, int appendFirstSeq, long offset) {
-            if (currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0
+            boolean promoteBootstrap = currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0
+                && updatedEntry.producerEpoch() == org.apache.kafka.common.record.RecordBatch.NO_PRODUCER_EPOCH
+                && java.util.Objects.equals(routedProducers.get(producerId()), producerEpoch)
+                && isPromoteBootstrapEnabled();
+            if (!promoteBootstrap && currentEntry.isEmpty() && updatedEntry.isEmpty() && appendFirstSeq != 0
                 // await sequence 0 message append timeout and retry
                 && time.milliseconds() - createTimestamp < AWAIT_SEQ_ZERO_TIMEOUT
             ) {

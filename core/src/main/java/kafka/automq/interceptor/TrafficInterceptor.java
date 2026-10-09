@@ -43,6 +43,10 @@ public interface TrafficInterceptor {
         return Optional.empty();
     }
 
+    default Optional<Errors> transactionMarkerAppendResult(TopicPartition partition, long producerId, short producerEpoch) {
+        return transactionMarkerAppendResult(partition);
+    }
+
     CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
 
     List<MetadataResponseData.MetadataResponseTopic> handleMetadataResponse(ClientIdMetadata clientId,

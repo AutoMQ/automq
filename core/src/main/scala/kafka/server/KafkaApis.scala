@@ -2514,6 +2514,9 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   protected[server] def transactionMarkerAppendResult(partition: TopicPartition): Option[Errors] = None
 
+  protected[server] def transactionMarkerAppendResult(partition: TopicPartition, producerId: Long, producerEpoch: Short): Option[Errors] =
+    transactionMarkerAppendResult(partition)
+
   def handleWriteTxnMarkersRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     ensureInterBrokerVersion(IBP_0_11_0_IV0)
     // We are checking for AlterCluster permissions first. If it is not present, we are authorizing cluster operation
@@ -2629,7 +2632,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         val controlRecords = mutable.Map.empty[TopicPartition, MemoryRecords]
         partitionsWithCompatibleMessageFormat.foreach { partition =>
           val overrideResult = try {
-            transactionMarkerAppendResult(partition)
+            transactionMarkerAppendResult(partition, marker.producerId, marker.producerEpoch)
           } catch {
             case exception: ApiException => Some(Errors.forException(exception))
           }

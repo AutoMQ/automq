@@ -262,6 +262,10 @@ class ElasticKafkaApis(
     OptionConverters.toScala(trafficInterceptor.transactionMarkerAppendResult(partition))
   }
 
+  override protected[server] def transactionMarkerAppendResult(partition: TopicPartition, producerId: Long, producerEpoch: Short): Option[Errors] = {
+    OptionConverters.toScala(trafficInterceptor.transactionMarkerAppendResult(partition, producerId, producerEpoch))
+  }
+
   /**
    * Handle a produce request
    */
