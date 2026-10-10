@@ -180,9 +180,8 @@ public class WALObjectHeader {
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof WALObjectHeader))
+        if (!(o instanceof WALObjectHeader header))
             return false;
-        WALObjectHeader header = (WALObjectHeader) o;
         return magicCode0 == header.magicCode0 && startOffset1 == header.startOffset1 && length2 == header.length2 && stickyRecordLength3 == header.stickyRecordLength3 && nodeId4 == header.nodeId4 && epoch5 == header.epoch5 && trimOffset6 == header.trimOffset6;
     }
 

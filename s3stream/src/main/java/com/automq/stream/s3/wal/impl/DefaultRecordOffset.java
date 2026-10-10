@@ -52,8 +52,8 @@ public class DefaultRecordOffset implements RecordOffset {
     }
 
     public static DefaultRecordOffset of(RecordOffset recordOffset) {
-        if (recordOffset instanceof DefaultRecordOffset) {
-            return (DefaultRecordOffset) recordOffset;
+        if (recordOffset instanceof DefaultRecordOffset defaultRecordOffset) {
+            return defaultRecordOffset;
         }
         return of(recordOffset.buffer());
     }

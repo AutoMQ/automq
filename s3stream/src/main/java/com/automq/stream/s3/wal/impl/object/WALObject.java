@@ -89,9 +89,8 @@ public class WALObject implements Comparable<WALObject> {
 
     @Override
     public boolean equals(Object o) {
-        if (!(o instanceof WALObject))
+        if (!(o instanceof WALObject object))
             return false;
-        WALObject object = (WALObject) o;
         return bucketId == object.bucketId && startOffset == object.startOffset && endOffset == object.endOffset && length == object.length && Objects.equals(path, object.path);
     }
 
