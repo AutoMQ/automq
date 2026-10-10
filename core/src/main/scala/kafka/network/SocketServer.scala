@@ -1100,12 +1100,14 @@ private[kafka] class Processor(
               channelContext.markThrottle()
               selector.mute(channelId)
             }
+          // AutoMQ inject start
           case _: EndThrottlingResponse =>
             val channelContext = channelContexts.get(channelId)
             val unmute = channelContext == null || channelContext.clearThrottle()
             if (unmute) {
-              selector.unmute(channelId)
+              openOrClosingChannel(channelId).foreach(channel => selector.unmute(channel.id))
             }
+          // AutoMQ inject end
           case _ =>
             throw new IllegalArgumentException(s"Unknown response type: ${currentResponse.getClass}")
         }
