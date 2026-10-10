@@ -117,7 +117,7 @@ public class RecordProcessorFactoryTest {
     @Test
     void testRawConverterWithoutTransforms() {
         // Arrange
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
@@ -153,6 +153,29 @@ public class RecordProcessorFactoryTest {
         assertEquals(TEST_TIMESTAMP, metadataRecord.get("timestamp"));
     }
 
+    /**
+     * Given Kafka metadata columns are disabled, the normal factory path preserves the value and excludes synthetic fields.
+     */
+    @Test
+    void testKafkaMetadataColumnsDisabled() {
+        WorkerConfig mockConfig = mockWorkerConfig();
+        when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.RAW);
+        when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
+        when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
+        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
+
+        RecordProcessor processor = recordProcessorFactory.create(mockConfig, TEST_TOPIC);
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord(TEST_TOPIC, "value".getBytes(StandardCharsets.UTF_8), "key".getBytes(StandardCharsets.UTF_8)));
+
+        assertTrue(result.isSuccess());
+        GenericRecord finalRecord = result.getFinalRecord();
+        assertTrue(finalRecord.hasField("_kafka_value"));
+        assertFalse(finalRecord.hasField("_kafka_header"));
+        assertFalse(finalRecord.hasField("_kafka_key"));
+        assertFalse(finalRecord.hasField("_kafka_metadata"));
+    }
+
     // --- Test Group 2: BY_SCHEMA_ID Converter ---
 
     @Test
@@ -162,7 +185,7 @@ public class RecordProcessorFactoryTest {
         Schema schema = Schema.create(Schema.Type.STRING);
         int schemaId = registerSchema(subject, schema);
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
@@ -202,7 +225,7 @@ public class RecordProcessorFactoryTest {
         String subject = TEST_TOPIC + "-value";
         int schemaId = registerSchema(subject, USER_SCHEMA);
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.FLATTEN);
@@ -250,7 +273,7 @@ public class RecordProcessorFactoryTest {
         String subject = TEST_TOPIC + "-value";
         int schemaId = registerSchema(subject, DEBEZIUM_ENVELOPE_SCHEMA);
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.FLATTEN_DEBEZIUM);
@@ -319,7 +342,7 @@ public class RecordProcessorFactoryTest {
         String subject = "avro-subject";
         registerSchema(subject, USER_SCHEMA); // Register an AVRO schema
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_LATEST_SCHEMA);
         when(mockConfig.valueSubject()).thenReturn(subject);
@@ -371,7 +394,7 @@ public class RecordProcessorFactoryTest {
         byte[] value = personMessage.toByteArray();
         Record kafkaRecord = createKafkaRecord(subject, value, "test-key".getBytes());
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_LATEST_SCHEMA);
         when(mockConfig.valueSubject()).thenReturn(subject);
@@ -447,7 +470,7 @@ public class RecordProcessorFactoryTest {
         byte[] value = address.toByteArray();
         Record kafkaRecord = createKafkaRecord(subject, value, "test-key".getBytes());
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_LATEST_SCHEMA);
         when(mockConfig.valueSubject()).thenReturn(subject);
@@ -466,6 +489,37 @@ public class RecordProcessorFactoryTest {
         assertEquals("123 Main St", addressRecord.get("street").toString());
     }
 
+    /**
+     * Given a latest-schema key converter without an explicit subject, it resolves the topic key subject.
+     */
+    @Test
+    void testByLatestSchemaKeyDefaultsToKeySubject() throws Exception {
+        String protoFileContent = Files.readString(Path.of("src/test/resources/proto/person.proto"));
+        CustomProtobufSchema addressSchema = new CustomProtobufSchema(
+            "Address", -1, null, null, protoFileContent, List.of(), Map.of());
+        schemaRegistryClient.register(TEST_TOPIC + "-key", addressSchema);
+
+        PersonProto.Address address = PersonProto.Address.newBuilder()
+            .setStreet("123 Main St")
+            .setCity("Anytown")
+            .build();
+
+        WorkerConfig mockConfig = mockWorkerConfig();
+        when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.BY_LATEST_SCHEMA);
+        when(mockConfig.keyMessageFullName()).thenReturn("kafka.automq.table.process.proto.Address");
+        when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
+        when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
+
+        RecordProcessor processor = recordProcessorFactory.create(mockConfig, TEST_TOPIC);
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord(TEST_TOPIC, "value".getBytes(), address.toByteArray()));
+
+        assertTrue(result.isSuccess());
+        GenericRecord keyRecord = (GenericRecord) result.getFinalRecord().get("_kafka_key");
+        assertEquals("123 Main St", keyRecord.get("street").toString());
+        assertEquals("Anytown", keyRecord.get("city").toString());
+    }
+
     // --- Test Group 5: Error Handling ---
 
     @Test
@@ -481,7 +535,7 @@ public class RecordProcessorFactoryTest {
         buffer.putInt(9999); // Non-existent schema ID
         byte[] invalidPayload = buffer.array();
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.FLATTEN);
@@ -507,7 +561,7 @@ public class RecordProcessorFactoryTest {
         GenericRecord userRecord = new GenericRecordBuilder(USER_SCHEMA).set("name", "a").set("age", 1).build();
         Record kafkaRecord = createKafkaRecord(TEST_TOPIC, userRecord, "test-key");
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.FLATTEN_DEBEZIUM);
@@ -528,7 +582,7 @@ public class RecordProcessorFactoryTest {
     @Test
     void testHeaderConversion() {
         // Arrange
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
@@ -575,7 +629,7 @@ public class RecordProcessorFactoryTest {
         registerSchema(keySubject, keySchema);
         registerSchema(valueSubject, USER_SCHEMA);
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.keySubject()).thenReturn(keySubject);
@@ -610,7 +664,7 @@ public class RecordProcessorFactoryTest {
     @Test
     void testKeyConversionAsString() {
         // Arrange
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
@@ -643,8 +697,9 @@ public class RecordProcessorFactoryTest {
     @Test
     void testSchemalessConfig() {
         // Arrange
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.schemaType()).thenReturn(org.apache.kafka.server.record.TableTopicSchemaType.SCHEMALESS);
+        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
         // These should be ignored when schemaType is SCHEMALESS
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
@@ -673,15 +728,11 @@ public class RecordProcessorFactoryTest {
         assertEquals(value, finalRecord.get("value"));
         assertEquals(TEST_TIMESTAMP, finalRecord.get("timestamp"));
 
-        // Check that Kafka metadata is still present
-        assertTrue(finalRecord.hasField("_kafka_key"));
-        assertTrue(finalRecord.hasField("_kafka_metadata"));
-        assertTrue(finalRecord.hasField("_kafka_header"));
+        assertFalse(finalRecord.hasField("_kafka_key"));
+        assertFalse(finalRecord.hasField("_kafka_metadata"));
+        assertFalse(finalRecord.hasField("_kafka_header"));
         assertFalse(finalRecord.hasField("_kafka_value"),
             "Value should be unwrapped by SchemalessTransform, not present as _kafka_value");
-
-        // The key converter in schemaless mode is RawConverter
-        assertEquals(key, finalRecord.get("_kafka_key"));
     }
 
     @Test
@@ -690,8 +741,9 @@ public class RecordProcessorFactoryTest {
         String subject = TEST_TOPIC + "-value";
         registerSchema(subject, USER_SCHEMA);
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.schemaType()).thenReturn(org.apache.kafka.server.record.TableTopicSchemaType.SCHEMA);
+        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
         // This should be used by the value converter
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         // These should be ignored by the factory logic for this deprecated config
@@ -718,8 +770,9 @@ public class RecordProcessorFactoryTest {
         assertEquals("test-user-deprecated", finalRecord.get("name").toString());
         assertEquals(40, finalRecord.get("age"));
 
-        // Check that key was processed by StringConverter (as per deprecated config logic)
-        assertEquals("test-key-deprecated", finalRecord.get("_kafka_key"));
+        assertFalse(finalRecord.hasField("_kafka_header"));
+        assertFalse(finalRecord.hasField("_kafka_key"));
+        assertFalse(finalRecord.hasField("_kafka_metadata"));
     }
 
     // --- Test Group 7: More Converter/Error Scenarios ---
@@ -749,7 +802,7 @@ public class RecordProcessorFactoryTest {
         buffer.put(protoBytes);
         byte[] valuePayload = buffer.array();
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.FLATTEN);
@@ -786,7 +839,7 @@ public class RecordProcessorFactoryTest {
         buffer.putInt(9999); // Invalid ID
         byte[] invalidKey = buffer.array();
 
-        WorkerConfig mockConfig = mock(WorkerConfig.class);
+        WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
@@ -806,6 +859,12 @@ public class RecordProcessorFactoryTest {
     }
 
     // --- Helper Methods ---
+
+    private WorkerConfig mockWorkerConfig() {
+        WorkerConfig config = mock(WorkerConfig.class);
+        when(config.kafkaMetadataColumnsEnable()).thenReturn(true);
+        return config;
+    }
 
     private Record createKafkaRecord(String topic, byte[] value, byte[] key) {
         return new SimpleRecord(TEST_OFFSET, TEST_TIMESTAMP, key, value);
