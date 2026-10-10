@@ -207,10 +207,15 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             writeLock.unlock();
         }
         return task.finalOrderedCf.whenComplete((result, error) -> {
-            if (result != null && !closed && targetNodeId != nodeId) {
-                cache.put(result.channelOffset().slice(), new CachedData(request.record.getPayload()));
-            } else {
-                request.record.release();
+            readLock.lock();
+            try {
+                if (result != null && !closed && targetNodeId != nodeId) {
+                    cache.put(result.channelOffset().slice(), new CachedData(request.record.getPayload()));
+                } else {
+                    request.record.release();
+                }
+            } finally {
+                readLock.unlock();
             }
         });
     }
@@ -353,17 +358,21 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     @Override
     public synchronized CompletableFuture<Void> close() {
         if (closeFuture == null) {
-            closed = true;
-            flushBatch();
-            CompletableFuture<Void> drained = CompletableFuture.allOf(
-                outstanding.stream().map(request -> request.task.finalOrderedCf).toArray(CompletableFuture[]::new))
-                .handle((ignored, error) -> null);
+            CompletableFuture<Void> drained;
+            writeLock.lock();
+            try {
+                closed = true;
+                cache.invalidateAll();
+                cache.cleanUp();
+                flushBatch();
+                drained = CompletableFuture.allOf(
+                    outstanding.stream().map(request -> request.task.finalOrderedCf).toArray(CompletableFuture[]::new))
+                    .handle((ignored, error) -> null);
+            } finally {
+                writeLock.unlock();
+            }
             closeFuture = drained.thenCompose(ignored -> CompletableFuture.allOf(
-                allChannels.stream().map(Channel::close).toArray(CompletableFuture[]::new)))
-                .whenComplete((ignored, error) -> {
-                    cache.invalidateAll();
-                    cache.cleanUp();
-                });
+                allChannels.stream().map(Channel::close).toArray(CompletableFuture[]::new)));
         }
         return closeFuture;
     }
