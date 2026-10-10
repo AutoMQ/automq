@@ -53,6 +53,10 @@ public class WorkerConfig {
         return config.tableTopicNamespace;
     }
 
+    public String location() {
+        return config.tableTopicLocation;
+    }
+
     public TableTopicSchemaType schemaType() {
         return config.tableTopicSchemaType;
     }

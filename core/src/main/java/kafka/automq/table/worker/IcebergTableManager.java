@@ -23,6 +23,7 @@ import kafka.automq.table.utils.PartitionUtil;
 
 import com.google.common.annotations.VisibleForTesting;
 
+import org.apache.commons.lang3.StringUtils;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
@@ -112,7 +113,12 @@ public class IcebergTableManager {
                             }
                         }
                         LOGGER.info("Table {} does not exist, create with schema={}, partition={}", tableId, schema, spec);
-                        result.set(catalog.createTable(tableId, schema, spec, options));
+                        String location = config.location();
+                        if (StringUtils.isBlank(location)) {
+                            result.set(catalog.createTable(tableId, schema, spec, options));
+                        } else {
+                            result.set(catalog.createTable(tableId, schema, spec, location, options));
+                        }
                     } catch (AlreadyExistsException e1) {
                         LOGGER.info("Table {} already exists", tableId);
                         result.set(catalog.loadTable(tableId));
