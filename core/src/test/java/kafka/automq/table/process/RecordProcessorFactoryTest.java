@@ -489,6 +489,37 @@ public class RecordProcessorFactoryTest {
         assertEquals("123 Main St", addressRecord.get("street").toString());
     }
 
+    /**
+     * Given a latest-schema key converter without an explicit subject, it resolves the topic key subject.
+     */
+    @Test
+    void testByLatestSchemaKeyDefaultsToKeySubject() throws Exception {
+        String protoFileContent = Files.readString(Path.of("src/test/resources/proto/person.proto"));
+        CustomProtobufSchema addressSchema = new CustomProtobufSchema(
+            "Address", -1, null, null, protoFileContent, List.of(), Map.of());
+        schemaRegistryClient.register(TEST_TOPIC + "-key", addressSchema);
+
+        PersonProto.Address address = PersonProto.Address.newBuilder()
+            .setStreet("123 Main St")
+            .setCity("Anytown")
+            .build();
+
+        WorkerConfig mockConfig = mockWorkerConfig();
+        when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.BY_LATEST_SCHEMA);
+        when(mockConfig.keyMessageFullName()).thenReturn("kafka.automq.table.process.proto.Address");
+        when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
+        when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
+
+        RecordProcessor processor = recordProcessorFactory.create(mockConfig, TEST_TOPIC);
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord(TEST_TOPIC, "value".getBytes(), address.toByteArray()));
+
+        assertTrue(result.isSuccess());
+        GenericRecord keyRecord = (GenericRecord) result.getFinalRecord().get("_kafka_key");
+        assertEquals("123 Main St", keyRecord.get("street").toString());
+        assertEquals("Anytown", keyRecord.get("city").toString());
+    }
+
     // --- Test Group 5: Error Handling ---
 
     @Test
