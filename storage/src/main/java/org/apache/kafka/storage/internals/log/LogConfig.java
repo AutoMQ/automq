@@ -218,7 +218,8 @@ public class LogConfig extends AbstractConfig {
             TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG,
             TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG,
             QuotaConfigs.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
-            QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG
+            QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
+            TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG
     ));
 
     @SuppressWarnings("deprecation")
@@ -348,6 +349,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(1), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+                .define(TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, BOOLEAN, TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DEFAULT, MEDIUM, TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.NONE.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
@@ -422,6 +424,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicEnable;
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
+    public final boolean tableTopicKafkaMetadataColumnsEnable;
     @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
     public final TableTopicConvertType valueConvertType;
@@ -498,6 +501,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicEnable = getBoolean(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG);
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
+        this.tableTopicKafkaMetadataColumnsEnable = getBoolean(TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
         this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));
@@ -816,6 +820,35 @@ public class LogConfig extends AbstractConfig {
             throw new InvalidConfigurationException(
                 TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG + "=[" + FROM_DEBEZIUM_KEY + "] requires "
                     + TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG + " to be '" + BY_SCHEMA_ID.name + "'");
+        }
+        validateKafkaMetadataColumnsConfig(props, idColumns);
+    }
+
+    private static void validateKafkaMetadataColumnsConfig(Properties props, List<String> idColumns) {
+        String metadataColumnsEnable = props.getProperty(TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG);
+        if (metadataColumnsEnable == null || !"false".equalsIgnoreCase(metadataColumnsEnable.trim())) {
+            return;
+        }
+        validateKafkaMetadataColumnReference(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG, idColumns);
+        List<String> partitionColumns = TableTopicConfigValidator.PartitionValidator.parsePartitionBy(
+                props.getProperty(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG)).stream()
+            .map(TableTopicConfigValidator.PartitionValidator::sourceColumn)
+            .toList();
+        validateKafkaMetadataColumnReference(TopicConfig.TABLE_TOPIC_PARTITION_BY_CONFIG, partitionColumns);
+        String cdcField = props.getProperty(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG);
+        if (cdcField != null) {
+            validateKafkaMetadataColumnReference(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, List.of(cdcField.trim()));
+        }
+    }
+
+    private static void validateKafkaMetadataColumnReference(String configName, List<String> columns) {
+        for (String column : columns) {
+            String rootColumn = column.split("\\.", 2)[0];
+            if (Set.of("_kafka_header", "_kafka_key", "_kafka_metadata").contains(rootColumn)) {
+                throw new InvalidConfigurationException(
+                    configName + " cannot reference " + column + " when "
+                        + TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG + " is false");
+            }
         }
     }
 

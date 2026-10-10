@@ -105,6 +105,24 @@ public class TableTopicConfigValidator {
             }
             return Pair.of(parts[0].trim(), Integer.parseInt(parts[1].trim()));
         }
+
+        /**
+         * Returns the source column referenced by a validated partition expression.
+         */
+        public static String sourceColumn(String partitionField) {
+            Matcher matcher = TRANSFORM_REGEX.matcher(partitionField);
+            if (!matcher.matches()) {
+                return partitionField;
+            }
+            Transform transform = Transform.fromString(matcher.group(1));
+            switch (transform) {
+                case BUCKET:
+                case TRUNCATE:
+                    return transformArgPair(matcher.group(2)).getLeft();
+                default:
+                    return matcher.group(2);
+            }
+        }
     }
 
     public static class IdColumnsValidator implements ConfigDef.Validator {
