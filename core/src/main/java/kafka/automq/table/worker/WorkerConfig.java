@@ -53,6 +53,10 @@ public class WorkerConfig {
         return config.tableTopicNamespace;
     }
 
+    /**
+     * Returns the explicit Iceberg table location for newly created tables.
+     * A null or blank value delegates location selection to the Catalog.
+     */
     public String location() {
         return config.tableTopicLocation;
     }
