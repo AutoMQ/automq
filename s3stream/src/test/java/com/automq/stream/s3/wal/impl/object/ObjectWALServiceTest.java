@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -41,6 +43,7 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.RecoverIterator.getContinuousFromTrimOffset;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(120)
@@ -61,6 +64,66 @@ public class ObjectWALServiceTest {
     public void tearDown() {
         objectStorage.triggerAll();
         objectStorage.close();
+    }
+
+    /** Manual batching ignores WAL size and timer triggers until the router explicitly flushes. */
+    @Test
+    public void testManualBatchingFlush() throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withNodeId(100).withEpoch(1000)
+            .withBatchInterval(1).withMaxBytesInBatch(1).withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            assertThrows(TimeoutException.class, () -> append.get(30, TimeUnit.MILLISECONDS));
+            wal.flush().get(5, TimeUnit.SECONDS);
+            assertTrue(append.isDone());
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    /** A failed upload fails both the append and its explicit flush durability future. */
+    @Test
+    public void testManualFlushPropagatesUploadFailure() throws Exception {
+        MockObjectStorage storage = new MockObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> write(WriteOptions options, String path, ByteBuf data) {
+                data.release();
+                return CompletableFuture.failedFuture(new IllegalStateException("upload failed"));
+            }
+        };
+        ObjectWALConfig config = ObjectWALConfig.builder().withNodeId(100).withEpoch(1000).withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            CompletableFuture<Void> flush = wal.flush();
+            assertThrows(ExecutionException.class, () -> flush.get(5, TimeUnit.SECONDS));
+            assertTrue(append.isCompletedExceptionally());
+        } finally {
+            wal.shutdownGracefully();
+            storage.close();
+        }
+    }
+
+    /** Trimming in manual mode flushes its marker without requiring a caller-issued flush. */
+    @Test
+    public void testManualTrimFlushesMarker() throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withNodeId(100).withEpoch(1000)
+            .withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            wal.flush().get(5, TimeUnit.SECONDS);
+            wal.trim(append.get(5, TimeUnit.SECONDS).recordOffset()).get(5, TimeUnit.SECONDS);
+        } finally {
+            wal.shutdownGracefully();
+        }
     }
 
     @Test
