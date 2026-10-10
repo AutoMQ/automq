@@ -268,6 +268,9 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_COMMIT_INTERVAL_DOC = "The table topic commit interval(ms)";
     public static final String TABLE_TOPIC_NAMESPACE_CONFIG = "automq.table.topic.namespace";
     public static final String TABLE_TOPIC_NAMESPACE_DOC = "The table topic table namespace";
+    public static final String TABLE_TOPIC_LOCATION_CONFIG = "automq.table.topic.location";
+    public static final String TABLE_TOPIC_LOCATION_DOC = "The location of the Iceberg table created for the table topic. " +
+        "If blank, the catalog determines the location. This applies only when the table is created.";
 
     public static final String TABLE_TOPIC_SCHEMA_TYPE_CONFIG = "automq.table.topic.schema.type";
     public static final String TABLE_TOPIC_SCHEMA_TYPE_DOC = "[DEPRECATED] The table topic schema type configuration. " +
