@@ -93,27 +93,53 @@ public class DefaultRouterChannelProviderTest {
     @Test
     public void testDuplicateTuningOptionFailsBeforeOpeningStorage() {
         DefaultRouterChannelProvider provider = new DefaultRouterChannelProvider(42, 123,
-            BucketURI.parse("7@s3://router?batchInterval=100&batchInterval=200"), "cluster");
+            List.of(BucketURI.parse("7@s3://router?batchInterval=100&batchInterval=200")), "cluster");
         try (MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class)) {
             assertThrows(IllegalArgumentException.class, provider::channel);
             assertEquals(0, wals.constructed().size());
         }
     }
 
-    private static List<ObjectWALConfig> channelConfigs(BucketURI bucket) {
-        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, bucket, "cluster"));
-        doReturn(mock(ObjectStorage.class)).when(provider).objectStorage();
+    /** Every bucket gets a writer and remote reader, and URI options are retained for each writer. */
+    @Test
+    public void testMultipleBuckets() {
+        List<BucketURI> buckets = List.of(BucketURI.parse("0@s3://a?batchInterval=100"),
+            BucketURI.parse("1@s3://b?batchInterval=200"));
+        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, buckets, "cluster"));
+        buckets.forEach(bucket -> doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket));
         List<ObjectWALConfig> configs = new ArrayList<>();
         try (MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
-            (wal, context) -> configs.add((ObjectWALConfig) context.arguments().get(2)));
-            MockedConstruction<ObjectRouterChannel> channels = mockConstruction(ObjectRouterChannel.class)) {
+            (wal, context) -> {
+                configs.add((ObjectWALConfig) context.arguments().get(2));
+                assertEquals(true, ((ObjectWALConfig) context.arguments().get(2)).manualMode());
+            })) {
+            provider.channel();
+            provider.readOnlyChannel(43);
+            assertEquals(4, wals.constructed().size());
+            assertEquals(100, configs.get(0).batchInterval());
+            assertEquals(200, configs.get(1).batchInterval());
+            assertEquals(0, configs.get(0).bucketId());
+            assertEquals(1, configs.get(1).bucketId());
+            assertEquals(OpenMode.READ_ONLY, configs.get(2).openMode());
+            assertEquals(OpenMode.READ_ONLY, configs.get(3).openMode());
+            assertEquals(0, configs.get(2).bucketId());
+            assertEquals(1, configs.get(3).bucketId());
+            provider.close();
+        }
+    }
+
+    private static List<ObjectWALConfig> channelConfigs(BucketURI bucket) {
+        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, List.of(bucket), "cluster"));
+        doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket);
+        List<ObjectWALConfig> configs = new ArrayList<>();
+        try (MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
+            (wal, context) -> configs.add((ObjectWALConfig) context.arguments().get(2)))) {
             RouterChannel writer = provider.channel();
             assertSame(writer, provider.channel());
             assertSame(writer, provider.readOnlyChannel(42));
             RouterChannel reader = provider.readOnlyChannel(43);
             assertSame(reader, provider.readOnlyChannel(43));
             assertEquals(2, wals.constructed().size());
-            assertEquals(2, channels.constructed().size());
         }
         return configs;
     }

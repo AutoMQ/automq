@@ -112,6 +112,11 @@ public class ObjectWALService implements WriteAheadLog {
         return writer.append(streamRecordBatch);
     }
 
+    /** Uploads buffered records, completing after they become durable. */
+    public CompletableFuture<Void> flush() {
+        return writer.flush();
+    }
+
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return reader.get(recordOffset);

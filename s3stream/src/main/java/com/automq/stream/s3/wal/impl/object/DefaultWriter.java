@@ -42,7 +42,6 @@ import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
-import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,6 +105,7 @@ public class DefaultWriter implements Writer {
     private Bulk lastInActiveBulk = null;
     private long lastBulkForceUploadNanos;
     private final long batchNanos;
+    private final boolean manualMode;
     private final long minBulkUploadIntervalNanos;
 
     private final Queue<Bulk> waitingUploadBulks = new ConcurrentLinkedQueue<>();
@@ -121,6 +121,7 @@ public class DefaultWriter implements Writer {
     private CompletableFuture<Void> lastTrimCf = CompletableFuture.completedFuture(null);
 
     public DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
+        this.manualMode = config.manualMode();
         this.time = time;
         this.objectStorage = objectStorage;
         this.reservationService = config.reservationService();
@@ -271,7 +272,7 @@ public class DefaultWriter implements Writer {
             activeBulk.add(record);
             // In FAILOVER mode, the only append is the fake record from trim to persist trimOffset.
             // Upload immediately to avoid the batch delay (~250ms) when failover recover.
-            if (activeBulk.size > config.maxBytesInBatch() || config.openMode() == OpenMode.FAILOVER) {
+            if ((!manualMode && activeBulk.size > config.maxBytesInBatch()) || config.openMode() == OpenMode.FAILOVER) {
                 uploadActiveBulk();
             }
         } finally {
@@ -312,8 +313,8 @@ public class DefaultWriter implements Writer {
         tryUploadBulkInWaiting();
     }
 
-    @VisibleForTesting
-    CompletableFuture<Void> flush() {
+    @Override
+    public CompletableFuture<Void> flush() {
         uploadActiveBulk();
         lock.writeLock().lock();
         try {
@@ -500,6 +501,7 @@ public class DefaultWriter implements Writer {
             // So we use a fake record to trigger the wal object upload.
             persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER,
                 BYTE_BUF_ALLOC));
+            flushTrimOffsetIfNeeded();
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
                 Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {
@@ -551,6 +553,12 @@ public class DefaultWriter implements Writer {
         }
     }
 
+    private void flushTrimOffsetIfNeeded() {
+        if (manualMode) {
+            flush();
+        }
+    }
+
     private void retryDelete(List<ObjectStorage.ObjectPath> objectPaths) {
         if (state == State.STARTED) {
             // Try to delete the objects again to avoid an object leak after a fast retry failure.
@@ -591,7 +599,9 @@ public class DefaultWriter implements Writer {
                 ),
                 batchNanos);
             lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
-            SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
+            if (!manualMode) {
+                SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
+            }
         }
 
         public void add(Record record) {
@@ -628,7 +638,11 @@ public class DefaultWriter implements Writer {
                     );
                 }
             }
-            completeCf.complete(null);
+            if (ex == null) {
+                completeCf.complete(null);
+            } else {
+                completeCf.completeExceptionally(ex);
+            }
         }
     }
 
