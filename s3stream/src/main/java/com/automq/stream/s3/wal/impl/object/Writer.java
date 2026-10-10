@@ -36,6 +36,9 @@ public interface Writer {
 
     CompletableFuture<AppendResult> append(StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
+    /** Uploads buffered records and completes when they are durable. */
+    CompletableFuture<Void> flush();
+
     RecordOffset confirmOffset();
 
     CompletableFuture<Void> reset() throws WALFencedException;

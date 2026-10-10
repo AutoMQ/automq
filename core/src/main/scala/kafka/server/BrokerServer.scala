@@ -908,8 +908,7 @@ class BrokerServer(
     if (config.automq.zoneRouterChannels().isEmpty) {
       return null
     }
-    val bucketURI = config.automq.zoneRouterChannels.get.get(0)
-    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, bucketURI, dataPlaneRequestProcessor.clusterId)
+    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, config.automq.zoneRouterChannels.get, dataPlaneRequestProcessor.clusterId)
   }
 
   protected def newConfirmWALProvider(): ConfirmWALProvider = {

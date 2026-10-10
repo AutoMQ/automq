@@ -39,6 +39,7 @@ public class ObjectWALConfig {
     private final OpenMode openMode;
     private final short bucketId;
     private final String type;
+    private final boolean manualMode;
 
     public static Builder builder() {
         return new Builder();
@@ -61,6 +62,29 @@ public class ObjectWALConfig {
         this.openMode = openMode;
         this.bucketId = bucketId;
         this.type = type;
+        this.manualMode = false;
+    }
+
+    private ObjectWALConfig(Builder builder) {
+        this.uri = builder.uri;
+        this.reservationService = builder.reservationService;
+        this.batchInterval = builder.batchInterval;
+        this.maxBytesInBatch = builder.maxBytesInBatch;
+        this.maxUnflushedBytes = builder.maxUnflushedBytes;
+        this.maxInflightUploadCount = builder.maxInflightUploadCount;
+        this.readaheadDataSize = builder.readaheadDataSize;
+        this.clusterId = builder.clusterId;
+        this.nodeId = builder.nodeId;
+        this.epoch = builder.epoch;
+        this.openMode = builder.openMode;
+        this.bucketId = builder.bucketId;
+        this.type = builder.type;
+        this.manualMode = builder.manualMode;
+    }
+
+    /** Returns whether callers control batching through explicit flushes instead of size or timer triggers. */
+    public boolean manualMode() {
+        return manualMode;
     }
 
     public String uri() {
@@ -146,6 +170,7 @@ public class ObjectWALConfig {
         private OpenMode openMode = OpenMode.READ_WRITE;
         private short bucketId;
         private String type = "";
+        private boolean manualMode;
 
         private Builder() {
         }
@@ -249,8 +274,14 @@ public class ObjectWALConfig {
             return this;
         }
 
+        /** Enables caller-controlled flushing; defaults to automatic size and timer batching. */
+        public Builder withManualMode(boolean manualMode) {
+            this.manualMode = manualMode;
+            return this;
+        }
+
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(uri, reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readaheadDataSize, clusterId, nodeId, epoch, openMode, bucketId, type);
+            return new ObjectWALConfig(this);
         }
     }
 }
