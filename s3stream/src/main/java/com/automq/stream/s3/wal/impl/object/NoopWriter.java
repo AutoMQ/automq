@@ -48,6 +48,11 @@ public class NoopWriter implements Writer {
     }
 
     @Override
+    public CompletableFuture<Void> flush() {
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
     public RecordOffset confirmOffset() {
         return DefaultRecordOffset.of(0, 0, 0);
     }
