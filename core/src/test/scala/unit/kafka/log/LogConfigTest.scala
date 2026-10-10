@@ -40,6 +40,16 @@ import scala.jdk.CollectionConverters._
 class LogConfigTest {
 
   /**
+   * Kafka metadata columns remain enabled unless a topic explicitly disables them.
+   */
+  @Test
+  def testKafkaMetadataColumnsEnableDefault(): Unit = {
+    assertTrue(new LogConfig(Collections.emptyMap()).tableTopicKafkaMetadataColumnsEnable)
+    assertFalse(new LogConfig(Collections.singletonMap(
+      TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, "false")).tableTopicKafkaMetadataColumnsEnable)
+  }
+
+  /**
    * This test verifies that KafkaConfig object initialization does not depend on
    * LogConfig initialization. Bad things happen due to static initialization
    * order dependencies. For example, LogConfig.configDef ends up adding null

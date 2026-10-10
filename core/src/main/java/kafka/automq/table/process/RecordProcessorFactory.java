@@ -52,12 +52,14 @@ public class RecordProcessorFactory {
     public RecordProcessor create(WorkerConfig config, String topic) {
         // Handle deprecated configurations
         if (config.schemaType() == TableTopicSchemaType.SCHEMALESS) {
-            return new DefaultRecordProcessor(topic, StringConverter.INSTANCE, StringConverter.INSTANCE, List.of(new SchemalessTransform()));
+            return new DefaultRecordProcessor(topic, StringConverter.INSTANCE, StringConverter.INSTANCE,
+                List.of(new SchemalessTransform()), List.of(), config.kafkaMetadataColumnsEnable());
         }
         if (config.schemaType() == TableTopicSchemaType.SCHEMA) {
             return new DefaultRecordProcessor(topic,
                 StringConverter.INSTANCE,
-                converterFactory.createForSchemaId(topic, false), List.of(FlattenTransform.INSTANCE));
+                converterFactory.createForSchemaId(topic, false), List.of(FlattenTransform.INSTANCE), List.of(),
+                config.kafkaMetadataColumnsEnable());
         }
 
         var keyConverter = converterFactory.createKeyConverter(topic, config);
@@ -65,7 +67,8 @@ public class RecordProcessorFactory {
 
         var transforms = createTransforms(config.transformType());
 
-        return new DefaultRecordProcessor(topic, keyConverter, valueConverter, transforms, config.idColumns());
+        return new DefaultRecordProcessor(topic, keyConverter, valueConverter, transforms, config.idColumns(),
+            config.kafkaMetadataColumnsEnable());
     }
 
     private List<Transform> createTransforms(TableTopicTransformType transformType) {

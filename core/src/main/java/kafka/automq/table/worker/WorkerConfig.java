@@ -61,6 +61,10 @@ public class WorkerConfig {
         return config.tableTopicLocation;
     }
 
+    public boolean kafkaMetadataColumnsEnable() {
+        return config.tableTopicKafkaMetadataColumnsEnable;
+    }
+
     public TableTopicSchemaType schemaType() {
         return config.tableTopicSchemaType;
     }

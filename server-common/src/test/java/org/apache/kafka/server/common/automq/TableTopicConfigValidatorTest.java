@@ -48,6 +48,9 @@ public class TableTopicConfigValidatorTest {
         // valid
         PartitionValidator.INSTANCE.ensureValid("config_name", "year(column_name)");
         PartitionValidator.INSTANCE.ensureValid("config_name", "[year(l1.l2.c1), month(c2), day(c3), hour(c4), bucket(c5, 1), truncate(c6, 10)]");
+        Assertions.assertEquals("l1.l2.c1", PartitionValidator.sourceColumn("year(l1.l2.c1)"));
+        Assertions.assertEquals("c5", PartitionValidator.sourceColumn("bucket(c5, 1)"));
+        Assertions.assertEquals("c7", PartitionValidator.sourceColumn("c7"));
     }
 
     /**
