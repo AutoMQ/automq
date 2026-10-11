@@ -321,6 +321,9 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
         }
 
         @Override
+        // getIssuerDN() is deprecated but must still be overridden since it remains abstract
+        // in X509Certificate; delegate to the original certificate to preserve its behavior.
+        @SuppressWarnings("deprecation")
         public Principal getIssuerDN() {
             return this.origCertificate.getIssuerDN();
         }
@@ -371,6 +374,9 @@ class CommonNameLoggingTrustManagerFactoryWrapper {
         }
 
         @Override
+        // getSubjectDN() is deprecated but must still be overridden since it remains abstract
+        // in X509Certificate; delegate to the original certificate to preserve its behavior.
+        @SuppressWarnings("deprecation")
         public Principal getSubjectDN() {
             return this.origCertificate.getSubjectDN();
         }
