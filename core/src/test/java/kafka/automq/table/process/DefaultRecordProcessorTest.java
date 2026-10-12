@@ -273,6 +273,28 @@ public class DefaultRecordProcessorTest {
     }
 
     /**
+     * Given otherwise identical processing, Kafka metadata column output changes the final schema identity.
+     */
+    @Test
+    void testSchemaIdentityIncludesKafkaMetadataColumnsSetting() {
+        Converter rawConverter = new RawConverter();
+        Record kafkaRecord = createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]);
+        DefaultRecordProcessor enabled = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of(), true);
+        DefaultRecordProcessor disabled = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of(), false);
+
+        ProcessingResult enabledResult = enabled.process(TEST_PARTITION, kafkaRecord);
+        ProcessingResult disabledResult = disabled.process(TEST_PARTITION, kafkaRecord);
+
+        assertTrue(enabledResult.isSuccess());
+        assertTrue(disabledResult.isSuccess());
+        assertNotEquals(enabledResult.getFinalSchemaIdentity(), disabledResult.getFinalSchemaIdentity());
+        assertNotNull(enabledResult.getFinalRecord().getSchema().getField(RecordAssembler.KAFKA_METADATA_FIELD));
+        assertNull(disabledResult.getFinalRecord().getSchema().getField(RecordAssembler.KAFKA_METADATA_FIELD));
+    }
+
+    /**
      * Given identifier column names with colliding hash codes, schema identity must still distinguish them.
      */
     @Test

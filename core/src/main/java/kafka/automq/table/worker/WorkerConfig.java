@@ -53,6 +53,10 @@ public class WorkerConfig {
         return config.tableTopicNamespace;
     }
 
+    public boolean metadataColumnsEnabled() {
+        return config.tableTopicMetadataColumnsEnabled;
+    }
+
     public TableTopicSchemaType schemaType() {
         return config.tableTopicSchemaType;
     }

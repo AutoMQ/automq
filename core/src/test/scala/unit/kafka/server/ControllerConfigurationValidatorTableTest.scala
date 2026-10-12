@@ -24,7 +24,7 @@ import kafka.server.{ControllerConfigurationValidator, KafkaConfig}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.TOPIC
-import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TABLE_TOPIC_ID_COLUMNS_CONFIG}
+import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TABLE_TOPIC_CDC_FIELD_CONFIG, TABLE_TOPIC_ID_COLUMNS_CONFIG, TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, TABLE_TOPIC_PARTITION_BY_CONFIG}
 import org.apache.kafka.common.errors.InvalidConfigurationException
 import org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY
 import org.apache.kafka.server.record.{TableTopicConvertType, TableTopicTransformType}
@@ -121,6 +121,30 @@ class ControllerConfigurationValidatorTableTest {
 
         config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
         assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config) })
+    }
+
+    /**
+     * Kafka metadata columns cannot be disabled while another Table Topic config references them.
+     */
+    @Test
+    def testDisabledKafkaMetadataColumnsRejectReferences(): Unit = {
+        Seq(
+            (TABLE_TOPIC_ID_COLUMNS_CONFIG, "[_kafka_key]", "_kafka_key"),
+            (TABLE_TOPIC_PARTITION_BY_CONFIG, "[hour(_kafka_metadata.timestamp)]", "_kafka_metadata.timestamp"),
+            (TABLE_TOPIC_CDC_FIELD_CONFIG, "_kafka_header.operation", "_kafka_header.operation"),
+            (TABLE_TOPIC_CDC_FIELD_CONFIG, " _kafka_metadata.operation ", "_kafka_metadata.operation")
+        ).foreach { case (configName, value, referencedColumn) =>
+            val config = new util.TreeMap[String, String]()
+            config.put(TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, " false ")
+            config.put(configName, value)
+
+            val exception = assertThrows(classOf[InvalidConfigurationException], () => {
+                validator.validate(new ConfigResource(TOPIC, "foo"), config)
+            })
+            assertEquals(
+                s"$configName cannot reference $referencedColumn when $TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG is false",
+                exception.getMessage)
+        }
     }
 
     @Test

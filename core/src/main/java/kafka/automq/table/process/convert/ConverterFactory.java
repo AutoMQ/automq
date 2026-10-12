@@ -145,7 +145,7 @@ public class ConverterFactory {
     }
 
     public Converter createForSubjectName(String topic, String subjectName, String messageFullName, boolean isKey) {
-        String subject = subjectName != null ? subjectName : getSubjectName(topic);
+        String subject = subjectName != null ? subjectName : getSubjectName(topic, isKey);
         return new LazyConverter(() -> {
             String schemaType = getSchemaType(subject);
             if (!PROTOBUF_TYPE.equals(schemaType)) {
