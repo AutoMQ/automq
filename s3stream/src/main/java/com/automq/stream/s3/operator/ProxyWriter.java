@@ -54,6 +54,7 @@ public class ProxyWriter implements Writer {
     private final CompletableFuture<Void> objectCf = new CompletableFuture<>();
     private final TimerUtil timerUtil = new TimerUtil();
     private Writer multiPartObjectWriter = null;
+    private boolean putObjectCloseStarted;
     private long size;
 
     public ProxyWriter(WriteOptions writeOptions, ObjectStorage objectStorage, String path, long minPartSize) {
@@ -115,6 +116,10 @@ public class ProxyWriter implements Writer {
         if (multiPartObjectWriter != null) {
             return multiPartObjectWriter.close();
         }
+        if (putObjectCloseStarted) {
+            return objectCf;
+        }
+        putObjectCloseStarted = true;
         return closeWithPutObject();
     }
 
@@ -122,6 +127,10 @@ public class ProxyWriter implements Writer {
     public CompletableFuture<Void> release() {
         if (multiPartObjectWriter != null) {
             return multiPartObjectWriter.release();
+        }
+        if (putObjectCloseStarted) {
+            // The replay or PutObject still owns its buffers. Its completion follows their cleanup.
+            return objectCf.handle((nil, ex) -> null);
         }
         pendingOperations.forEach(PendingOperation::release);
         pendingOperations.clear();

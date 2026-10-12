@@ -39,6 +39,7 @@ import io.netty.buffer.ByteBuf;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -71,6 +72,57 @@ public class ProxyWriterTest {
         ArgumentCaptor<ByteBuf> captor = ArgumentCaptor.forClass(ByteBuf.class);
         verify(operator, times(1)).write(any(), eq("testpath"), captor.capture());
         Assertions.assertEquals(16 * 1024 * 1024, captor.getValue().readableBytes());
+    }
+
+    @Test
+    public void testPutObjectCloseIsIdempotent() {
+        // Given a PutObject is in progress, repeated close calls must return its future and issue only one write.
+        CompletableFuture<ObjectStorage.WriteResult> uploadCf = new CompletableFuture<>();
+        when(operator.write(any(), eq("testpath"), any())).thenReturn(uploadCf);
+        writer.write(TestUtils.randomPooled(16));
+
+        CompletableFuture<Void> closeCf = writer.close();
+        assertSame(closeCf, writer.close());
+
+        ArgumentCaptor<ByteBuf> captor = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(operator, times(1)).write(any(), eq("testpath"), captor.capture());
+        captor.getValue().release();
+        uploadCf.complete(new ObjectStorage.WriteResult((short) 0));
+
+        assertTrue(closeCf.isDone());
+        assertSame(closeCf, writer.close());
+        verify(operator, times(1)).write(any(), eq("testpath"), any());
+    }
+
+    @Test
+    public void testReleaseWaitsForPutObjectReplayAndUpload() {
+        // Given a small copy is still being read during close, release must wait for both replay and upload cleanup.
+        CompletableFuture<ByteBuf> readCf = new CompletableFuture<>();
+        CompletableFuture<ObjectStorage.WriteResult> uploadCf = new CompletableFuture<>();
+        when(operator.rangeRead(any(), any(), anyLong(), anyLong())).thenReturn(readCf);
+        when(operator.write(any(), eq("testpath"), any())).thenReturn(uploadCf);
+        writer.copyWrite(new S3ObjectMetadata(1, 8, S3ObjectType.STREAM), 0, 8);
+        ByteBuf followingWrite = TestUtils.randomPooled(8);
+        writer.write(followingWrite);
+
+        CompletableFuture<Void> closeCf = writer.close();
+        CompletableFuture<Void> releaseCf = writer.release();
+        assertFalse(closeCf.isDone());
+        assertFalse(releaseCf.isDone());
+
+        ByteBuf read = TestUtils.randomPooled(8);
+        readCf.complete(read);
+        assertFalse(releaseCf.isDone());
+
+        ArgumentCaptor<ByteBuf> captor = ArgumentCaptor.forClass(ByteBuf.class);
+        verify(operator).write(any(), eq("testpath"), captor.capture());
+        captor.getValue().release();
+        uploadCf.complete(new ObjectStorage.WriteResult((short) 0));
+
+        assertTrue(closeCf.isDone());
+        assertTrue(releaseCf.isDone());
+        assertEquals(0, read.refCnt());
+        assertEquals(0, followingWrite.refCnt());
     }
 
     @Test
