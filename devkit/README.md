@@ -426,6 +426,22 @@ num.partitions=4
 log.retention.hours=24
 ```
 
+**Select the S3 SDK per bucket** — add camel-case options to each data, ops, or WAL bucket URI:
+
+```properties
+s3.data.buckets=0@s3://automq-data?region=us-east-1&endpoint=http://minio:9000&pathStyle=true&sdkImpl=crt&connectionTimeoutMs=2000&numRetries=2&maxConcurrency=-1&crtTargetThroughputInGbps=10&crtMinimumThroughputInBps=33554432&crtMinimumThroughputTimeoutSeconds=2&crtMaxNativeMemoryLimitInBytes=-1
+```
+
+Omitting `sdkImpl` selects Netty. `connectionTimeoutMs`, `numRetries` (excluding the initial attempt),
+and `maxConcurrency` apply to both clients. `maxConcurrency=-1` inherits AutoMQ's existing client concurrency
+without changing its inflight quotas. CRT-only options are ignored by Netty; omitted options use the values
+in the example. `crtMaxNativeMemoryLimitInBytes=-1` leaves native memory budgeting to CRT.
+`crtMinimumThroughputTimeoutSeconds` must be at least two. The throughput target is per client and is not
+a bandwidth limiter. Existing `apiCallTimeoutMs` and `apiCallAttemptTimeoutMs` remain supported by Netty.
+CRT automatic multipart uploads are disabled with a fixed `Long.MAX_VALUE` threshold; AutoMQ's explicit
+multipart uploads remain enabled, preserving its request-level precomputed checksums.
+Configure each `s3.ops.buckets` and `s3.wal.path` URI separately; settings do not propagate between buckets.
+
 **Add a new feature** — create `config/features/my-feature.properties`:
 ```properties
 my.setting=value

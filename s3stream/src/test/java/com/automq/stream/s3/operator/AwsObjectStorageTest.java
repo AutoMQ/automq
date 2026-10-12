@@ -52,6 +52,173 @@ import static org.mockito.Mockito.when;
 public class AwsObjectStorageTest {
 
     /**
+     * CRT keeps PUTs single-request while AutoMQ retains ownership of multipart uploads and precomputed checksums.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testCrtDisablesAutomaticMultipart() {
+        AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket", ChecksumAlgorithm.CRC32);
+        var builder = mock(software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
+        when(builder.build()).thenReturn(mock(S3AsyncClient.class));
+        try (var factory = org.mockito.Mockito.mockStatic(S3AsyncClient.class)) {
+            factory.when(S3AsyncClient::crtBuilder).thenReturn(builder);
+            BucketURI uri = BucketURI.parse("0@s3://bucket?region=us-east-1&sdkImpl=crt");
+            try (S3AsyncClient ignored = storage.newS3Client(uri, List.of(), AwsObjectStorage.Configuration.fromBucketURI(uri))) {
+                org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
+            }
+        } finally {
+            storage.close();
+        }
+    }
+
+    /**
+     * Each URI supplies its own SDK and tuning options; configuring one bucket leaves another bucket's defaults intact.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testPerBucketClientOptions() {
+        BucketURI uri = BucketURI.parse("0@s3://one?region=us-east-1&sdkImpl=crt&connectionTimeoutMs=1500"
+            + "&numRetries=0&maxConcurrency=12&crtTargetThroughputInGbps=2.5&crtMinimumThroughputInBps=1048576"
+            + "&crtMinimumThroughputTimeoutSeconds=3&crtMaxNativeMemoryLimitInBytes=1073741824");
+        AwsObjectStorage.Configuration options = AwsObjectStorage.Configuration.fromBucketURI(uri);
+        Assertions.assertEquals("crt", options.sdkImplementation());
+        Assertions.assertEquals(java.time.Duration.ofMillis(1500), options.connectionTimeout());
+        Assertions.assertEquals(0, options.numRetries());
+        Assertions.assertEquals(12, options.maxConcurrency());
+        Assertions.assertEquals(2.5, options.crtTargetThroughputGbps());
+        Assertions.assertEquals(1048576L, options.crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(3), options.crtMinimumThroughputTimeout());
+        Assertions.assertEquals(1073741824L, options.crtMaxNativeMemoryBytes());
+        Assertions.assertEquals(AwsObjectStorage.Configuration.builder().build(),
+            AwsObjectStorage.Configuration.fromBucketURI(BucketURI.parse("1@s3://two?region=us-east-1")));
+    }
+
+    /**
+     * Netty consumes the shared retry setting, preserves API deadlines, and ignores CRT-only settings.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testNettySharedRetryOptions() {
+        AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
+        try {
+            storage.bucketURI.addExtension("numRetries", "0");
+            storage.bucketURI.addExtension("connectionTimeoutMs", "1500");
+            storage.bucketURI.addExtension("maxConcurrency", "12");
+            storage.bucketURI.addExtension("crtTargetThroughputInGbps", "ignored");
+            var configuration = AwsObjectStorage.Configuration.fromBucketURI(storage.bucketURI);
+            var overrides = storage.clientOverrideConfiguration(configuration);
+            Assertions.assertEquals(1, overrides.retryStrategy().orElseThrow().maxAttempts());
+            Assertions.assertEquals(java.time.Duration.ofMillis(30000), overrides.apiCallTimeout().orElseThrow());
+            Assertions.assertEquals(java.time.Duration.ofMillis(10000), overrides.apiCallAttemptTimeout().orElseThrow());
+            try (S3AsyncClient client = storage.newS3Client(
+                BucketURI.parse("0@s3://bucket?region=us-east-1&endpoint=http://localhost:9000&pathStyle=true"),
+                List.of(() -> AwsBasicCredentials.create("test", "test")), configuration)) {
+                Assertions.assertEquals("s3", client.serviceName());
+            }
+        } finally {
+            storage.close();
+        }
+    }
+
+    /**
+     * Unsupported SDK names and CRT health windows below two seconds fail during URI option parsing.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testBucketClientOptionValidation() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> AwsObjectStorage.Configuration.fromBucketURI(
+            BucketURI.parse("0@s3://one?sdkImpl=unknown")));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> AwsObjectStorage.Configuration.fromBucketURI(
+            BucketURI.parse("0@s3://one?sdkImpl=crt&crtMinimumThroughputTimeoutSeconds=1")));
+    }
+
+    /**
+     * Both SDK implementations build with endpoint and path-style overrides using the existing runtime dependencies.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testSdkClientSelection() {
+        AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
+        try {
+            for (String implementation : List.of("netty", "crt")) {
+                storage.bucketURI.addExtension("sdkImpl", implementation);
+                try (S3AsyncClient client = storage.newS3Client(
+                    BucketURI.parse("0@s3://bucket?region=us-east-1&endpoint=http://localhost:9000&pathStyle=true"),
+                    List.of(() -> AwsBasicCredentials.create("test", "test")),
+                    AwsObjectStorage.Configuration.fromBucketURI(storage.bucketURI))) {
+                    Assertions.assertEquals("s3", client.serviceName());
+                }
+            }
+        } finally {
+            storage.bucketURI.addExtension("sdkImpl", "netty");
+            storage.close();
+        }
+    }
+
+    /**
+     * Builder mutations preserve previously built snapshots and unmodified fields retain their defaults.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testConfigurationSnapshot() {
+        AwsObjectStorage.Configuration.Builder builder = AwsObjectStorage.Configuration.builder();
+        AwsObjectStorage.Configuration defaults = builder.build();
+        AwsObjectStorage.Configuration custom = builder.sdkImplementation("crt")
+            .crtMinimumThroughputBps(1024).crtMinimumThroughputTimeout(java.time.Duration.ofSeconds(3))
+            .crtTargetThroughputGbps(2.5).build();
+        Assertions.assertEquals("netty", defaults.sdkImplementation());
+        Assertions.assertEquals(32L * 1024 * 1024, defaults.crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), defaults.crtMinimumThroughputTimeout());
+        Assertions.assertEquals("crt", custom.sdkImplementation());
+        Assertions.assertEquals(10.0, defaults.crtTargetThroughputGbps());
+        Assertions.assertEquals(2.5, custom.crtTargetThroughputGbps());
+        Assertions.assertEquals(1024, custom.crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(3), custom.crtMinimumThroughputTimeout());
+        Assertions.assertEquals(-1, defaults.maxConcurrency());
+        Assertions.assertEquals(-1L, defaults.crtMaxNativeMemoryBytes());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), defaults.connectionTimeout());
+        Assertions.assertEquals(2, defaults.numRetries());
+    }
+
+    /**
+     * Automatic concurrency inherits the existing cap, while native memory stays unset until explicitly configured.
+     */
+    @Tag("S3Unit")
+    @Test
+    void testCrtBuilderConfiguration() {
+        software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder builder = mock(
+            software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder> configure = invocation.getArgument(0);
+            var http = software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.builder();
+            configure.accept(http);
+            var result = http.build();
+            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.connectionTimeout());
+            Assertions.assertEquals(32L * 1024 * 1024, result.healthConfiguration().minimumThroughputInBps());
+            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.healthConfiguration().minimumThroughputTimeout());
+            return builder;
+        }).when(builder).httpConfiguration(org.mockito.ArgumentMatchers
+            .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder>>any());
+        org.mockito.Mockito.doAnswer(invocation -> {
+            Consumer<software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.Builder> configure = invocation.getArgument(0);
+            var retry = software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.builder();
+            configure.accept(retry);
+            Assertions.assertEquals(2, retry.build().numRetries());
+            return builder;
+        }).when(builder).retryConfiguration(org.mockito.ArgumentMatchers
+            .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.Builder>>any());
+        AwsObjectStorage.Configuration.builder().build().configureCrtBuilder(builder, 77);
+        org.mockito.Mockito.verify(builder).maxConcurrency(77);
+        org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.never()).maxNativeMemoryLimitInBytes(any());
+        AwsObjectStorage.Configuration.builder().maxConcurrency(12).crtMaxNativeMemoryBytes(1024L * 1024 * 1024)
+            .build().configureCrtBuilder(builder, 77);
+        org.mockito.Mockito.verify(builder).maxConcurrency(12);
+        org.mockito.Mockito.verify(builder).maxNativeMemoryLimitInBytes(1024L * 1024 * 1024);
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2)).thresholdInBytes(Long.MAX_VALUE);
+    }
+
+    /**
      * Given a timeout on a later LIST page, retry restarts pagination and returns only the successful attempt's
      * objects, without retaining partial results or a stale continuation token.
      */
