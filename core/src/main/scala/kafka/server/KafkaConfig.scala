@@ -803,6 +803,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
   def kafkaGoMetadataCompatibilityEnabled: Boolean = getBoolean(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG)
   val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
+  val tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG);
   // AutoMQ inject end
 
@@ -1275,6 +1276,9 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     // AutoMQ inject start
     if (tableTopicNamespace != null) {
       logProps.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, tableTopicNamespace)
+    }
+    if (tableTopicLocation != null) {
+      logProps.put(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, tableTopicLocation)
     }
     if (tableTopicSchemaRegistryUrl != null) {
       logProps.put(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, tableTopicSchemaRegistryUrl)
