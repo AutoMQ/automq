@@ -157,8 +157,8 @@ public class ProxyWriterTest {
         when(operator.completeMultipartUpload(any(), eq("testpath"), eq("test_upload_id"), any()))
             .thenReturn(CompletableFuture.completedFuture(null));
 
-        // rangeRead hands back a not-yet-completed future per call so we can drive completion order by hand. The
-        // multipart replay chain issues each read only after the previous one completes.
+        // rangeRead hands back a not-yet-completed future per call so we can drive completion order by hand.
+        // Reads are serialized within each multipart part; different parts can start reads concurrently.
         List<CompletableFuture<ByteBuf>> reads = new ArrayList<>();
         List<Integer> readSizes = new ArrayList<>();
         List<Byte> readMarkers = new ArrayList<>();
@@ -331,6 +331,37 @@ public class ProxyWriterTest {
     }
 
     @Test
+    public void testLargeWriteBeforeCopyFlushesWithoutInvalidRange() {
+        // Given a 28 MiB write followed by an 8 MiB copy, flush the buffered write before issuing the copy.
+        // No range read may be constructed with a negative end offset.
+        int mib = 1024 * 1024;
+        when(operator.createMultipartUpload(any(), eq("testpath")))
+            .thenReturn(CompletableFuture.completedFuture("test_upload_id"));
+        when(operator.uploadPart(any(), eq("testpath"), eq("test_upload_id"), anyInt(), any()))
+            .thenAnswer(inv -> {
+                ByteBuf part = inv.getArgument(4);
+                part.release();
+                return CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(
+                    inv.getArgument(3), "etag", "checksum"));
+            });
+        when(operator.uploadPartCopy(any(), any(), eq("testpath"), anyLong(), anyLong(),
+            eq("test_upload_id"), anyInt()))
+            .thenAnswer(inv -> CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(
+                inv.getArgument(6), "etag", "checksum")));
+        when(operator.completeMultipartUpload(any(), eq("testpath"), eq("test_upload_id"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        writer.write(TestUtils.randomPooled(28 * mib));
+        writer.copyWrite(new S3ObjectMetadata(1, 8L * mib, S3ObjectType.STREAM), 0, 8L * mib);
+
+        assertTrue(writer.close().isDone());
+        assertFalse(writer.close().isCompletedExceptionally());
+        verify(operator, times(0)).rangeRead(any(), any(), anyLong(), anyLong());
+        verify(operator).uploadPartCopy(any(), any(), eq("testpath"), eq(0L), eq(8L * mib),
+            eq("test_upload_id"), anyInt());
+    }
+
+    @Test
     public void testReleaseWaitsForPendingMultipartRead() {
         // Given multipart selection with a pending range read, release must wait to free the returned buffer and
         // must not upload the part after cleanup is requested.
@@ -385,6 +416,45 @@ public class ProxyWriterTest {
         writer.copyWrite(new S3ObjectMetadata(1, 30L * mib, S3ObjectType.STREAM), 0, 30L * mib);
         writer.copyWrite(new S3ObjectMetadata(2, 3L * mib, S3ObjectType.STREAM), 0, 3L * mib);
         ByteBuf source = TestUtils.randomPooled(8);
+        byte original = source.getByte(0);
+        writer.write(source.retainedDuplicate());
+        writer.copyOnWrite();
+        source.setByte(0, original + 1);
+
+        readCf.complete(TestUtils.randomPooled(3 * mib));
+        assertTrue(writer.close().isDone());
+        assertEquals(original, uploadedMarker[0]);
+        source.release();
+    }
+
+    @Test
+    public void testCopyOnWriteSnapshotsQueuedWriteAfterPartSubmission() {
+        // Given a queued write makes a part large enough to upload before its range read completes, the writer
+        // must detach the caller's buffer before copyOnWrite returns and the caller changes it.
+        int mib = 1024 * 1024;
+        CompletableFuture<ByteBuf> readCf = new CompletableFuture<>();
+        byte[] uploadedMarker = new byte[1];
+        when(operator.createMultipartUpload(any(), eq("testpath")))
+            .thenReturn(CompletableFuture.completedFuture("test_upload_id"));
+        when(operator.uploadPartCopy(any(), any(), eq("testpath"), anyLong(), anyLong(),
+            eq("test_upload_id"), anyInt()))
+            .thenAnswer(inv -> CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(
+                inv.getArgument(6), "etag", "checksum")));
+        when(operator.rangeRead(any(), any(), anyLong(), anyLong())).thenReturn(readCf);
+        when(operator.uploadPart(any(), eq("testpath"), eq("test_upload_id"), anyInt(), any()))
+            .thenAnswer(inv -> {
+                ByteBuf part = inv.getArgument(4);
+                uploadedMarker[0] = part.getByte(3 * mib);
+                part.release();
+                return CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(
+                    inv.getArgument(3), "etag", "checksum"));
+            });
+        when(operator.completeMultipartUpload(any(), eq("testpath"), eq("test_upload_id"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+
+        writer.copyWrite(new S3ObjectMetadata(1, 30L * mib, S3ObjectType.STREAM), 0, 30L * mib);
+        writer.copyWrite(new S3ObjectMetadata(2, 3L * mib, S3ObjectType.STREAM), 0, 3L * mib);
+        ByteBuf source = TestUtils.randomPooled(31 * mib);
         byte original = source.getByte(0);
         writer.write(source.retainedDuplicate());
         writer.copyOnWrite();

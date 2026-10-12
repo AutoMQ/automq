@@ -159,6 +159,14 @@ public class MultiPartWriter implements Writer {
             }
         } else {
             if (objectPart.size() + targetSize > maxMergeWriteSize) {
+                if (objectPart.size() >= minPartSize) {
+                    // A buffered write can already exceed minPartSize. Upload it before starting a copy rather than
+                    // calculating a negative range end from the remaining bytes needed to fill the part.
+                    objectPart.upload();
+                    this.objectPart = null;
+                    copyWrite0(sourceObjectMateData, start, end);
+                    return;
+                }
                 long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
                 objectPart.readAndWrite(sourceObjectMateData, start, readAndWriteCopyEnd);
                 objectPart.upload();
@@ -292,6 +300,11 @@ public class MultiPartWriter implements Writer {
         }
 
         public void upload() {
+            if (!lastRangeReadCf.isDone()) {
+                // This part is no longer reachable through MultiPartWriter.copyOnWrite(), but queued writes may
+                // still hold caller-owned buffers until the read finishes. Snapshot them before submitting it.
+                copyOnWrite();
+            }
             this.lastRangeReadCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
                     synchronized (this) {
