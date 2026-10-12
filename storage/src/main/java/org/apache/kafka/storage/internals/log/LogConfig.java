@@ -219,7 +219,9 @@ public class LogConfig extends AbstractConfig {
             TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG,
             QuotaConfigs.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
             QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
+            // AutoMQ inject start
             TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG
+            // AutoMQ inject end
     ));
 
     @SuppressWarnings("deprecation")
@@ -427,7 +429,7 @@ public class LogConfig extends AbstractConfig {
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
     public final String tableTopicLocation;
-    public final boolean tableTopicKafkaMetadataColumnsEnable;
+    public final boolean tableTopicMetadataColumnsEnabled;
     @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
     public final TableTopicConvertType valueConvertType;
@@ -505,7 +507,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
         this.tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG);
-        this.tableTopicKafkaMetadataColumnsEnable = getBoolean(TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG);
+        this.tableTopicMetadataColumnsEnabled = getBoolean(TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
         this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));

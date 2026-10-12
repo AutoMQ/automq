@@ -44,9 +44,9 @@ class LogConfigTest {
    */
   @Test
   def testKafkaMetadataColumnsEnableDefault(): Unit = {
-    assertTrue(new LogConfig(Collections.emptyMap()).tableTopicKafkaMetadataColumnsEnable)
+    assertTrue(new LogConfig(Collections.emptyMap()).tableTopicMetadataColumnsEnabled)
     assertFalse(new LogConfig(Collections.singletonMap(
-      TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, "false")).tableTopicKafkaMetadataColumnsEnable)
+      TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, "false")).tableTopicMetadataColumnsEnabled)
   }
 
   /**

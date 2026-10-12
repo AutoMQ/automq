@@ -62,7 +62,7 @@ public final class RecordAssembler {
     private static final int SCHEMA_CACHE_MAX = 32;
     // Cache of assembled schema + precomputed indexes bound to a schema identity
     private final LRUCache<String, AssemblerSchema> assemblerSchemaCache = new LRUCache<>(SCHEMA_CACHE_MAX);
-    private final boolean kafkaMetadataColumnsEnable;
+    private final boolean metadataColumnsEnabled;
 
     // Reusable state - reset for each record
     private GenericRecord baseRecord;
@@ -80,8 +80,8 @@ public final class RecordAssembler {
     /**
      * Creates an assembler with a fixed output shape for Kafka metadata columns.
      */
-    public RecordAssembler(boolean kafkaMetadataColumnsEnable) {
-        this.kafkaMetadataColumnsEnable = kafkaMetadataColumnsEnable;
+    public RecordAssembler(boolean metadataColumnsEnabled) {
+        this.metadataColumnsEnabled = metadataColumnsEnabled;
     }
 
     public RecordAssembler reset(GenericRecord baseRecord) {
@@ -132,18 +132,18 @@ public final class RecordAssembler {
     private AssemblerSchema getOrCreateAssemblerSchema() {
         if (schemaIdentity == null) {
             long baseFp = SchemaNormalization.parsingFingerprint64(baseRecord.getSchema());
-            long keyFp = kafkaMetadataColumnsEnable && keyResult != null
+            long keyFp = metadataColumnsEnabled && keyResult != null
                 ? SchemaNormalization.parsingFingerprint64(keyResult.getSchema()) : 0L;
-            long headerFp = kafkaMetadataColumnsEnable && headerResult != null
+            long headerFp = metadataColumnsEnabled && headerResult != null
                 ? SchemaNormalization.parsingFingerprint64(headerResult.getSchema()) : 0L;
-            long metadataFp = kafkaMetadataColumnsEnable
+            long metadataFp = metadataColumnsEnabled
                 ? SchemaNormalization.parsingFingerprint64(METADATA_SCHEMA) : 0L;
 
             schemaIdentity = "v:" + Long.toUnsignedString(baseFp) +
                            "|k:" + Long.toUnsignedString(keyFp) +
                            "|h:" + Long.toUnsignedString(headerFp) +
                            "|m:" + Long.toUnsignedString(metadataFp) +
-                           "|km:" + (kafkaMetadataColumnsEnable ? "1" : "0");
+                           "|km:" + (metadataColumnsEnabled ? "1" : "0");
         }
         final String cacheKey = schemaIdentity;
         AssemblerSchema cached = assemblerSchemaCache.get(cacheKey);
@@ -169,18 +169,18 @@ public final class RecordAssembler {
         int keyIndex = -1;
         int metadataIndex = -1;
 
-        if (kafkaMetadataColumnsEnable && headerResult != null) {
+        if (metadataColumnsEnabled && headerResult != null) {
             Schema optionalHeaderSchema = ensureOptional(headerResult.getSchema());
             finalFields.add(new Schema.Field(KAFKA_HEADER_FIELD, optionalHeaderSchema, "Kafka record headers", JsonProperties.NULL_VALUE));
             headerIndex = baseFieldCount;
         }
-        if (kafkaMetadataColumnsEnable && keyResult != null) {
+        if (metadataColumnsEnabled && keyResult != null) {
             Schema optionalKeySchema = ensureOptional(keyResult.getSchema());
             finalFields.add(new Schema.Field(KAFKA_KEY_FIELD, optionalKeySchema, "Kafka record key", JsonProperties.NULL_VALUE));
             keyIndex = (headerIndex >= 0) ? baseFieldCount + 1 : baseFieldCount;
         }
 
-        if (kafkaMetadataColumnsEnable) {
+        if (metadataColumnsEnabled) {
             Schema optionalMetadataSchema = ensureOptional(METADATA_SCHEMA);
             finalFields.add(new Schema.Field(KAFKA_METADATA_FIELD, optionalMetadataSchema, "Kafka record metadata", JsonProperties.NULL_VALUE));
             metadataIndex = baseFieldCount + (headerIndex >= 0 ? 1 : 0) + (keyIndex >= 0 ? 1 : 0);

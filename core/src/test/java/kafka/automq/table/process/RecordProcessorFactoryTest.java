@@ -162,7 +162,7 @@ public class RecordProcessorFactoryTest {
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.RAW);
         when(mockConfig.transformType()).thenReturn(TableTopicTransformType.NONE);
-        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
+        when(mockConfig.metadataColumnsEnabled()).thenReturn(false);
 
         RecordProcessor processor = recordProcessorFactory.create(mockConfig, TEST_TOPIC);
         ProcessingResult result = processor.process(TEST_PARTITION,
@@ -699,7 +699,7 @@ public class RecordProcessorFactoryTest {
         // Arrange
         WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.schemaType()).thenReturn(org.apache.kafka.server.record.TableTopicSchemaType.SCHEMALESS);
-        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
+        when(mockConfig.metadataColumnsEnabled()).thenReturn(false);
         // These should be ignored when schemaType is SCHEMALESS
         when(mockConfig.keyConvertType()).thenReturn(TableTopicConvertType.STRING);
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
@@ -743,7 +743,7 @@ public class RecordProcessorFactoryTest {
 
         WorkerConfig mockConfig = mockWorkerConfig();
         when(mockConfig.schemaType()).thenReturn(org.apache.kafka.server.record.TableTopicSchemaType.SCHEMA);
-        when(mockConfig.kafkaMetadataColumnsEnable()).thenReturn(false);
+        when(mockConfig.metadataColumnsEnabled()).thenReturn(false);
         // This should be used by the value converter
         when(mockConfig.valueConvertType()).thenReturn(TableTopicConvertType.BY_SCHEMA_ID);
         // These should be ignored by the factory logic for this deprecated config
@@ -862,7 +862,7 @@ public class RecordProcessorFactoryTest {
 
     private WorkerConfig mockWorkerConfig() {
         WorkerConfig config = mock(WorkerConfig.class);
-        when(config.kafkaMetadataColumnsEnable()).thenReturn(true);
+        when(config.metadataColumnsEnabled()).thenReturn(true);
         return config;
     }
 
