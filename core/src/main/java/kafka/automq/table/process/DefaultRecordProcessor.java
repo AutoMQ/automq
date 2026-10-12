@@ -68,7 +68,7 @@ public class DefaultRecordProcessor implements RecordProcessor {
     private final List<Transform> transformChain;
     private final List<String> idColumns;
     private final boolean fromDebeziumKey;
-    private final boolean kafkaMetadataColumnsEnable;
+    private final boolean metadataColumnsEnabled;
     private final RecordAssembler recordAssembler; // Reusable assembler
     private final String transformIdentity; // precomputed transform chain identity
     private String lastKeySchemaId;
@@ -98,19 +98,19 @@ public class DefaultRecordProcessor implements RecordProcessor {
      * @param valueConverter converter used for Kafka record values
      * @param transforms ordered transform chain applied after value conversion
      * @param idColumns configured identifier columns, or {@code [_from_debezium_key_]} to derive them from the key schema
-     * @param kafkaMetadataColumnsEnable whether to include Kafka header, key, and metadata columns in output records
+     * @param metadataColumnsEnabled whether to include Kafka header, key, and metadata columns in output records
      */
     public DefaultRecordProcessor(String topicName, Converter keyConverter, Converter valueConverter,
                                   List<Transform> transforms, List<String> idColumns,
-                                  boolean kafkaMetadataColumnsEnable) {
+                                  boolean metadataColumnsEnabled) {
         this.transformChain = transforms;
         this.idColumns = idColumns == null ? List.of() : List.copyOf(idColumns);
         this.fromDebeziumKey = this.idColumns.size() == 1 && FROM_DEBEZIUM_KEY.equals(this.idColumns.get(0));
-        this.kafkaMetadataColumnsEnable = kafkaMetadataColumnsEnable;
+        this.metadataColumnsEnabled = metadataColumnsEnabled;
         this.topicName = topicName;
         this.keyConverter = keyConverter;
         this.valueConverter = valueConverter;
-        this.recordAssembler = new RecordAssembler(kafkaMetadataColumnsEnable);
+        this.recordAssembler = new RecordAssembler(metadataColumnsEnabled);
 
         // Precompute transform identity (names joined by comma)
         StringBuilder sb = new StringBuilder();
@@ -304,13 +304,13 @@ public class DefaultRecordProcessor implements RecordProcessor {
         ConversionResult valueResult,
         List<String> identifierColumns) {
         // Extract schema identities
-        String headerIdentity = kafkaMetadataColumnsEnable ? headerResult.getSchemaIdentity() : "excluded";
-        String keyIdentity = kafkaMetadataColumnsEnable
+        String headerIdentity = metadataColumnsEnabled ? headerResult.getSchemaIdentity() : "excluded";
+        String keyIdentity = metadataColumnsEnabled
             ? keyResult == null ? NULL_KEY_SCHEMA_IDENTITY : keyResult.getSchemaIdentity()
             : "excluded";
         String valueIdentity = valueResult.getSchemaIdentity();
         return "h:" + headerIdentity + "|v:" + valueIdentity + "|k:" + keyIdentity + "|t:" + transformIdentity
-            + "|id:" + encodeIdentifierColumns(identifierColumns) + "|km:" + (kafkaMetadataColumnsEnable ? "1" : "0");
+            + "|id:" + encodeIdentifierColumns(identifierColumns) + "|km:" + (metadataColumnsEnabled ? "1" : "0");
     }
 
     private String encodeIdentifierColumns(List<String> identifierColumns) {

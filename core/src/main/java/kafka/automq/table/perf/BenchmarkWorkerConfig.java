@@ -41,7 +41,7 @@ class BenchmarkWorkerConfig extends WorkerConfig {
     }
 
     @Override
-    public boolean kafkaMetadataColumnsEnable() {
+    public boolean metadataColumnsEnabled() {
         return true;
     }
 

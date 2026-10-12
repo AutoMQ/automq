@@ -53,8 +53,8 @@ public class WorkerConfig {
         return config.tableTopicNamespace;
     }
 
-    public boolean kafkaMetadataColumnsEnable() {
-        return config.tableTopicKafkaMetadataColumnsEnable;
+    public boolean metadataColumnsEnabled() {
+        return config.tableTopicMetadataColumnsEnabled;
     }
 
     public TableTopicSchemaType schemaType() {
