@@ -268,6 +268,7 @@ public class LogConfig extends AbstractConfig {
 
             // AutoMQ inject start
             .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+            .define(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_LOCATION_DOC)
             // AutoMQ inject end
 
             .defineInternal(ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_CONFIG, LONG, ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_DEFAULT, atLeast(0), LOW, ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_DOC);
@@ -348,6 +349,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(1), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+                .define(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_LOCATION_DOC)
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.NONE.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
@@ -422,6 +424,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicEnable;
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
+    public final String tableTopicLocation;
     @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
     public final TableTopicConvertType valueConvertType;
@@ -498,6 +501,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicEnable = getBoolean(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG);
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
+        this.tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
         this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));

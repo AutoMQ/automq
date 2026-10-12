@@ -21,6 +21,7 @@ package kafka.automq.table.worker;
 
 import com.google.common.collect.ImmutableMap;
 
+import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.TableProperties;
@@ -41,6 +42,7 @@ import org.mockito.stubbing.Answer;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -80,6 +82,63 @@ public class IcebergTableManagerTest {
         Table table = manager.getTableOrCreate(schema);
         assertNotNull(table);
         assertEquals(table, manager.getTableOrCreate(schema));
+    }
+
+    /**
+     * Given an explicit table location, a newly created Iceberg table uses that location.
+     */
+    @Test
+    public void shouldCreateTableAtConfiguredLocation() {
+        TableIdentifier tableId = randomTableId();
+        String location = "s3://warehouse/custom/table";
+        IcebergTableManager manager = newManager(tableId, location);
+
+        Schema schema = new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get()));
+
+        Table table = manager.getTableOrCreate(schema);
+        assertEquals(location, table.location());
+    }
+
+    /**
+     * Given an existing Iceberg table, a configured location does not change its location.
+     */
+    @Test
+    public void shouldKeepExistingTableLocation() {
+        TableIdentifier tableId = randomTableId();
+        String originalLocation = "s3://warehouse/original/table";
+        catalog.createTable(tableId, new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())),
+            PartitionSpec.unpartitioned(), originalLocation, Map.of());
+
+        IcebergTableManager manager = newManager(tableId, "s3://warehouse/replacement/table");
+        Table table = manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        assertEquals(originalLocation, table.location());
+    }
+
+    /**
+     * Given a blank location, table creation delegates location selection to the catalog.
+     */
+    @Test
+    public void shouldDelegateBlankLocationToCatalog() {
+        TableIdentifier tableId = randomTableId();
+        Catalog mockCatalog = mock(Catalog.class);
+        Table mockTable = mock(Table.class);
+        WorkerConfig config = mock(WorkerConfig.class);
+        when(config.location()).thenReturn("  ");
+        when(config.partitionBy()).thenReturn(List.of());
+        when(config.icebergAutoCreateProperties()).thenReturn(List.of());
+        when(mockCatalog.loadTable(eq(tableId))).thenThrow(new NoSuchTableException("Table not found"));
+        when(mockCatalog.createTable(eq(tableId), any(), any(), any())).thenReturn(mockTable);
+
+        IcebergTableManager manager = new IcebergTableManager(mockCatalog, tableId, config);
+        manager.getTableOrCreate(new Schema(
+            Types.NestedField.required(1, "id", Types.IntegerType.get())));
+
+        verify(mockCatalog).createTable(eq(tableId), any(), any(), any());
+        verify(mockCatalog, never()).createTable(eq(tableId), any(), any(), any(String.class), any());
     }
 
     @Test
@@ -556,6 +615,14 @@ public class IcebergTableManagerTest {
 
     private IcebergTableManager newManager(TableIdentifier tableId) {
         return newManager(tableId, List.of("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true"));
+    }
+
+    private IcebergTableManager newManager(TableIdentifier tableId, String location) {
+        WorkerConfig config = mock(WorkerConfig.class);
+        when(config.location()).thenReturn(location);
+        when(config.icebergAutoCreateProperties()).thenReturn(List.of(
+            "write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true"));
+        return new IcebergTableManager(catalog, tableId, config);
     }
 
     private IcebergTableManager newManager(TableIdentifier tableId, List<String> autoCreateProperties) {
