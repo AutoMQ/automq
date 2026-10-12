@@ -1104,12 +1104,14 @@ private[kafka] class Processor(
               channelContext.markThrottle()
               selector.mute(channelId)
             }
+          // AutoMQ inject start
           case _: EndThrottlingResponse =>
             val channelContext = channelContexts.get(channelId)
             val unmute = channelContext == null || channelContext.clearThrottle()
             if (unmute) {
-              selector.unmute(channelId)
+              tryUnmuteChannel(channelId)
             }
+          // AutoMQ inject end
           case _ =>
             throw new IllegalArgumentException(s"Unknown response type: ${currentResponse.getClass}")
         }
@@ -1489,9 +1491,9 @@ private[kafka] class Processor(
 //    openOrClosingChannel(connectionId).foreach(c => c.handleChannelMuteEvent(event))
 //  }
 //
-//  private def tryUnmuteChannel(connectionId: String): Unit = {
-//    openOrClosingChannel(connectionId).foreach(c => selector.unmute(c.id))
-//  }
+  private def tryUnmuteChannel(connectionId: String): Unit = {
+    openOrClosingChannel(connectionId).foreach(channel => selector.unmute(channel.id))
+  }
 
   /* For test usage */
   private[network] def channel(connectionId: String): Option[KafkaChannel] =

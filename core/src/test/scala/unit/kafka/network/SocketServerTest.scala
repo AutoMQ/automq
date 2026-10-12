@@ -821,6 +821,29 @@ class SocketServerTest {
     assertFalse(openOrClosingChannel(request).exists(c => c.isMuted))
   }
 
+  /**
+   * Verifies that a late end-throttling response for a closed connection is ignored without unmuting a missing channel.
+   */
+  @Test
+  def testEndThrottlingResponseForClosedConnection(): Unit = {
+    withTestableServer(testWithServer = { testableServer =>
+      val socket = connect(testableServer)
+      sendRequest(socket, producerRequestBytes())
+      val request = receiveRequest(testableServer.dataPlaneRequestChannel)
+      val connectionId = request.context.connectionId
+
+      socket.close()
+      testableServer.waitForChannelClose(connectionId, locallyClosed = false)
+      val pollCount = testableServer.testableSelector.operationCounts(SelectorOperation.Poll)
+
+      testableServer.dataPlaneRequestChannel.endThrottling(request)
+      TestUtils.waitUntilTrue(
+        () => testableServer.testableSelector.operationCounts(SelectorOperation.Poll) > pollCount,
+        "Late end-throttling response was not processed")
+      assertEquals(0, testableServer.testableSelector.operationCounts(SelectorOperation.Unmute))
+    })
+  }
+
   @Test
   def testSocketsCloseOnShutdown(): Unit = {
     // open a connection
