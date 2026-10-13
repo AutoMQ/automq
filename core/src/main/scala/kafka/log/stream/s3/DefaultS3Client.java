@@ -191,7 +191,8 @@ public class DefaultS3Client implements Client {
     protected WriteAheadLog buildWAL() {
         String clusterId = brokerServer.clusterId();
         WalHandle walHandle = new DefaultWalHandle(clusterId);
-        WalFactory factory = new DefaultWalFactory(config.nodeId(), config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
+        WalFactory factory = new DefaultWalFactory(config.nodeId(), config.objectTagging(), networkInboundLimiter,
+            networkOutboundLimiter, this::getAutoMQVersion);
         return new ConfirmWal(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
     }
 
@@ -251,7 +252,8 @@ public class DefaultS3Client implements Client {
                 int nodeId = request.getNodeId();
                 long nodeEpoch = request.getNodeEpoch();
                 WalHandle walHandle = new DefaultWalHandle(clusterId);
-                WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
+                WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter,
+                    networkOutboundLimiter, DefaultS3Client.this::getAutoMQVersion);
                 NodeManager nodeManager = new NodeManagerStub(requestSender, nodeId, nodeEpoch, Collections.emptyMap());
                 return new ConfirmWal(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
             }

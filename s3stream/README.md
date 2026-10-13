@@ -67,7 +67,7 @@ Both `s3.wal.path` and each bucket URI in `automq.zonerouter.channels` accept:
 | URI option | Default | Behavior |
 | --- | --- | --- |
 | `shardCount` | `64` | Positive number of deterministic object-key shards. |
-| `shardMode` | `r` | `r` reads both layouts and writes legacy keys; `rw` reads both layouts and writes sharded keys. |
+| `shardMode` | `rw` | `rw` writes sharded keys and reads sharded keys first; `r` writes legacy keys and reads legacy keys first. Both fall back to the other layout on object-not-found. |
 
 The shard is `(objectStartOffset / 67108864) % shardCount`, encoded as lowercase
 hexadecimal with at least two digits. It is inserted before the broker epoch:
@@ -79,13 +79,34 @@ hexadecimal with at least two digits. It is inserted before the broker epoch:
 
 Traditional object WAL uses the same layout without `_rc` on the broker directory.
 Broker-prefix listing discovers both layouts, and recovery and trimming use the
-stored object paths. Single and batch reads try the sharded key first and fall back
-to the legacy key only for an object-not-found response. No offsets or router
+stored object paths. Single and batch reads prefer the configured write layout and
+fall back to the other layout only for an object-not-found response. No offsets or router
 protocol fields change, and existing objects do not need to be copied.
 
-For a rolling upgrade, first deploy compatible readers everywhere with
-`shardMode=r` and the intended `shardCount`. Then roll out `shardMode=rw` to enable
-sharded writes, for example:
+New clusters formatted with the default release version finalize `automq.version=7`
+(AutoMQ V6) and use sharded writes by default. Existing clusters at older feature
+levels must explicitly set `shardMode=r` on `s3.wal.path` and every writable router
+bucket before upgrading. Otherwise broker startup fails before WAL initialization,
+with an error identifying the required migration setting. Read-only router buckets
+and local WALs are exempt because they do not write new sharded objects. Recovery
+and failover may reopen older stored WAL URIs without `shardMode`; their writers
+keep legacy keys until the cluster has finalized sharding support.
+
+For a rolling upgrade:
+
+1. Configure `shardMode=r` with the intended `shardCount` on all object WAL writers.
+2. Upgrade all brokers and controllers, retaining `r` throughout the rollout.
+3. Finalize reader support after the upgrade:
+
+   ```sh
+   bin/kafka-features.sh --bootstrap-server <broker>:9092 upgrade --feature automq.version=7
+   ```
+
+   Feature validation rejects this update while registered nodes do not support it.
+   Older brokers cannot rejoin once the new feature level is finalized.
+4. Remove `shardMode=r` or explicitly set `shardMode=rw`, then restart the writers.
+
+For example, these configurations enable sharded writes on a compatible cluster:
 
 ```properties
 s3.wal.path=0@s3://wal-bucket?region=us-west-2&shardCount=64&shardMode=rw
@@ -98,8 +119,10 @@ on all brokers that read or write it, including read-only router buckets. Keep t
 count unchanged while sharded objects are retained: offsets do not encode it.
 To change the count, switch all writers to `shardMode=r`, wait for the old sharded
 objects to be trimmed, configure the new count on all readers, and then enable
-`rw` again. Likewise, rollback to older binaries requires stopping sharded writes
-and waiting for sharded objects to be trimmed before downgrading readers.
+`rw` again. Switching back to `r` does not remove the cluster capability requirement:
+feature downgrades below `automq.version=7`, including unsafe downgrades, are rejected
+because the controller cannot verify that retained sharded objects have been drained.
+After finalizing the feature, binary rollback must retain sharded-WAL reader support.
 
 Sharding spreads successive objects across key prefixes to reduce concentrated
 S3 request traffic. Validate the count against request rates and `503 SlowDown`

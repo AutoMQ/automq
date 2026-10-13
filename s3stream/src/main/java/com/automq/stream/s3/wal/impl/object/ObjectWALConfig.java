@@ -69,7 +69,7 @@ public class ObjectWALConfig {
         this.type = type;
         this.manualMode = false;
         this.shardCount = DEFAULT_SHARD_COUNT;
-        this.shardMode = "r";
+        this.shardMode = "rw";
     }
 
     private ObjectWALConfig(Builder builder) {
@@ -193,7 +193,7 @@ public class ObjectWALConfig {
         private String type = "";
         private boolean manualMode;
         private int shardCount = DEFAULT_SHARD_COUNT;
-        private String shardMode = "r";
+        private String shardMode = "rw";
 
         private Builder() {
         }
@@ -242,7 +242,7 @@ public class ObjectWALConfig {
             return this;
         }
 
-        /** Sets r (default) for legacy writes or rw for sharded writes; both modes read both layouts. */
+        /** Sets r for legacy writes or rw (default) for sharded writes; reads prefer the write layout and fall back on not-found. */
         public Builder withShardMode(String shardMode) {
             if (!"r".equals(shardMode) && !"rw".equals(shardMode)) {
                 throw new IllegalArgumentException("shardMode must be r or rw");

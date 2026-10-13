@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Verifies migration defaults and rejects ambiguous object-key layouts before opening a WAL. */
 @Tag("S3Unit")
 public class ObjectWALConfigTest {
-    /** Existing builder, URI, and constructor callers keep legacy writes and gain 64-shard reads. */
+    /** Builder, URI, and constructor callers default to sharded writes with 64 shards. */
     @Test
     public void testDefaults() {
         assertDefaults(ObjectWALConfig.builder().build());
@@ -81,6 +81,6 @@ public class ObjectWALConfigTest {
 
     private static void assertDefaults(ObjectWALConfig config) {
         assertEquals(64, config.shardCount());
-        assertEquals("r", config.shardMode());
+        assertEquals("rw", config.shardMode());
     }
 }

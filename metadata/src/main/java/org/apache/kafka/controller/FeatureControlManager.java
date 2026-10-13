@@ -235,6 +235,14 @@ public class FeatureControlManager {
         }
 
         if (newVersion < currentVersion) {
+            // AutoMQ inject start
+            if (featureName.equals(AutoMQVersion.FEATURE_NAME)
+                && currentVersion >= AutoMQVersion.V6.featureLevel()
+                && newVersion < AutoMQVersion.V6.featureLevel()) {
+                return invalidUpdateVersion(featureName, newVersion,
+                    "Cannot downgrade below WAL sharding support: retained sharded objects may still require compatible readers.");
+            }
+            // AutoMQ inject end
             if (upgradeType.equals(FeatureUpdate.UpgradeType.UPGRADE)) {
                 return invalidUpdateVersion(featureName, newVersion,
                     "Can't downgrade the version of this feature without setting the " +

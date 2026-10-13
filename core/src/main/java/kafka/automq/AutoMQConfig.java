@@ -72,10 +72,11 @@ public class AutoMQConfig {
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
     private static final String WAL_SHARDING_DOC = " shardCount is a positive integer (default 64)."
-        + " shardMode=r (default) reads sharded and legacy keys while writing legacy keys; shardMode=rw writes sharded keys."
-        + " Upgrade all readers with the same shardCount before enabling rw. Keep shardCount unchanged while sharded objects are retained."
-        + " Switching back to r stops sharded writes; retain compatible readers until sharded objects have been trimmed.";
-    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&shardCount=64][&shardMode=r]'."
+        + " shardMode=rw (default) writes sharded keys; shardMode=r writes legacy keys. Both modes read both layouts, preferring their write layout."
+        + " Before automq.version=7, object WAL writers require explicit shardMode=r or broker startup fails."
+        + " Upgrade all brokers and controllers, finalize automq.version=7, then enable rw. Use the same shardCount on all readers and writers."
+        + " Keep shardCount unchanged while sharded objects are retained. Feature downgrades below sharding support are rejected.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&shardCount=64][&shardMode=rw]'."
         + WAL_SHARDING_DOC;
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
@@ -226,7 +227,7 @@ public class AutoMQConfig {
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
-        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw][&shardCount=64][&shardMode=r]'."
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw][&shardCount=64][&shardMode=rw]'."
         + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching."
         + WAL_SHARDING_DOC;
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";

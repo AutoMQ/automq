@@ -160,6 +160,6 @@ public class DefaultRouterChannelProviderTest {
         assertEquals(1024 * 1024 * 1024L, config.maxUnflushedBytes());
         assertEquals(100 * 1024 * 1024, config.readaheadDataSize());
         assertEquals(64, config.shardCount());
-        assertEquals("r", config.shardMode());
+        assertEquals("rw", config.shardMode());
     }
 }

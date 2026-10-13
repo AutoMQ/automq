@@ -19,6 +19,8 @@
 
 package kafka.log.stream.s3.wal;
 
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
 import com.automq.shell.AutoMQApplication;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.BucketURI;
@@ -35,19 +37,24 @@ import com.automq.stream.utils.Time;
 
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Supplier;
 
 public class DefaultWalFactory implements WalFactory {
     private final int nodeId;
     private final Map<String, String> objectTagging;
     private final NetworkBandwidthLimiter networkInboundLimiter;
     private final NetworkBandwidthLimiter networkOutboundLimiter;
+    private final Supplier<AutoMQVersion> versionSupplier;
 
+    /** Creates object WALs using the finalized cluster capability, including WALs reopened from historical URIs. */
     public DefaultWalFactory(int nodeId, Map<String, String> objectTagging,
-        NetworkBandwidthLimiter networkInboundLimiter, NetworkBandwidthLimiter networkOutboundLimiter) {
+        NetworkBandwidthLimiter networkInboundLimiter, NetworkBandwidthLimiter networkOutboundLimiter,
+        Supplier<AutoMQVersion> versionSupplier) {
         this.nodeId = nodeId;
         this.objectTagging = objectTagging;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
+        this.versionSupplier = versionSupplier;
     }
 
     @Override
@@ -55,6 +62,17 @@ public class DefaultWalFactory implements WalFactory {
         //noinspection SwitchStatementWithTooFewBranches
         switch (uri.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3":
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                    .withClusterId(AutoMQApplication.getClusterId())
+                    .withNodeId(nodeId)
+                    .withEpoch(options.nodeEpoch())
+                    .withOpenMode(options.openMode());
+                // Startup validates the current config, but recovery/failover also opens stored URIs
+                // from older brokers. Those may omit shardMode, so keep their trim markers legacy
+                // until the cluster has finalized reader support.
+                if (!versionSupplier.get().isWALShardingSupported()) {
+                    configBuilder.withShardMode("r");
+                }
                 BucketURI bucketURI = to(uri);
                 ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
                     .builder(bucketURI)
@@ -63,11 +81,6 @@ public class DefaultWalFactory implements WalFactory {
                     .outboundLimiter(networkOutboundLimiter)
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
-                    .withClusterId(AutoMQApplication.getClusterId())
-                    .withNodeId(nodeId)
-                    .withEpoch(options.nodeEpoch())
-                    .withOpenMode(options.openMode());
                 ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
                 configBuilder.withReservationService(reservationService);
                 // This factory creates a dedicated ObjectStorage, so the WAL owns its lifecycle.

@@ -35,6 +35,7 @@ import com.automq.stream.utils.Time;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
@@ -58,10 +59,12 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -75,7 +78,7 @@ public class ObjectWALShardingTest {
     public void testReadsInsideShardedObject(String type) throws Exception {
         MemoryObjectStorage storage = new MemoryObjectStorage((short) 7);
         ObjectWALConfig config = ObjectWALConfig.builder().withClusterId("cluster").withNodeId(1001)
-            .withBucketId((short) 7).withType(type).withEpoch(42).withShardMode("rw").withManualMode(true).build();
+            .withBucketId((short) 7).withType(type).withEpoch(42).withManualMode(true).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
         wal.start();
         try {
@@ -139,24 +142,27 @@ public class ObjectWALShardingTest {
             assertTrue(paths.contains(prefix + "s00/1/wal/402653184-469762048"));
             assertTrue(paths.contains(prefix + "2/wal/536870912-603979776"));
 
-            // Read-only migration mode must read sharded writes from another broker without starting a writer.
-            ObjectWALService reader = new ObjectWALService(Time.SYSTEM, storage, config(type, 0, "r", OpenMode.READ_ONLY));
-            reader.start();
-            try {
-                for (int i = 0; i < offsets.size(); i++) {
-                    StreamRecordBatch record = reader.get(offsets.get(i)).get(5, TimeUnit.SECONDS);
-                    try {
-                        assertEquals(i, record.getBaseOffset());
-                    } finally {
-                        record.release();
+            for (String readerMode : List.of("r", "rw")) {
+                clearInvocations(storage);
+                // Remote readers in either mode must read both layouts without starting a writer.
+                ObjectWALService reader = new ObjectWALService(Time.SYSTEM, storage, config(type, 0, readerMode, OpenMode.READ_ONLY));
+                reader.start();
+                try {
+                    for (int i = 0; i < offsets.size(); i++) {
+                        StreamRecordBatch record = reader.get(offsets.get(i)).get(5, TimeUnit.SECONDS);
+                        try {
+                            assertEquals(i, record.getBaseOffset());
+                        } finally {
+                            record.release();
+                        }
                     }
+                    List<StreamRecordBatch> batch = reader.get(offsets.get(0), offsets.get(11)).get(5, TimeUnit.SECONDS);
+                    assertRecords(batch, 11);
+                    verify(storage, times("r".equals(readerMode) ? 2 : 0)).rangeRead(
+                        any(), eq(prefix + "1/wal/268435456-335544320"), anyLong(), anyLong());
+                } finally {
+                    reader.shutdownGracefully();
                 }
-                List<StreamRecordBatch> batch = reader.get(offsets.get(0), offsets.get(11)).get(5, TimeUnit.SECONDS);
-                assertRecords(batch, 11);
-                // The sharded object is read directly: no redundant legacy request is made on success.
-                verify(storage, never()).rangeRead(any(), eq(prefix + "1/wal/268435456-335544320"), anyLong(), anyLong());
-            } finally {
-                reader.shutdownGracefully();
             }
 
             ObjectWALService recovered = new ObjectWALService(Time.SYSTEM, storage, config(type, 3, "rw", OpenMode.FAILOVER));
@@ -178,23 +184,25 @@ public class ObjectWALShardingTest {
         }
     }
 
-    /** Wrapped object-not-found failures use the legacy path with the same byte range for single and batch reads. */
+    /** Single and batch reads fall back in either direction on wrapped not-found, preserving the byte range. */
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    public void testWrappedNotFoundFallback(boolean batch) throws Exception {
+    @CsvSource({"false,r", "true,r", "false,rw", "true,rw"})
+    public void testWrappedNotFoundFallback(boolean batch, String mode) throws Exception {
         MemoryObjectStorage storage = spy(new MemoryObjectStorage((short) 7));
-        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config("rc", 42, "r", OpenMode.READ_WRITE));
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config("rc", 42, "rw".equals(mode) ? "r" : "rw", OpenMode.READ_WRITE));
         wal.start();
         try {
             RecordOffset offset = append(wal, 0);
             String prefix = ObjectUtils.nodePrefix("cluster", 1001, "rc");
             String sharded = prefix + "s00/42/wal/0-67108864";
+            String preferred = "rw".equals(mode) ? sharded : prefix + "42/wal/0-67108864";
             doReturn(CompletableFuture.failedFuture(new CompletionException(new ObjectNotExistException("missing"))))
-                .when(storage).rangeRead(any(), eq(sharded), anyLong(), anyLong());
+                .when(storage).rangeRead(any(), eq(preferred), anyLong(), anyLong());
+            DefaultReader reader = new DefaultReader(storage, config("rc", 42, mode, OpenMode.READ_ONLY), Time.SYSTEM);
             if (batch) {
-                assertRecords(wal.get(offset, wal.confirmOffset()).get(5, TimeUnit.SECONDS), 1);
+                assertRecords(reader.get(offset, wal.confirmOffset()).get(5, TimeUnit.SECONDS), 1);
             } else {
-                StreamRecordBatch record = wal.get(offset).get(5, TimeUnit.SECONDS);
+                StreamRecordBatch record = reader.get(offset).get(5, TimeUnit.SECONDS);
                 assertEquals(0, record.getBaseOffset());
                 record.release();
             }
@@ -208,38 +216,40 @@ public class ObjectWALShardingTest {
         }
     }
 
-    /** Single and batch readers propagate access/transport failures and missing legacy objects without extra fallback. */
+    /** Both read orders propagate access/transport failures and missing fallback objects without more requests. */
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    public void testReadFailures(boolean batch) throws Exception {
+    @CsvSource({"false,r", "true,r", "false,rw", "true,rw"})
+    public void testReadFailures(boolean batch, String mode) throws Exception {
         for (Throwable error : List.of(new IOException("503 SlowDown"), new SecurityException("403 Forbidden"),
             new ObjectNotExistException("missing legacy object"))) {
             ObjectStorage storage = mock(ObjectStorage.class);
             String prefix = ObjectUtils.nodePrefix("cluster", 1001, "rc");
             String sharded = prefix + "s00/42/wal/0-67108864";
             String legacy = prefix + "42/wal/0-67108864";
+            String preferred = "rw".equals(mode) ? sharded : legacy;
+            String fallback = "rw".equals(mode) ? legacy : sharded;
             when(storage.bucketId()).thenReturn((short) 7);
             when(storage.list(prefix)).thenReturn(CompletableFuture.completedFuture(List.of(
                 new ObjectStorage.ObjectInfo((short) 7, legacy, 0, 100))));
             boolean notFound = error instanceof ObjectNotExistException;
-            when(storage.rangeRead(any(), eq(sharded), anyLong(), anyLong())).thenReturn(
+            when(storage.rangeRead(any(), eq(preferred), anyLong(), anyLong())).thenReturn(
                 CompletableFuture.failedFuture(new CompletionException(error)));
             if (notFound) {
-                when(storage.rangeRead(any(), eq(legacy), anyLong(), anyLong()))
+                when(storage.rangeRead(any(), eq(fallback), anyLong(), anyLong()))
                     .thenReturn(CompletableFuture.failedFuture(error));
             }
-            DefaultReader reader = new DefaultReader(storage, "cluster", 1001, "rc", Time.SYSTEM, 3);
+            DefaultReader reader = new DefaultReader(storage, config("rc", 42, mode, OpenMode.READ_ONLY), Time.SYSTEM);
             DefaultRecordOffset offset = DefaultRecordOffset.of(42, 0, 10);
             CompletableFuture<?> future = batch
                 ? reader.get(offset, DefaultRecordOffset.of(42, DATA_FILE_ALIGN_SIZE, 0)) : reader.get(offset);
             ExecutionException failure = assertThrows(ExecutionException.class, () -> future.get(5, TimeUnit.SECONDS));
             assertSame(error, failure.getCause());
             if (!notFound) {
-                verify(storage, never()).rangeRead(any(), eq(legacy), anyLong(), anyLong());
+                verify(storage, never()).rangeRead(any(), eq(fallback), anyLong(), anyLong());
             }
             verify(storage).rangeRead(argThat(options ->
                 options.bucket() == 7 && options.throttleStrategy() == ThrottleStrategy.BYPASS),
-                eq(sharded), eq((long) WALObjectHeader.WAL_HEADER_SIZE_V1), eq(batch ? -1L : WALObjectHeader.WAL_HEADER_SIZE_V1 + 10L));
+                eq(preferred), eq((long) WALObjectHeader.WAL_HEADER_SIZE_V1), eq(batch ? -1L : WALObjectHeader.WAL_HEADER_SIZE_V1 + 10L));
         }
     }
 
