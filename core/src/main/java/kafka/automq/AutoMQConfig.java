@@ -71,7 +71,12 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    private static final String WAL_SHARDING_DOC = " shardCount is a positive integer (default 64)."
+        + " shardMode=r (default) reads sharded and legacy keys while writing legacy keys; shardMode=rw writes sharded keys."
+        + " Upgrade all readers with the same shardCount before enabling rw. Keep shardCount unchanged while sharded objects are retained."
+        + " Switching back to r stops sharded writes; retain compatible readers until sharded objects have been trimmed.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&shardCount=64][&shardMode=r]'."
+        + WAL_SHARDING_DOC;
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
@@ -221,8 +226,9 @@ public class AutoMQConfig {
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
-        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw]'."
-        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching.";
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw][&shardCount=64][&shardMode=r]'."
+        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching."
+        + WAL_SHARDING_DOC;
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
         + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "

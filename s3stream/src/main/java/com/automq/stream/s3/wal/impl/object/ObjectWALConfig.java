@@ -26,6 +26,9 @@ import com.automq.stream.utils.IdURI;
 import org.apache.commons.lang3.StringUtils;
 
 public class ObjectWALConfig {
+    /** Default number of deterministic object-key shards for both WAL types. */
+    public static final int DEFAULT_SHARD_COUNT = 64;
+
     private final String uri;
     private final ReservationService reservationService;
     private final long batchInterval;
@@ -40,6 +43,8 @@ public class ObjectWALConfig {
     private final short bucketId;
     private final String type;
     private final boolean manualMode;
+    private final int shardCount;
+    private final String shardMode;
 
     public static Builder builder() {
         return new Builder();
@@ -63,6 +68,8 @@ public class ObjectWALConfig {
         this.bucketId = bucketId;
         this.type = type;
         this.manualMode = false;
+        this.shardCount = DEFAULT_SHARD_COUNT;
+        this.shardMode = "r";
     }
 
     private ObjectWALConfig(Builder builder) {
@@ -80,6 +87,18 @@ public class ObjectWALConfig {
         this.bucketId = builder.bucketId;
         this.type = builder.type;
         this.manualMode = builder.manualMode;
+        this.shardCount = builder.shardCount;
+        this.shardMode = builder.shardMode;
+    }
+
+    /** Returns the shard count, which must match across readers and writers while sharded objects are retained. */
+    public int shardCount() {
+        return shardCount;
+    }
+
+    /** Returns r for dual-layout reads with legacy writes, or rw for dual-layout reads with sharded writes. */
+    public String shardMode() {
+        return shardMode;
     }
 
     /** Returns whether callers control batching through explicit flushes instead of size or timer triggers. */
@@ -153,6 +172,8 @@ public class ObjectWALConfig {
             ", openMode=" + openMode +
             ", bucketId=" + bucketId +
             ", type='" + type + '\'' +
+            ", shardCount=" + shardCount +
+            ", shardMode='" + shardMode + '\'' +
             '}';
     }
 
@@ -171,6 +192,8 @@ public class ObjectWALConfig {
         private short bucketId;
         private String type = "";
         private boolean manualMode;
+        private int shardCount = DEFAULT_SHARD_COUNT;
+        private String shardMode = "r";
 
         private Builder() {
         }
@@ -199,6 +222,32 @@ public class ObjectWALConfig {
             if (StringUtils.isNumeric(readaheadDataSize)) {
                 withReadaheadDataSize(Integer.parseInt(readaheadDataSize));
             }
+            String shardCount = uri.extensionString("shardCount");
+            if (uri.extension().containsKey("shardCount")) {
+                withShardCount(Integer.parseInt(shardCount));
+            }
+            String shardMode = uri.extensionString("shardMode");
+            if (uri.extension().containsKey("shardMode")) {
+                withShardMode(shardMode);
+            }
+            return this;
+        }
+
+        /** Sets a positive shard count; all readers and writers of retained sharded objects must use this value. */
+        public Builder withShardCount(int shardCount) {
+            if (shardCount < 1) {
+                throw new IllegalArgumentException("shardCount must be positive");
+            }
+            this.shardCount = shardCount;
+            return this;
+        }
+
+        /** Sets r (default) for legacy writes or rw for sharded writes; both modes read both layouts. */
+        public Builder withShardMode(String shardMode) {
+            if (!"r".equals(shardMode) && !"rw".equals(shardMode)) {
+                throw new IllegalArgumentException("shardMode must be r or rw");
+            }
+            this.shardMode = shardMode;
             return this;
         }
 

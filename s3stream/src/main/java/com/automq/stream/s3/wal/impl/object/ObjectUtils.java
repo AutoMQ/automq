@@ -48,6 +48,7 @@ public class ObjectUtils {
         for (ObjectStorage.ObjectInfo object : objects) {
             // v0: md5hex(nodeId)/clusterId/nodeId/epoch/wal/startOffset
             // v1: md5hex(nodeId)/clusterId/nodeId/epoch/wal/startOffset_endOffset
+            // Sharded v1 inserts s<hex shard> before epoch; trailing components remain unchanged.
             String path = object.key();
             String[] parts = path.split("/");
             try {
@@ -114,6 +115,20 @@ public class ObjectUtils {
 
     public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset, long objectEndOffset) {
         return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + objectEndOffset;
+    }
+
+    /**
+     * Generates a v1 key with a deterministic shard before the epoch, preserving broker-prefix listing.
+     * The positive shard count must be shared by readers and writers. Shards use at least two hex digits.
+     */
+    public static String genShardedObjectPathV1(String nodePrefix, long epoch, long objectStartOffset,
+        long objectEndOffset, int shardCount) {
+        if (shardCount < 1) {
+            throw new IllegalArgumentException("shardCount must be positive");
+        }
+        long shard = (objectStartOffset / DATA_FILE_ALIGN_SIZE) % shardCount;
+        String shardPrefix = nodePrefix + String.format(Locale.ROOT, "s%02x/", shard);
+        return genObjectPathV1(shardPrefix, epoch, objectStartOffset, objectEndOffset);
     }
 
     public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset) {

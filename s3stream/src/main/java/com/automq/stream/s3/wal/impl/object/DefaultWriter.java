@@ -71,7 +71,6 @@ import io.netty.buffer.Unpooled;
 import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
-import static com.automq.stream.s3.wal.impl.object.ObjectUtils.OBJECT_PATH_OFFSET_DELIMITER;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.ceilAlignOffset;
 
 public class DefaultWriter implements Writer {
@@ -79,7 +78,6 @@ public class DefaultWriter implements Writer {
 
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
-    private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
     // Owned by this class for the process lifetime so WAL writers reuse the same slabs.
     private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
     private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
@@ -93,7 +91,6 @@ public class DefaultWriter implements Writer {
     private List<WALObject> previousObjects = new ArrayList<>();
     private final ConcurrentNavigableMap<Long, WALObject> lastRecordOffset2object = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
-    private final String objectPrefix;
 
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
@@ -127,7 +124,6 @@ public class DefaultWriter implements Writer {
         this.reservationService = config.reservationService();
         this.config = config;
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
-        this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.batchNanos = TimeUnit.MILLISECONDS.toNanos(config.batchInterval());
         this.minBulkUploadIntervalNanos = Math.min(TimeUnit.MILLISECONDS.toNanos(10), batchNanos);
         this.lastBulkForceUploadNanos = time.nanoseconds();
@@ -386,7 +382,9 @@ public class DefaultWriter implements Writer {
 
             // Enable fast retry.
             ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true);
-            String path = String.format(OBJECT_PATH_FORMAT, objectPrefix, firstOffset, endOffset);
+            String path = "rw".equals(config.shardMode())
+                ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset, config.shardCount())
+                : ObjectUtils.genObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset);
             FutureUtil.propagate(objectStorage.write(writeOptions, path, objectBuffer), bulk.uploadCf);
             long finalLastRecordOffset = lastRecordOffset;
             bulk.uploadCf.whenCompleteAsync((rst, ex) -> {

@@ -59,3 +59,48 @@ S3Stream supports various WAL storage options, including EBS, Regional EBS, S3, 
 - **Regional EBS WAL**: On Azure, GCP, and Alibaba Cloud, Regional EBS replicas span multiple AZs.
 - **S3 WAL**: Utilizing S3 as a WAL eliminates the need for EBS, streamlining the architecture to be fully S3-based, thus simplifying operations and maintenance. If your current setup is limited to MinIO, this is an excellent option.
 - **S3 Express WAL**: AWS provides S3 Express, a high-performance, low-latency object storage solution that is well-suited as a storage choice for the S3Stream WAL.
+
+### Object WAL prefix sharding
+
+Both `s3.wal.path` and each bucket URI in `automq.zonerouter.channels` accept:
+
+| URI option | Default | Behavior |
+| --- | --- | --- |
+| `shardCount` | `64` | Positive number of deterministic object-key shards. |
+| `shardMode` | `r` | `r` reads both layouts and writes legacy keys; `rw` reads both layouts and writes sharded keys. |
+
+The shard is `(objectStartOffset / 67108864) % shardCount`, encoded as lowercase
+hexadecimal with at least two digits. It is inserted before the broker epoch:
+
+```text
+<MD5(1001)>/_kafka_clusterA/1001_rc/s00/42/wal/0-67108864
+<MD5(1001)>/_kafka_clusterA/1001_rc/s01/42/wal/67108864-134217728
+```
+
+Traditional object WAL uses the same layout without `_rc` on the broker directory.
+Broker-prefix listing discovers both layouts, and recovery and trimming use the
+stored object paths. Single and batch reads try the sharded key first and fall back
+to the legacy key only for an object-not-found response. No offsets or router
+protocol fields change, and existing objects do not need to be copied.
+
+For a rolling upgrade, first deploy compatible readers everywhere with
+`shardMode=r` and the intended `shardCount`. Then roll out `shardMode=rw` to enable
+sharded writes, for example:
+
+```properties
+s3.wal.path=0@s3://wal-bucket?region=us-west-2&shardCount=64&shardMode=rw
+automq.zonerouter.channels=0@s3://router-bucket?region=us-west-2&mode=rw&shardCount=64&shardMode=rw
+```
+
+Router bucket `mode=r|rw` controls whether a bucket receives writes and is
+independent of `shardMode`. Configure the same shard count for a given WAL bucket
+on all brokers that read or write it, including read-only router buckets. Keep the
+count unchanged while sharded objects are retained: offsets do not encode it.
+To change the count, switch all writers to `shardMode=r`, wait for the old sharded
+objects to be trimmed, configure the new count on all readers, and then enable
+`rw` again. Likewise, rollback to older binaries requires stopping sharded writes
+and waiting for sharded objects to be trimmed before downgrading readers.
+
+Sharding spreads successive objects across key prefixes to reduce concentrated
+S3 request traffic. Validate the count against request rates and `503 SlowDown`
+responses; directory names alone do not guarantee S3 partition throughput.

@@ -74,7 +74,8 @@ public class ObjectWALService implements WriteAheadLog {
         } else {
             this.writer = new NoopWriter();
         }
-        this.reader = new DefaultReader(objectStorage, config.clusterId(), config.nodeId(), config.type(), time);
+        this.reader = new DefaultReader(objectStorage, config.clusterId(), config.nodeId(), config.type(), time,
+            config.shardCount());
     }
 
     @Override
