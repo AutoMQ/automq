@@ -66,13 +66,13 @@ import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.core.retry.RetryMode;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
@@ -144,10 +144,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
         this.checksumAlgorithm = checksumAlgorithm;
 
-        long apiCallTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"));
-        long apiCallAttemptTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"));
-
-        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI.endpoint(), bucketURI.region(), bucketURI.extensionBool(PATH_STYLE_KEY, false), credentialsProviders, getMaxObjectStorageConcurrency(), apiCallTimeoutMs, apiCallAttemptTimeoutMs);
+        Configuration configuration = Configuration.fromBucketURI(bucketURI);
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
     }
@@ -522,8 +520,27 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return "bytes=" + start + "-" + (end - 1);
     }
 
-    protected S3AsyncClient newS3Client(String endpoint, String region, boolean forcePathStyle,
-                                        List<AwsCredentialsProvider> credentialsProviders, int maxConcurrency, long apiCallTimeoutMs, long apiCallAttemptTimeoutMs) {
+    protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
+                                      Configuration configuration) {
+        String endpoint = uri.endpoint();
+        String region = uri.region();
+        boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
+        int maxConcurrency = getMaxObjectStorageConcurrency();
+        if ("crt".equals(configuration.sdkImplementation())) {
+            S3CrtAsyncClientBuilder crtBuilder = S3AsyncClient.crtBuilder()
+                .region(Region.of(region))
+                .credentialsProvider(newCredentialsProviderChain(credentialsProviders))
+                .forcePathStyle(forcePathStyle)
+                .checksumValidationEnabled(false);
+            configuration.configureCrtBuilder(crtBuilder, maxConcurrency);
+            if (StringUtils.isNotBlank(endpoint)) {
+                crtBuilder.endpointOverride(URI.create(endpoint));
+            }
+            logger.info("Using CRT S3 client with minimum throughput {} B/s and health timeout {} seconds; "
+                    + "SDK API call/attempt timeouts are not supported by this client",
+                configuration.crtMinimumThroughputBps(), configuration.crtMinimumThroughputTimeout().getSeconds());
+            return crtBuilder.build();
+        }
         S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
@@ -532,20 +549,22 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
         }
         SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
-            .maxConcurrency(maxConcurrency)
+            .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
+            .connectionTimeout(configuration.connectionTimeout())
             .build();
         builder.httpClient(httpClient);
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(false));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
-        builder.overrideConfiguration(clientOverrideConfiguration(apiCallTimeoutMs, apiCallAttemptTimeoutMs));
+        builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
     }
 
-    protected ClientOverrideConfiguration clientOverrideConfiguration(long apiCallTimeoutMs, long apiCallAttemptTimeoutMs) {
+    protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {
         return ClientOverrideConfiguration.builder()
-            .apiCallTimeout(Duration.ofMillis(apiCallTimeoutMs))
-            .apiCallAttemptTimeout(Duration.ofMillis(apiCallAttemptTimeoutMs))
-            .retryStrategy(RetryMode.STANDARD)
+            .apiCallTimeout(configuration.apiCallTimeout())
+            .apiCallAttemptTimeout(configuration.apiCallAttemptTimeout())
+            .retryStrategy(software.amazon.awssdk.awscore.retry.AwsRetryStrategy.standardRetryStrategy()
+                .toBuilder().maxAttempts(configuration.numRetries() + 1).build())
             .build();
     }
 
@@ -783,6 +802,158 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return true;
         }
 
+    }
+
+    /**
+     * Immutable per-bucket client options. SDK-specific constraints are checked by the SDK when constructing clients.
+     */
+    public record Configuration(String sdkImplementation, long crtMinimumThroughputBps, Duration crtMinimumThroughputTimeout,
+                                double crtTargetThroughputGbps, int maxConcurrency, long crtMaxNativeMemoryBytes,
+                                Duration connectionTimeout, int numRetries,
+                                Duration apiCallTimeout, Duration apiCallAttemptTimeout) {
+        /**
+         * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
+         */
+        public static Configuration fromBucketURI(BucketURI uri) {
+            String implementation = uri.extensionString("sdkImpl", "netty");
+            if (!"netty".equals(implementation) && !"crt".equals(implementation)) {
+                throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
+            }
+            Builder builder = builder().sdkImplementation(implementation)
+                .maxConcurrency(Integer.parseInt(uri.extensionString(BucketURI.MAX_CONCURRENCY_KEY, "-1")))
+                .connectionTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.CONNECTION_TIMEOUT_KEY, "2000"))))
+                .numRetries(Integer.parseInt(uri.extensionString(BucketURI.NUM_RETRIES_KEY, "2")))
+                .apiCallTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"))))
+                .apiCallAttemptTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"))));
+            if ("crt".equals(implementation)) {
+                int healthTimeout = Integer.parseInt(uri.extensionString("crtMinimumThroughputTimeoutSeconds", "2"));
+                if (healthTimeout < 2) {
+                    throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
+                }
+                builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
+                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout))
+                    .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
+            }
+            return builder.build();
+        }
+
+        /**
+         * Creates a builder with Netty, CRT health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
+         */
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        /**
+         * Builds immutable configurations; subsequent builder changes do not affect previously built snapshots.
+         */
+        public static final class Builder {
+            private String sdkImplementation = "netty";
+            private long crtMinimumThroughputBps = 32L * 1024 * 1024;
+            private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
+            private double crtTargetThroughputGbps = 10.0;
+            private int maxConcurrency = -1;
+            private long crtMaxNativeMemoryBytes = -1;
+            private Duration connectionTimeout = Duration.ofSeconds(2);
+            private int numRetries = 2;
+            private Duration apiCallTimeout = Duration.ofSeconds(30);
+            private Duration apiCallAttemptTimeout = Duration.ofSeconds(10);
+
+            private Builder() {
+            }
+
+            /**
+             * Selects the S3 SDK implementation, either netty or crt.
+             */
+            public Builder sdkImplementation(String implementation) {
+                this.sdkImplementation = implementation;
+                return this;
+            }
+
+            /**
+             * Sets the minimum healthy throughput of each CRT connection in bytes per second.
+             */
+            public Builder crtMinimumThroughputBps(long throughputBps) {
+                this.crtMinimumThroughputBps = throughputBps;
+                return this;
+            }
+
+            /**
+             * Sets how long a CRT connection may remain below the throughput threshold.
+             */
+            public Builder crtMinimumThroughputTimeout(Duration timeout) {
+                this.crtMinimumThroughputTimeout = timeout;
+                return this;
+            }
+
+            /**
+             * Sets the CRT transfer throughput target in gigabits per second; this is not a bandwidth limit.
+             */
+            public Builder crtTargetThroughputGbps(double throughputGbps) {
+                this.crtTargetThroughputGbps = throughputGbps;
+                return this;
+            }
+
+            /** Selects a connection cap, or -1 to inherit AutoMQ's existing client concurrency. */
+            public Builder maxConcurrency(int maxConcurrency) {
+                this.maxConcurrency = maxConcurrency;
+                return this;
+            }
+
+            /** Sets a per-client native memory budget, or -1 to let CRT calculate it. */
+            public Builder crtMaxNativeMemoryBytes(long memoryBytes) {
+                this.crtMaxNativeMemoryBytes = memoryBytes;
+                return this;
+            }
+
+            /** Sets the timeout for establishing a connection, independent of object completion time. */
+            public Builder connectionTimeout(Duration timeout) {
+                this.connectionTimeout = timeout;
+                return this;
+            }
+
+            /** Sets retries per HTTP request, excluding the initial attempt. */
+            public Builder numRetries(int numRetries) {
+                this.numRetries = numRetries;
+                return this;
+            }
+
+            /** Sets the Netty SDK deadline for an API call including all attempts. */
+            public Builder apiCallTimeout(Duration timeout) {
+                this.apiCallTimeout = timeout;
+                return this;
+            }
+
+            /** Sets the Netty SDK deadline for one API call attempt. */
+            public Builder apiCallAttemptTimeout(Duration timeout) {
+                this.apiCallAttemptTimeout = timeout;
+                return this;
+            }
+
+            /**
+             * Creates a snapshot without changing the process-wide configuration.
+             */
+            public Configuration build() {
+                return new Configuration(sdkImplementation, crtMinimumThroughputBps, crtMinimumThroughputTimeout,
+                    crtTargetThroughputGbps, maxConcurrency, crtMaxNativeMemoryBytes,
+                    connectionTimeout, numRetries, apiCallTimeout, apiCallAttemptTimeout);
+            }
+        }
+
+        void configureCrtBuilder(S3CrtAsyncClientBuilder builder, int inheritedMaxConcurrency) {
+            builder.maxConcurrency(maxConcurrency == -1 ? inheritedMaxConcurrency : maxConcurrency)
+                .targetThroughputInGbps(crtTargetThroughputGbps)
+                // AutoMQ owns multipart uploads and precomputes checksums for individual requests.
+                .thresholdInBytes(Long.MAX_VALUE)
+                .retryConfiguration(retry -> retry.numRetries(numRetries))
+                .httpConfiguration(http -> http.connectionTimeout(connectionTimeout)
+                    .connectionHealthConfiguration(health -> health.minimumThroughputInBps(crtMinimumThroughputBps)
+                        .minimumThroughputTimeout(crtMinimumThroughputTimeout)));
+            if (crtMaxNativeMemoryBytes != -1) {
+                builder.maxNativeMemoryLimitInBytes(crtMaxNativeMemoryBytes);
+            }
+        }
     }
 
     public static class Builder {
