@@ -22,6 +22,7 @@ package kafka.log.streamaspect
 import com.automq.stream.DefaultRecordBatch
 import com.automq.stream.api.{AppendResult, CreateStreamOptions, FetchResult, OpenStreamOptions, RecordBatch, Stream, StreamClient}
 import com.automq.stream.s3.context.{AppendContext, FetchContext}
+import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.reassignment._
 import kafka.server.KafkaConfig
@@ -1348,6 +1349,41 @@ class ElasticLogTest {
         assertEquals(0, fetchDataInfo.records.sizeInBytes)
         assertTrue(fetchDataInfo.abortedTransactions.isPresent)
         assertTrue(fetchDataInfo.abortedTransactions.get.isEmpty)
+    }
+
+    /** A snapshot-read log has no MetaStream or LogSegmentManager, but still closes its data streams. */
+    @Test
+    def testSnapshotReadCloseSkipsMetadataLifecycle(): Unit = {
+        val snapshotDir = Files.createTempDirectory("elastic-snapshot-read-").toFile
+        val snapshotPartition = new TopicPartition("snapshot-close", 0)
+        val snapshotBuilder = PartitionSnapshot.builder().leaderEpoch(1)
+        log.snapshot(snapshotBuilder)
+        val client = new CloseTrackingClient()
+        val snapshotLog = ElasticLog.apply(
+            client,
+            "",
+            snapshotDir,
+            LogTestUtils.createLogConfig(),
+            mockTime.scheduler,
+            time = mockTime,
+            topicPartition = snapshotPartition,
+            logDirFailureChannel = logDirFailureChannel,
+            maxTransactionTimeoutMs = 5 * 60 * 1000,
+            producerStateManagerConfig = producerStateManagerConfig,
+            topicId = Some(Uuid.randomUuid()),
+            leaderEpoch = 1,
+            openStreamChecker = OpenStreamChecker.NOOP,
+            snapshotRead = true)
+
+        try {
+            snapshotLog.snapshot(snapshotBuilder.build())
+            assertFalse(snapshotLog.segments.isEmpty)
+            snapshotLog.close()
+            assertFalse(client.createdStreams.isEmpty)
+            assertTrue(client.createdStreams.asScala.forall(_.closeCount.get() == 1))
+        } finally {
+            Utils.delete(snapshotDir)
+        }
     }
 
     private def createElasticLogWithActiveSegment(dir: File = logDir,
