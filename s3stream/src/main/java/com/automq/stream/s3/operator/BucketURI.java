@@ -44,6 +44,9 @@ public class BucketURI {
     public static final String SECRET_KEY_KEY = "secretKey";
     public static final String API_CALL_TIMEOUT_KEY = "apiCallTimeoutMs";
     public static final String API_CALL_ATTEMPT_TIMEOUT_KEY = "apiCallAttemptTimeoutMs";
+    public static final String CONNECTION_TIMEOUT_KEY = "connectionTimeoutMs";
+    public static final String NUM_RETRIES_KEY = "numRetries";
+    public static final String MAX_CONCURRENCY_KEY = "maxConcurrency";
     private static final String EMPTY_STRING = "";
     private final short bucketId;
     private final String protocol;
