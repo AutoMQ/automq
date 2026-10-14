@@ -20,6 +20,6 @@
 package com.automq.stream.s3.compact;
 
 public class CompactionConstants {
-    public static final int S3_OBJECT_TTL_MINUTES = 24 * 60;
+    public static final int S3_OBJECT_TTL_MINUTES = 2 * 60;
     public static final int S3_OBJECT_MAX_READ_BATCH = 16 * 1024 * 1024; // 16MB
 }
