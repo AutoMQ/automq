@@ -18,7 +18,6 @@
 package kafka.server
 
 import com.automq.stream.s3.S3Storage
-import kafka.automq.WALShardingConfigValidator
 import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, DefaultBackPressureManager, Regulator}
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
@@ -608,9 +607,6 @@ class BrokerServer(
 
 
       // AutoMQ inject start
-      if (config.elasticStreamEnabled) {
-        WALShardingConfigValidator.validate(config.automq, metadataCache.autoMQVersion())
-      }
       routerChannelProvider = newRouterChannelProvider()
       confirmWALProvider = newConfirmWALProvider()
       if (routerChannelProvider != null) {

@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Verifies migration defaults and rejects ambiguous object-key layouts before opening a WAL. */
 @Tag("S3Unit")
 public class ObjectWALConfigTest {
-    /** Builder, URI, and constructor callers default to sharded writes with 64 shards. */
+    /** Builder, URI, and constructor callers retain legacy writes until version=1 is explicitly enabled. */
     @Test
     public void testDefaults() {
         assertDefaults(ObjectWALConfig.builder().build());
@@ -42,30 +42,29 @@ public class ObjectWALConfigTest {
             "cluster", 1001, 42, OpenMode.READ_WRITE, (short) 0, "rc"));
     }
 
-    /** Sharding mode is independent of read-only bucket mode and WAL open mode. */
+    /** Layout version is independent of read-only bucket mode and WAL open mode. */
     @Test
     public void testURIOptions() {
         ObjectWALConfig config = ObjectWALConfig.builder()
-            .withURI("7@s3://wal?shardCount=3&shardMode=rw&mode=r")
+            .withURI("7@s3://wal?version=1&mode=r")
             .withOpenMode(OpenMode.READ_ONLY).build();
-        assertEquals(3, config.shardCount());
-        assertEquals("rw", config.shardMode());
+        assertEquals(1, config.version());
         assertEquals(OpenMode.READ_ONLY, config.openMode());
         assertEquals(7, config.bucketId());
     }
 
-    /** A non-power-of-two count and a single shard are valid; neither changes the offset format. */
+    /** Explicit layout versions are accepted by both URI and programmatic configuration. */
     @ParameterizedTest
-    @ValueSource(ints = {1, 3, 64, 256, 1024})
-    public void testPositiveCounts(int count) {
-        assertEquals(count, ObjectWALConfig.builder().withShardCount(count).build().shardCount());
+    @ValueSource(ints = {0, 1})
+    public void testSupportedVersions(int version) {
+        assertEquals(version, ObjectWALConfig.builder().withVersion(version).build().version());
+        assertEquals(version, ObjectWALConfig.builder().withURI("0@s3://wal?version=" + version).build().version());
     }
 
     /** Invalid or repeated URI options must fail instead of silently using a different key layout. */
     @ParameterizedTest
-    @ValueSource(strings = {"shardCount=0", "shardCount=-1", "shardCount=no", "shardCount=1.5",
-        "shardCount", "shardCount=", "shardCount=2147483648", "shardCount=64&shardCount=128", "shardMode", "shardMode=",
-        "shardMode=w", "shardMode=RW", "shardMode=r&shardMode=rw"})
+    @ValueSource(strings = {"version=2", "version=-1", "version=no", "version=1.5",
+        "version", "version=", "version=2147483648", "version=0&version=1", "version=1&version=1"})
     public void testInvalidURIOptions(String option) {
         assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withURI("0@s3://wal?" + option));
     }
@@ -73,14 +72,11 @@ public class ObjectWALConfigTest {
     /** Programmatic configuration enforces the same validation as URI configuration. */
     @Test
     public void testInvalidBuilderOptions() {
-        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withShardCount(0));
-        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withShardCount(-1));
-        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withShardMode(null));
-        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withShardMode("w"));
+        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withVersion(-1));
+        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withVersion(2));
     }
 
     private static void assertDefaults(ObjectWALConfig config) {
-        assertEquals(64, config.shardCount());
-        assertEquals("rw", config.shardMode());
+        assertEquals(0, config.version());
     }
 }

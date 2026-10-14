@@ -69,9 +69,9 @@ public class ObjectWALServiceTest {
 
     /** Both layouts defer manual-mode uploads until an explicit flush. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testManualBatchingFlush(String shardMode) throws Exception {
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode).withNodeId(100).withEpoch(1000)
+    @ValueSource(ints = {0, 1})
+    public void testManualBatchingFlush(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000)
             .withBatchInterval(1).withMaxBytesInBatch(1).withManualMode(true).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         wal.start();
@@ -88,8 +88,8 @@ public class ObjectWALServiceTest {
 
     /** Both layouts propagate upload failures through append and flush futures. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testManualFlushPropagatesUploadFailure(String shardMode) throws Exception {
+    @ValueSource(ints = {0, 1})
+    public void testManualFlushPropagatesUploadFailure(int version) throws Exception {
         MockObjectStorage storage = new MockObjectStorage() {
             @Override
             public CompletableFuture<WriteResult> write(WriteOptions options, String path, ByteBuf data) {
@@ -97,7 +97,7 @@ public class ObjectWALServiceTest {
                 return CompletableFuture.failedFuture(new IllegalStateException("upload failed"));
             }
         };
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode).withNodeId(100).withEpoch(1000).withManualMode(true).build();
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000).withManualMode(true).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
         wal.start();
         try {
@@ -114,9 +114,9 @@ public class ObjectWALServiceTest {
 
     /** Both layouts flush trim markers without a caller-issued flush. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testManualTrimFlushesMarker(String shardMode) throws Exception {
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode).withNodeId(100).withEpoch(1000)
+    @ValueSource(ints = {0, 1})
+    public void testManualTrimFlushesMarker(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000)
             .withManualMode(true).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
         wal.start();
@@ -167,13 +167,13 @@ public class ObjectWALServiceTest {
 
     /** Single reads preserve record contents across epochs in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testGet_single(String shardMode) throws IOException, OverCapacityException, ExecutionException, InterruptedException {
+    @ValueSource(ints = {0, 1})
+    public void testGet_single(int version) throws IOException, OverCapacityException, ExecutionException, InterruptedException {
         ObjectWALConfig config;
         ObjectWALService wal;
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int r = 0; r < 3; r++) {
-            config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
             wal = new ObjectWALService(time, objectStorage, config);
             acquire(config);
             wal.start();
@@ -200,13 +200,13 @@ public class ObjectWALServiceTest {
 
     /** Batch reads cross objects and epochs in order in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testGet_batch(String shardMode) throws Exception {
+    @ValueSource(ints = {0, 1})
+    public void testGet_batch(int version) throws Exception {
         ObjectWALConfig config;
         ObjectWALService wal;
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int r = 0; r < 3; r++) {
-            config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
             wal = new ObjectWALService(time, objectStorage, config);
             acquire(config);
             wal.start();
@@ -234,9 +234,9 @@ public class ObjectWALServiceTest {
 
     /** Batch reads omit synthetic trim records in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testGet_batchSkipTrim(String shardMode) throws Exception {
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode)
+    @ValueSource(ints = {0, 1})
+    public void testGet_batchSkipTrim(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version)
             .withEpoch(1L)
             .withMaxBytesInBatch(1024)
             .withBatchInterval(1000)
@@ -274,9 +274,9 @@ public class ObjectWALServiceTest {
 
     /** Trim progress survives restart and recovery in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testTrim(String shardMode) throws Exception {
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+    @ValueSource(ints = {0, 1})
+    public void testTrim(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
         ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
         acquire(config);
         wal.start();
@@ -307,14 +307,14 @@ public class ObjectWALServiceTest {
 
     /** Recovery retains only records after the trim boundary in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testRecover(String shardMode) throws Exception {
+    @ValueSource(ints = {0, 1})
+    public void testRecover(int version) throws Exception {
         ObjectWALConfig config;
         ObjectWALService wal;
         int trimIndex = 0;
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int r = 0; r < 4; r++) {
-            config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
             wal = new ObjectWALService(time, objectStorage, config);
             acquire(config);
             wal.start();
@@ -339,14 +339,14 @@ public class ObjectWALServiceTest {
 
     /** Reset preserves monotonic offsets across restarts in both write layouts. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testReset(String shardMode) throws Exception {
+    @ValueSource(ints = {0, 1})
+    public void testReset(int version) throws Exception {
         ObjectWALConfig config;
         ObjectWALService wal;
         int resetIndex = 0;
         List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
         for (int r = 0; r < 4; r++) {
-            config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
             wal = new ObjectWALService(time, objectStorage, config);
             acquire(config);
             wal.start();
@@ -438,9 +438,9 @@ public class ObjectWALServiceTest {
 
     /** Recovery stops at missing objects even when keys are distributed across shards. */
     @ParameterizedTest
-    @ValueSource(strings = {"r", "rw"})
-    public void testRecoverDiscontinuousObjects(String shardMode) throws IOException, OverCapacityException, InterruptedException, ExecutionException {
-        ObjectWALConfig config = ObjectWALConfig.builder().withShardMode(shardMode).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+    @ValueSource(ints = {0, 1})
+    public void testRecoverDiscontinuousObjects(int version) throws IOException, OverCapacityException, InterruptedException, ExecutionException {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
         ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
         acquire(config);
         wal.start();

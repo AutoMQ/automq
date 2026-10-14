@@ -382,8 +382,8 @@ public class DefaultWriter implements Writer {
 
             // Enable fast retry.
             ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true);
-            String path = "rw".equals(config.shardMode())
-                ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset, config.shardCount())
+            String path = config.version() == 1
+                ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset)
                 : ObjectUtils.genObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset);
             FutureUtil.propagate(objectStorage.write(writeOptions, path, objectBuffer), bulk.uploadCf);
             long finalLastRecordOffset = lastRecordOffset;

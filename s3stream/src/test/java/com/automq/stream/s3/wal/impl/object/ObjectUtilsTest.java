@@ -29,26 +29,23 @@ import java.util.List;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.genShardedObjectPathV1;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** Protects the deterministic shard layout and the parser's compatibility with older keys. */
 @Tag("S3Unit")
 public class ObjectUtilsTest {
-    /** Shards rotate at 64 MiB boundaries, wrap at the configured count, and precede the epoch. */
+    /** Shards rotate at 64 MiB boundaries, wrap after all 256 prefixes, and precede the epoch. */
     @Test
     public void testShardPaths() {
         String prefix = ObjectUtils.nodePrefix("clusterA", 1001, "rc");
-        assertEquals(prefix + "s00/42/wal/0-67108864", genShardedObjectPathV1(prefix, 42, 0, DATA_FILE_ALIGN_SIZE, 64));
+        assertEquals(prefix + "s00/42/wal/0-67108864", genShardedObjectPathV1(prefix, 42, 0, DATA_FILE_ALIGN_SIZE));
         assertEquals(prefix + "s01/42/wal/67108864-134217728",
-            genShardedObjectPathV1(prefix, 42, DATA_FILE_ALIGN_SIZE, 2 * DATA_FILE_ALIGN_SIZE, 64));
-        assertShard(prefix, 63, 64, "s3f");
-        assertShard(prefix, 64, 64, "s00");
-        assertShard(prefix, 255, 256, "sff");
-        assertShard(prefix, 256, 256, "s00");
-        assertShard(prefix, 256, 1024, "s100");
-        assertShard(prefix, 3, 3, "s00");
-        assertShard(prefix, 11, 1, "s00");
-        assertThrows(IllegalArgumentException.class, () -> genShardedObjectPathV1(prefix, 42, 0, 1, 0));
+            genShardedObjectPathV1(prefix, 42, DATA_FILE_ALIGN_SIZE, 2 * DATA_FILE_ALIGN_SIZE));
+        assertShard(prefix, 63, "s3f");
+        assertShard(prefix, 64, "s40");
+        assertShard(prefix, 255, "sff");
+        assertShard(prefix, 256, "s00");
+        assertShard(prefix, 257, "s01");
+        assertShard(prefix, 511, "sff");
     }
 
     /** Listing may mix v0, legacy v1, and sharded v1 objects; parsing preserves exact paths and ordering. */
@@ -69,10 +66,10 @@ public class ObjectUtilsTest {
         assertEquals(7, objects.get(2).bucketId());
     }
 
-    private static void assertShard(String prefix, long objectIndex, int count, String shard) {
+    private static void assertShard(String prefix, long objectIndex, String shard) {
         long start = objectIndex * DATA_FILE_ALIGN_SIZE;
         long end = start + DATA_FILE_ALIGN_SIZE;
         assertEquals(prefix + shard + "/42/wal/" + start + "-" + end,
-            genShardedObjectPathV1(prefix, 42, start, end, count));
+            genShardedObjectPathV1(prefix, 42, start, end));
     }
 }

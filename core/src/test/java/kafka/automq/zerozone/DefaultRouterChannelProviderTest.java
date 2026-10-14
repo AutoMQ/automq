@@ -54,7 +54,7 @@ public class DefaultRouterChannelProviderTest {
     public void testReadWriteChannelUsesURIOptions() {
         BucketURI bucket = BucketURI.parse("7@s3://router/prefix?region=us-west-2&endpoint=https://example.com"
             + "&batchInterval=100&maxBytesInBatch=16777216&maxInflightUploadCount=100"
-            + "&maxUnflushedBytes=536870912&readaheadDataSize=2097152&secretKey=test-secret&shardCount=256&shardMode=rw");
+            + "&maxUnflushedBytes=536870912&readaheadDataSize=2097152&secretKey=test-secret&version=1");
         List<ObjectWALConfig> configs = channelConfigs(bucket);
         ObjectWALConfig writer = configs.get(0);
 
@@ -71,15 +71,13 @@ public class DefaultRouterChannelProviderTest {
         assertEquals(OpenMode.READ_WRITE, writer.openMode());
         assertEquals("test-secret", IdURI.parse(writer.uri()).extensionString("secretKey"));
         assertFalse(writer.toString().contains("test-secret"));
-        assertEquals(256, writer.shardCount());
-        assertEquals("rw", writer.shardMode());
+        assertEquals(1, writer.version());
 
         ObjectWALConfig reader = configs.get(1);
         assertEquals(OpenMode.READ_ONLY, reader.openMode());
         assertEquals(43, reader.nodeId());
         assertEquals(writer.uri(), reader.uri());
-        assertEquals(256, reader.shardCount());
-        assertEquals("rw", reader.shardMode());
+        assertEquals(1, reader.version());
         assertEquals(writer.readaheadDataSize(), reader.readaheadDataSize());
     }
 
@@ -107,8 +105,8 @@ public class DefaultRouterChannelProviderTest {
     /** Every bucket gets a writer and remote reader, and URI options are retained for each writer. */
     @Test
     public void testMultipleBuckets() {
-        List<BucketURI> buckets = List.of(BucketURI.parse("0@s3://a?batchInterval=100&shardCount=3&shardMode=rw"),
-            BucketURI.parse("1@s3://b?batchInterval=200&mode=r&shardCount=128"));
+        List<BucketURI> buckets = List.of(BucketURI.parse("0@s3://a?batchInterval=100&version=1"),
+            BucketURI.parse("1@s3://b?batchInterval=200&mode=r&version=0"));
         DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, buckets, "cluster"));
         buckets.forEach(bucket -> doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket));
         List<ObjectWALConfig> configs = new ArrayList<>();
@@ -128,11 +126,11 @@ public class DefaultRouterChannelProviderTest {
             assertEquals(OpenMode.READ_ONLY, configs.get(3).openMode());
             assertEquals(0, configs.get(2).bucketId());
             assertEquals(1, configs.get(3).bucketId());
-            assertEquals(3, configs.get(0).shardCount());
-            assertEquals(128, configs.get(1).shardCount());
+            assertEquals(1, configs.get(0).version());
+            assertEquals(0, configs.get(1).version());
             assertEquals(OpenMode.READ_ONLY, configs.get(1).openMode());
-            assertEquals(3, configs.get(2).shardCount());
-            assertEquals(128, configs.get(3).shardCount());
+            assertEquals(1, configs.get(2).version());
+            assertEquals(0, configs.get(3).version());
             provider.close();
         }
     }
@@ -159,7 +157,6 @@ public class DefaultRouterChannelProviderTest {
         assertEquals(50, config.maxInflightUploadCount());
         assertEquals(1024 * 1024 * 1024L, config.maxUnflushedBytes());
         assertEquals(100 * 1024 * 1024, config.readaheadDataSize());
-        assertEquals(64, config.shardCount());
-        assertEquals("rw", config.shardMode());
+        assertEquals(0, config.version());
     }
 }

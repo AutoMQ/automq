@@ -42,12 +42,10 @@ public enum AutoMQVersion implements FeatureVersion {
     // Support proxy-main dual mapping
     V4((short) 5, MetadataVersion.IBP_3_9_IV0),
     // Support KV namespace
-    V5((short) 6, MetadataVersion.IBP_3_9_IV0),
-    // Support reading sharded object WAL keys
-    V6((short) 7, MetadataVersion.IBP_3_9_IV0);
+    V5((short) 6, MetadataVersion.IBP_3_9_IV0);
 
     public static final String FEATURE_NAME = "automq.version";
-    public static final AutoMQVersion LATEST = V6;
+    public static final AutoMQVersion LATEST = V5;
 
     private final short level;
     private final Version s3streamVersion;
@@ -135,11 +133,6 @@ public enum AutoMQVersion implements FeatureVersion {
         return isAtLeast(V5);
     }
 
-    /** Returns whether every compatible broker can read both sharded and legacy object WAL keys. */
-    public boolean isWALShardingSupported() {
-        return isAtLeast(V6);
-    }
-
     public short streamRecordVersion() {
         if (isReassignmentV1Supported()) {
             return 1;
@@ -187,7 +180,7 @@ public enum AutoMQVersion implements FeatureVersion {
     private Version mapS3StreamVersion(short automqVersion) {
         return switch (automqVersion) {
             case 1, 2 -> Version.V0;
-            case 3, 4, 5, 6, 7 -> Version.V1;
+            case 3, 4, 5, 6 -> Version.V1;
             default -> throw new IllegalArgumentException("Unknown AutoMQVersion level: " + automqVersion);
         };
     }

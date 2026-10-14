@@ -64,7 +64,6 @@ public class DefaultReader {
 
     private final ObjectStorage objectStorage;
     private final String nodePrefix;
-    private final int shardCount;
     private final boolean shardedFirst;
     private final Time time;
 
@@ -81,29 +80,18 @@ public class DefaultReader {
     private final EventLoop eventLoop;
 
     public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time) {
-        this(objectStorage, clusterId, nodeId, type, time, ObjectWALConfig.DEFAULT_SHARD_COUNT);
-    }
-
-    /** Creates a dual-layout reader using the same positive shard count as the owner broker's WAL. */
-    public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
-        int shardCount) {
-        this(objectStorage, clusterId, nodeId, type, time, shardCount, true);
+        this(objectStorage, clusterId, nodeId, type, time, false);
     }
 
     /** Creates a dual-layout reader that prefers the configured write layout and falls back only on not-found. */
     public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time) {
-        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.shardCount(),
-            "rw".equals(config.shardMode()));
+        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1);
     }
 
     private DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
-        int shardCount, boolean shardedFirst) {
-        if (shardCount < 1) {
-            throw new IllegalArgumentException("shardCount must be positive");
-        }
+        boolean shardedFirst) {
         this.objectStorage = objectStorage;
         this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
-        this.shardCount = shardCount;
         this.shardedFirst = shardedFirst;
         this.time = time;
         this.eventLoop = EVENT_LOOPS[Math.abs(nodeId % EVENT_LOOPS.length)];
@@ -278,7 +266,7 @@ public class DefaultReader {
 
     private CompletableFuture<ByteBuf> rangeRead(long epoch, long objectStartOffset, long start, long end) {
         String shardedPath = ObjectUtils.genShardedObjectPathV1(nodePrefix, epoch, objectStartOffset,
-            objectStartOffset + DATA_FILE_ALIGN_SIZE, shardCount);
+            objectStartOffset + DATA_FILE_ALIGN_SIZE);
         String legacyPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
         String preferredPath = shardedFirst ? shardedPath : legacyPath;
         String fallbackPath = shardedFirst ? legacyPath : shardedPath;

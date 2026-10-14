@@ -27,6 +27,8 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedConstruction;
 
 import java.util.ArrayList;
@@ -41,24 +43,24 @@ import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.withSettings;
 
-/** Protects shard configuration propagation to remote readers of the traditional WAL. */
+/** Protects WAL layout version propagation to remote readers of the traditional WAL. */
 @Tag("S3Unit")
 public class DefaultConfirmWALProviderTest {
-    /** Confirmation readers use the owner's configured shard count and bucket ID. */
-    @Test
-    public void testReadOnlyUsesWALLayout() throws Exception {
+    /** Confirmation readers use the owner's configured layout version and bucket ID. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testReadOnlyUsesWALLayout(int version) throws Exception {
         List<ObjectWALConfig> configs = new ArrayList<>();
         try (MockedConstruction<ObjectStorageFactory.Builder> builders = mockConstruction(ObjectStorageFactory.Builder.class,
             withSettings().defaultAnswer(RETURNS_SELF), (builder, context) -> when(builder.build()).thenReturn(mock(ObjectStorage.class)));
             MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
                 (wal, context) -> configs.add((ObjectWALConfig) context.arguments().get(2)))) {
             DefaultConfirmWALProvider provider = new DefaultConfirmWALProvider("cluster");
-            provider.readOnly("7@s3://wal?shardCount=256&shardMode=rw", 1001).get(5, TimeUnit.SECONDS);
+            provider.readOnly("7@s3://wal?version=" + version, 1001).get(5, TimeUnit.SECONDS);
             assertEquals(1, builders.constructed().size());
             assertEquals(1, wals.constructed().size());
             ObjectWALConfig config = configs.get(0);
-            assertEquals(256, config.shardCount());
-            assertEquals("rw", config.shardMode());
+            assertEquals(version, config.version());
             assertEquals(7, config.bucketId());
             assertEquals("cluster", config.clusterId());
             assertEquals(1001, config.nodeId());
@@ -72,7 +74,7 @@ public class DefaultConfirmWALProviderTest {
         try (MockedConstruction<ObjectStorageFactory.Builder> builders = mockConstruction(ObjectStorageFactory.Builder.class)) {
             DefaultConfirmWALProvider provider = new DefaultConfirmWALProvider("cluster");
             assertThrows(IllegalArgumentException.class,
-                () -> provider.readOnly("7@s3://wal?shardCount=0", 1001));
+                () -> provider.readOnly("7@s3://wal?version=2", 1001));
             assertEquals(0, builders.constructed().size());
         }
     }
