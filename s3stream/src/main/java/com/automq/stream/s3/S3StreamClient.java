@@ -55,9 +55,12 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
@@ -87,10 +90,11 @@ public class S3StreamClient implements StreamClient {
      */
     private static final int MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD = Systems.getEnvInt("AUTOMQ_STREAM_COMPACTION_MAJOR_V1_MAX_OBJECT_THRESHOLD", 400000);
     static final double MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO = 0.9;
-    private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 20);
-    private static final long COMPACTION_METADATA_REPLAY_DELAY_MS = TimeUnit.SECONDS.toMillis(1);
+    private static final int STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_JITTER_MAX_DELAY", 5);
+    private static final int STREAM_OBJECT_COMPACTION_THREADS = Systems.getEnvInt("AUTOMQ_STREAM_OBJECT_COMPACTION_THREADS", Math.max(1, Systems.CPU_CORES / 4));
     private final ScheduledExecutorService streamObjectCompactionScheduler = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("stream-object-compaction-scheduler", true), LOGGER, true);
+    private final ThreadPoolExecutor streamObjectCompactionExecutor;
     final Map<Long, StreamWrapper> openedStreams;
     private final StreamManager streamManager;
     private final Storage storage;
@@ -120,6 +124,15 @@ public class S3StreamClient implements StreamClient {
     public S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
         ObjectStorage objectStorage, Config config,
         NetworkBandwidthLimiter networkInboundBucket, NetworkBandwidthLimiter networkOutboundBucket) {
+        this(streamManager, storage, objectManager, objectStorage, config, networkInboundBucket, networkOutboundBucket,
+            new ThreadPoolExecutor(STREAM_OBJECT_COMPACTION_THREADS, STREAM_OBJECT_COMPACTION_THREADS, 0, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(),
+                ThreadUtils.createThreadFactory("stream-object-compaction-worker-%d", true)));
+    }
+
+    S3StreamClient(StreamManager streamManager, Storage storage, ObjectManager objectManager,
+        ObjectStorage objectStorage, Config config, NetworkBandwidthLimiter networkInboundBucket,
+        NetworkBandwidthLimiter networkOutboundBucket, ThreadPoolExecutor compactionExecutor) {
+        this.streamObjectCompactionExecutor = compactionExecutor;
         this.streamManager = streamManager;
         this.storage = storage;
         this.openedStreams = new ConcurrentHashMap<>();
@@ -173,7 +186,7 @@ public class S3StreamClient implements StreamClient {
             try {
                 CompactionHint hint = new CompactionHint(objectManager.getObjectsCount().get());
                 List<StreamWrapper> operationStreams = new ArrayList<>(openedStreams.values());
-                operationStreams.forEach(s -> s.compact(hint));
+                operationStreams.forEach(s -> s.compaction.compact(hint));
             } catch (Throwable e) {
                 LOGGER.info("run stream object compaction task failed", e);
             }
@@ -235,6 +248,17 @@ public class S3StreamClient implements StreamClient {
         } catch (InterruptedException e) {
             streamObjectCompactionScheduler.shutdownNow();
             LOGGER.warn("await streamObjectCompactionExecutor close fail", e);
+        }
+
+        streamObjectCompactionExecutor.shutdown();
+        streamObjectCompactionExecutor.getQueue().clear();
+        try {
+            if (!streamObjectCompactionExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                LOGGER.warn("await streamObjectCompactionExecutor timeout 10s");
+            }
+        } catch (InterruptedException e) {
+            LOGGER.warn("await streamObjectCompactionExecutor close interrupted", e);
+            Thread.currentThread().interrupt();
         }
 
         TimerUtil timerUtil = new TimerUtil();
@@ -305,10 +329,7 @@ public class S3StreamClient implements StreamClient {
     public class StreamWrapper implements Stream {
         private final S3Stream stream;
         private final long openedTimestamp = System.currentTimeMillis();
-        private long lastMinorCompactionTimestamp = System.currentTimeMillis();
-        private long lastMajorCompactionTimestamp = System.currentTimeMillis();
-        private long lastMinorV1CompactionTimestamp = System.currentTimeMillis();
-        private long lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+        final Compaction compaction = new Compaction();
 
         public StreamWrapper(S3Stream stream) {
             this.stream = stream;
@@ -406,106 +427,125 @@ public class S3StreamClient implements StreamClient {
             return stream.isClosed();
         }
 
-        void compact(CompactionHint hint) {
-            if (isClosed() || stream.snapshotRead()) {
-                // the compaction task may be taking a long time,
-                // so we need to check if the stream is closed before starting the compaction.
-                return;
-            }
-            long now = System.currentTimeMillis();
-            if (now - openedTimestamp < COMPACTION_COOLDOWN_AFTER_OPEN_STREAM) {
-                // skip compaction in the first few minutes after the stream is opened
-                return;
-            }
-            if (config.version().isStreamObjectCompactV1Supported()) {
-                compactV1(hint, now);
-            } else {
-                compactV0(now);
+        // Owns the per-stream compaction state and its queued/running task.
+        class Compaction implements Runnable {
+            private long lastMinorCompactionTimestamp = System.currentTimeMillis();
+            private long lastMajorCompactionTimestamp = System.currentTimeMillis();
+            private long lastMinorV1CompactionTimestamp = System.currentTimeMillis();
+            private long lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+            // Guarded by this. A non-null type covers both queued and running work.
+            private StreamObjectCompactor.CompactionType activeCompactionType;
+            private CompactionHint activeCompactionHint;
+            private boolean pendingMajor;
+
+            void compact(CompactionHint hint) {
+                compact(hint, System.currentTimeMillis());
             }
 
-        }
-
-        private void compactV0(long now) {
-            if (now - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
-                compact(MAJOR, null);
-                lastMajorCompactionTimestamp = System.currentTimeMillis();
-            } else if (now - lastMinorCompactionTimestamp > TimeUnit.MINUTES.toMillis(5)) {
-                compact(MINOR, null);
-                lastMinorCompactionTimestamp = System.currentTimeMillis();
-            } else {
-                compact(CLEANUP, null);
-            }
-        }
-
-        private void compactV1(CompactionHint hint, long now) {
-            boolean majorDue = now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL;
-            boolean minorDue = now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL;
-            boolean majorRequiredByObjectCount = shouldRunMajorV1CompactionByObjectCount(hint.objectsCount,
-                MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD);
-            List<StreamObjectCompactor.CompactionType> compactionTypes = v1CompactionTypes(majorDue, minorDue,
-                majorRequiredByObjectCount);
-            for (int i = 0; i < compactionTypes.size(); i++) {
-                StreamObjectCompactor.CompactionType compactionType = compactionTypes.get(i);
-                if (i > 0) {
-                    // Give the local metadata image time to replay the previous compaction. This is best effort; a later
-                    // scheduler pass will retry if the metadata image is still stale.
-                    Threads.sleep(COMPACTION_METADATA_REPLAY_DELAY_MS);
+            synchronized void compact(CompactionHint hint, long now) {
+                if (activeCompactionType != null || streamObjectCompactionExecutor.isShutdown()
+                    || isClosed() || stream.snapshotRead() || now - openedTimestamp < COMPACTION_COOLDOWN_AFTER_OPEN_STREAM) {
+                    return;
                 }
-                compact(compactionType, hint);
-                if (MAJOR_V1.equals(compactionType)) {
-                    lastMajorV1CompactionTimestamp = System.currentTimeMillis();
+                StreamObjectCompactor.CompactionType type;
+                if (config.version().isStreamObjectCompactV1Supported()) {
+                    if (pendingMajor || now - lastMajorV1CompactionTimestamp > MAJOR_V1_COMPACTION_INTERVAL) {
+                        type = MAJOR_V1;
+                    } else if (now - lastMinorV1CompactionTimestamp > MINOR_V1_COMPACTION_INTERVAL) {
+                        type = MINOR_V1;
+                    } else {
+                        type = CLEANUP_V1;
+                    }
+                    // Finish the regular task first; run pressure-triggered MAJOR on a later scan.
+                    // A MAJOR attempt clears this request, including when MAJOR is already due.
+                    if (shouldRunMajorV1CompactionByObjectCount(hint.objectsCount, MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD)) {
+                        pendingMajor = true;
+                    }
+                } else if (now - lastMajorCompactionTimestamp > TimeUnit.MINUTES.toMillis(config.streamObjectCompactionIntervalMinutes())) {
+                    type = MAJOR;
+                } else if (now - lastMinorCompactionTimestamp > TimeUnit.MINUTES.toMillis(5)) {
+                    type = MINOR;
+                } else {
+                    type = CLEANUP;
+                }
+                activeCompactionType = type;
+                activeCompactionHint = hint;
+                try {
+                    streamObjectCompactionExecutor.execute(this);
+                } catch (RejectedExecutionException e) {
+                    activeCompactionType = null;
+                    activeCompactionHint = null;
+                }
+            }
+
+            @Override
+            public void run() {
+                StreamObjectCompactor.CompactionType type;
+                CompactionHint hint;
+                synchronized (this) {
+                    type = activeCompactionType;
+                    hint = activeCompactionHint;
+                }
+                boolean attempted = false;
+                try {
+                    if (streamObjectCompactionExecutor.isShutdown() || isClosed()) {
+                        return;
+                    }
+                    attempted = true;
+                    compact(type, hint);
+                } catch (Throwable e) {
+                    LOGGER.error("Stream object compaction failed, streamId={}, type={}", streamId(), type, e);
+                } finally {
+                    synchronized (this) {
+                        if (attempted) {
+                            // Failed attempts also advance the interval; skipped tasks do not.
+                            long now = System.currentTimeMillis();
+                            switch (type) {
+                                case MINOR -> lastMinorCompactionTimestamp = now;
+                                case MAJOR -> lastMajorCompactionTimestamp = now;
+                                case MINOR_V1 -> lastMinorV1CompactionTimestamp = now;
+                                case MAJOR_V1 -> {
+                                    lastMajorV1CompactionTimestamp = now;
+                                    pendingMajor = false;
+                                }
+                                default -> { }
+                            }
+                        }
+                        activeCompactionType = null;
+                        activeCompactionHint = null;
+                    }
+                }
+            }
+
+            void compact(StreamObjectCompactor.CompactionType compactionType, CompactionHint hint) {
+                // Select the policy-specific threshold here so StreamObjectCompactor only applies the grouping behavior of
+                // each compaction type and does not reconstruct size configuration from unrelated parameters.
+                long groupSizeThreshold;
+                if (MINOR.equals(compactionType)) {
+                    groupSizeThreshold = MINOR_COMPACTION_SIZE_THRESHOLD;
                 } else if (MINOR_V1.equals(compactionType)) {
-                    lastMinorV1CompactionTimestamp = System.currentTimeMillis();
+                    groupSizeThreshold = MINOR_V1_COMPACTION_SIZE;
+                } else {
+                    groupSizeThreshold = config.streamObjectCompactionMaxSizeBytes();
                 }
-            }
-        }
+                // Under normal object counts, leave small normal objects to MINOR_V1. Disable the filter under object-count
+                // pressure so MAJOR_V1 can reduce metadata even before MINOR_V1 has enlarged every small object.
+                long majorV1MinNormalObjectSize = hint != null
+                    && hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD ? MINOR_V1_COMPACTION_SIZE : 0;
+                StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
+                    .objectManager(objectManager)
+                    .stream(StreamWrapper.this)
+                    .objectStorage(objectStorage)
+                    .groupSizeThreshold(groupSizeThreshold)
+                    .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
 
-        private void compact(StreamObjectCompactor.CompactionType compactionType, CompactionHint hint) {
-            // Select the policy-specific threshold here so StreamObjectCompactor only applies the grouping behavior of
-            // each compaction type and does not reconstruct size configuration from unrelated parameters.
-            long groupSizeThreshold;
-            if (MINOR.equals(compactionType)) {
-                groupSizeThreshold = MINOR_COMPACTION_SIZE_THRESHOLD;
-            } else if (MINOR_V1.equals(compactionType)) {
-                groupSizeThreshold = MINOR_V1_COMPACTION_SIZE;
-            } else {
-                groupSizeThreshold = config.streamObjectCompactionMaxSizeBytes();
+                taskBuilder.build().compact(compactionType);
             }
-            // Under normal object counts, leave small normal objects to MINOR_V1. Disable the filter under object-count
-            // pressure so MAJOR_V1 can reduce metadata even before MINOR_V1 has enlarged every small object.
-            long majorV1MinNormalObjectSize = hint != null
-                && hint.objectsCount < MAJOR_V1_COMPACTION_MAX_OBJECT_THRESHOLD ? MINOR_V1_COMPACTION_SIZE : 0;
-            StreamObjectCompactor.Builder taskBuilder = StreamObjectCompactor.builder()
-                .objectManager(objectManager)
-                .stream(this)
-                .objectStorage(objectStorage)
-                .groupSizeThreshold(groupSizeThreshold)
-                .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
-
-            taskBuilder.build().compact(compactionType);
         }
     }
 
     static boolean shouldRunMajorV1CompactionByObjectCount(int objectsCount, int maxObjectThreshold) {
         return objectsCount >= (int) Math.ceil(maxObjectThreshold * MAJOR_V1_COMPACTION_OBJECT_COUNT_SOFT_THRESHOLD_RATIO);
-    }
-
-    static List<StreamObjectCompactor.CompactionType> v1CompactionTypes(boolean majorDue, boolean minorDue,
-        boolean majorRequiredByObjectCount) {
-        StreamObjectCompactor.CompactionType scheduledType;
-        if (majorDue) {
-            scheduledType = MAJOR_V1;
-        } else if (minorDue) {
-            scheduledType = MINOR_V1;
-        } else {
-            scheduledType = CLEANUP_V1;
-        }
-        // Object-count pressure accelerates MAJOR_V1 after the regular lifecycle task instead of starving MINOR_V1
-        // or CLEANUP_V1. A regularly scheduled MAJOR_V1 already satisfies the pressure request.
-        if (majorRequiredByObjectCount && !MAJOR_V1.equals(scheduledType)) {
-            return List.of(scheduledType, MAJOR_V1);
-        }
-        return List.of(scheduledType);
     }
 
     static class CompactionHint {
