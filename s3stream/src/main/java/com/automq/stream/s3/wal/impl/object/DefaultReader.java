@@ -25,6 +25,7 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
 import com.automq.stream.utils.threads.EventLoopSafe;
@@ -42,6 +43,8 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListMap;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.floorAlignOffset;
@@ -61,6 +64,7 @@ public class DefaultReader {
 
     private final ObjectStorage objectStorage;
     private final String nodePrefix;
+    private final boolean shardedFirst;
     private final Time time;
 
     private final Queue<SingleReadTask> singleReadTasks = new ConcurrentLinkedQueue<>();
@@ -76,8 +80,19 @@ public class DefaultReader {
     private final EventLoop eventLoop;
 
     public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time) {
+        this(objectStorage, clusterId, nodeId, type, time, false);
+    }
+
+    /** Creates a dual-layout reader that prefers the configured write layout and falls back only on not-found. */
+    public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time) {
+        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1);
+    }
+
+    private DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
+        boolean shardedFirst) {
         this.objectStorage = objectStorage;
         this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
+        this.shardedFirst = shardedFirst;
         this.time = time;
         this.eventLoop = EVENT_LOOPS[Math.abs(nodeId % EVENT_LOOPS.length)];
     }
@@ -107,11 +122,8 @@ public class DefaultReader {
                 break;
             }
             long objectStartObject = floorAlignOffset(readTask.offset);
-            String objectPath = genObjectPathV1(nodePrefix, readTask.epoch, objectStartObject);
             long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
-            objectStorage.rangeRead(
-                new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
-                objectPath,
+            rangeRead(readTask.epoch, objectStartObject,
                 relativeStartOffset,
                 relativeStartOffset + readTask.size
             ).whenCompleteAsync((buf, ex) -> {
@@ -175,13 +187,10 @@ public class DefaultReader {
                     long epochEndOffset = (i == entries.size() - 1) ? Long.MAX_VALUE : entries.get(i + 1).getKey();
                     while (nextGetOffset < epochEndOffset && nextGetOffset < readTask.endOffset.offset()) {
                         long objectStartOffset = floorAlignOffset(nextGetOffset);
-                        String objectPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
                         long relativeStartOffset = nextGetOffset - objectStartOffset + WALObjectHeader.WAL_HEADER_SIZE_V1;
                         // read to end
                         long finalNextGetOffset = nextGetOffset;
-                        getCfList.add(objectStorage.rangeRead(
-                            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
-                            objectPath,
+                        getCfList.add(rangeRead(epoch, objectStartOffset,
                             relativeStartOffset,
                             -1
                         ).thenApply(buf -> {
@@ -253,6 +262,26 @@ public class DefaultReader {
             }, eventLoop);
             return retCf;
         }
+    }
+
+    private CompletableFuture<ByteBuf> rangeRead(long epoch, long objectStartOffset, long start, long end) {
+        String shardedPath = ObjectUtils.genShardedObjectPathV1(nodePrefix, epoch, objectStartOffset,
+            objectStartOffset + DATA_FILE_ALIGN_SIZE);
+        String legacyPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
+        String preferredPath = shardedFirst ? shardedPath : legacyPath;
+        String fallbackPath = shardedFirst ? legacyPath : shardedPath;
+        return rangeRead(preferredPath, start, end).exceptionallyCompose(ex -> {
+            if (FutureUtil.cause(ex) instanceof ObjectNotExistException) {
+                return rangeRead(fallbackPath, start, end);
+            }
+            return CompletableFuture.failedFuture(ex);
+        });
+    }
+
+    private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+        return objectStorage.rangeRead(
+            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
+            path, start, end);
     }
 
     private CompletableFuture<Void> rebuildIndexMap0() {
