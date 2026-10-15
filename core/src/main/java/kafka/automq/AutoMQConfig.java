@@ -71,7 +71,16 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    private static final String WAL_VERSION_DOC = " The object WAL URI option version selects the key layout:"
+        + " version=0 (default) writes legacy keys; version=1 writes keys across 256 fixed shards to distribute S3 requests."
+        + " Both versions read both layouts, preferring the configured layout and falling back only on object-not-found."
+        + " To upgrade, first upgrade all nodes to a release that reads both layouts, leaving version=0."
+        + " Then set version=1 on the WAL bucket URIs and roll out the configuration with broker restarts."
+        + " Mixed versions are supported during this configuration rollout; completing the software upgrade first is the operator's responsibility."
+        + " After any version=1 objects have been written, binary rollback must stay on a release that reads both layouts;"
+        + " setting version=0 only changes new writes. Existing objects are removed by normal trimming.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&version=0]'."
+        + WAL_VERSION_DOC;
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
@@ -221,8 +230,10 @@ public class AutoMQConfig {
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
-        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw]'."
-        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching.";
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw][&version=0]'."
+        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching."
+        + " The mode option controls bucket write eligibility independently of the WAL layout version."
+        + WAL_VERSION_DOC;
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
         + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
