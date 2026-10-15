@@ -22,6 +22,7 @@ package com.automq.opentelemetry;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
 import com.automq.opentelemetry.exporter.MetricsExporter;
 import com.automq.opentelemetry.exporter.MetricsExporterURI;
+import com.automq.opentelemetry.jmx.AutomaticJmxMetricsCollector;
 import com.automq.opentelemetry.yammer.YammerMetricsReporter;
 import com.yammer.metrics.core.MetricsRegistry;
 
@@ -31,7 +32,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.bridge.SLF4JBridgeHandler;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -79,6 +79,8 @@ public class AutoMQTelemetryManager {
     private final List<AutoCloseable> autoCloseableList;
     private OpenTelemetrySdk openTelemetrySdk;
     private YammerMetricsReporter yammerReporter;
+    private AutomaticJmxMetricsCollector automaticJmxMetricsCollector;
+    private boolean shutdown;
 
     private int metricCardinalityLimit = TelemetryConstants.DEFAULT_METRIC_CARDINALITY_LIMIT;
     private String jmxConfigPath;
@@ -106,7 +108,13 @@ public class AutoMQTelemetryManager {
      * Initializes the telemetry system. This method sets up the OpenTelemetry SDK,
      * configures exporters, and registers JVM and JMX metrics.
      */
-    public void init() {
+    public synchronized void init() {
+        if (shutdown) {
+            throw new IllegalStateException("TelemetryManager has been shut down");
+        }
+        if (openTelemetrySdk != null) {
+            return;
+        }
         SdkMeterProvider meterProvider = buildMeterProvider();
 
         this.openTelemetrySdk = OpenTelemetrySdk.builder()
@@ -225,7 +233,34 @@ public class AutoMQTelemetryManager {
         this.yammerReporter.start(getMeter());
     }
 
-    public void shutdown() {
+    /**
+     * Starts one automatic JMX source on this manager's existing meter and exporters.
+     * The worker owns this source; individual Kafka reporter instances must not close it.
+     *
+     * @param baseAttributes attributes attached to every JMX data point, including worker identity
+     */
+    public synchronized void startAutomaticJmxMetrics(Attributes baseAttributes) {
+        if (shutdown) {
+            throw new IllegalStateException("TelemetryManager has been shut down");
+        }
+        if (automaticJmxMetricsCollector != null) {
+            return;
+        }
+        AutomaticJmxMetricsCollector collector = new AutomaticJmxMetricsCollector(
+            getMeter(), metricsExportConfig.intervalMs(), baseAttributes, metricCardinalityLimit);
+        autoCloseableList.add(collector);
+        collector.start();
+        automaticJmxMetricsCollector = collector;
+    }
+
+    /**
+     * Stops worker metric sources and exporters once, including partially initialized resources.
+     */
+    public synchronized void shutdown() {
+        if (shutdown) {
+            return;
+        }
+        shutdown = true;
         autoCloseableList.forEach(autoCloseable -> {
             try {
                 autoCloseable.close();
@@ -234,16 +269,26 @@ public class AutoMQTelemetryManager {
             }
         });
         metricReaders.forEach(metricReader -> {
-            metricReader.forceFlush();
+            try {
+                metricReader.forceFlush();
+            } catch (RuntimeException e) {
+                LOGGER.error("Failed to flush metric reader", e);
+            }
             try {
                 metricReader.close();
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LOGGER.error("Failed to close metric reader", e);
             }
         });
         if (openTelemetrySdk != null) {
-            openTelemetrySdk.close();
+            try {
+                openTelemetrySdk.close();
+            } catch (RuntimeException e) {
+                LOGGER.error("Failed to close OpenTelemetry SDK", e);
+            }
         }
+        autoCloseableList.clear();
+        metricReaders.clear();
     }
 
     /**
@@ -255,7 +300,13 @@ public class AutoMQTelemetryManager {
         return this.yammerReporter;
     }
 
-    public void setMetricCardinalityLimit(int limit) {
+    public synchronized void setMetricCardinalityLimit(int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("Metric cardinality limit must be positive");
+        }
+        if (openTelemetrySdk != null) {
+            throw new IllegalStateException("Metric cardinality limit must be configured before initialization");
+        }
         this.metricCardinalityLimit = limit;
     }
 
@@ -268,8 +319,8 @@ public class AutoMQTelemetryManager {
      *
      * @return The meter instance.
      */
-    public Meter getMeter() {
-        if (this.openTelemetrySdk == null) {
+    public synchronized Meter getMeter() {
+        if (shutdown || this.openTelemetrySdk == null) {
             throw new IllegalStateException("TelemetryManager is not initialized. Call init() first.");
         }
         return this.openTelemetrySdk.getMeter(TelemetryConstants.TELEMETRY_SCOPE_NAME);

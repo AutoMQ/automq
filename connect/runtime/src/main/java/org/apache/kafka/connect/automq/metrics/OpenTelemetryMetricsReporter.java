@@ -31,12 +31,14 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -84,7 +86,8 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     
     private static final String DEFAULT_PREFIX = "kafka";
 
-    private static AutoMQTelemetryManager telemetryManager;
+    private static volatile AutoMQTelemetryManager telemetryManager;
+    private static final String WORKER_ID = createWorkerId();
 
     private boolean enabled = true;
     private String metricPrefix = DEFAULT_PREFIX;
@@ -95,7 +98,16 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private final Map<String, MetricHandle> metricHandles = new ConcurrentHashMap<>();
     private final Map<KafkaMetric, String> metricToKey = new ConcurrentHashMap<>();
     
-    public static void initializeTelemetry(Properties props) {
+    /**
+     * Initializes the worker's shared SDK and automatic JMX source exactly once.
+     * Kafka clients and tasks reuse these exporters throughout rebalances.
+     *
+     * @param props worker-level telemetry and exporter properties
+     */
+    public static synchronized void initializeTelemetry(Properties props) {
+        if (telemetryManager != null) {
+            return;
+        }
         String exportURIStr = props.getProperty(MetricsConfigConstants.EXPORTER_URI_KEY);
         String serviceName = props.getProperty(MetricsConfigConstants.SERVICE_NAME_KEY, "connect-default");
         String instanceId = props.getProperty(MetricsConfigConstants.SERVICE_INSTANCE_ID_KEY, "0");
@@ -104,9 +116,49 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         BucketURI metricsBucket = getMetricsBucket(props);
         List<Pair<String, String>> baseLabels = getBaseLabels(props);
 
-        telemetryManager = new AutoMQTelemetryManager(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
-        telemetryManager.init();
+        int cardinalityLimit = Integer.parseInt(props.getProperty(MetricsConfigConstants.METRIC_CARDINALITY_LIMIT_KEY,
+            Integer.toString(MetricsConfigConstants.DEFAULT_METRIC_CARDINALITY_LIMIT)));
+        AutoMQTelemetryManager manager = new AutoMQTelemetryManager(exportURIStr, serviceName, instanceId,
+            new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
+        try {
+            manager.setMetricCardinalityLimit(cardinalityLimit);
+            manager.init();
+            AttributesBuilder attributes = Attributes.builder();
+            baseLabels.forEach(label -> attributes.put(label.getKey(), label.getValue()));
+            attributes.put("worker_id", WORKER_ID);
+            manager.startAutomaticJmxMetrics(attributes.build());
+            telemetryManager = manager;
+        } catch (RuntimeException | Error e) {
+            try {
+                manager.shutdown();
+            } catch (RuntimeException cleanupFailure) {
+                e.addSuppressed(cleanupFailure);
+            }
+            throw e;
+        }
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
+    }
+
+    /**
+     * Releases shared telemetry when the worker stops, including startup failure cleanup.
+     * Closing an individual reporter must not invoke this method.
+     */
+    public static synchronized void shutdownTelemetry() {
+        AutoMQTelemetryManager manager = telemetryManager;
+        telemetryManager = null;
+        if (manager != null) {
+            try {
+                manager.shutdown();
+            } catch (RuntimeException e) {
+                LOGGER.error("Failed to shut down Connect telemetry", e);
+            }
+        }
+    }
+
+    private static String createWorkerId() {
+        String podName = System.getenv("POD_NAME");
+        String processName = StringUtils.isBlank(podName) ? ManagementFactory.getRuntimeMXBean().getName() : podName;
+        return processName + "-" + UUID.randomUUID();
     }
 
     private static BucketURI getMetricsBucket(Properties props) {
@@ -176,12 +228,13 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         try {
             // Get the OpenTelemetry meter from AutoMQTelemetryManager
             // This assumes the telemetry manager is already initialized
-            meter = telemetryManager.getMeter();
-            if (meter == null) {
+            AutoMQTelemetryManager manager = telemetryManager;
+            if (manager == null) {
                 LOGGER.warn("AutoMQTelemetryManager is not initialized, OpenTelemetry metrics will not be available");
                 enabled = false;
                 return;
             }
+            meter = manager.getMeter();
             
             // Register initial metrics
             for (KafkaMetric metric : metrics) {

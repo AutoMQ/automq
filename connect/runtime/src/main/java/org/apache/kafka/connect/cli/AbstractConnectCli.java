@@ -131,6 +131,7 @@ public abstract class AbstractConnectCli<H extends Herder, T extends WorkerConfi
 
         } catch (Throwable t) {
             // AutoMQ inject start
+            OpenTelemetryMetricsReporter.shutdownTelemetry();
             logStartupFailure("run", t);
             // AutoMQ inject end
             getLogger().error("Stopping due to error", t);

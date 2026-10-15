@@ -17,6 +17,7 @@
 package org.apache.kafka.connect.runtime;
 
 import org.apache.kafka.common.utils.Exit;
+import org.apache.kafka.connect.automq.metrics.OpenTelemetryMetricsReporter;
 import org.apache.kafka.connect.runtime.distributed.DistributedHerder;
 import org.apache.kafka.connect.runtime.rest.ConnectRestServer;
 import org.apache.kafka.connect.runtime.rest.RestServer;
@@ -88,8 +89,14 @@ public class Connect<H extends Herder> {
             if (!wasShuttingDown) {
                 log.info("Kafka Connect stopping");
 
-                rest.stop();
-                herder.stop();
+                // AutoMQ inject start
+                try {
+                    rest.stop();
+                    herder.stop();
+                } finally {
+                    OpenTelemetryMetricsReporter.shutdownTelemetry();
+                }
+                // AutoMQ inject end
 
                 log.info("Kafka Connect stopped");
             }

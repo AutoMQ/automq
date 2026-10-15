@@ -259,6 +259,12 @@ AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
 AutoMQTelemetryManager.shutdownInstance();
 ```
 
+### Automatic Connect JMX Metrics
+
+Connect workers discover numeric JMX attributes automatically and export them through the existing
+OpenTelemetry destinations without connector-specific configuration. See [Automatic JMX metrics](AUTOMATIC_JMX.md)
+for naming, labels, lifecycle, limits, and verification.
+
 ### JMX Metrics Configuration
 
 Define JMX metrics collection rules through YAML configuration files:

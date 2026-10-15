@@ -14,5 +14,6 @@
  # limitations under the License.
 
 org.apache.kafka.connect.tools.MockSourceConnector
+org.apache.kafka.connect.tools.JmxMetricsSourceConnector
 org.apache.kafka.connect.tools.SchemaSourceConnector
 org.apache.kafka.connect.tools.VerifiableSourceConnector

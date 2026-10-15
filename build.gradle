@@ -2518,6 +2518,7 @@ project(':automq-metrics') {
     testImplementation libs.junitJupiter
     testImplementation libs.mockitoCore
     testImplementation libs.slf4jReload4j
+    testImplementation "io.opentelemetry:opentelemetry-sdk-testing:${versions.opentelemetrySDK}"
 
     testRuntimeOnly libs.junitPlatformLanucher
 
