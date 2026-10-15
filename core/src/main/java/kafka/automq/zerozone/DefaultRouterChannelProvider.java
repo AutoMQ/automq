@@ -97,6 +97,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     private RouterChannel newChannel(int ownerNodeId, boolean readOnly) {
         return new MultiBucketsRouterChannel(ownerNodeId, buckets, readOnly, (bucket, bucketReadOnly) -> {
             ObjectWALConfig.Builder builder = ObjectWALConfig.builder()
+                .withURI(bucket.toIdURI())
                 .withClusterId(clusterId)
                 .withNodeId(ownerNodeId)
                 .withBucketId(bucket.bucketId())
@@ -104,7 +105,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
                 .withType(WAL_TYPE)
                 .withManualMode(true);
             if (!bucketReadOnly) {
-                builder.withURI(bucket.toIdURI()).withEpoch(nodeEpoch);
+                builder.withEpoch(nodeEpoch);
             }
             ObjectWALConfig config = builder.build();
             ObjectStorage storage = objectStorage(bucket);

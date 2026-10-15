@@ -47,6 +47,12 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
     @Override
     public CompletableFuture<WriteAheadLog> readOnly(String walConfig, int nodeId) {
         BucketURI bucketURI = BucketURI.parse(walConfig);
+        ObjectWALConfig objectWALConfig = ObjectWALConfig.builder()
+            .withURI(bucketURI.toIdURI())
+            .withClusterId(clusterId)
+            .withNodeId(nodeId)
+            .withOpenMode(OpenMode.READ_ONLY)
+            .build();
         ObjectStorage objectStorage = objectStorages.computeIfAbsent(bucketURI.bucketId(), id -> {
                 try {
                     return ObjectStorageFactory.instance().builder(bucketURI).readWriteIsolate(false)
@@ -61,11 +67,6 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
         if (objectStorage == null) {
             throw new IllegalArgumentException("Cannot parse " + walConfig);
         }
-        ObjectWALConfig objectWALConfig = ObjectWALConfig.builder()
-            .withClusterId(clusterId)
-            .withNodeId(nodeId)
-            .withOpenMode(OpenMode.READ_ONLY)
-            .build();
         ObjectWALService wal = new ObjectWALService(time, objectStorage, objectWALConfig);
         return CompletableFuture.runAsync(() -> {
             try {
