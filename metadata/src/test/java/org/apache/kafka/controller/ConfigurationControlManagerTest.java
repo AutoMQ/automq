@@ -19,6 +19,7 @@ package org.apache.kafka.controller;
 
 import org.apache.kafka.clients.admin.AlterConfigOp;
 import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.config.ConfigResource;
 import org.apache.kafka.common.errors.PolicyViolationException;
 import org.apache.kafka.common.errors.UnknownTopicOrPartitionException;
@@ -32,6 +33,7 @@ import org.apache.kafka.server.config.ConfigSynonym;
 import org.apache.kafka.server.policy.AlterConfigPolicy;
 import org.apache.kafka.server.policy.AlterConfigPolicy.RequestMetadata;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -393,4 +395,117 @@ public class ConfigurationControlManagerTest {
             manager.legacyAlterConfigs(toMap(entry(MYTOPIC, toMap(entry("def", "901")))),
                 true));
     }
+
+    // AutoMQ inject start
+    /**
+     * Records what {@link ConfigurationValidator#validateAlteredConfigs} receives and rejects {@code baz} whenever
+     * the request changes it, which is how a validator can refuse a new value while tolerating a persisted one.
+     */
+    private static class AlteredConfigsRecordingValidator implements ConfigurationValidator {
+        private Map<String, String> altered;
+        private Map<String, String> existing;
+
+        @Override
+        public void validate(ConfigResource resource) { }
+
+        @Override
+        public void validate(ConfigResource resource, Map<String, String> config) { }
+
+        @Override
+        public void validateAlteredConfigs(ConfigResource resource, Map<String, String> alteredConfigs,
+                                           Map<String, String> existingConfigs) {
+            altered = new HashMap<>(alteredConfigs);
+            existing = new HashMap<>(existingConfigs);
+            String newValue = alteredConfigs.get("baz");
+            if (newValue != null && !newValue.equals(existingConfigs.get("baz"))) {
+                throw new ConfigException("baz", newValue, "not allowed to change");
+            }
+        }
+    }
+
+    /**
+     * Given a broker resource holding a persisted value, when a request alters other keys, deletes it or re-sends it
+     * unchanged, then the validator sees the altered keys next to the pre-request configs and the request succeeds.
+     */
+    @Tag("S3Unit")
+    @Test
+    public void testIncrementalAlterConfigsValidatesAlteredConfigs() {
+        AlteredConfigsRecordingValidator validator = new AlteredConfigsRecordingValidator();
+        ConfigurationControlManager manager = new ConfigurationControlManager.Builder().
+            setKafkaConfigSchema(SCHEMA).
+            setValidator(validator).
+            build();
+        manager.replay(new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+            setName("baz").setValue("persisted"));
+
+        // An unrelated key is altered, so the persisted value is not revalidated.
+        assertEquals(ControllerResult.atomicOf(Collections.singletonList(new ApiMessageAndVersion(
+                new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+                    setName("quux").setValue("1"), CONFIG_RECORD.highestSupportedVersion())),
+                ApiError.NONE),
+            manager.incrementalAlterConfig(BROKER0, toMap(entry("quux", entry(SET, "1"))), true));
+        assertEquals(Collections.singletonMap("quux", "1"), validator.altered);
+        assertEquals(Collections.singletonMap("baz", "persisted"), validator.existing);
+
+        // A broker resource gets a record even for an unchanged value (KAFKA-14136), which must stay allowed.
+        assertEquals(ControllerResult.atomicOf(Collections.singletonList(new ApiMessageAndVersion(
+                new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+                    setName("baz").setValue("persisted"), CONFIG_RECORD.highestSupportedVersion())),
+                ApiError.NONE),
+            manager.incrementalAlterConfig(BROKER0, toMap(entry("baz", entry(SET, "persisted"))), true));
+        assertEquals(Collections.singletonMap("baz", "persisted"), validator.altered);
+
+        assertEquals(ControllerResult.atomicOf(Collections.singletonList(new ApiMessageAndVersion(
+                new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+                    setName("baz").setValue(null), CONFIG_RECORD.highestSupportedVersion())),
+                ApiError.NONE),
+            manager.incrementalAlterConfig(BROKER0, toMap(entry("baz", entry(DELETE, null))), true));
+        assertEquals(Collections.singletonMap("baz", null), validator.altered);
+    }
+
+    /**
+     * Given a validator that refuses a changed value, when a request sets it, then the request fails with
+     * INVALID_CONFIG and generates no record.
+     */
+    @Tag("S3Unit")
+    @Test
+    public void testIncrementalAlterConfigsRejectedByAlteredConfigsValidation() {
+        ConfigurationControlManager manager = new ConfigurationControlManager.Builder().
+            setKafkaConfigSchema(SCHEMA).
+            setValidator(new AlteredConfigsRecordingValidator()).
+            build();
+        manager.replay(new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+            setName("baz").setValue("persisted"));
+
+        assertEquals(ControllerResult.atomicOf(Collections.emptyList(),
+                new ApiError(Errors.INVALID_CONFIG, "Invalid value changed for configuration baz: not allowed to change")),
+            manager.incrementalAlterConfig(BROKER0, toMap(entry("baz", entry(SET, "changed"))), true));
+    }
+
+    /**
+     * Given a broker resource holding persisted values, when the legacy API re-sends them all with one changed key,
+     * then the validator sees every explicitly altered key next to the pre-request configs.
+     */
+    @Tag("S3Unit")
+    @Test
+    public void testLegacyAlterConfigsValidatesAlteredConfigs() {
+        AlteredConfigsRecordingValidator validator = new AlteredConfigsRecordingValidator();
+        ConfigurationControlManager manager = new ConfigurationControlManager.Builder().
+            setKafkaConfigSchema(SCHEMA).
+            setValidator(validator).
+            build();
+        manager.replay(new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+            setName("baz").setValue("persisted"));
+        manager.replay(new ConfigRecord().setResourceType(BROKER.id()).setResourceName("0").
+            setName("foo.bar").setValue("1,2"));
+
+        assertEquals(toMap(entry(BROKER0, ApiError.NONE)),
+            manager.legacyAlterConfigs(toMap(entry(BROKER0, toMap(
+                entry("baz", "persisted"),
+                entry("quux", "1")))),
+                true).response());
+        assertEquals(toMap(entry("baz", "persisted"), entry("quux", "1")), validator.altered);
+        assertEquals(toMap(entry("baz", "persisted"), entry("foo.bar", "1,2")), validator.existing);
+    }
+    // AutoMQ inject end
 }

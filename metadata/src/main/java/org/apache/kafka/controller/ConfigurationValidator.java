@@ -45,4 +45,20 @@ public interface ConfigurationValidator {
      * @param config        The new configuration.
      */
     void validate(ConfigResource resource, Map<String, String> config);
+
+    // AutoMQ inject start
+    /**
+     * Throws an ApiException, or a ConfigException that the caller turns into an INVALID_CONFIG error, if the
+     * alterations an AlterConfigs or IncrementalAlterConfigs request asks for are invalid for the given resource.
+     * Unlike {@link #validate(ConfigResource, Map)} this is only called for such requests, never when the
+     * resulting records are replayed, so it may reject a value that is already persisted and that the replay path
+     * has to keep accepting.
+     *
+     * @param resource        The configuration resource.
+     * @param alteredConfigs  Each explicitly altered key mapped to its new value, null for a deletion.
+     * @param existingConfigs The configuration persisted for the resource before the request.
+     */
+    default void validateAlteredConfigs(ConfigResource resource, Map<String, String> alteredConfigs,
+                                        Map<String, String> existingConfigs) { }
+    // AutoMQ inject end
 }

@@ -17,6 +17,7 @@
 
 package kafka.server
 
+import kafka.automq.zerozone.DefaultZeroZoneConfig
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, CLIENT_METRICS, TOPIC}
 import org.apache.kafka.common.errors.{InvalidConfigurationException, InvalidRequestException}
@@ -122,4 +123,17 @@ class ControllerConfigurationValidator(kafkaConfig: KafkaConfig) extends Configu
       case _ => throwExceptionForUnknownResourceType(resource)
     }
   }
+
+  // AutoMQ inject start
+  override def validateAlteredConfigs(
+    resource: ConfigResource,
+    alteredConfigs: util.Map[String, String],
+    existingConfigs: util.Map[String, String]
+  ): Unit = {
+    resource.`type`() match {
+      case BROKER => DefaultZeroZoneConfig.validateAlteredConfigs(alteredConfigs, existingConfigs)
+      case _ =>
+    }
+  }
+  // AutoMQ inject end
 }

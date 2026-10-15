@@ -19,14 +19,16 @@ package kafka.server
 
 import kafka.automq.AutoMQConfig
 import kafka.utils.TestUtils
+import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.{BROKER, BROKER_LOGGER, CLIENT_METRICS, TOPIC}
 import org.apache.kafka.common.config.TopicConfig.{SEGMENT_BYTES_CONFIG, SEGMENT_JITTER_MS_CONFIG, SEGMENT_MS_CONFIG, TABLE_TOPIC_SCHEMA_TYPE_CONFIG}
 import org.apache.kafka.common.errors.{InvalidConfigurationException, InvalidRequestException, InvalidTopicException}
 import org.apache.kafka.server.metrics.ClientMetricsConfigs
 import org.apache.kafka.server.record.TableTopicSchemaType
-import org.junit.jupiter.api.Assertions.{assertEquals, assertThrows}
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.{assertDoesNotThrow, assertEquals, assertThrows, assertTrue}
+import org.junit.jupiter.api.function.Executable
+import org.junit.jupiter.api.{Tag, Test}
 
 import java.util
 import java.util.Collections.emptyMap
@@ -177,4 +179,81 @@ class ControllerConfigurationValidatorTest {
     // No exception should be thrown when schema registry URL is configured properly
     validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config)
   }
+
+  // AutoMQ inject start
+  private val ZONE_CIDR_BLOCKS_CONFIG = "automq.zone.cidr.blocks"
+
+  private def zoneCidrBlocks(value: String): util.Map[String, String] = {
+    val configs = new util.HashMap[String, String]()
+    configs.put(ZONE_CIDR_BLOCKS_CONFIG, value)
+    configs
+  }
+
+  private def validateAlteredConfigs(
+    resource: ConfigResource,
+    alteredConfigs: util.Map[String, String],
+    existingConfigs: util.Map[String, String]
+  ): Executable = () => validator.validateAlteredConfigs(resource, alteredConfigs, existingConfigs)
+
+  /**
+   * Given a broker resource, when a request sets a zone CIDR block only earlier releases accepted, then it is rejected.
+   */
+  @Tag("S3Unit")
+  @Test
+  def testNewLegacyZoneCidrBlocksRejected(): Unit = {
+    val exception = assertThrows(classOf[ConfigException], validateAlteredConfigs(
+      new ConfigResource(BROKER, "0"), zoneCidrBlocks("az-a@10.0.0/24"), emptyMap()))
+    assertTrue(exception.getMessage.contains(
+      "Block az-a@10.0.0/24 is not a supported CIDR block (the address is not an IPv4 or IPv6 literal)"))
+  }
+
+  /**
+   * Given the cluster default resource, when a request sets a zone CIDR block only earlier releases accepted, then
+   * it is rejected, while re-sending the persisted value unchanged is accepted.
+   */
+  @Tag("S3Unit")
+  @Test
+  def testClusterDefaultLegacyZoneCidrBlocks(): Unit = {
+    val clusterDefault = new ConfigResource(BROKER, "")
+    assertThrows(classOf[ConfigException], validateAlteredConfigs(
+      clusterDefault, zoneCidrBlocks("az-a@10.0.0/24"), emptyMap()))
+    assertDoesNotThrow(validateAlteredConfigs(
+      clusterDefault, zoneCidrBlocks("az-a@10.0.0/24"), zoneCidrBlocks("az-a@10.0.0/24")))
+  }
+
+  /**
+   * Given a persisted zone CIDR blocks value, when a request re-sends it unchanged or deletes it, then it is accepted.
+   */
+  @Tag("S3Unit")
+  @Test
+  def testPersistedLegacyZoneCidrBlocksAccepted(): Unit = {
+    val existing = zoneCidrBlocks("az-a@10.0.0/24")
+    val broker = new ConfigResource(BROKER, "0")
+    assertDoesNotThrow(validateAlteredConfigs(broker, zoneCidrBlocks("az-a@10.0.0/24"), existing))
+    assertDoesNotThrow(validateAlteredConfigs(broker, zoneCidrBlocks(null), existing))
+    assertDoesNotThrow(validateAlteredConfigs(broker, emptyMap(), existing))
+  }
+
+  /**
+   * Given a broker resource, when a request sets a fully supported zone CIDR blocks value, then it is accepted.
+   */
+  @Tag("S3Unit")
+  @Test
+  def testSupportedZoneCidrBlocksAccepted(): Unit = {
+    assertDoesNotThrow(validateAlteredConfigs(new ConfigResource(BROKER, "0"),
+      zoneCidrBlocks("az-a@192.0.2.0/24<>az-b@2001:db8::/32"), emptyMap()))
+  }
+
+  /**
+   * Given a resource that is not a broker, when a request alters it, then the zone CIDR blocks are not validated.
+   */
+  @Tag("S3Unit")
+  @Test
+  def testNonBrokerResourcesAreNotValidated(): Unit = {
+    assertDoesNotThrow(validateAlteredConfigs(
+      new ConfigResource(TOPIC, "foo"), zoneCidrBlocks("az-a@10.0.0/24"), emptyMap()))
+    assertDoesNotThrow(validateAlteredConfigs(
+      new ConfigResource(CLIENT_METRICS, "subscription-1"), zoneCidrBlocks("az-a@10.0.0/24"), emptyMap()))
+  }
+  // AutoMQ inject end
 }
