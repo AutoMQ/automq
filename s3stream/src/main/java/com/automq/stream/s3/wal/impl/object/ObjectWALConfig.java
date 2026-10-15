@@ -40,6 +40,7 @@ public class ObjectWALConfig {
     private final short bucketId;
     private final String type;
     private final boolean manualMode;
+    private final int version;
 
     public static Builder builder() {
         return new Builder();
@@ -63,6 +64,7 @@ public class ObjectWALConfig {
         this.bucketId = bucketId;
         this.type = type;
         this.manualMode = false;
+        this.version = 0;
     }
 
     private ObjectWALConfig(Builder builder) {
@@ -80,6 +82,12 @@ public class ObjectWALConfig {
         this.bucketId = builder.bucketId;
         this.type = builder.type;
         this.manualMode = builder.manualMode;
+        this.version = builder.version;
+    }
+
+    /** Returns the key layout version: 0 for legacy writes, or 1 for writes across 256 fixed shards. */
+    public int version() {
+        return version;
     }
 
     /** Returns whether callers control batching through explicit flushes instead of size or timer triggers. */
@@ -153,6 +161,7 @@ public class ObjectWALConfig {
             ", openMode=" + openMode +
             ", bucketId=" + bucketId +
             ", type='" + type + '\'' +
+            ", version=" + version +
             '}';
     }
 
@@ -171,6 +180,7 @@ public class ObjectWALConfig {
         private short bucketId;
         private String type = "";
         private boolean manualMode;
+        private int version;
 
         private Builder() {
         }
@@ -199,6 +209,20 @@ public class ObjectWALConfig {
             if (StringUtils.isNumeric(readaheadDataSize)) {
                 withReadaheadDataSize(Integer.parseInt(readaheadDataSize));
             }
+            withVersion(Integer.parseInt(uri.extensionString("version", "0")));
+            return this;
+        }
+
+        /**
+         * Sets the key layout version: 0 (default) writes legacy keys; 1 writes keys across 256 fixed shards.
+         * Both versions read both layouts, preferring their write layout and falling back only on not-found.
+         * This version does not change the WAL object contents or record offset encoding.
+         */
+        public Builder withVersion(int version) {
+            if (version != 0 && version != 1) {
+                throw new IllegalArgumentException("WAL version must be 0 or 1");
+            }
+            this.version = version;
             return this;
         }
 
