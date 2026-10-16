@@ -66,6 +66,25 @@ public class DefaultRecordBatchTest {
     private static final Random RANDOM = new Random(20231025);
 
     @Test
+    public void testClearTransactionalFlagAfterProducerIdStripped() {
+        for (Compression compression : Arrays.asList(Compression.NONE, Compression.gzip().build())) {
+            MemoryRecords records = MemoryRecords.withTransactionalRecords(compression, 42L, (short) 3, 7,
+                new SimpleRecord(new byte[] {1, 2, 3}));
+            DefaultRecordBatch batch = (DefaultRecordBatch) records.batches().iterator().next();
+            batch.setProducerId(RecordBatch.NO_PRODUCER_ID);
+            batch.clearTransactionalFlag();
+            batch.ensureValid();
+            assertFalse(batch.isTransactional());
+            assertFalse(batch.hasProducerId());
+            assertEquals(3, batch.producerEpoch());
+            assertEquals(7, batch.baseSequence());
+            assertEquals(ByteBuffer.wrap(new byte[] {1, 2, 3}), batch.iterator().next().value());
+            batch.clearTransactionalFlag();
+            batch.ensureValid();
+        }
+    }
+
+    @Test
     public void testWriteEmptyHeader() {
         long producerId = 23423L;
         short producerEpoch = 145;
