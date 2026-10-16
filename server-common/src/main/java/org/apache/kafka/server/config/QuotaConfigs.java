@@ -190,7 +190,7 @@ public class QuotaConfigs {
                 .define(QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_CONFIG, ConfigDef.Type.STRING, "", MEDIUM, QuotaConfigs.BROKER_QUOTA_WHITE_LIST_LISTENER_DOC)
                 .define(QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_TOPIC_COUNT_DOC)
                 .define(QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_CONFIG, ConfigDef.Type.LONG, Long.MAX_VALUE, MEDIUM, QuotaConfigs.CLUSTER_QUOTA_PARTITION_COUNT_DOC);
-                 // AutoMQ inject start
+                 // AutoMQ inject end
     }
 
     public static ConfigDef userAndClientQuotaConfigs() {

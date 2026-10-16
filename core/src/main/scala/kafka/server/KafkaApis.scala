@@ -4215,7 +4215,7 @@ class KafkaApis(val requestChannel: RequestChannel,
       s"with context ${request.context}", e)
     requestHelper.handleError(request, e)
   }
-  // AutoMQ inject start
+  // AutoMQ inject end
 
 }
 
