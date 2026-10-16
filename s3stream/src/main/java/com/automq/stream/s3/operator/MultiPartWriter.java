@@ -57,6 +57,7 @@ public class MultiPartWriter implements Writer {
     private final AtomicLong totalWriteSize = new AtomicLong(0L);
     private String uploadId;
     private CompletableFuture<Void> closeCf;
+    private CompletableFuture<Void> releaseCf;
     private ObjectPart objectPart = null;
 
     public MultiPartWriter(ObjectStorage.WriteOptions writeOptions, ObjectStorage operator, String path,
@@ -158,6 +159,14 @@ public class MultiPartWriter implements Writer {
             }
         } else {
             if (objectPart.size() + targetSize > maxMergeWriteSize) {
+                if (objectPart.size() >= minPartSize) {
+                    // A buffered write can already exceed minPartSize. Upload it before starting a copy rather than
+                    // calculating a negative range end from the remaining bytes needed to fill the part.
+                    objectPart.upload();
+                    this.objectPart = null;
+                    copyWrite0(sourceObjectMateData, start, end);
+                    return;
+                }
                 long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
                 objectPart.readAndWrite(sourceObjectMateData, start, readAndWriteCopyEnd);
                 objectPart.upload();
@@ -198,17 +207,19 @@ public class MultiPartWriter implements Writer {
 
     @Override
     public CompletableFuture<Void> release() {
-        List<CompletableFuture<ObjectStorage.ObjectStorageCompletedPart>> partsToWait = parts;
-        if (objectPart != null) {
-            // skip waiting for pending part
-            partsToWait = partsToWait.subList(0, partsToWait.size() - 1);
+        if (releaseCf != null) {
+            return releaseCf;
         }
-        // wait for all ongoing uploading parts to finish and release pending part
-        return CompletableFuture.allOf(partsToWait.toArray(new CompletableFuture[0])).whenComplete((nil, ex) -> {
-            if (objectPart != null) {
-                objectPart.release();
-            }
-        });
+        ObjectPart pendingPart = objectPart;
+        List<CompletableFuture<ObjectStorage.ObjectStorageCompletedPart>> partsToWait = pendingPart == null
+            ? parts : parts.subList(0, parts.size() - 1);
+        CompletableFuture<Void> pendingRelease = pendingPart == null
+            ? CompletableFuture.completedFuture(null) : pendingPart.release();
+        // A pending range read may still append to the part buffer. Wait for it before freeing the buffer or
+        // reporting cleanup complete, while also waiting for parts that were already submitted for upload.
+        releaseCf = CompletableFuture.allOf(
+            CompletableFuture.allOf(partsToWait.toArray(new CompletableFuture[0])), pendingRelease);
+        return releaseCf;
     }
 
     @Override
@@ -233,6 +244,7 @@ public class MultiPartWriter implements Writer {
         private final ThrottleStrategy throttleStrategy;
         private CompositeByteBuf partBuf = ByteBufAlloc.compositeByteBuffer();
         private CompletableFuture<Void> lastRangeReadCf = CompletableFuture.completedFuture(null);
+        private final List<PendingWrite> pendingWrites = new LinkedList<>();
         private long size;
 
         public ObjectPart(ThrottleStrategy throttleStrategy) {
@@ -240,20 +252,26 @@ public class MultiPartWriter implements Writer {
             parts.add(partCf);
         }
 
-        public void write(ByteBuf data) {
+        public synchronized void write(ByteBuf data) {
             size += data.readableBytes();
+            PendingWrite pendingWrite = new PendingWrite(data);
+            pendingWrites.add(pendingWrite);
             // ensure addComponent happen before following write or copyWrite.
             this.lastRangeReadCf = lastRangeReadCf.handle((nil, ex) -> {
-                if (ex != null) {
-                    data.release();
-                    throw new CompletionException(ex);
+                synchronized (this) {
+                    pendingWrites.remove(pendingWrite);
+                    ByteBuf part = pendingWrite.take();
+                    if (ex != null) {
+                        part.release();
+                        throw new CompletionException(ex);
+                    }
+                    partBuf.addComponent(true, part);
+                    return null;
                 }
-                partBuf.addComponent(true, data);
-                return null;
             });
         }
 
-        public void copyOnWrite() {
+        public synchronized void copyOnWrite() {
             int size = partBuf.readableBytes();
             if (size > 0) {
                 ByteBuf buf = ByteBufAlloc.byteBuffer(size, writeOptions.allocType());
@@ -262,6 +280,7 @@ public class MultiPartWriter implements Writer {
                 this.partBuf.release();
                 this.partBuf = copy;
             }
+            pendingWrites.forEach(PendingWrite::copyOnWrite);
         }
 
         public void readAndWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
@@ -273,13 +292,24 @@ public class MultiPartWriter implements Writer {
                         new ReadOptions().throttleStrategy(throttleStrategy).bucket(s3ObjectMetadata.bucket()),
                         s3ObjectMetadata.key(), start, end)
                 )
-                .thenAccept(buf -> partBuf.addComponent(true, buf));
+                .thenAccept(buf -> {
+                    synchronized (this) {
+                        partBuf.addComponent(true, buf);
+                    }
+                });
         }
 
         public void upload() {
+            if (!lastRangeReadCf.isDone()) {
+                // This part is no longer reachable through MultiPartWriter.copyOnWrite(), but queued writes may
+                // still hold caller-owned buffers until the read finishes. Snapshot them before submitting it.
+                copyOnWrite();
+            }
             this.lastRangeReadCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
-                    partBuf.release();
+                    synchronized (this) {
+                        partBuf.release();
+                    }
                     partCf.completeExceptionally(ex);
                 } else {
                     upload0();
@@ -289,7 +319,11 @@ public class MultiPartWriter implements Writer {
 
         private void upload0() {
             TimerUtil timerUtil = new TimerUtil();
-            FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(writeOptions, path, uploadId, partNumber, partBuf)), partCf);
+            ByteBuf data;
+            synchronized (this) {
+                data = partBuf;
+            }
+            FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(writeOptions, path, uploadId, partNumber, data)), partCf);
             partCf.whenComplete((nil, ex) -> {
                 S3ObjectMetrics.recordUploadPartStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             });
@@ -303,8 +337,34 @@ public class MultiPartWriter implements Writer {
             return partCf.thenApply(nil -> null);
         }
 
-        public void release() {
-            partBuf.release();
+        public CompletableFuture<Void> release() {
+            return lastRangeReadCf.handle((nil, ex) -> {
+                synchronized (this) {
+                    partBuf.release();
+                }
+                return null;
+            });
+        }
+
+        private class PendingWrite {
+            private ByteBuf data;
+
+            private PendingWrite(ByteBuf data) {
+                this.data = data;
+            }
+
+            private ByteBuf take() {
+                ByteBuf result = data;
+                data = null;
+                return result;
+            }
+
+            private void copyOnWrite() {
+                ByteBuf copy = ByteBufAlloc.byteBuffer(data.readableBytes(), writeOptions.allocType());
+                copy.writeBytes(data.duplicate());
+                data.release();
+                data = copy;
+            }
         }
     }
 
