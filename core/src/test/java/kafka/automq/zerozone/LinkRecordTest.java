@@ -32,25 +32,40 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 @Tag("S3Unit")
 public class LinkRecordTest {
 
+    /**
+     * Reading a link's decoded size is repeatable and preserves the caller's buffer indices and ownership.
+     */
     @Test
     public void testEncodeDecode() {
         SimpleRecord record = new SimpleRecord(ByteBuffer.wrap("hello".getBytes(StandardCharsets.UTF_8)));
         MemoryRecords memoryRecords = MemoryRecords.withRecords(Compression.NONE, record);
 
-        ByteBuf linkRecordBuf = LinkRecord.encode(
-            ChannelOffset.of(
-                (short) 1, (short) 2, 3, 4,
-                DefaultRecordOffset.of(5, 6, 7).buffer()
-            ),
-            memoryRecords);
-
-        assertEquals(7, LinkRecord.decodedSize(linkRecordBuf));
+        ByteBuf walOffset = DefaultRecordOffset.of(5, 6, 7).buffer();
+        ChannelOffset channelOffset = ChannelOffset.of((short) 1, (short) 2, 3, 4, walOffset);
+        ByteBuf linkRecordBuf = LinkRecord.encode(channelOffset, memoryRecords);
+        ByteBuf padded = Unpooled.buffer().writeByte(0).writeBytes(linkRecordBuf.duplicate());
+        padded.readByte();
+        try {
+            assertEquals(7, LinkRecord.decodedSize(linkRecordBuf));
+            assertEquals(7, LinkRecord.decodedSize(padded));
+            assertEquals(7, LinkRecord.decodedSize(padded));
+            assertEquals(1, padded.readerIndex());
+            assertEquals(1, padded.refCnt());
+            assertEquals(0, linkRecordBuf.readerIndex());
+            assertEquals(1, linkRecordBuf.refCnt());
+        } finally {
+            padded.release();
+            linkRecordBuf.release();
+            channelOffset.byteBuf().release();
+            walOffset.release();
+        }
     }
 
 }

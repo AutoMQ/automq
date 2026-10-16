@@ -124,8 +124,7 @@ public class LinkRecord {
             throw new UnsupportedOperationException("Unsupported magic: " + magic);
         }
         int channelOffsetSize = buf.readableBytes() - CHANNEL_OFFSET_OFFSET;
-        ByteBuf channelOffsetBuf = Unpooled.buffer(channelOffsetSize);
-        buf.getBytes(CHANNEL_OFFSET_OFFSET, channelOffsetBuf);
+        ByteBuf channelOffsetBuf = buf.slice(CHANNEL_OFFSET_OFFSET, channelOffsetSize);
         return DefaultRecordOffset.of(ChannelOffset.of(channelOffsetBuf).walRecordOffset()).size();
     }
 }
