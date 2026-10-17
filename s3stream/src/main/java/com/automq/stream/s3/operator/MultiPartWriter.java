@@ -253,6 +253,7 @@ public class MultiPartWriter implements Writer {
             this.lastRangeReadCf.whenComplete((nil, ex) -> {
                 if (ex != null) {
                     partCf.completeExceptionally(ex);
+                    release();
                 } else {
                     upload0();
                 }
@@ -264,6 +265,7 @@ public class MultiPartWriter implements Writer {
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(writeOptions, path, uploadId, partNumber, partBuf)), partCf);
             partCf.whenComplete((nil, ex) -> {
                 S3ObjectStats.getInstance().objectStageUploadPartStats.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                release();
             });
         }
 
@@ -275,8 +277,13 @@ public class MultiPartWriter implements Writer {
             return partCf.thenApply(nil -> null);
         }
 
-        public void release() {
-            partBuf.release();
+        public synchronized void release() {
+            if (partBuf != null) {
+                if (partBuf.refCnt() > 0) {
+                    partBuf.release();
+                }
+                partBuf = null;
+            }
         }
     }
 

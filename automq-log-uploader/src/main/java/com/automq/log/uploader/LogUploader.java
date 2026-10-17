@@ -63,7 +63,7 @@ public class LogUploader implements LogRecorder {
     public static final int MAX_JITTER_INTERVAL = 60 * 1000;
 
     private final BlockingQueue<LogEvent> queue = new LinkedBlockingQueue<>(DEFAULT_MAX_QUEUE_SIZE);
-    private final ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
+    private ByteBuf uploadBuffer = Unpooled.directBuffer(DEFAULT_BUFFER_SIZE);
     private final Random random = new Random();
     private volatile long lastUploadTimestamp = System.currentTimeMillis();
     private volatile long nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
@@ -119,6 +119,11 @@ public class LogUploader implements LogRecorder {
 
         if (cleanupThread != null) {
             cleanupThread.interrupt();
+        }
+
+        if (uploadBuffer != null) {
+            uploadBuffer.release();
+            uploadBuffer = null;
         }
     }
 
@@ -181,25 +186,37 @@ public class LogUploader implements LogRecorder {
         }
 
         private void upload(long now) {
-            if (uploadBuffer.readableBytes() > 0) {
+            if (uploadBuffer != null && uploadBuffer.readableBytes() > 0) {
+                int retryCount = 0;
+                final int maxRetries = 5;
+                boolean success = false;
                 try {
-                    while (!Thread.currentThread().isInterrupted()) {
+                    while (!Thread.currentThread().isInterrupted() && retryCount < maxRetries) {
                         if (objectStorage == null) {
                             break;
                         }
                         try {
                             String objectKey = getObjectKey();
                             objectStorage.write(WriteOptions.DEFAULT, objectKey, Utils.compress(uploadBuffer.slice().asReadOnly())).get();
+                            success = true;
                             break;
                         } catch (Exception e) {
-                            LOGGER.warn("Failed to upload logs, will retry", e);
-                            Thread.sleep(1000);
+                            retryCount++;
+                            if (retryCount >= maxRetries) {
+                                LOGGER.error("Failed to upload logs after {} retries, dropping buffered logs", maxRetries, e);
+                                break;
+                            }
+                            long backoffMs = Math.min(1000L * (1 << retryCount), 16000L);
+                            LOGGER.warn("Failed to upload logs (attempt {}/{}), retrying in {} ms", retryCount, maxRetries, backoffMs, e);
+                            Thread.sleep(backoffMs);
                         }
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-                uploadBuffer.clear();
+                if (uploadBuffer != null) {
+                    uploadBuffer.clear();
+                }
                 lastUploadTimestamp = now;
                 nextUploadInterval = UPLOAD_INTERVAL + random.nextInt(MAX_JITTER_INTERVAL);
             }

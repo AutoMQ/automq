@@ -100,7 +100,14 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         BucketURI metricsBucket = getMetricsBucket(props);
         List<Pair<String, String>> baseLabels = getBaseLabels(props);
         
-        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, Integer.parseInt(instanceId), metricsBucket, baseLabels, intervalMs));
+        int parsedInstanceId;
+        try {
+            parsedInstanceId = Integer.parseInt(instanceId);
+        } catch (NumberFormatException e) {
+            parsedInstanceId = instanceId.hashCode() & Integer.MAX_VALUE;
+        }
+
+        AutoMQTelemetryManager.initializeInstance(exportURIStr, serviceName, instanceId, new ConnectMetricsExportConfig(clusterId, parsedInstanceId, metricsBucket, baseLabels, intervalMs));
         LOGGER.info("OpenTelemetryMetricsReporter initialized");
     }
 

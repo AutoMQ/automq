@@ -6,11 +6,30 @@ image:
   repository: automq
   tag: 1.5.0-bitnami
   pullPolicy: Always
+# Security & Credentials Configuration:
+# -----------------------------------------------------------------------------------------
+# OPTION 1: Static credentials (NOT recommended for production).
+# For testing/demo purposes only:
 extraEnvVars:
   - name: AWS_ACCESS_KEY_ID
     value: "${access-key}"
   - name: AWS_SECRET_ACCESS_KEY
     value: "${secret-key}"
+
+# OPTION 2: Kubernetes Secret (Recommended for production when using static IAM keys).
+# Mount credentials securely from a pre-created Kubernetes Secret instead of plaintext values.
+# Create secret: kubectl create secret generic automq-aws-creds --from-literal=AWS_ACCESS_KEY_ID=xxx --from-literal=AWS_SECRET_ACCESS_KEY=yyy
+# extraEnvVarsSecret: automq-aws-creds
+
+# OPTION 3: AWS EKS IAM Roles for Service Accounts (IRSA) (Recommended best practice on AWS EKS).
+# Avoids static credentials completely. AWS SDK in AutoMQ will automatically assume the IAM role.
+# When using IRSA, omit AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY and configure the ServiceAccount annotation:
+# serviceAccount:
+#   create: true
+#   name: automq-sa
+#   annotations:
+#     eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/<AUTO_MQ_EKS_ROLE_NAME>
+
 controller:
   replicaCount: 3
   resources:
