@@ -420,6 +420,12 @@ public class S3Storage implements Storage {
      */
     @SuppressWarnings("NPathComplexity")
     public boolean append0(AppendContext context, WalWriteRequest request, boolean fromBackoff) {
+        // Reject an indivisible oversized record before persisting it or advancing the WAL.
+        if (request.record.size() > Constants.MAX_UPLOAD_STREAM_SIZE) {
+            request.cf.completeExceptionally(new IllegalArgumentException(
+                "Record payload size exceeds the upload limit: " + request.record.size()));
+            return false;
+        }
         // TODO: storage status check, fast fail the request when storage closed.
         if (!fromBackoff && !backoffRecords.isEmpty()) {
             backoffRecords.offer(request);
@@ -735,21 +741,26 @@ public class S3Storage implements Storage {
     private void handleAppendCallback(WalWriteRequest request) {
         final long startTime = System.nanoTime();
         request.record.retain();
-        boolean added;
-        synchronized (deltaWALCache) {
-            // Because LogCacheBlock will use request.offset to execute WAL#trim after being uploaded,
-            // this cache put order should keep consistence with WAL put order.
-            added = deltaWALCache.put(request.record);
-            if (!added) {
-                // record was not added, archive current block and retry
-                uploadDeltaWAL();
+        boolean added = false;
+        try {
+            synchronized (deltaWALCache) {
+                // Because LogCacheBlock will use request.offset to execute WAL#trim after being uploaded,
+                // this cache put order should keep consistence with WAL put order.
                 added = deltaWALCache.put(request.record);
+                if (!added) {
+                    // record was not added, archive current block and retry
+                    uploadDeltaWAL();
+                    added = deltaWALCache.put(request.record);
+                }
+                if (!added) {
+                    throw new IllegalStateException("WAL record cannot fit in an empty cache block");
+                }
+                deltaWALCache.setLastRecordOffset(request.offset);
             }
-            deltaWALCache.setLastRecordOffset(request.offset);
-        }
-        if (!added) {
-            // cache block is full, trigger WAL upload.
-            uploadDeltaWAL();
+        } finally {
+            if (!added) {
+                request.record.release();
+            }
         }
         // parallel execute append callback in streamId based executor.
         EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];

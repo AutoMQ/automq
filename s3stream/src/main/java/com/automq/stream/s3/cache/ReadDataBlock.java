@@ -61,7 +61,10 @@ public class ReadDataBlock {
         }
     }
 
-    public int sizeInBytes() {
-        return records.stream().mapToInt(StreamRecordBatch::size).sum();
+    /**
+     * Returns the total payload bytes, which may exceed int range under a soft read limit.
+     */
+    public long sizeInBytes() {
+        return records.stream().mapToLong(StreamRecordBatch::size).sum();
     }
 }

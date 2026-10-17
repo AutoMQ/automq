@@ -66,11 +66,14 @@ public class MultiPartWriter implements Writer {
 
     public MultiPartWriter(ObjectStorage.WriteOptions writeOptions, ObjectStorage operator, String path,
         long minPartSize, long maxMergeWriteSize) {
+        if (minPartSize <= 0 || minPartSize > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Multipart minimum size must fit in a single buffer: " + minPartSize);
+        }
         this.writeOptions = writeOptions;
         this.operator = operator;
         this.path = path;
         this.minPartSize = minPartSize;
-        this.maxMergeWriteSize = maxMergeWriteSize;
+        this.maxMergeWriteSize = Math.max(minPartSize, Math.min(maxMergeWriteSize, Integer.MAX_VALUE));
         init();
     }
 
@@ -88,18 +91,29 @@ public class MultiPartWriter implements Writer {
     public CompletableFuture<Void> write(ByteBuf data) {
         totalWriteSize.addAndGet(data.readableBytes());
 
+        CompletableFuture<Void> prefixCf = CompletableFuture.completedFuture(null);
+        if (objectPart != null && objectPart.size() + data.readableBytes() > Integer.MAX_VALUE) {
+            // Fill a short pending part before flushing; non-final parts must meet the minimum size.
+            if (objectPart.size() < minPartSize) {
+                int prefixSize = (int) (minPartSize - objectPart.size());
+                objectPart.write(data.readRetainedSlice(prefixSize));
+                prefixCf = objectPart.getFuture();
+            }
+            objectPart.upload();
+            objectPart = null;
+        }
         if (objectPart == null) {
             objectPart = new ObjectPart(writeOptions.throttleStrategy());
         }
         ObjectPart objectPart = this.objectPart;
 
         objectPart.write(data);
-        if (objectPart.size() > Math.max(minPartSize, maxMergeWriteSize)) {
+        if (objectPart.size() > maxMergeWriteSize || objectPart.size() == Integer.MAX_VALUE) {
             objectPart.upload();
             // finish current part.
             this.objectPart = null;
         }
-        return objectPart.getFuture();
+        return CompletableFuture.allOf(prefixCf, objectPart.getFuture());
     }
 
     @Override
@@ -134,12 +148,13 @@ public class MultiPartWriter implements Writer {
     private void crossBucketCopyWrite(S3ObjectMetadata sourceObjectMateData, long start, long end) {
         long nextStart = start;
         while (nextStart < end) {
-            long currentEnd = Math.min(nextStart + CROSS_BUCKET_COPY_CHUNK_SIZE, end);
             if (objectPart == null) {
                 objectPart = new ObjectPart(writeOptions.throttleStrategy());
             }
+            long chunkSize = Math.min(CROSS_BUCKET_COPY_CHUNK_SIZE, Integer.MAX_VALUE - objectPart.size());
+            long currentEnd = Math.min(nextStart + chunkSize, end);
             objectPart.readAndWrite(sourceObjectMateData, nextStart, currentEnd);
-            if (objectPart.size() > minPartSize) {
+            if (objectPart.size() > minPartSize || objectPart.size() == Integer.MAX_VALUE) {
                 objectPart.upload();
                 objectPart = null;
             }
@@ -158,14 +173,16 @@ public class MultiPartWriter implements Writer {
             }
         } else {
             if (objectPart.size() + targetSize > maxMergeWriteSize) {
-                long readAndWriteCopyEnd = start + minPartSize - objectPart.size();
-                objectPart.readAndWrite(sourceObjectMateData, start, readAndWriteCopyEnd);
+                long readAndWriteCopyEnd = start + Math.max(0, minPartSize - objectPart.size());
+                if (readAndWriteCopyEnd > start) {
+                    objectPart.readAndWrite(sourceObjectMateData, start, readAndWriteCopyEnd);
+                }
                 objectPart.upload();
                 this.objectPart = null;
-                new CopyObjectPart(sourceObjectMateData.key(), readAndWriteCopyEnd, end);
+                copyWrite0(sourceObjectMateData, readAndWriteCopyEnd, end);
             } else {
                 objectPart.readAndWrite(sourceObjectMateData, start, end);
-                if (objectPart.size() > minPartSize) {
+                if (objectPart.size() > minPartSize || objectPart.size() == Integer.MAX_VALUE) {
                     objectPart.upload();
                     this.objectPart = null;
                 }

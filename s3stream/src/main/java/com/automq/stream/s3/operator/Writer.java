@@ -22,9 +22,12 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
 
 /**
  * Multipart object writer.
@@ -57,6 +60,44 @@ public interface Writer {
      * @param data object data.
      */
     CompletableFuture<Void> write(ByteBuf data);
+
+    /**
+     * Transfers ownership of the components to the writer in order, grouping only buffers that fit in int capacity.
+     * Ownership of each assembled buffer transfers on entry to write, even if write throws synchronously.
+     * Components not yet submitted are released on synchronous failure.
+     * The returned future completes when all resulting writes complete; callers may still need to close the writer
+     * to flush its final buffered part.
+     */
+    static CompletableFuture<Void> writeComponents(Writer writer, ByteBuf... components) {
+        List<CompletableFuture<Void>> writes = new ArrayList<>();
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        int nextComponent = 0;
+        try {
+            while (nextComponent < components.length) {
+                ByteBuf component = components[nextComponent];
+                if ((long) buffer.readableBytes() + component.readableBytes() > Integer.MAX_VALUE) {
+                    ByteBuf submitted = buffer;
+                    buffer = null;
+                    writes.add(writer.write(submitted));
+                    buffer = ByteBufAlloc.compositeByteBuffer();
+                }
+                nextComponent++;
+                buffer.addComponent(true, component);
+            }
+            ByteBuf submitted = buffer;
+            buffer = null;
+            writes.add(writer.write(submitted));
+            return CompletableFuture.allOf(writes.toArray(new CompletableFuture[0]));
+        } catch (Throwable ex) {
+            if (buffer != null) {
+                buffer.release();
+            }
+            while (nextComponent < components.length) {
+                components[nextComponent++].release();
+            }
+            throw ex;
+        }
+    }
 
     /**
      * Make a copy of all cached buffer and release old one to prevent outside modification to underlying data and

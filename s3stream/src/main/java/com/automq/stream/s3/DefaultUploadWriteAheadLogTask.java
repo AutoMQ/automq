@@ -128,8 +128,8 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         }
     }
 
-    private CompletableFuture<Void> acquireLimiter(int size) {
-        return limiter.acquire(size);
+    private CompletableFuture<Void> acquireLimiter(long size) {
+        return limiter.acquire(Math.toIntExact(size));
     }
 
     @Override
@@ -168,11 +168,11 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         Collections.sort(streamSetIds);
         for (Long streamId : streamSetIds) {
             List<StreamRecordBatch> streamRecords = streamSetObjectMap.get(streamId);
-            int streamSize = streamSize(streamRecords);
+            long streamSize = streamSize(streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
             long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
             streamSetObjectCfList.add(acquireLimiter(streamSize).thenAccept(nil -> ssoWriter.write(streamId, streamRecords)));
-            request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset, streamSize));
+            request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
         }
 
         request.setObjectId(streamSetObjectId);
@@ -222,7 +222,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(long objectId, List<StreamRecordBatch> streamRecords) {
-        int streamSize = streamSize(streamRecords);
+        long streamSize = streamSize(streamRecords);
         return acquireLimiter(streamSize).thenComposeAsync(nil -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
             long streamId = streamRecords.get(0).getStreamId();
@@ -242,8 +242,8 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         }, executor);
     }
 
-    static int streamSize(List<StreamRecordBatch> streamRecords) {
-        return streamRecords.stream().mapToInt(StreamRecordBatch::size).sum();
+    static long streamSize(List<StreamRecordBatch> streamRecords) {
+        return streamRecords.stream().mapToLong(StreamRecordBatch::size).sum();
     }
 
     public static class Builder {
