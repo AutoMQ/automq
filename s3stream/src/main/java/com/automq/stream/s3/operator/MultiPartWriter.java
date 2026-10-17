@@ -266,13 +266,13 @@ public class MultiPartWriter implements Writer {
 
         public void readAndWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
             size += end - start;
-            // TODO: parallel read and sequence add.
-            this.lastRangeReadCf = lastRangeReadCf
-                .thenCompose(nil ->
-                    operator.rangeRead(
-                        new ReadOptions().throttleStrategy(throttleStrategy).bucket(s3ObjectMetadata.bucket()),
-                        s3ObjectMetadata.key(), start, end)
-                )
+            // Dispatch the asynchronous rangeRead immediately for concurrent pre-fetching
+            CompletableFuture<ByteBuf> readCf = operator.rangeRead(
+                new ReadOptions().throttleStrategy(throttleStrategy).bucket(s3ObjectMetadata.bucket()),
+                s3ObjectMetadata.key(), start, end);
+            // Sequence the addition into partBuf in order as prior reads finish
+            this.lastRangeReadCf = this.lastRangeReadCf
+                .thenCompose(nil -> readCf)
                 .thenAccept(buf -> partBuf.addComponent(true, buf));
         }
 
@@ -281,6 +281,7 @@ public class MultiPartWriter implements Writer {
                 if (ex != null) {
                     partBuf.release();
                     partCf.completeExceptionally(ex);
+                    release();
                 } else {
                     upload0();
                 }
@@ -292,6 +293,7 @@ public class MultiPartWriter implements Writer {
             FutureUtil.propagate(uploadIdCf.thenCompose(uploadId -> operator.uploadPart(writeOptions, path, uploadId, partNumber, partBuf)), partCf);
             partCf.whenComplete((nil, ex) -> {
                 S3ObjectMetrics.recordUploadPartStage(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                release();
             });
         }
 
@@ -303,8 +305,13 @@ public class MultiPartWriter implements Writer {
             return partCf.thenApply(nil -> null);
         }
 
-        public void release() {
-            partBuf.release();
+        public synchronized void release() {
+            if (partBuf != null) {
+                if (partBuf.refCnt() > 0) {
+                    partBuf.release();
+                }
+                partBuf = null;
+            }
         }
     }
 
