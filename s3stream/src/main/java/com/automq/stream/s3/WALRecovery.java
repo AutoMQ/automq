@@ -68,7 +68,8 @@ public class WALRecovery {
      *     <li>The record 1 and 2 are discarded because they have been committed (less than 3, the end offset of the stream)</li>
      * </ul>
      * <p>
-     * Records are processed in blocks. When a block is full (size threshold or offset overflow),
+     * Records are processed in blocks, accounting for decoded link payloads before decoding them.
+     * When a block is full (size threshold, upload byte count limit, or offset overflow),
      * it is passed to the {@code blockHandler} for upload, and a new block is started.
      *
      * @param it                      WAL recover iterator
@@ -87,26 +88,26 @@ public class WALRecovery {
         boolean first = true;
         RecoverResult pending = null;
         while (pending != null || it.hasNext()) {
-            LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(maxCacheSize);
+            LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(Math.min(maxCacheSize, Integer.MAX_VALUE));
             RecordOffset blockLastOffset = null;
             try {
                 if (pending != null) {
-                    cacheBlock.put(pending.record());
+                    cacheBlock.put(pending.record(), recoveryRecordSize(pending.record()));
                     openingStreamEndOffsets.put(pending.record().getStreamId(), pending.record().getLastOffset());
                     blockLastOffset = pending.recordOffset();
                     pending = null;
                 }
                 while (it.hasNext() && !cacheBlock.isFull()) {
-                    RecoverResult recoverResult = it.next();
+                    pending = it.next();
                     if (first) {
-                        logger.info("recover start offset {}", recoverResult.recordOffset());
+                        logger.info("recover start offset {}", pending.recordOffset());
                         first = false;
                     }
-                    if (!processRecord(recoverResult.record(), openingStreamEndOffsets, cacheBlock, logger)) {
-                        pending = recoverResult;
-                    } else {
-                        blockLastOffset = recoverResult.recordOffset();
+                    if (!processRecord(pending.record(), openingStreamEndOffsets, cacheBlock, logger)) {
+                        break;
                     }
+                    blockLastOffset = pending.recordOffset();
+                    pending = null;
                 }
             } catch (Throwable e) {
                 releaseAllRecords(cacheBlock.records().values());
@@ -118,8 +119,15 @@ public class WALRecovery {
             if (blockLastOffset != null) {
                 cacheBlock.lastRecordOffset(blockLastOffset);
             }
-            decodeLinkRecords(cacheBlock);
-            blockHandler.handle(cacheBlock);
+            try {
+                decodeLinkRecords(cacheBlock);
+                blockHandler.handle(cacheBlock);
+            } catch (Throwable e) {
+                if (pending != null) {
+                    pending.record().release();
+                }
+                throw e;
+            }
         }
     }
 
@@ -153,11 +161,28 @@ public class WALRecovery {
             return true;
         }
 
-        if (!cacheBlock.put(streamRecordBatch)) {
+        int recordSize = recoveryRecordSize(streamRecordBatch);
+        // Upload tasks and stream ranges use int byte counts. Split before their sums can overflow.
+        // A single record may exceed the configured cache limit, but its payload size is still an int.
+        if (cacheBlock.size() != 0 && recordSize > Integer.MAX_VALUE - cacheBlock.size()) {
+            return false;
+        }
+        if (!cacheBlock.put(streamRecordBatch, recordSize)) {
             return false;
         }
         openingStreamEndOffsets.put(streamId, streamRecordBatch.getLastOffset());
         return true;
+    }
+
+    private static int recoveryRecordSize(StreamRecordBatch record) {
+        if (record.getCount() >= 0) {
+            return record.size();
+        }
+        int decodedSize = S3Storage.getLinkRecordDecoder().decodedSize(record.getPayload());
+        if (decodedSize < 0) {
+            throw new IllegalArgumentException("Negative decoded link record size: " + decodedSize);
+        }
+        return Math.max(record.size(), decodedSize);
     }
 
     private static void decodeLinkRecords(LogCache.LogCacheBlock cacheBlock) {
