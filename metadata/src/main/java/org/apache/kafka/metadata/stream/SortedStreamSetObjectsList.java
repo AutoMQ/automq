@@ -17,8 +17,9 @@
 
 package org.apache.kafka.metadata.stream;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -28,11 +29,11 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
     private final List<S3StreamSetObject> list;
 
     public SortedStreamSetObjectsList(SortedStreamSetObjects source) {
-        this.list = new LinkedList<>(source.list());
+        this.list = new ArrayList<>(source.list());
     }
 
     public SortedStreamSetObjectsList() {
-        this.list = new LinkedList<>();
+        this.list = new ArrayList<>();
     }
 
     /**
@@ -70,21 +71,43 @@ public class SortedStreamSetObjectsList implements SortedStreamSetObjects {
 
     @Override
     public boolean add(S3StreamSetObject s3StreamSetObject) {
-        // TODO: optimize by binary search
-        for (int index = 0; index < this.list.size(); index++) {
-            S3StreamSetObject current = this.list.get(index);
-            if (s3StreamSetObject.compareTo(current) <= 0) {
-                this.list.add(index, s3StreamSetObject);
-                return true;
-            }
+        int index = Collections.binarySearch(this.list, s3StreamSetObject);
+        if (index < 0) {
+            index = -index - 1;
         }
-        this.list.add(s3StreamSetObject);
+        this.list.add(index, s3StreamSetObject);
         return true;
     }
 
     @Override
     public boolean remove(Object o) {
-        // TODO: optimize by binary search
+        if (o instanceof S3StreamSetObject) {
+            S3StreamSetObject target = (S3StreamSetObject) o;
+            int index = Collections.binarySearch(this.list, target);
+            if (index >= 0) {
+                // If there are multiple objects with identical orderId, check equality or linear search around index
+                if (Objects.equals(this.list.get(index), target)) {
+                    this.list.remove(index);
+                    return true;
+                }
+                // Scan left
+                for (int i = index - 1; i >= 0 && this.list.get(i).compareTo(target) == 0; i--) {
+                    if (Objects.equals(this.list.get(i), target)) {
+                        this.list.remove(i);
+                        return true;
+                    }
+                }
+                // Scan right
+                for (int i = index + 1; i < this.list.size() && this.list.get(i).compareTo(target) == 0; i++) {
+                    if (Objects.equals(this.list.get(i), target)) {
+                        this.list.remove(i);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            return false;
+        }
         return this.list.remove(o);
     }
 

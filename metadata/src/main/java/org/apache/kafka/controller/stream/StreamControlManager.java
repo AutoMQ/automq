@@ -1091,42 +1091,17 @@ public class StreamControlManager {
                 (short) 0));
         }
 
-        // The getOpeningStreams is invoked when node startup, so we just iterate all streams to get the node opening streams.
-        List<StreamMetadata> streamStatusList = this.streamsMetadata.entrySet().stream().filter(entry -> {
-            StreamRuntimeMetadata streamMetadata = entry.getValue();
-            if (!StreamState.OPENED.equals(streamMetadata.currentState())) {
-                return false;
-            }
-            int rangeIndex = streamMetadata.currentRangeIndex();
-            if (rangeIndex < 0) {
-                return false;
-            }
-            RangeMetadata rangeMetadata = streamMetadata.ranges().get(rangeIndex);
-            return rangeMetadata.nodeId() == nodeId;
-        }).map(e -> {
-            StreamRuntimeMetadata streamMetadata = e.getValue();
-            RangeMetadata rangeMetadata = streamMetadata.ranges().get(streamMetadata.currentRangeIndex());
-            return new StreamMetadata()
-                .setStreamId(e.getKey())
+        List<StreamRuntimeMetadata> openingStreams = getOpeningStreams(nodeId);
+        List<StreamMetadata> streamStatusList = new ArrayList<>(openingStreams.size());
+        for (StreamRuntimeMetadata streamMetadata : openingStreams) {
+            streamStatusList.add(new StreamMetadata()
+                .setStreamId(streamMetadata.streamId())
                 .setEpoch(streamMetadata.currentEpoch())
                 .setStartOffset(streamMetadata.startOffset())
-                // Fix https://github.com/AutoMQ/automq/issues/1222#issuecomment-2132812938
-                .setEndOffset(Math.max(streamMetadata.endOffset(), streamMetadata.startOffset()));
-        }).collect(Collectors.toList());
-        // TODO: replace scan with the #getOpeningStreams(nodeId)
-        doubleCheckOpeningStreams(streamStatusList, nodeId);
+                .setEndOffset(Math.max(streamMetadata.endOffset(), streamMetadata.startOffset())));
+        }
         resp.setStreamMetadataList(streamStatusList);
         return ControllerResult.atomicOf(records, resp);
-    }
-
-    private void doubleCheckOpeningStreams(List<StreamMetadata> openingStreams, int nodeId) {
-        List<Long> left = openingStreams.stream().map(s -> s.streamId()).sorted().collect(Collectors.toList());
-        List<Long> right = getOpeningStreams(nodeId).stream().map(s -> s.streamId()).sorted().collect(Collectors.toList());
-        if (!left.equals(right)) {
-            RuntimeException e = new IllegalStateException(String.format("The opening streams are inconsistent, left: %s, right: %s", left, right));
-            LOGGER.error("doubleCheckOpeningStreams", e);
-            throw e;
-        }
     }
 
     public List<StreamRuntimeMetadata> getOpeningStreams(int nodeId) {

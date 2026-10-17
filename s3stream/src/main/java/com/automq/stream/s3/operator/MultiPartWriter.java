@@ -239,13 +239,13 @@ public class MultiPartWriter implements Writer {
 
         public void readAndWrite(S3ObjectMetadata s3ObjectMetadata, long start, long end) {
             size += end - start;
-            // TODO: parallel read and sequence add.
-            this.lastRangeReadCf = lastRangeReadCf
-                .thenCompose(nil ->
-                    operator.rangeRead(
-                        new ReadOptions().throttleStrategy(throttleStrategy).bucket(s3ObjectMetadata.bucket()),
-                        s3ObjectMetadata.key(), start, end)
-                )
+            // Dispatch the asynchronous rangeRead immediately for concurrent pre-fetching
+            CompletableFuture<ByteBuf> readCf = operator.rangeRead(
+                new ReadOptions().throttleStrategy(throttleStrategy).bucket(s3ObjectMetadata.bucket()),
+                s3ObjectMetadata.key(), start, end);
+            // Sequence the addition into partBuf in order as prior reads finish
+            this.lastRangeReadCf = this.lastRangeReadCf
+                .thenCompose(nil -> readCf)
                 .thenAccept(buf -> partBuf.addComponent(true, buf));
         }
 

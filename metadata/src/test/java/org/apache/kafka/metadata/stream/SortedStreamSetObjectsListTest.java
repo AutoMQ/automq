@@ -70,5 +70,42 @@ public class SortedStreamSetObjectsListTest {
             .collect(Collectors.toList()));
     }
 
+    @Test
+    public void testAddAndRemove() {
+        SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
+        S3StreamSetObject obj1 = new S3StreamSetObject(10, -1, Collections.emptyList(), 1);
+        S3StreamSetObject obj2 = new S3StreamSetObject(20, -1, Collections.emptyList(), 2);
+        S3StreamSetObject obj3 = new S3StreamSetObject(30, -1, Collections.emptyList(), 2);
+        S3StreamSetObject obj4 = new S3StreamSetObject(40, -1, Collections.emptyList(), 3);
 
+        objects.add(obj2);
+        objects.add(obj4);
+        objects.add(obj1);
+        objects.add(obj3);
+
+        assertEquals(4, objects.size());
+        assertEquals(1L, objects.get(0).orderId());
+        assertEquals(3L, objects.get(3).orderId());
+
+        // Remove non-existent
+        S3StreamSetObject nonExistent = new S3StreamSetObject(99, -1, Collections.emptyList(), 2);
+        assertEquals(false, objects.remove(nonExistent));
+        assertEquals(false, objects.remove(new Object()));
+
+        // Remove obj3 (which shares orderId 2 with obj2)
+        assertEquals(true, objects.remove(obj3));
+        assertEquals(3, objects.size());
+        assertEquals(false, objects.contains(obj3));
+        assertEquals(true, objects.contains(obj2));
+
+        // Remove obj2
+        assertEquals(true, objects.remove(obj2));
+        assertEquals(2, objects.size());
+
+        // Remove remaining
+        assertEquals(true, objects.remove(obj1));
+        assertEquals(true, objects.remove(obj4));
+        assertEquals(0, objects.size());
+        assertEquals(true, objects.isEmpty());
+    }
 }
