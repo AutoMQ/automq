@@ -504,6 +504,18 @@ public class LogCache {
          * @return true if the record was successfully added, false if the block is full or would overflow
          */
         public boolean put(StreamRecordBatch recordBatch) {
+            return put(recordBatch, recordBatch.size());
+        }
+
+        /**
+         * Adds a record using the supplied payload size for block accounting. Recovery can account for a link
+         * record's decoded size before allocating its payload. The block takes ownership only when this returns true.
+         *
+         * @param recordBatch record to add in stream offset order
+         * @param recordSize payload size, or an upper bound on the decoded payload size
+         * @return true if added, false if the block is full or the stream offset delta would overflow
+         */
+        public boolean put(StreamRecordBatch recordBatch, int recordSize) {
             if (isFull()) {
                 return false;
             }
@@ -512,7 +524,7 @@ public class LogCache {
                 overflow = true;
                 return false;
             }
-            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
+            size.addAndGet((long) recordSize + RECORD_OVERHEAD);
             return true;
         }
 
