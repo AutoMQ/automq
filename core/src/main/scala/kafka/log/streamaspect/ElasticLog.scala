@@ -125,13 +125,16 @@ class ElasticLog(val metaStream: MetaStream,
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
 
-    // persist log meta when lazy stream real create
-    streamManager.setListener((_, event) => {
-        if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
-            logSegmentManager.asyncPersistLogMeta()
-            logSegmentManager.notifySegmentUpdate();
-        }
-    })
+    // Persist log metadata when a normal log lazily creates a stream. Snapshot-read logs
+    // intentionally do not own a MetaStream or LogSegmentManager.
+    if (!snapshotRead) {
+        streamManager.setListener((_, event) => {
+            if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
+                logSegmentManager.asyncPersistLogMeta()
+                logSegmentManager.notifySegmentUpdate();
+            }
+        })
+    }
 
     private def maybeHandleIOExceptionAsync[T](msg: => String)(fun: => CompletableFuture[T]): CompletableFuture[T] = {
         ElasticLog.maybeHandleIOExceptionAsync(logDirFailureChannel, _dir.getPath, msg) {
@@ -523,6 +526,23 @@ class ElasticLog(val metaStream: MetaStream,
      * ref. LocalLog#close
      */
     override private[log] def close(): Unit = {
+        if (snapshotRead) {
+            maybeHandleIOException(s"Error while closing snapshot-read $topicPartition in dir ${dir.getParent}") {
+                checkIfMemoryMappedBufferClosed()
+                try {
+                    segments.close()
+                } finally {
+                    closeStreams(false).handle[Void]((_, exception) => {
+                        if (exception != null) {
+                            warn(s"${logIdent}failed to close snapshot-read streams", FutureUtil.cause(exception))
+                        }
+                        null
+                    }).join()
+                }
+                info("snapshot-read log closed")
+            }
+            return
+        }
         metaStream.beforeClose()
         markFlushed(logEndOffset)
         partitionMeta.setCleanedShutdown(true)
