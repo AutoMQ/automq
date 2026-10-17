@@ -44,7 +44,7 @@ dependencies {
         exclude(group: 'io.opentelemetry.proto', module: '*')
         exclude(group: 'com.github.luben', module: '*')
         exclude(group: 'org.xerial.snappy', module: '*')
-        exclude(group: 'org.lz4', module: '*')
+        exclude(group: 'at.yawk.lz4', module: '*')
         exclude(group: 'org.apache.kafka.shaded', module: '*')
     }
 

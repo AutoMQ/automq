@@ -39,6 +39,7 @@ import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.KafkaException;
+import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.errors.InterruptException;
 import org.apache.kafka.common.internals.Topic;
@@ -54,8 +55,7 @@ import org.apache.kafka.server.config.QuotaConfigs;
 import org.apache.kafka.server.config.ServerConfigs;
 import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.StreamOperationStats;
+import com.automq.stream.s3.S3Stream;
 import com.yammer.metrics.core.Metric;
 import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
@@ -97,6 +97,18 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
     private volatile boolean shutdown = false;
     private int metricsReporterCreateRetries;
     private long lastErrorReportTime = 0;
+    private boolean enabled = true;
+
+    static boolean isControllerOnly(Object processRoles) {
+        if (processRoles == null) {
+            return false;
+        }
+        List<?> roles = (List<?>) ConfigDef.parseType(
+            KRaftConfigs.PROCESS_ROLES_CONFIG,
+            processRoles,
+            ConfigDef.Type.LIST);
+        return roles.equals(List.of("controller"));
+    }
 
     String getBootstrapServers(Map<String, ?> configs, String expectedListenerName) {
         String listenerStr = String.valueOf(configs.get(SocketServerConfigs.LISTENERS_CONFIG));
@@ -129,6 +141,9 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
     @Override
     public void init(List<KafkaMetric> metrics) {
+        if (!enabled) {
+            return;
+        }
         metricsReporterRunner = new KafkaThread("AutoBalancerMetricsReporterRunner", this, true);
         yammerMetricProcessor = new YammerMetricProcessor();
         metricsReporterRunner.start();
@@ -223,8 +238,15 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
 
         Map<String, Object> configs = new HashMap<>(rawConfigs);
 
+        if (isControllerOnly(configs.get(KRaftConfigs.PROCESS_ROLES_CONFIG))) {
+            enabled = false;
+            LOGGER.info("Skipping AutoBalancerMetricsReporter on controller-only node");
+            return;
+        }
+
         StaticAutoBalancerConfig staticAutoBalancerConfig = new StaticAutoBalancerConfig(configs, false);
-        Properties producerProps = AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs);
+        Properties producerProps = StaticAutoBalancerConfigUtils.parseClientConfigs(configs);
+        producerProps.putAll(AutoBalancerMetricsReporterConfig.parseProducerConfigs(configs));
 
         // Add BootstrapServers if not set
         if (!producerProps.containsKey(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG)) {
@@ -248,8 +270,6 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
         setIfAbsent(producerProps, ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         setIfAbsent(producerProps, ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
         setIfAbsent(producerProps, ProducerConfig.ACKS_CONFIG, "all");
-        StaticAutoBalancerConfigUtils.addSslConfigs(producerProps, staticAutoBalancerConfig);
-
         metricsReporterCreateRetries = reporterConfig.getInt(
                 AutoBalancerMetricsReporterConfig.AUTO_BALANCER_METRICS_REPORTER_CREATE_RETRIES_CONFIG);
 
@@ -410,12 +430,12 @@ public class AutoBalancerMetricsReporter implements MetricsRegistryListener, Met
                 // TODO: fix latency calculation
                 .put(RawMetricTypes.BROKER_APPEND_LATENCY_AVG_MS,
                         TimeUnit.NANOSECONDS.toMillis((long) appendLatencyAvg.derive(
-                                StreamOperationStats.getInstance().appendStreamLatency.sum(),
-                                StreamOperationStats.getInstance().appendStreamLatency.count())))
+                                S3Stream.appendStreamLatencySum(),
+                                S3Stream.appendStreamLatencyCount())))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_APPEND_LATENCY_MS,
-                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamAppendLatency()))
+                        TimeUnit.NANOSECONDS.toMillis(S3Stream.maxPendingStreamAppendLatency()))
                 .put(RawMetricTypes.BROKER_MAX_PENDING_FETCH_LATENCY_MS,
-                        TimeUnit.NANOSECONDS.toMillis(S3StreamMetricsManager.maxPendingStreamFetchLatency())));
+                        TimeUnit.NANOSECONDS.toMillis(S3Stream.maxPendingStreamFetchLatency())));
     }
 
     protected void processYammerMetrics(YammerMetricProcessor.Context context) throws Exception {

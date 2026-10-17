@@ -95,7 +95,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
     private final ScheduledExecutorService mainExecutorService;
     private final Map<Integer, BrokerEndpoints> bootstrapServerMapInUse;
     private final Set<TopicPartition> currentAssignment = new HashSet<>();
-    private final StaticAutoBalancerConfig staticConfig;
+    private final Properties clientConfigs;
     private final String listenerName;
     private volatile boolean leaderEpochInitialized;
     private volatile boolean isLeader;
@@ -117,7 +117,8 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
             Threads.newSingleThreadScheduledExecutor(
                 new AutoBalancerThreadFactory("load-retriever-main"), logger);
         leaderEpochInitialized = false;
-        staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
+        StaticAutoBalancerConfig staticConfig = new StaticAutoBalancerConfig(config.originals(), false);
+        clientConfigs = StaticAutoBalancerConfigUtils.parseClientConfigs(config.originals());
         listenerName = staticConfig.getString(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG);
         metricReporterTopicPartition = config.getInt(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_NUM_PARTITIONS_CONFIG);
         metricReporterTopicRetentionTime = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_METRICS_TOPIC_RETENTION_MS_CONFIG);
@@ -163,6 +164,7 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
 
     protected Properties buildConsumerProps(String bootstrapServer) {
         Properties consumerProps = new Properties();
+        consumerProps.putAll(clientConfigs);
         long randomToken = RANDOM.nextLong();
         consumerProps.setProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServer);
         consumerProps.setProperty(ConsumerConfig.CLIENT_ID_CONFIG, consumerClientIdPrefix + randomToken);
@@ -171,7 +173,6 @@ public class LoadRetriever extends AbstractResumableService implements BrokerSta
         consumerProps.setProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         consumerProps.setProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         consumerProps.setProperty(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, MetricSerde.class.getName());
-        StaticAutoBalancerConfigUtils.addSslConfigs(consumerProps, this.staticConfig);
         return consumerProps;
     }
 

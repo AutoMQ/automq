@@ -24,7 +24,21 @@ import org.apache.kafka.common.requests.AbstractRequest.Builder;
 public abstract class BatchRequest implements WrapRequest {
     public abstract Builder addSubRequest(Builder builder);
 
+    /**
+     * Returns how long the first request may wait for more requests with the same batch key.
+     */
+    public long lingerNanos() {
+        return 0;
+    }
+
     public Object batchKey() {
         return apiKey();
+    }
+
+    /**
+     * Returns the maximum number of subrequests emitted in one RPC.
+     */
+    public int maxBatchSize() {
+        return Integer.MAX_VALUE;
     }
 }

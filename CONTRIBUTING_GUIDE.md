@@ -9,7 +9,51 @@ or [Slack](https://join.slack.com/t/automq/shared_invite/zt-29h17vye9-thf31ebIVL
 Before getting started, please review AutoMQ's Code of Conduct. Everyone interacting in Slack or WeChat
 follow [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Suggested Onboarding Path for New Contributors
+
+## Quick Start for First-Time Contributors (Recommended)
+
+If you are new to AutoMQ, we recommend starting with the simplest path before diving into local builds.
+
+**Option 1: Quick exploration (recommended for beginners)**
+- Run AutoMQ using Docker as described in the README
+- Verify you can:
+  - Start the broker
+  - Create a topic
+  - Produce and consume messages
+- This helps you understand AutoMQ behavior without local environment setup
+
+**Option 2: DevKit local development (recommended for code contributions)**
+- Use the Docker Compose-based DevKit to start a local AutoMQ cluster with MinIO and JDWP debug ports
+- Quick start:
+  - `cd devkit`
+  - `just start-build` (single node) or `just start-build 3` (3-node cluster)
+- Useful shortcuts: `just topic-list`, `just produce <topic>`, `just logs`
+- See full instructions in [devkit/README.md](devkit/README.md)
+
+**Option 3: Manual local development setup**
+- Follow the steps below to build and run AutoMQ locally with IDEA/manual configuration
+- This path is useful when you need full control over local components and configs
+
+> Tip: If you encounter setup issues, check [devkit/README.md](devkit/README.md), “Local Debug with IDEA”, and S3 configuration sections below.
+
+
+If you are new to AutoMQ, it is recommended to first deploy and run AutoMQ using Docker as described in the README.
+This helps you quickly understand AutoMQ’s core concepts and behavior without local environment complexity.
+
+After gaining familiarity, contributors who want to work on code can follow the steps in this guide to build and run AutoMQ locally.
+For most contributors, we recommend starting with DevKit (`devkit/README.md`) and using the manual setup only when deeper environment customization is needed.
+
+
 ## Code Contributions
+
+### Contribution Expectations
+
+Please open an issue first and explain the problem and the expected benefit. Pull requests that have not been discussed, or that only contain formatting or drive-by refactors, may be declined.
+
+First-time contributors should briefly describe, in their own words, why they are making the change and how they understand the relevant code.
+
+If you used generative AI, name the tool and model in the pull request. You are expected to understand the changes and to test them; do not leave that review to maintainers.
 
 ### Finding or Reporting Issues
 
@@ -52,6 +96,9 @@ Pull Request reviews are done on a regular basis.
 | Compiling requirements | JDK 17     |
 | Compiling requirements | Scala 2.13 |
 | Running requirements   | JDK 17     |
+
+> Note: At least 8GB RAM is recommended for local development and debugging.
+
 
 > Tips: You can refer the [document](https://www.scala-lang.org/download/2.13.12.html) to install Scala 2.13
 

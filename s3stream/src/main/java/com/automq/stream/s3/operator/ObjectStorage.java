@@ -24,6 +24,7 @@ import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -63,14 +64,83 @@ public interface ObjectStorage {
      */
     CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end);
 
+    /**
+     * Copy one complete object inside object storage without transferring its payload through the Broker.
+     *
+     * @param sourceBucket source bucket name
+     * @param sourcePath source object key
+     * @param destinationPath destination object key
+     * @return copy completion
+     */
+    default CompletableFuture<Void> copy(String sourceBucket, String sourcePath, String destinationPath) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
     // Low level API
     default CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf buf) {
         Writer writer = writer(options, objectPath);
         writer.write(buf);
-        return writer.close().thenApply(nil -> new WriteResult(bucketId()));
+        return writer.close().thenApply(nil -> new WriteResult(writer.bucketId()));
     }
 
-    CompletableFuture<List<ObjectInfo>> list(String prefix);
+    /**
+     * Start a multipart upload for the target object path.
+     * <p>
+     * Implementations that do not support low-level multipart operations fail with
+     * {@link UnsupportedOperationException}.
+     */
+    default CompletableFuture<String> createMultipartUpload(WriteOptions options, String path) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Upload one multipart part to the target object path.
+     * <p>
+     * The implementation owns {@code data} after this call and is responsible for releasing it when the returned future
+     * completes. Implementations that do not support low-level multipart operations fail with
+     * {@link UnsupportedOperationException}.
+     */
+    default CompletableFuture<ObjectStorageCompletedPart> uploadPart(WriteOptions options, String path, String uploadId,
+        int partNumber, ByteBuf data) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Copy one source range into a multipart part for the target object path.
+     * <p>
+     * This low-level operation is same-storage copy. Cross-bucket routing should fall back to range read plus
+     * {@link #uploadPart(WriteOptions, String, String, int, ByteBuf)} before calling this method.
+     */
+    default CompletableFuture<ObjectStorageCompletedPart> uploadPartCopy(WriteOptions options, String sourcePath,
+        String path, long start, long end, String uploadId, int partNumber) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * Complete a multipart upload for the target object path using the completed parts in part-number order.
+     */
+    default CompletableFuture<Void> completeMultipartUpload(WriteOptions options, String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException());
+    }
+
+    /**
+     * List objects under a prefix in lexicographic key order.
+     *
+     * @param options prefix, exclusive cursor, and result bound
+     * @return one logical ordered result; provider pagination is not exposed
+     */
+    CompletableFuture<List<ObjectInfo>> list(ListOptions options);
+
+    /**
+     * List every object under a prefix.
+     *
+     * @param prefix required object-key prefix
+     * @return every matching object in lexicographic key order
+     */
+    default CompletableFuture<List<ObjectInfo>> list(String prefix) {
+        return list(new ListOptions(prefix));
+    }
 
     /**
      * The deleteObjects API have max batch limit.
@@ -82,6 +152,18 @@ public interface ObjectStorage {
     CompletableFuture<Void> delete(List<ObjectPath> objectPaths);
 
     short bucketId();
+
+    /**
+     * Resolve the physical bucket URI for a bucket identity.
+     */
+    BucketURI bucketURI(short bucketId);
+
+    /**
+     * Return the stable concrete storage used for Archive objects.
+     */
+    default ObjectStorage primary() {
+        return this;
+    }
 
     class ObjectPath {
         private final short bucketId;
@@ -128,8 +210,99 @@ public interface ObjectStorage {
         }
     }
 
+    class ObjectStorageCompletedPart {
+        private final int partNumber;
+        private final String partId;
+        private final String checkSum;
+
+        public ObjectStorageCompletedPart(int partNumber, String partId, String checkSum) {
+            this.partNumber = partNumber;
+            this.partId = partId;
+            this.checkSum = checkSum;
+        }
+
+        public int getPartNumber() {
+            return partNumber;
+        }
+
+        public String getPartId() {
+            return partId;
+        }
+
+        public String getCheckSum() {
+            return checkSum;
+        }
+    }
+
+    /**
+     * Options for one logical ordered object listing. Provider page state is intentionally not represented here.
+     */
+    class ListOptions {
+        public static final int UNLIMITED = -1;
+
+        private final String prefix;
+        private String startAfter;
+        private int maxKeys = UNLIMITED;
+
+        /**
+         * Create options for a required key prefix with unlimited results.
+         *
+         * @param prefix required object-key prefix
+         */
+        public ListOptions(String prefix) {
+            this.prefix = Objects.requireNonNull(prefix, "prefix");
+        }
+
+        /**
+         * Set the exclusive key cursor.
+         *
+         * @param startAfter exclusive key cursor, or null to start at the prefix beginning
+         * @return these options
+         */
+        public ListOptions startAfter(String startAfter) {
+            this.startAfter = startAfter;
+            return this;
+        }
+
+        /**
+         * Set the result bound.
+         *
+         * @param maxKeys -1 for unlimited results, zero for none, or a positive bound
+         * @return these options
+         */
+        public ListOptions maxKeys(int maxKeys) {
+            if (maxKeys < UNLIMITED) {
+                throw new IllegalArgumentException("maxKeys must be -1 or non-negative");
+            }
+            this.maxKeys = maxKeys;
+            return this;
+        }
+
+        /**
+         * Return the required object-key prefix.
+         */
+        public String prefix() {
+            return prefix;
+        }
+
+        /**
+         * Return the exclusive key cursor, or null when unset.
+         */
+        public String startAfter() {
+            return startAfter;
+        }
+
+        /**
+         * Return -1 for unlimited results, zero for none, or a positive result bound.
+         */
+        public int maxKeys() {
+            return maxKeys;
+        }
+    }
+
     class WriteOptions {
         public static final WriteOptions DEFAULT = new WriteOptions();
+        public static final short UNSET_BUCKET = (short) -2;
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private int allocType = ByteBufAlloc.DEFAULT;
@@ -137,7 +310,7 @@ public interface ObjectStorage {
         private long apiCallAttemptTimeout = -1L;
         // timeout for the whole write operation
         private long timeout = Long.MAX_VALUE;
-        private short bucketId;
+        private short bucketId = UNSET_BUCKET;
         private boolean enableFastRetry;
         // write context start
         private boolean retry;
@@ -190,7 +363,7 @@ public interface ObjectStorage {
             return apiCallAttemptTimeout;
         }
 
-        // Writer will set the value
+        // Writer will set the value.
         WriteOptions bucketId(short bucketId) {
             this.bucketId = bucketId;
             return this;
@@ -279,6 +452,15 @@ public interface ObjectStorage {
 
         public int retryCount() {
             return retryCount;
+        }
+
+        /** Returns an independent copy of the read settings and current retry count. */
+        public ReadOptions copy() {
+            ReadOptions copy = new ReadOptions();
+            copy.throttleStrategy = throttleStrategy;
+            copy.bucket = bucket;
+            copy.retryCount = retryCount;
+            return copy;
         }
     }
 

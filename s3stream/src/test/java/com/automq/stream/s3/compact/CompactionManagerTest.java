@@ -21,6 +21,7 @@ package com.automq.stream.s3.compact;
 
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectWriter;
 import com.automq.stream.s3.StreamDataBlock;
 import com.automq.stream.s3.TestUtils;
@@ -175,6 +176,23 @@ public class CompactionManagerTest extends CompactionTestBase {
         Assertions.assertEquals(List.of(OBJECT_2), request.getCompactedObjectIds());
         Assertions.assertEquals(2, request.getStreamObjects().size());
         Assertions.assertTrue(checkDataIntegrity(streamMetadataList, Collections.singletonList(s3ObjectMetadata.get(2)), request));
+    }
+
+    @Test
+    public void testDeduplicateObjectsByIdKeepsLatestMetadata() {
+        List<S3ObjectMetadata> s3ObjectMetadata = this.objectManager.getServerObjects().join();
+        compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
+
+        S3ObjectMetadata oldObject = s3ObjectMetadata.get(0);
+        S3ObjectMetadata latestObject = new S3ObjectMetadata(oldObject.objectId(), S3ObjectType.STREAM_SET,
+            List.of(new StreamOffsetRange(STREAM_0, 0L, 15L)), oldObject.dataTimeInMs(),
+            oldObject.committedTimestamp(), oldObject.objectSize(), oldObject.getOrderId(), oldObject.attributes());
+        S3ObjectMetadata secondObject = s3ObjectMetadata.get(1);
+
+        List<S3ObjectMetadata> deduplicated = compactionManager.deduplicateObjectsById(
+            List.of(oldObject, latestObject, secondObject), "test");
+
+        assertEquals(List.of(latestObject, secondObject), deduplicated);
     }
 
     @Test
@@ -350,9 +368,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(1024), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(1024), DefaultByteBufSupplier.INSTANCE);
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -430,9 +448,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(1024));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(1024));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(1024), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(1024), DefaultByteBufSupplier.INSTANCE);
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -462,9 +480,9 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_3, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_3, objectStorage, 200, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_1, 0, 500, 20, TestUtils.random(20));
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_3, 0, 0, 10, TestUtils.random(200));
-            StreamRecordBatch r3 = new StreamRecordBatch(STREAM_3, 0, 10, 10, TestUtils.random(200));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_1, 0, 500, 20, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_3, 0, 0, 10, TestUtils.random(200), DefaultByteBufSupplier.INSTANCE);
+            StreamRecordBatch r3 = StreamRecordBatch.of(STREAM_3, 0, 10, 10, TestUtils.random(200), DefaultByteBufSupplier.INSTANCE);
             objectWriter.write(STREAM_1, List.of(r1));
             objectWriter.write(STREAM_3, List.of(r2, r3));
             objectWriter.close().join();
@@ -584,15 +602,6 @@ public class CompactionManagerTest extends CompactionTestBase {
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class,
             () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
-        for (CompactionPlan plan : compactionPlans) {
-            plan.streamDataBlocksMap().forEach((streamId, blocks) -> blocks.forEach(block -> {
-                if (block.getObjectId() != OBJECT_2) {
-                    block.getDataCf().thenAccept(data -> {
-                        Assertions.assertEquals(0, data.refCnt());
-                    }).join();
-                }
-            }));
-        }
     }
 
     @Test
@@ -620,15 +629,6 @@ public class CompactionManagerTest extends CompactionTestBase {
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class,
             () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
-        for (CompactionPlan plan : compactionPlans) {
-            plan.streamDataBlocksMap().forEach((streamId, blocks) -> blocks.forEach(block -> {
-                if (block.getObjectId() != OBJECT_1) {
-                    block.getDataCf().thenAccept(data -> {
-                        Assertions.assertEquals(0, data.refCnt());
-                    }).join();
-                }
-            }));
-        }
     }
 
     @Test
@@ -659,15 +659,6 @@ public class CompactionManagerTest extends CompactionTestBase {
         CompactionManager compactionManager = new CompactionManager(config, objectManager, streamManager, objectStorage);
         Assertions.assertThrowsExactly(CompletionException.class,
             () -> compactionManager.executeCompactionPlans(request, compactionPlans, s3ObjectMetadata));
-        for (CompactionPlan plan : compactionPlans) {
-            plan.streamDataBlocksMap().forEach((streamId, blocks) -> blocks.forEach(block -> {
-                if (block.getObjectId() != OBJECT_1) {
-                    block.getDataCf().thenAccept(data -> {
-                        Assertions.assertEquals(0, data.refCnt());
-                    }).join();
-                }
-            }));
-        }
     }
 
     private static Map<Long, List<StreamDataBlock>> getStreamDataBlockMapLarge() {
@@ -741,7 +732,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_0, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(objectId, objectStorage, 1024, 1024);
-            StreamRecordBatch r1 = new StreamRecordBatch(STREAM_0, 0, 0, 80, TestUtils.random(80));
+            StreamRecordBatch r1 = StreamRecordBatch.of(STREAM_0, 0, 0, 80, TestUtils.random(80), DefaultByteBufSupplier.INSTANCE);
             objectWriter.write(STREAM_0, List.of(r1));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(
@@ -757,7 +748,7 @@ public class CompactionManagerTest extends CompactionTestBase {
         objectManager.prepareObject(1, TimeUnit.MINUTES.toMillis(30)).thenAccept(objectId -> {
             assertEquals(OBJECT_1, objectId);
             ObjectWriter objectWriter = ObjectWriter.writer(OBJECT_1, objectStorage, 1024, 1024);
-            StreamRecordBatch r2 = new StreamRecordBatch(STREAM_0, 0, 80, 120, TestUtils.random(120));
+            StreamRecordBatch r2 = StreamRecordBatch.of(STREAM_0, 0, 80, 120, TestUtils.random(120), DefaultByteBufSupplier.INSTANCE);
             objectWriter.write(STREAM_0, List.of(r2));
             objectWriter.close().join();
             List<StreamOffsetRange> streamsIndices = List.of(

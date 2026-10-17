@@ -660,4 +660,10 @@ class GroupCoordinatorAdapter(
       bufferSupplier: BufferSupplier): CompletableFuture[AutomqUpdateGroupResponseData] = {
     FutureUtils.failedFuture(new UnsupportedOperationException("Not implemented"))
   }
+
+  // AutoMQ inject start
+  def registerGroupCoordinatorListener(listener: GroupCoordinatorListener): Unit = {
+    coordinator.registerGroupCoordinatorListener(listener)
+  }
+  // AutoMQ inject end
 }

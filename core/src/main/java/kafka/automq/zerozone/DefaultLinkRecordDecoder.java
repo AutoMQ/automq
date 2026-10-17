@@ -21,8 +21,9 @@ package kafka.automq.zerozone;
 
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
+import org.apache.kafka.common.record.RecordBatch;
 
-import com.automq.stream.s3.cache.SnapshotReadCache;
+import com.automq.stream.s3.ByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
@@ -31,7 +32,6 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 
 public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecordDecoder {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultLinkRecordDecoder.class);
@@ -47,7 +47,7 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
     }
 
     @Override
-    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src) {
+    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();
@@ -59,13 +59,15 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                         .records());
                     MutableRecordBatch recordBatch = records.batches().iterator().next();
                     recordBatch.setLastOffset(linkRecord.lastOffset());
-                    recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
-                    recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
-                    StreamRecordBatch streamRecordBatch = new StreamRecordBatch(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
-                        -src.getCount(), Unpooled.wrappedBuffer(records.buffer()));
-                    // The buf will be release after the finally block, so we need copy the data by #encoded.
-                    streamRecordBatch.encoded(SnapshotReadCache.ENCODE_ALLOC);
-                    return streamRecordBatch;
+                    byte magic = recordBatch.magic();
+                    if (magic > RecordBatch.MAGIC_VALUE_V0) {
+                        recordBatch.setMaxTimestamp(linkRecord.timestampType(), linkRecord.maxTimestamp());
+                    }
+                    if (magic >= RecordBatch.MAGIC_VALUE_V2) {
+                        recordBatch.setPartitionLeaderEpoch(linkRecord.partitionLeaderEpoch());
+                    }
+                    return StreamRecordBatch.of(src.getStreamId(), src.getEpoch(), src.getBaseOffset(),
+                        -src.getCount(), records.buffer(), alloc);
                 } finally {
                     buf.release();
                 }

@@ -75,7 +75,7 @@ import java.util.function.Supplier;
 public class TableCoordinator implements Closeable {
     private static final Logger LOGGER = LoggerFactory.getLogger(TableCoordinator.class);
     private static final ScheduledExecutorService SCHEDULER = Threads.newSingleThreadScheduledExecutor("table-coordinator", true, LOGGER);
-    private static final ExecutorService EXPIRE_SNAPSHOT_EXECUTOR = Threads.newFixedThreadPoolWithMonitor(Systems.CPU_CORES * 2, "table-coordinator-expire-snapshot", true, LOGGER);
+    private static final ExecutorService EXPIRE_SNAPSHOT_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES * 2, "table-coordinator-expire-snapshot", true, LOGGER);
     private static final String TABLE_COMMIT_CHECKPOINT_KEY = "TABLE_COMMIT_CHECKPOINT";
     private static final String SNAPSHOT_COMMIT_ID = "automq.commit.id";
     private static final String WATERMARK = "automq.watermark";
@@ -175,7 +175,7 @@ public class TableCoordinator implements Closeable {
                     commitStatusMachine.nextRoundCommit();
                     break;
                 case REQUEST_COMMIT:
-                    commitStatusMachine.tryMoveToCommitedStatus();
+                    commitStatusMachine.tryMoveToCommittedStatus();
                     break;
                 default:
                     LOGGER.error("[TABLE_COORDINATOR_UNKNOWN_STATUS],{}", commitStatusMachine.status);
@@ -325,7 +325,7 @@ public class TableCoordinator implements Closeable {
             channel.send(topic, new Event(time.milliseconds(), EventType.COMMIT_REQUEST, commitRequest));
         }
 
-        public void tryMoveToCommitedStatus() throws Exception {
+        public void tryMoveToCommittedStatus() throws Exception {
             for (; ; ) {
                 boolean awaitCommitTimeout = (time.milliseconds() - requestCommitTimestamp) > commitTimeout;
                 if (!awaitCommitTimeout) {
@@ -389,11 +389,14 @@ public class TableCoordinator implements Closeable {
                         delta.commit();
                     }
                     try {
-                        transaction.expireSnapshots()
-                            .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(1))
-                            .retainLast(1)
-                            .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
-                            .commit();
+                        LogConfig currentLogConfig = config.get();
+                        if (currentLogConfig.tableTopicExpireSnapshotEnabled) {
+                            transaction.expireSnapshots()
+                                .expireOlderThan(System.currentTimeMillis() - TimeUnit.HOURS.toMillis(currentLogConfig.tableTopicExpireSnapshotOlderThanHours))
+                                .retainLast(currentLogConfig.tableTopicExpireSnapshotRetainLast)
+                                .executeDeleteWith(EXPIRE_SNAPSHOT_EXECUTOR)
+                                .commit();
+                        }
                     } catch (Exception exception) {
                         // skip expire snapshot failure
                         LOGGER.error("[EXPIRE_SNAPSHOT_FAIL],{}", getTable().name(), exception);

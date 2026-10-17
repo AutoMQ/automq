@@ -72,7 +72,7 @@ public class CLIUtils {
             config.getLong(CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MS_CONFIG),
             config.getLong(CommonClientConfigs.SOCKET_CONNECTION_SETUP_TIMEOUT_MAX_MS_CONFIG),
             time,
-            false,
+            true,
             new ApiVersions(),
             logContext,
             MetadataRecoveryStrategy.NONE

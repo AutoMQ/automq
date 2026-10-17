@@ -837,7 +837,7 @@ public class ClusterControlManager {
         return !registration.inControlledShutdown() && !registration.fenced();
     }
 
-    BrokerHeartbeatManager heartbeatManager() {
+    public BrokerHeartbeatManager heartbeatManager() {
         if (heartbeatManager == null) {
             throw new RuntimeException("ClusterControlManager is not active.");
         }

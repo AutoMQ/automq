@@ -23,12 +23,17 @@ import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.impl.object.ObjectReservationService;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.IdURI;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 
 public class DefaultWalHandle implements WalHandle {
+    private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWalHandle.class);
 
     private final String clusterId;
 
@@ -67,6 +72,7 @@ public class DefaultWalHandle implements WalHandle {
         AcquirePermissionOptions options) {
         ObjectStorage objectStorage = ObjectStorageFactory.instance().builder(BucketURI.parse(walConfig)).build();
         ObjectReservationService reservationService = new ObjectReservationService(clusterId, objectStorage, walConfig.id());
-        return reservationService.acquire(nodeId, nodeEpoch, options.failoverMode());
+        return reservationService.acquire(nodeId, nodeEpoch, options.failoverMode())
+            .whenComplete((result, exception) -> FutureUtil.suppress(objectStorage::close, LOGGER));
     }
 }

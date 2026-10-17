@@ -25,6 +25,7 @@ import org.apache.kafka.controller.stream.NodeState;
 
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 /**
  * NodeRuntimeMetadata is a runtime view of a node's metadata.
@@ -39,6 +40,7 @@ public final class NodeRuntimeMetadata {
      * @see ClusterControlManager#getNextNodeId()
      */
     private static final int MAX_CONTROLLER_ID = 1000 - 1;
+    private static final long DONT_FAILOVER_AFTER_NEW_EPOCH_MS = TimeUnit.MINUTES.toMillis(1);
     private final int id;
     private final long epoch;
     private final String walConfigs;
@@ -60,7 +62,11 @@ public final class NodeRuntimeMetadata {
     }
 
     public boolean shouldFailover() {
-        return isFenced() && hasOpeningStreams;
+        return isFenced() && hasOpeningStreams
+            // The node epoch is the start timestamp of node.
+            // We need to avoid failover just after node restart.
+            // The node may take some time to recover its data.
+            && System.currentTimeMillis() - epoch > DONT_FAILOVER_AFTER_NEW_EPOCH_MS;
     }
 
     public boolean isFenced() {

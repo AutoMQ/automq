@@ -35,7 +35,10 @@ import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 
 public class ReplicationConfigs {
     public static final String CONTROLLER_SOCKET_TIMEOUT_MS_CONFIG = "controller.socket.timeout.ms";
-    public static final int CONTROLLER_SOCKET_TIMEOUT_MS_DEFAULT = 30000;
+    // AutoMQ inject start
+    // Change default value from 30s to 3s to accelerate the finding of new controller leader.
+    public static final int CONTROLLER_SOCKET_TIMEOUT_MS_DEFAULT = 3000;
+    // AutoMQ inject end
     public static final String CONTROLLER_SOCKET_TIMEOUT_MS_DOC = "The socket timeout for controller-to-broker channels.";
 
     public static final String DEFAULT_REPLICATION_FACTOR_CONFIG = "default.replication.factor";

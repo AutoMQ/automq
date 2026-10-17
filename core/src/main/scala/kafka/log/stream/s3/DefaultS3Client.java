@@ -19,7 +19,6 @@
 
 package kafka.log.stream.s3;
 
-import kafka.autobalancer.metricsreporter.metric.Derivator;
 import kafka.log.stream.s3.metadata.StreamMetadataManager;
 import kafka.log.stream.s3.network.ControllerRequestSender;
 import kafka.log.stream.s3.node.NodeManager;
@@ -27,7 +26,7 @@ import kafka.log.stream.s3.node.NodeManagerStub;
 import kafka.log.stream.s3.node.NoopNodeManager;
 import kafka.log.stream.s3.objects.ControllerObjectManager;
 import kafka.log.stream.s3.streams.ControllerStreamManager;
-import kafka.log.stream.s3.wal.BootstrapWalV1;
+import kafka.log.stream.s3.wal.ConfirmWal;
 import kafka.log.stream.s3.wal.DefaultWalFactory;
 import kafka.server.BrokerServer;
 
@@ -54,9 +53,6 @@ import com.automq.stream.s3.failover.ForceCloseStorageFailureHandler;
 import com.automq.stream.s3.failover.HaltStorageFailureHandler;
 import com.automq.stream.s3.failover.StorageFailureHandlerChain;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
-import com.automq.stream.s3.metrics.stats.NetworkStats;
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -67,8 +63,6 @@ import com.automq.stream.s3.wal.DefaultWalHandle;
 import com.automq.stream.s3.wal.WalFactory;
 import com.automq.stream.s3.wal.WalHandle;
 import com.automq.stream.s3.wal.WriteAheadLog;
-import com.automq.stream.utils.LogContext;
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -76,7 +70,6 @@ import org.slf4j.LoggerFactory;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
 
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_BACKGROUND;
 import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_KEY;
@@ -85,8 +78,6 @@ import static com.automq.stream.s3.operator.ObjectStorageFactory.EXTENSION_TYPE_
 public class DefaultS3Client implements Client {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultS3Client.class);
     protected final Config config;
-    protected final Derivator networkInboundRate = new Derivator();
-    protected final Derivator networkOutboundRate = new Derivator();
     private StreamMetadataManager metadataManager;
 
     protected ControllerRequestSender requestSender;
@@ -128,24 +119,7 @@ public class DefaultS3Client implements Client {
 
     @Override
     public void start() {
-        long refillToken = (long) (config.networkBaselineBandwidth() * ((double) config.refillPeriodMs() / 1000));
-        if (refillToken <= 0) {
-            throw new IllegalArgumentException(String.format("refillToken must be greater than 0, bandwidth: %d, refill period: %dms",
-                config.networkBaselineBandwidth(), config.refillPeriodMs()));
-        }
-        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.INBOUND,
-            refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth());
-        networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND);
-        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.INBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkInboundRate.derive(
-                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkInboundUsageTotal().get()));
-        // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting tail-reading performance.
-        GlobalNetworkBandwidthLimiters.instance().setup(AsyncNetworkBandwidthLimiter.Type.OUTBOUND,
-            refillToken, config.refillPeriodMs(), config.networkBaselineBandwidth() * 5);
-        networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND);
-        S3StreamMetricsManager.registerNetworkAvailableBandwidthSupplier(AsyncNetworkBandwidthLimiter.Type.OUTBOUND, () ->
-            config.networkBaselineBandwidth() - (long) networkOutboundRate.derive(
-                TimeUnit.NANOSECONDS.toSeconds(System.nanoTime()), NetworkStats.getInstance().networkOutboundUsageTotal().get()));
+        setupNetworkLimiters();
 
         this.localIndexCache = LocalStreamRangeIndexCache.create();
         this.objectReaderFactory = new DefaultObjectReaderFactory(() -> this.mainObjectStorage);
@@ -161,24 +135,20 @@ public class DefaultS3Client implements Client {
         this.backgroundObjectStorage = newBackgroundObjectStorage();
         localIndexCache.init(config.nodeId(), backgroundObjectStorage);
         localIndexCache.start();
-        this.streamManager.setStreamCloseHook(streamId -> localIndexCache.uploadOnStreamClose());
         this.objectManager.setCommitStreamSetObjectHook(localIndexCache::updateIndexFromRequest);
         this.blockCache = new StreamReaders(this.config.blockCacheSize(), objectManager, mainObjectStorage, objectReaderFactory);
         this.compactionManager = new CompactionManager(this.config, this.objectManager, this.streamManager, backgroundObjectStorage);
         this.writeAheadLog = buildWAL();
         this.storageFailureHandlerChain = new StorageFailureHandlerChain();
         this.storage = newS3Storage();
+        this.storage.setLocalStreamRangeIndexCache(localIndexCache);
         // stream object compactions share the same object storage with stream set object compactions
         this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, backgroundObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
         storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
         storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
-        this.streamClient.registerStreamLifeCycleListener(localIndexCache);
         this.kvClient = new ControllerKVClient(this.requestSender);
         Context.instance().kvClient(this.kvClient);
         this.failover = failover();
-
-        S3StreamThreadPoolMonitor.config(new LogContext("ThreadPoolMonitor").logger("s3.threads.logger"), TimeUnit.SECONDS.toMillis(5));
-        S3StreamThreadPoolMonitor.init();
 
         this.storage.startup();
         this.compactionManager.start();
@@ -190,10 +160,16 @@ public class DefaultS3Client implements Client {
         this.compactionManager.shutdown();
         this.streamClient.shutdown();
         this.storage.shutdown();
-        this.networkInboundLimiter.shutdown();
-        this.networkOutboundLimiter.shutdown();
+        // Network limiters are process-level singletons managed by GlobalNetworkBandwidthLimiters.
         this.requestSender.shutdown();
         LOGGER.info("S3Client shutdown successfully");
+    }
+
+    protected void setupNetworkLimiters() {
+        GlobalNetworkBandwidthLimiters.instance().setup(
+            config.networkBandwidthMode(), config.networkBaselineBandwidth(), config.refillPeriodMs());
+        networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().inbound();
+        networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().outbound();
     }
 
     @Override
@@ -215,7 +191,7 @@ public class DefaultS3Client implements Client {
         String clusterId = brokerServer.clusterId();
         WalHandle walHandle = new DefaultWalHandle(clusterId);
         WalFactory factory = new DefaultWalFactory(config.nodeId(), config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
-        return new BootstrapWalV1(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
+        return new ConfirmWal(config.nodeId(), config.nodeEpoch(), config.walConfig(), false, factory, getNodeManager(), walHandle);
     }
 
     protected ObjectStorage newMainObjectStorage() {
@@ -276,7 +252,7 @@ public class DefaultS3Client implements Client {
                 WalHandle walHandle = new DefaultWalHandle(clusterId);
                 WalFactory factory = new DefaultWalFactory(nodeId, config.objectTagging(), networkInboundLimiter, networkOutboundLimiter);
                 NodeManager nodeManager = new NodeManagerStub(requestSender, nodeId, nodeEpoch, Collections.emptyMap());
-                return new BootstrapWalV1(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
+                return new ConfirmWal(nodeId, nodeEpoch, request.getKraftWalConfigs(), true, factory, nodeManager, walHandle);
             }
         }, (wal, sm, om, logger) -> {
             try {

@@ -26,12 +26,16 @@ import org.apache.kafka.storage.internals.log.EpochEntry;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+
+import static com.automq.stream.utils.LockUtils.runInLock;
 
 // TODO: better implementation, limit the partition meta logic in partition
 class ElasticLeaderEpochCheckpoint extends LeaderEpochCheckpointFile {
     private final ElasticLeaderEpochCheckpointMeta meta;
     private final Consumer<ElasticLeaderEpochCheckpointMeta> saveFunc;
+    private final ReentrantLock lock = new ReentrantLock();
 
     public ElasticLeaderEpochCheckpoint(ElasticLeaderEpochCheckpointMeta meta,
         Consumer<ElasticLeaderEpochCheckpointMeta> saveFunc) {
@@ -40,18 +44,20 @@ class ElasticLeaderEpochCheckpoint extends LeaderEpochCheckpointFile {
     }
 
     @Override
-    public synchronized void write(Collection<EpochEntry> epochs) {
-        meta.setEntries(new ArrayList<>(epochs));
-        saveFunc.accept(meta);
+    public void write(Collection<EpochEntry> epochs) {
+        runInLock(lock, () -> {
+            meta.setEntries(new ArrayList<>(epochs));
+            saveFunc.accept(meta);
+        });
     }
 
     @Override
-    public synchronized void writeIfDirExists(Collection<EpochEntry> epochs) {
+    public void writeIfDirExists(Collection<EpochEntry> epochs) {
         write(epochs);
     }
 
     @Override
-    public synchronized List<EpochEntry> read() {
-        return meta.entries();
+    public List<EpochEntry> read() {
+        return runInLock(lock, meta::entries);
     }
 }

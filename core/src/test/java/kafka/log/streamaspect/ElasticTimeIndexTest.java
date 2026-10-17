@@ -86,6 +86,33 @@ public class ElasticTimeIndexTest {
         Assertions.assertEquals(TimestampOffset.UNKNOWN, to);
     }
 
+    /**
+     * Given an entry exactly at the truncation boundary, when truncating, then that entry and later entries are hidden
+     * and the last-entry cache points to the actual final retained entry.
+     */
+    @Test
+    public void testTruncateToRemovesBoundaryEntry() throws IOException {
+        FileCache cache = new FileCache(TestUtils.tempFile().getPath(), 10 * 1024);
+        ElasticStreamSlice slice = new DefaultElasticStreamSlice(new MemoryClient.StreamImpl(1),
+            SliceRange.of(0, Offsets.NOOP_OFFSET));
+        ElasticTimeIndex index = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
+            new IStreamSliceSupplier(slice), TimestampOffset.UNKNOWN, cache);
+        index.maybeAppend(10L, baseOffset + 10L);
+        index.maybeAppend(20L, baseOffset + 20L);
+        index.maybeAppend(30L, baseOffset + 30L);
+
+        index.truncateTo(baseOffset + 20L);
+
+        assertEquals(1, index.entries());
+        assertEquals(new TimestampOffset(10L, baseOffset + 10L), index.lastEntry());
+        assertEquals(12L, slice.nextOffset());
+
+        ElasticTimeIndex reloaded = new ElasticTimeIndex(TestUtils.tempFile(), baseOffset, maxEntries * 12,
+            new IStreamSliceSupplier(slice), index.lastEntry(), cache);
+        assertEquals(1, reloaded.entries());
+        assertEquals(new TimestampOffset(10L, baseOffset + 10L), reloaded.lastEntry());
+    }
+
     void appendEntries(ElasticTimeIndex idx, int numEntries) {
         for (int i = 1; i < numEntries; i++) {
             idx.maybeAppend(i * 10L, i * 10L + baseOffset, false);

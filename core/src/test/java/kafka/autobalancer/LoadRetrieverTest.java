@@ -20,20 +20,32 @@
 package kafka.autobalancer;
 
 import kafka.autobalancer.config.AutoBalancerControllerConfig;
+import kafka.autobalancer.config.StaticAutoBalancerConfig;
 import kafka.autobalancer.model.ClusterModel;
 
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.config.SslConfigs;
+import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
 import org.apache.kafka.common.metadata.UnregisterBrokerRecord;
+import org.apache.kafka.common.security.auth.SecurityProtocol;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.controller.Controller;
 import org.apache.kafka.metadata.BrokerRegistrationFencingChange;
 
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 
+@Tag("S3Unit")
 public class LoadRetrieverTest {
 
     @Test
@@ -77,5 +89,46 @@ public class LoadRetrieverTest {
         loadRetriever.onBrokerUnregister(new UnregisterBrokerRecord().setBrokerId(1));
         Assertions.assertFalse(loadRetriever.hasAvailableBrokerInUse());
         Assertions.assertFalse(loadRetriever.hasAvailableBroker());
+    }
+
+    /**
+     * Given shared client settings, the load retriever passes them to its Kafka consumer while retaining
+     * authoritative values for its internal settings.
+     */
+    @Test
+    public void testMetricsConsumerUsesSharedClientConfig() {
+        Password keyStorePassword = new Password("key-store-password");
+        Password keyPassword = new Password("key-password");
+        Password trustStorePassword = new Password("trust-store-password");
+        Map<String, Object> configs = new HashMap<>();
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG), SecurityProtocol.SSL.name);
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG), "/ssl/client.keystore.jks");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG), keyStorePassword);
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_KEY_PASSWORD_CONFIG), keyPassword);
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG), "/ssl/client.truststore.jks");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG), trustStorePassword);
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG), "");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig("future.kafka.config"), "future-value");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG), "shared:9092");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.CLIENT_ID_CONFIG), "shared-client");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG), "9999");
+        configs.put(StaticAutoBalancerConfig.clientAuthConfig(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG), String.class.getName());
+        AutoBalancerControllerConfig controllerConfig = new AutoBalancerControllerConfig(configs, false);
+        LoadRetriever loadRetriever = new LoadRetriever(controllerConfig, Mockito.mock(Controller.class), Mockito.mock(ClusterModel.class));
+
+        Properties consumerProps = loadRetriever.buildConsumerProps("broker:9095");
+
+        Assertions.assertEquals(SecurityProtocol.SSL.name, consumerProps.getProperty(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        Assertions.assertEquals("/ssl/client.keystore.jks", consumerProps.getProperty(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG));
+        Assertions.assertEquals(keyStorePassword, consumerProps.get(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG));
+        Assertions.assertEquals(keyPassword, consumerProps.get(SslConfigs.SSL_KEY_PASSWORD_CONFIG));
+        Assertions.assertEquals("/ssl/client.truststore.jks", consumerProps.getProperty(SslConfigs.SSL_TRUSTSTORE_LOCATION_CONFIG));
+        Assertions.assertEquals(trustStorePassword, consumerProps.get(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG));
+        Assertions.assertEquals("", consumerProps.getProperty(SslConfigs.SSL_ENDPOINT_IDENTIFICATION_ALGORITHM_CONFIG));
+        Assertions.assertEquals("future-value", consumerProps.getProperty("future.kafka.config"));
+        Assertions.assertEquals("broker:9095", consumerProps.getProperty(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG));
+        Assertions.assertNotEquals("shared-client", consumerProps.getProperty(ConsumerConfig.CLIENT_ID_CONFIG));
+        Assertions.assertEquals("1000", consumerProps.getProperty(ConsumerConfig.RETRY_BACKOFF_MS_CONFIG));
+        Assertions.assertEquals(StringDeserializer.class.getName(), consumerProps.getProperty(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG));
     }
 }

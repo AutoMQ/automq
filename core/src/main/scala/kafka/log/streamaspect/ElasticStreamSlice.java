@@ -57,7 +57,7 @@ public interface ElasticStreamSlice {
     CompletableFuture<FetchResult> fetch(FetchContext context, long startOffset, long endOffset, int maxBytesHint);
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return fetch(FetchContext.DEFAULT, startOffset, endOffset, maxBytesHint);
+        return fetch(new FetchContext(), startOffset, endOffset, maxBytesHint);
     }
 
     default CompletableFuture<FetchResult> fetch(long startOffset, long endOffset) {
@@ -86,6 +86,14 @@ public interface ElasticStreamSlice {
      * Seal slice, forbid future append.
      */
     void seal();
+
+    /**
+     * Seal the slice at the supplied relative, exclusive end offset and forbid future append.
+     *
+     * @param endOffset the relative, exclusive logical end offset
+     * @throws IllegalArgumentException if the end offset is negative or exceeds the current logical end
+     */
+    void seal(long endOffset);
 
     Stream stream();
 }

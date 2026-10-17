@@ -229,6 +229,15 @@ public class FeatureControlManager {
                 "A feature version cannot be less than 0.");
         }
 
+        // AutoMQ inject start
+        if (featureName.equals(AutoMQVersion.FEATURE_NAME)
+            && currentVersion >= AutoMQVersion.V6.featureLevel()
+            && newVersion < AutoMQVersion.V6.featureLevel()) {
+            return invalidUpdateVersion(featureName, newVersion,
+                "Direct downgrade from AutoMQVersion V6 is not supported.");
+        }
+        // AutoMQ inject end
+
         Optional<String> reasonNotSupported = reasonNotSupported(featureName, newVersion);
         if (reasonNotSupported.isPresent()) {
             return invalidUpdateVersion(featureName, newVersion, reasonNotSupported.get());

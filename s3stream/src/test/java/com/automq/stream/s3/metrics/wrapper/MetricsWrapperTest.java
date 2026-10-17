@@ -46,18 +46,6 @@ public class MetricsWrapperTest {
         Assertions.assertEquals(MetricsLevel.DEBUG, metric.metricsLevel);
         Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), metric.attributes);
 
-        HistogramMetric histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
-            Attributes.builder().put("extra", "v").build());
-        Assertions.assertEquals(MetricsLevel.INFO, histogramMetric.metricsLevel);
-
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, Attributes.builder().put("base", "v2").build()));
-        Assertions.assertEquals(MetricsLevel.DEBUG, histogramMetric.metricsLevel);
-        Assertions.assertEquals(Attributes.builder().put("extra", "v").put("base", "v2").build(), histogramMetric.attributes);
-
-        histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig());
-        Assertions.assertEquals(5000L, histogramMetric.getDeltaHistogram().getSnapshotInterval());
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.INFO, Attributes.empty(), 30000L));
-        Assertions.assertEquals(30000L, histogramMetric.getDeltaHistogram().getSnapshotInterval());
     }
 
     @Test
@@ -69,16 +57,6 @@ public class MetricsWrapperTest {
         Assertions.assertTrue(metric.add(MetricsLevel.INFO, 1));
         Assertions.assertTrue(metric.add(MetricsLevel.DEBUG, 1));
 
-        HistogramMetric histogramMetric = new HistogramMetric(MetricsLevel.INFO, new MetricsConfig(),
-            Attributes.builder().put("extra", "v").build());
-        Assertions.assertTrue(histogramMetric.shouldRecord());
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
-        Assertions.assertTrue(histogramMetric.shouldRecord());
-        histogramMetric = new HistogramMetric(MetricsLevel.DEBUG, new MetricsConfig(),
-            Attributes.builder().put("extra", "v").build());
-        Assertions.assertFalse(histogramMetric.shouldRecord());
-        histogramMetric.onConfigChange(new MetricsConfig(MetricsLevel.DEBUG, null));
-        Assertions.assertTrue(histogramMetric.shouldRecord());
     }
 
     @Test

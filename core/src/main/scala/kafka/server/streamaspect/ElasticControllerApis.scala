@@ -5,12 +5,15 @@ import kafka.raft.RaftManager
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server.metadata.KRaftMetadataCache
 import kafka.server.{ApiVersionManager, ControllerApis, KafkaConfig, RequestLocal}
-import org.apache.kafka.common.acl.AclOperation.CLUSTER_ACTION
-import org.apache.kafka.common.errors.ApiException
+import org.apache.kafka.common.acl.AclOperation.{ALTER_CONFIGS, CLUSTER_ACTION, DESCRIBE_CONFIGS}
+import org.apache.kafka.common.errors.{ApiException, UnsupportedVersionException}
 import org.apache.kafka.common.internals.FatalExitError
 import org.apache.kafka.common.message.{DeleteKVsResponseData, GetKVsResponseData, GetNextNodeIdResponseData, PutKVsResponseData}
 import org.apache.kafka.common.protocol.Errors.{NONE, UNKNOWN_SERVER_ERROR}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
+import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
+import org.apache.kafka.common.resource.ResourceType.CLUSTER
+import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse}
 import org.apache.kafka.common.requests.s3._
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.controller.{Controller, ControllerRequestContext}
@@ -38,6 +41,10 @@ class ElasticControllerApis(
 
   def handleExtensionRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     try {
+      if (!authorizeExtensionRequest(request)) {
+        return
+      }
+
       val handlerFuture: CompletableFuture[Unit] = request.header.apiKey match {
         case ApiKeys.CREATE_STREAMS => handleCreateStream(request)
         case ApiKeys.OPEN_STREAMS => handleOpenStream(request)
@@ -47,14 +54,19 @@ class ElasticControllerApis(
         case ApiKeys.PREPARE_S3_OBJECT => handlePrepareS3Object(request)
         case ApiKeys.COMMIT_STREAM_SET_OBJECT => handleCommitStreamSetObject(request)
         case ApiKeys.COMMIT_STREAM_OBJECT => handleCommitStreamObject(request)
+        case ApiKeys.UPDATE_STREAM_ARCHIVE => handleUpdateStreamArchive(request)
         case ApiKeys.GET_OPENING_STREAMS => handleGetOpeningStreams(request)
         case ApiKeys.GET_KVS => handleGetKV(request)
         case ApiKeys.PUT_KVS => handlePutKV(request)
         case ApiKeys.DELETE_KVS => handleDeleteKV(request)
+        case ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request)
         case ApiKeys.AUTOMQ_REGISTER_NODE => handleRegisterNode(request)
         case ApiKeys.AUTOMQ_GET_NODES => handleGetNodes(request)
         case ApiKeys.GET_NEXT_NODE_ID => handleGetNextNodeId(request)
         case ApiKeys.DESCRIBE_STREAMS => handleDescribeStreams(request)
+        case apiKey if ApiKeys.isExtensionApi(apiKey) => handleExtensionRequest(request)
         case _ => throw new ApiException(s"Unsupported ApiKey ${request.context.header.apiKey}")
       }
 
@@ -82,8 +94,26 @@ class ElasticControllerApis(
         request.apiLocalCompleteTimeNanos = time.nanoseconds
       }
     }
-
   }
+
+  // AutoMQ inject start
+  private def authorizeExtensionRequest(request: RequestChannel.Request): Boolean = {
+    val operation = request.header.apiKey match {
+      case ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => DESCRIBE_CONFIGS
+      case ApiKeys.UPDATE_LICENSE => ALTER_CONFIGS
+      case _ => CLUSTER_ACTION
+    }
+    if (!authHelper.authorize(request.context, operation, CLUSTER, CLUSTER_NAME)) {
+      requestHelper.sendMaybeThrottle(request, request.body[AbstractRequest].getErrorResponse(
+        0,
+        Errors.CLUSTER_AUTHORIZATION_FAILED.exception))
+      false
+    } else {
+      true
+    }
+  }
+  // AutoMQ inject end
 
   override def handle(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     request.header.apiKey match {
@@ -95,22 +125,26 @@ class ElasticControllerApis(
            | ApiKeys.PREPARE_S3_OBJECT
            | ApiKeys.COMMIT_STREAM_SET_OBJECT
            | ApiKeys.COMMIT_STREAM_OBJECT
+           | ApiKeys.UPDATE_STREAM_ARCHIVE
            | ApiKeys.GET_OPENING_STREAMS
            | ApiKeys.GET_KVS
            | ApiKeys.PUT_KVS
            | ApiKeys.DELETE_KVS
+           | ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST
            | ApiKeys.AUTOMQ_REGISTER_NODE
            | ApiKeys.AUTOMQ_GET_NODES
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.DESCRIBE_STREAMS
       => handleExtensionRequest(request, requestLocal)
+      case apiKey if ApiKeys.isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
 
   private def handleGetNextNodeId(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val getNextNodeIdRequest = request.body[GetNextNodeIdRequest]
-    authHelper.authorizeClusterOperation(request, CLUSTER_ACTION)
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
       OptionalLong.empty())
     controller.getNextNodeId(context, getNextNodeIdRequest.data()).handle[Unit] { (reply, e) =>
@@ -263,6 +297,25 @@ class ElasticControllerApis(
       }
   }
 
+  /**
+   * Applies ordered typed Archive operations and returns positional business results.
+   */
+  def handleUpdateStreamArchive(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val updateRequest = request.body[UpdateStreamArchiveRequest]
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.updateStreamArchive(context, updateRequest.data)
+      .handle[Unit] { (result, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            new UpdateStreamArchiveResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
   def handleGetOpeningStreams(request: RequestChannel.Request): CompletableFuture[Unit] = {
     val getOpeningStreamsRequest = request.body[GetOpeningStreamsRequest]
     val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
@@ -356,6 +409,26 @@ class ElasticControllerApis(
         } else {
           requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
             new DeleteKVsResponse(result.setThrottleTimeMs(requestThrottleMs))
+          })
+        }
+      }
+  }
+
+  def handleExtensionRequest(request: RequestChannel.Request): CompletableFuture[Unit] = {
+    val apiKey = request.header.apiKey
+    val requestData = request.body[AbstractRequest].data()
+    val context = new ControllerRequestContext(request.context.header.data, request.context.principal,
+      OptionalLong.empty())
+    controller.handleExtensionRequest(context, apiKey, requestData)
+      .handle[Unit] { (response: AbstractResponse, exception) =>
+        if (exception != null) {
+          requestHelper.handleError(request, exception)
+        } else if (response == null) {
+          requestHelper.handleError(request, new UnsupportedVersionException(s"Api ${apiKey} is not supported in this version"))
+        } else {
+          requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => {
+            response.maybeSetThrottleTimeMs(requestThrottleMs)
+            response
           })
         }
       }

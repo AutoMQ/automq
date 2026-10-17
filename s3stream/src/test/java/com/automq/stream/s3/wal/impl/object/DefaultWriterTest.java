@@ -23,6 +23,8 @@ import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 import java.util.Random;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -30,6 +32,9 @@ import java.util.concurrent.ConcurrentSkipListMap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+@Tag("S3Unit")
 public class DefaultWriterTest {
     private DefaultWriter writer;
     private MockObjectStorage objectStorage;
@@ -64,6 +69,18 @@ public class DefaultWriterTest {
         random.nextBytes(bytes);
         byteBuf.writeBytes(bytes);
         return byteBuf;
+    }
+
+    /**
+     * Given a started writer, when it is closed repeatedly, then it remains closed and cannot restart.
+     */
+    @Test
+    public void testCloseIsIdempotentAndPreventsRestart() {
+        writer.close();
+        writer.close();
+        writer.start();
+
+        assertThrows(IllegalStateException.class, writer::objectList);
     }
 
     // TODO: fix the test

@@ -33,6 +33,9 @@ public class FetchParams {
     public final int maxBytes;
     public final FetchIsolation isolation;
     public final Optional<ClientMetadata> clientMetadata;
+    // AutoMQ inject start
+    public final String connectionId;
+    // AutoMQ inject end
 
     public FetchParams(short requestVersion,
                        int replicaId,
@@ -42,6 +45,21 @@ public class FetchParams {
                        int maxBytes,
                        FetchIsolation isolation,
                        Optional<ClientMetadata> clientMetadata) {
+        // AutoMQ inject start
+        this(requestVersion, replicaId, replicaEpoch, maxWaitMs, minBytes, maxBytes, isolation, clientMetadata, null);
+        // AutoMQ inject end
+    }
+
+    // AutoMQ inject start
+    public FetchParams(short requestVersion,
+                       int replicaId,
+                       long replicaEpoch,
+                       long maxWaitMs,
+                       int minBytes,
+                       int maxBytes,
+                       FetchIsolation isolation,
+                       Optional<ClientMetadata> clientMetadata,
+                       String connectionId) {
         Objects.requireNonNull(isolation);
         Objects.requireNonNull(clientMetadata);
         this.requestVersion = requestVersion;
@@ -52,7 +70,9 @@ public class FetchParams {
         this.maxBytes = maxBytes;
         this.isolation = isolation;
         this.clientMetadata = clientMetadata;
+        this.connectionId = connectionId;
     }
+    // AutoMQ inject end
 
     public boolean isFromFollower() {
         return FetchRequest.isValidBrokerId(replicaId);

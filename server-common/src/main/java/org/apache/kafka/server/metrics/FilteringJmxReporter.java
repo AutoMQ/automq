@@ -22,9 +22,26 @@ import com.yammer.metrics.core.MetricName;
 import com.yammer.metrics.core.MetricsRegistry;
 import com.yammer.metrics.reporting.JmxReporter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Predicate;
 
 public class FilteringJmxReporter extends JmxReporter {
+
+    // AutoMQ inject start
+    private static final Logger LOGGER = LoggerFactory.getLogger(FilteringJmxReporter.class);
+    private final ExecutorService mBeanOperationExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "kafka-yammer-mbean-operator");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final Object submissionLock = new Object();
+    private boolean shuttingDown = false;
+    // AutoMQ inject end
 
     private volatile Predicate<MetricName> metricPredicate;
 
@@ -35,23 +52,74 @@ public class FilteringJmxReporter extends JmxReporter {
 
     @Override
     public void onMetricAdded(MetricName name, Metric metric) {
-        if (metricPredicate.test(name)) {
-            super.onMetricAdded(name, metric);
+        // AutoMQ inject start
+        reconcileAsync(name);
+        // AutoMQ inject end
+    }
+
+    // AutoMQ inject start
+    @Override
+    public void onMetricRemoved(MetricName name) {
+        reconcileAsync(name);
+    }
+
+    private void reconcileAsync(MetricName name) {
+        synchronized (submissionLock) {
+            if (!shuttingDown) {
+                mBeanOperationExecutor.execute(() -> reconcile(name));
+            }
+        }
+    }
+
+    private void reconcile(MetricName name) {
+        try {
+            Metric metric = getMetricsRegistry().allMetrics().get(name);
+            if (metric != null && metricPredicate.test(name)) {
+                super.onMetricAdded(name, metric);
+            } else {
+                super.onMetricRemoved(name);
+            }
+        } catch (Throwable ex) {
+            LOGGER.warn("Failed to reconcile Yammer metric {} with JMX", name, ex);
         }
     }
 
     public void updatePredicate(Predicate<MetricName> predicate) {
         this.metricPredicate = predicate;
-        // re-register metrics on update
-        getMetricsRegistry()
-            .allMetrics()
-            .forEach((name, metric) -> {
-                if (metricPredicate.test(name)) {
-                    super.onMetricAdded(name, metric);
-                } else {
-                    super.onMetricRemoved(name);
-                }
-            }
-            );
+        runAndWait(() -> getMetricsRegistry().allMetrics().keySet().forEach(this::reconcile));
     }
+
+    @Override
+    public void shutdown() {
+        CompletableFuture<Void> result = new CompletableFuture<>();
+        synchronized (submissionLock) {
+            shuttingDown = true;
+            execute(super::shutdown, result);
+        }
+        result.join();
+        mBeanOperationExecutor.shutdown();
+    }
+
+    private void runAndWait(Runnable operation) {
+        CompletableFuture<Void> result = new CompletableFuture<>();
+        synchronized (submissionLock) {
+            if (shuttingDown) {
+                return;
+            }
+            execute(operation, result);
+        }
+        result.join();
+    }
+
+    private void execute(Runnable operation, CompletableFuture<Void> result) {
+        mBeanOperationExecutor.execute(() -> {
+            try {
+                operation.run();
+                result.complete(null);
+            } catch (Throwable ex) {
+                result.completeExceptionally(ex);
+            }
+        });
+    }
+    // AutoMQ inject end
 }

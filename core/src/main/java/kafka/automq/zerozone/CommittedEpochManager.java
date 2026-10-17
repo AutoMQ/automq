@@ -99,9 +99,12 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
                 break;
             }
             AtomicLong inflight = entry.getValue();
-            if (inflight.get() == 0) {
+            if (inflight.get() <= 0) {
+                // We only bump the commitEpoch when this epoch was fenced and has no inflight requests.
                 it.remove();
                 newWaitingEpoch = epoch;
+            } else {
+                break;
             }
         }
         if (epoch2inflight.isEmpty()) {

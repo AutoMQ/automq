@@ -46,13 +46,16 @@ public interface WriteAheadLog {
     WALMetadata metadata();
 
     /**
-     * Append data to log, note append may be out of order.
-     * ex. when sequence append R1 R2 , R2 maybe complete before R1.
-     * {@link ByteBuf#release()} will be called whatever append success or not.
+     * Get WAL config URI string. We could use the uri to reconstruct the WAL instance.
+     */
+    String uri();
+
+    /**
+     * Appends data to the log. Append futures complete in append order, so when R1 is appended before R2, R1's future
+     * completes before R2's future. {@link ByteBuf#release()} is called whether the append succeeds or fails.
      *
      * @return The data position will be written.
      */
-    // TODO: change the doc
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
     CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);

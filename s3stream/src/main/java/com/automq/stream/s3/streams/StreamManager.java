@@ -29,6 +29,15 @@ import java.util.concurrent.CompletableFuture;
 public interface StreamManager {
 
     /**
+     * Returns whether stream close may transfer ownership before force upload completes.
+     *
+     * @return true when fast close is supported by the finalized cluster version
+     */
+    default boolean isFastCloseSupported() {
+        return false;
+    }
+
+    /**
      * Get current server opening streams.
      * When server is starting or recovering, WAL in EBS need streams offset to determine the recover point.
      *
@@ -94,7 +103,18 @@ public interface StreamManager {
      * @param streamId stream id.
      * @param epoch    stream epoch.
      */
-    CompletableFuture<Void> closeStream(long streamId, long epoch);
+    default CompletableFuture<Void> closeStream(long streamId, long epoch) {
+        return closeStream(streamId, epoch, -1L);
+    }
+
+    /**
+     * Close a stream at an optional exclusive end offset. A negative end offset requests legacy close semantics.
+     *
+     * @param streamId  stream id.
+     * @param epoch     stream epoch.
+     * @param endOffset exclusive stream end offset, or a negative value for legacy close.
+     */
+    CompletableFuture<Void> closeStream(long streamId, long epoch, long endOffset);
 
     /**
      * Delete stream.
@@ -104,5 +124,22 @@ public interface StreamManager {
      */
     CompletableFuture<Void> deleteStream(long streamId, long epoch);
 
-    void setStreamCloseHook(StreamCloseHook hook);
+    /**
+     * Submit one typed Broker-owned Archive operation to the Controller.
+     */
+    default CompletableFuture<Void> updateStreamArchive(StreamArchiveOperation operation) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Stream Archive is not supported"));
+    }
+
+    /**
+     * Get the complete Archive state observed for an owned Stream.
+     *
+     * @param streamId stream id
+     * @param streamEpoch expected owner epoch
+     * @return the current complete Archive state
+     */
+    default CompletableFuture<StreamArchiveState> getStreamArchive(long streamId, long streamEpoch) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Stream Archive is not supported"));
+    }
+
 }

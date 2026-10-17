@@ -20,11 +20,14 @@
 package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
+import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 
+import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -46,15 +49,19 @@ import io.netty.buffer.ByteBuf;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -173,6 +180,106 @@ class AbstractObjectStorageTest {
                 buf.release();
                 return CompletableFuture.completedFuture(null);
             }).get();
+    }
+
+    private void prepareReadFastRetry() throws Exception {
+        objectStorage = spy(new MemoryObjectStorage());
+        Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
+        field.setAccessible(true);
+        S3LatencyCalculator calculator = mock(S3LatencyCalculator.class);
+        when(calculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(50L);
+        field.set(objectStorage, calculator);
+    }
+
+    /** Given a stalled original read, the fast retry wins and the late original buffer is released. */
+    @Test
+    void testReadFastRetryWins() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        ByteBuf retryBuffer = TestUtils.randomPooled(1024);
+        doReturn(original, CompletableFuture.completedFuture(retryBuffer))
+            .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        ByteBuf result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024)
+            .get(1, TimeUnit.SECONDS);
+        assertSame(retryBuffer, result);
+        result.release();
+        ByteBuf lateBuffer = TestUtils.randomPooled(1024);
+        original.complete(lateBuffer);
+        assertEquals(0, lateBuffer.refCnt());
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** Given both reads in flight, the original wins and the late retry buffer is released. */
+    @Test
+    void testReadOriginalWinsAfterFastRetryStarts() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        ByteBuf originalBuffer = TestUtils.randomPooled(1024);
+        original.complete(originalBuffer);
+        assertSame(originalBuffer, result.get(1, TimeUnit.SECONDS));
+        originalBuffer.release();
+        ByteBuf lateBuffer = TestUtils.randomPooled(1024);
+        retry.complete(lateBuffer);
+        assertEquals(0, lateBuffer.refCnt());
+    }
+
+    /** A failed speculative read leaves the original read pending and does not start normal retries. */
+    @Test
+    void testReadFastRetryFailureDoesNotFailRequest() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        retry.completeExceptionally(new TimeoutException());
+        assertFalse(result.isDone());
+        ByteBuf originalBuffer = TestUtils.randomPooled(1024);
+        original.complete(originalBuffer);
+        assertSame(originalBuffer, result.get(1, TimeUnit.SECONDS));
+        originalBuffer.release();
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** A normal retry scheduled before speculative success must not issue another network request. */
+    @Test
+    void testReadFastRetryStopsScheduledNormalRetry() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
+        doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        doReturn(Pair.of(RetryStrategy.RETRY, new TimeoutException()))
+            .when(objectStorage).toRetryStrategyAndCause(any(), eq(S3Operation.GET_OBJECT));
+        doReturn(50).when(objectStorage).retryDelay(eq(S3Operation.GET_OBJECT), anyInt());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        original.completeExceptionally(new TimeoutException());
+        ByteBuf retryBuffer = TestUtils.randomPooled(1024);
+        retry.complete(retryBuffer);
+        assertSame(retryBuffer, result.get(1, TimeUnit.SECONDS));
+        retryBuffer.release();
+        objectStorage.scheduler.schedule(() -> { }, 100, TimeUnit.MILLISECONDS).get(1, TimeUnit.SECONDS);
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+    }
+
+    /** An unknown read-to-end size must not schedule speculative reads. */
+    @Test
+    void testReadToEndSkipsFastRetry() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        doReturn(original).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, -1);
+        Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
+        field.setAccessible(true);
+        verify((S3LatencyCalculator) field.get(objectStorage), times(0)).valueAtPercentile(anyLong(), anyLong());
+        ByteBuf buf = TestUtils.randomPooled(1024);
+        original.complete(buf);
+        result.get(1, TimeUnit.SECONDS).release();
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("key"), eq(0L), eq(-1L));
     }
 
     @Test
@@ -435,5 +542,47 @@ class AbstractObjectStorageTest {
         }
 
         assertTrue(cf4.isDone() && cf4.isCompletedExceptionally());
+    }
+
+    /**
+     * Given LIST and COPY fail transiently, when they are invoked through AbstractObjectStorage, then the storage
+     * boundary retries each operation until it succeeds.
+     */
+    @Test
+    void testListAndCopyRetryTransientFailures() throws Exception {
+        objectStorage = spy(objectStorage);
+        doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
+        ObjectStorage.ObjectInfo object = new ObjectStorage.ObjectInfo(objectStorage.bucketId(), "prefix/key", 0, 1);
+        doReturn(CompletableFuture.failedFuture(new IllegalStateException("LIST unavailable")),
+            CompletableFuture.completedFuture(List.of(object))).when(objectStorage).doList(any());
+        doReturn(CompletableFuture.failedFuture(new IllegalStateException("COPY unavailable")),
+            CompletableFuture.completedFuture(null)).when(objectStorage).doCopy(any(), anyString(), anyString());
+
+        assertEquals(List.of(object), objectStorage.list(new ObjectStorage.ListOptions("prefix/")).get());
+        objectStorage.copy(objectStorage.bucketURI(objectStorage.bucketId()).bucket(), "source", "destination").get();
+
+        verify(objectStorage, times(2)).doList(any());
+        verify(objectStorage, times(2)).doCopy(any(), eq("source"), eq("destination"));
+    }
+
+    /**
+     * Given LIST and COPY fail permanently, when they are invoked through AbstractObjectStorage, then the storage
+     * boundary returns each failure without retrying.
+     */
+    @Test
+    void testListAndCopyDoNotRetryPermanentFailures() {
+        objectStorage = spy(objectStorage);
+        doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("invalid LIST")))
+            .when(objectStorage).doList(any());
+        doReturn(CompletableFuture.failedFuture(new ObjectNotExistException("missing source")))
+            .when(objectStorage).doCopy(any(), anyString(), anyString());
+
+        assertThrows(ExecutionException.class,
+            () -> objectStorage.list(new ObjectStorage.ListOptions("prefix/")).get());
+        assertThrows(ExecutionException.class, () -> objectStorage.copy(
+            objectStorage.bucketURI(objectStorage.bucketId()).bucket(), "source", "destination").get());
+
+        verify(objectStorage).doList(any());
+        verify(objectStorage).doCopy(any(), eq("source"), eq("destination"));
     }
 }

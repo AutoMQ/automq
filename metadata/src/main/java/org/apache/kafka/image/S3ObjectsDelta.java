@@ -74,6 +74,14 @@ public final class S3ObjectsDelta {
         changedObjects.remove(record.objectId());
     }
 
+    public void finishSnapshot() {
+        image.objectIds().forEach(objectId -> {
+            if (!changedObjects.containsKey(objectId)) {
+                removedObjectIds.add(objectId);
+            }
+        });
+    }
+
     public S3ObjectsImage apply() {
         RegistryRef registry = image.registryRef();
         // get original objects first

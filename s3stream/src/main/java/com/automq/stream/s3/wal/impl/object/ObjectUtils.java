@@ -20,7 +20,6 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.Constants;
-import com.automq.stream.s3.StreamRecordBatchCodec;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.common.RecordHeader;
@@ -41,6 +40,8 @@ import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 
 public class ObjectUtils {
     public static final long DATA_FILE_ALIGN_SIZE = 64L * 1024 * 1024; // 64MiB
+    // Part of the version=1 key layout; changing this would require a new layout version.
+    private static final int SHARD_COUNT = 256;
     private static final Logger LOGGER = LoggerFactory.getLogger(ObjectUtils.class);
     public static final String OBJECT_PATH_OFFSET_DELIMITER = "-";
 
@@ -49,6 +50,7 @@ public class ObjectUtils {
         for (ObjectStorage.ObjectInfo object : objects) {
             // v0: md5hex(nodeId)/clusterId/nodeId/epoch/wal/startOffset
             // v1: md5hex(nodeId)/clusterId/nodeId/epoch/wal/startOffset_endOffset
+            // URI version=1 inserts s<hex shard> before epoch; trailing filename formats remain unchanged.
             String path = object.key();
             String[] parts = path.split("/");
             try {
@@ -117,6 +119,17 @@ public class ObjectUtils {
         return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + objectEndOffset;
     }
 
+    /**
+     * Generates a key for URI version=1, with one of 256 fixed shards before the epoch.
+     * Preserves broker-prefix listing and the existing start-end offset filename format.
+     */
+    public static String genShardedObjectPathV1(String nodePrefix, long epoch, long objectStartOffset,
+        long objectEndOffset) {
+        long shard = (objectStartOffset / DATA_FILE_ALIGN_SIZE) % SHARD_COUNT;
+        String shardPrefix = nodePrefix + String.format(Locale.ROOT, "s%02x/", shard);
+        return genObjectPathV1(shardPrefix, epoch, objectStartOffset, objectEndOffset);
+    }
+
     public static String genObjectPathV1(String nodePrefix, long epoch, long objectStartOffset) {
         long endOffset = objectStartOffset + DATA_FILE_ALIGN_SIZE;
         return nodePrefix + epoch + "/wal/" + objectStartOffset + OBJECT_PATH_OFFSET_DELIMITER + endOffset;
@@ -138,9 +151,6 @@ public class ObjectUtils {
         if (header.getMagicCode() != RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE) {
             throw new IllegalStateException("Invalid magic code in record header.");
         }
-        int length = header.getRecordBodyLength();
-        StreamRecordBatch streamRecordBatch = StreamRecordBatchCodec.sliceRetainDecode(dataBuffer.slice(dataBuffer.readerIndex(), length));
-        dataBuffer.skipBytes(length);
-        return streamRecordBatch;
+        return StreamRecordBatch.parse(dataBuffer, false, null);
     }
 }

@@ -52,8 +52,8 @@ public class DefaultRecordOffset implements RecordOffset {
     }
 
     public static DefaultRecordOffset of(RecordOffset recordOffset) {
-        if (recordOffset instanceof DefaultRecordOffset) {
-            return (DefaultRecordOffset) recordOffset;
+        if (recordOffset instanceof DefaultRecordOffset defaultRecordOffset) {
+            return defaultRecordOffset;
         }
         return of(recordOffset.buffer());
     }
@@ -100,5 +100,11 @@ public class DefaultRecordOffset implements RecordOffset {
     @Override
     public int hashCode() {
         return Objects.hash(epoch, offset, size);
+    }
+
+    @Override
+    public int compareTo(RecordOffset o) {
+        DefaultRecordOffset other = DefaultRecordOffset.of(o);
+        return Long.compare(this.offset, other.offset);
     }
 }

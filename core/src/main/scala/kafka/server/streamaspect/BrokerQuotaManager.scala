@@ -19,7 +19,7 @@
 
 package kafka.server.streamaspect
 
-import com.automq.stream.s3.metrics.S3StreamMetricsManager
+import com.automq.stream.s3.metrics.{Metrics => AutoMQMetrics, MetricsLevel}
 import kafka.network.RequestChannel
 import kafka.server._
 import kafka.utils.QuotaUtils
@@ -33,8 +33,15 @@ import org.apache.kafka.server.config.{BrokerQuotaManagerConfig, QuotaConfigs}
 
 import java.util.concurrent.TimeUnit
 import java.util.{Optional, Properties}
+import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
+
+object BrokerQuotaManager {
+  private val LabelBrokerQuotaType = AttributeKey.stringKey("type")
+  private val BrokerQuotaLimit = AutoMQMetrics.instance()
+    .doubleGauge("kafka_stream_broker_quota_limit", "Broker quota limit", "")
+}
 
 class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
   private val metrics: Metrics,
@@ -51,12 +58,20 @@ class BrokerQuotaManager(private val config: BrokerQuotaManagerConfig,
 
   override def delayQueueSensor: Sensor = brokerDelayQueueSensor
 
-  S3StreamMetricsManager.registerBrokerQuotaLimitSupplier(() => java.util.Map.of(
-    QuotaType.RequestRate.toString, quotaLimit(QuotaType.RequestRate),
-    QuotaType.Produce.toString, quotaLimit(QuotaType.Produce),
-    QuotaType.Fetch.toString, quotaLimit(QuotaType.Fetch),
-    QuotaType.SlowFetch.toString, quotaLimit(QuotaType.SlowFetch)
-  ))
+  recordBrokerQuotaLimit(QuotaType.RequestRate)
+  recordBrokerQuotaLimit(QuotaType.Produce)
+  recordBrokerQuotaLimit(QuotaType.Fetch)
+  recordBrokerQuotaLimit(QuotaType.SlowFetch)
+
+  private def recordBrokerQuotaLimit(quotaType: QuotaType): Unit = {
+    BrokerQuotaManager.BrokerQuotaLimit
+      .register(MetricsLevel.INFO, Attributes.of(BrokerQuotaManager.LabelBrokerQuotaType, quotaType.toString), measurement => {
+        val limit = quotaLimit(quotaType)
+        if (limit <= 1e15) {
+          measurement.record(limit)
+        }
+      })
+  }
 
   def getMaxValueInQuotaWindow(quotaType: QuotaType, request: RequestChannel.Request): Double = {
     if (shouldThrottle(request)) {

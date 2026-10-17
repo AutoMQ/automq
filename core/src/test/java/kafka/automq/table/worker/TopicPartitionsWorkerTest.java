@@ -87,7 +87,7 @@ public class TopicPartitionsWorkerTest {
     WorkerConfig config;
 
     EventLoop eventLoop = new EventLoop("test");
-    ExecutorService flushExecutor = Threads.newFixedThreadPoolWithMonitor(1, "test-flush", true, LoggerFactory.getLogger(TopicPartitionsWorkerTest.class));
+    ExecutorService flushExecutor = Threads.newFixedThreadPool(1, "test-flush", true, LoggerFactory.getLogger(TopicPartitionsWorkerTest.class));
     EventLoops eventLoops;
     Semaphore commitLimiter;
 

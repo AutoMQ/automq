@@ -105,8 +105,7 @@ class TransactionsTest(Test):
                     wait_until(lambda: not self.kafka.pids(node),
                                timeout_sec=brokerSessionTimeoutSecs + gracePeriodSecs,
                                err_msg="Failed to see timely disappearance of process for hard-killed broker %s" % str(node.account))
-                    # Do not sleep. Recover ASAP.
-                    # time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
+                    time.sleep(brokerSessionTimeoutSecs + gracePeriodSecs)
                 self.kafka.start_node(node)
 
             self.kafka.await_no_under_replicated_partitions()
@@ -239,8 +238,6 @@ class TransactionsTest(Test):
         security_protocol = 'PLAINTEXT'
         self.kafka.security_protocol = security_protocol
         self.kafka.interbroker_security_protocol = security_protocol
-        self.kafka.logs["kafka_data_1"]["collect_default"] = True
-        self.kafka.logs["kafka_data_2"]["collect_default"] = True
         self.kafka.logs["kafka_operational_logs_debug"]["collect_default"] = True
         if check_order:
             # To check ordering, we simply create input and output topics

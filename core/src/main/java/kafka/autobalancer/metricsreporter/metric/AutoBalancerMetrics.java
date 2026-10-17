@@ -98,7 +98,7 @@ public abstract class AutoBalancerMetrics {
     }
 
     public int bodySize() {
-        return Integer.SIZE + (Byte.SIZE + Double.SIZE) * metricValueMap.size();
+        return Integer.BYTES + (Byte.BYTES + Double.BYTES) * metricValueMap.size();
     }
 
     public ByteBuffer writeBody(ByteBuffer buffer) {

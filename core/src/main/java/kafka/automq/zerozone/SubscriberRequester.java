@@ -20,6 +20,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.partition.snapshot.SnapshotOperation;
+import kafka.automq.utils.AsyncSender;
 import kafka.cluster.PartitionSnapshot;
 import kafka.log.streamaspect.ElasticLogMeta;
 import kafka.log.streamaspect.ElasticStreamSegmentMeta;
@@ -72,7 +73,8 @@ import io.netty.buffer.Unpooled;
     private final EventLoop eventLoop;
     private final Time time;
 
-    public SubscriberRequester(SnapshotReadPartitionsManager.Subscriber subscriber, Node node, AutoMQVersion version, AsyncSender asyncSender,
+    public SubscriberRequester(SnapshotReadPartitionsManager.Subscriber subscriber, Node node, AutoMQVersion version,
+        AsyncSender asyncSender,
         Function<Uuid, String> topicNameGetter, EventLoop eventLoop, Time time) {
         this.subscriber = subscriber;
         this.node = node;
@@ -125,6 +127,9 @@ import io.netty.buffer.Unpooled;
         } else if (requestCommit) {
             requestCommit = false;
             data.setRequestCommit(true);
+        }
+        if (data.requestCommit()) {
+            LOGGER.info("[SNAPSHOT_SUBSCRIBE_REQUEST_COMMIT],node={},sessionId={},sessionEpoch={}", node, sessionId, sessionEpoch);
         }
         AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
         asyncSender.sendRequest(node, builder)
@@ -198,9 +203,12 @@ import io.netty.buffer.Unpooled;
             int c2 = o2.operation.code() == SnapshotOperation.REMOVE.code() ? 0 : 1;
             return c1 - c2;
         });
+        short requestVersion = clientResponse.requestHeader().apiVersion();
         if (resp.confirmWalEndOffset() != null && resp.confirmWalEndOffset().length > 0) {
             // zerozone v2
-            subscriber.onNewWalEndOffset(resp.confirmWalConfig(), DefaultRecordOffset.of(Unpooled.wrappedBuffer(resp.confirmWalEndOffset())));
+            subscriber.onNewWalEndOffset(resp.confirmWalConfig(),
+                DefaultRecordOffset.of(Unpooled.wrappedBuffer(resp.confirmWalEndOffset())),
+                requestVersion >= 2 ? resp.confirmWalDeltaData() : null);
         }
         batch.operations.add(SnapshotWithOperation.snapshotMark(snapshotCf));
         subscriber.onNewOperationBatch(batch);

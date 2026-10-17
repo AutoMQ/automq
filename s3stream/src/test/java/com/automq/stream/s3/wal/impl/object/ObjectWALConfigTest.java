@@ -1,0 +1,82 @@
+/*
+ * Copyright 2026, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.automq.stream.s3.wal.impl.object;
+
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.ReservationService;
+
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+/** Verifies migration defaults and rejects ambiguous object-key layouts before opening a WAL. */
+@Tag("S3Unit")
+public class ObjectWALConfigTest {
+    /** Builder, URI, and constructor callers retain legacy writes until version=1 is explicitly enabled. */
+    @Test
+    public void testDefaults() {
+        assertDefaults(ObjectWALConfig.builder().build());
+        assertDefaults(ObjectWALConfig.builder().withURI("0@s3://wal").build());
+        assertDefaults(new ObjectWALConfig("", ReservationService.NOOP, 250, 1024, 1024, 1, 1024,
+            "cluster", 1001, 42, OpenMode.READ_WRITE, (short) 0, "rc"));
+    }
+
+    /** Layout version is independent of read-only bucket mode and WAL open mode. */
+    @Test
+    public void testURIOptions() {
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withURI("7@s3://wal?version=1&mode=r")
+            .withOpenMode(OpenMode.READ_ONLY).build();
+        assertEquals(1, config.version());
+        assertEquals(OpenMode.READ_ONLY, config.openMode());
+        assertEquals(7, config.bucketId());
+    }
+
+    /** Explicit layout versions are accepted by both URI and programmatic configuration. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testSupportedVersions(int version) {
+        assertEquals(version, ObjectWALConfig.builder().withVersion(version).build().version());
+        assertEquals(version, ObjectWALConfig.builder().withURI("0@s3://wal?version=" + version).build().version());
+    }
+
+    /** Invalid or repeated URI options must fail instead of silently using a different key layout. */
+    @ParameterizedTest
+    @ValueSource(strings = {"version=2", "version=-1", "version=no", "version=1.5",
+        "version", "version=", "version=2147483648", "version=0&version=1", "version=1&version=1"})
+    public void testInvalidURIOptions(String option) {
+        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withURI("0@s3://wal?" + option));
+    }
+
+    /** Programmatic configuration enforces the same validation as URI configuration. */
+    @Test
+    public void testInvalidBuilderOptions() {
+        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withVersion(-1));
+        assertThrows(IllegalArgumentException.class, () -> ObjectWALConfig.builder().withVersion(2));
+    }
+
+    private static void assertDefaults(ObjectWALConfig config) {
+        assertEquals(0, config.version());
+    }
+}

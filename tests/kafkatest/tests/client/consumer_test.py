@@ -74,6 +74,16 @@ class OffsetValidationTest(VerifiableConsumerTest):
         self.mark_for_collect(consumer, 'verifiable_consumer_stdout')
         return consumer
 
+    # // AutoMQ inject start
+    def await_conflict_consumers_fenced(self, conflict_consumer):
+        # Rely on explicit shutdown_complete events from the verifiable consumer to guarantee each conflict member
+        # reached the fenced path rather than remaining in the default DEAD state prior to startup.
+        wait_until(lambda: len(conflict_consumer.shutdown_complete_nodes()) == len(conflict_consumer.nodes) and
+                           len(conflict_consumer.dead_nodes()) == len(conflict_consumer.nodes),
+                   timeout_sec=60,
+                   err_msg="Timed out waiting for conflict consumers to report shutdown completion after fencing")
+    # // AutoMQ inject end
+
     @cluster(num_nodes=7)
     @matrix(
         metadata_quorum=[quorum.isolated_kraft],
@@ -84,7 +94,6 @@ class OffsetValidationTest(VerifiableConsumerTest):
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
-    def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
     def test_broker_rolling_bounce(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verify correct consumer behavior when the brokers are consecutively restarted.
@@ -145,8 +154,6 @@ class OffsetValidationTest(VerifiableConsumerTest):
         clean_shutdown=[True],
         bounce_mode=["all", "rolling"],
         metadata_quorum=[quorum.isolated_kraft],
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
     )
@@ -352,6 +359,9 @@ class OffsetValidationTest(VerifiableConsumerTest):
         if fencing_stage == "stable":
             consumer.start()
             self.await_members(consumer, len(consumer.nodes))
+            # // AutoMQ inject start
+            self.await_all_members_stabilized(self.TOPIC, self.NUM_PARTITIONS, consumer, timeout_sec=120)
+            # // AutoMQ inject end
 
             num_rebalances = consumer.num_rebalances()
             conflict_consumer.start()
@@ -369,16 +379,29 @@ class OffsetValidationTest(VerifiableConsumerTest):
                 assert num_rebalances == consumer.num_rebalances(), "Static consumers attempt to join with instance id in use should not cause a rebalance"
                 assert len(consumer.joined_nodes()) == len(consumer.nodes)
                 assert len(conflict_consumer.joined_nodes()) == 0
-                
+
+                # // AutoMQ inject start
+                # Conflict consumers will terminate due to a fatal UnreleasedInstanceIdException error.
+                # Wait for termination to complete to prevent conflict consumers from immediately re-joining the group while existing nodes are shutting down.
+                self.await_conflict_consumers_fenced(conflict_consumer)
+                # // AutoMQ inject end
+
                 # Stop existing nodes, so conflicting ones should be able to join.
                 consumer.stop_all()
                 wait_until(lambda: len(consumer.dead_nodes()) == len(consumer.nodes),
                            timeout_sec=self.session_timeout_sec+5,
                            err_msg="Timed out waiting for the consumer to shutdown")
+
+                # // AutoMQ inject start
+                # Wait until the group becomes empty to ensure the instance ID is released.
+                wait_until(lambda: self.group_id in self.kafka.list_consumer_groups(state="empty"),
+                           timeout_sec=self.session_timeout_sec,
+                           err_msg="Timed out waiting for the consumers to be removed from the group")
+                # // AutoMQ inject end
+
                 conflict_consumer.start()
                 self.await_members(conflict_consumer, num_conflict_consumers)
 
-            
         else:
             consumer.start()
             conflict_consumer.start()
@@ -409,10 +432,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
     )
-    def test_consumer_failure(self, clean_shutdown, enable_autocommit, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
     def test_consumer_failure(self, clean_shutdown, enable_autocommit, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         partition = TopicPartition(self.TOPIC, 0)
 
@@ -522,10 +542,7 @@ class OffsetValidationTest(VerifiableConsumerTest):
         metadata_quorum=[quorum.isolated_kraft],
         use_new_coordinator=[True],
         group_protocol=consumer_group.all_group_protocols
-        use_new_coordinator=[True],
-        group_protocol=consumer_group.all_group_protocols
     )
-    def test_group_consumption(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
     def test_group_consumption(self, metadata_quorum=quorum.zk, use_new_coordinator=False, group_protocol=None):
         """
         Verifies correct group rebalance behavior as consumers are started and stopped.

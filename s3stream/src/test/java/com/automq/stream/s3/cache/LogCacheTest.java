@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.LogCache.LogCacheBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -28,6 +29,8 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,15 +44,15 @@ public class LogCacheTest {
     public void testPutGet() {
         LogCache logCache = new LogCache(1024 * 1024, 1024 * 1024);
 
-        logCache.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
-        logCache.put(new StreamRecordBatch(233L, 0L, 11L, 2, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 11L, 2, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         logCache.archiveCurrentBlock();
-        logCache.put(new StreamRecordBatch(233L, 0L, 13L, 2, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 13L, 2, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         logCache.archiveCurrentBlock();
-        logCache.put(new StreamRecordBatch(233L, 0L, 20L, 1, TestUtils.random(20)));
-        logCache.put(new StreamRecordBatch(233L, 0L, 21L, 1, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 20L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 21L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         List<StreamRecordBatch> records = logCache.get(233L, 10L, 21L, 1000);
         assertEquals(1, records.size());
@@ -74,7 +77,7 @@ public class LogCacheTest {
         LogCache cache = new LogCache(Integer.MAX_VALUE, Integer.MAX_VALUE);
 
         for (int i = 0; i < 100000; i++) {
-            cache.put(new StreamRecordBatch(233L, 0L, i, 1, TestUtils.random(1)));
+            cache.put(StreamRecordBatch.of(233L, 0L, i, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
         }
 
         long start = System.nanoTime();
@@ -91,13 +94,13 @@ public class LogCacheTest {
     public void testClearStreamRecords() {
         LogCache logCache = new LogCache(1024 * 1024, 1024 * 1024);
 
-        logCache.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
-        logCache.put(new StreamRecordBatch(233L, 0L, 11L, 2, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 11L, 2, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         logCache.archiveCurrentBlock();
-        logCache.put(new StreamRecordBatch(233L, 0L, 13L, 2, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(233L, 0L, 13L, 2, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
-        logCache.put(new StreamRecordBatch(234L, 0L, 13L, 2, TestUtils.random(20)));
+        logCache.put(StreamRecordBatch.of(234L, 0L, 13L, 2, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         assertTrue(logCache.blocks.get(0).containsStream(233L));
         assertTrue(logCache.blocks.get(1).containsStream(234L));
@@ -113,19 +116,19 @@ public class LogCacheTest {
     @Test
     public void testIsDiscontinuous() {
         LogCacheBlock left = new LogCacheBlock(1024L * 1024);
-        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
+        left.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         LogCacheBlock right = new LogCacheBlock(1024L * 1024);
-        right.put(new StreamRecordBatch(233L, 0L, 13L, 1, TestUtils.random(20)));
+        right.put(StreamRecordBatch.of(233L, 0L, 13L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         assertTrue(LogCache.isDiscontinuous(left, right));
 
         left = new LogCacheBlock(1024L * 1024);
-        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
-        left.put(new StreamRecordBatch(234L, 0L, 10L, 1, TestUtils.random(20)));
+        left.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        left.put(StreamRecordBatch.of(234L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
 
         right = new LogCacheBlock(1024L * 1024);
-        right.put(new StreamRecordBatch(233L, 0L, 11L, 1, TestUtils.random(20)));
+        right.put(StreamRecordBatch.of(233L, 0L, 11L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
         assertFalse(LogCache.isDiscontinuous(left, right));
     }
 
@@ -133,13 +136,13 @@ public class LogCacheTest {
     public void testMergeBlock() {
         long size = 0;
         LogCacheBlock left = new LogCacheBlock(1024L * 1024);
-        left.put(new StreamRecordBatch(233L, 0L, 10L, 1, TestUtils.random(20)));
-        left.put(new StreamRecordBatch(234L, 0L, 100L, 1, TestUtils.random(20)));
+        left.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        left.put(StreamRecordBatch.of(234L, 0L, 100L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
         size += left.size();
 
         LogCacheBlock right = new LogCacheBlock(1024L * 1024);
-        right.put(new StreamRecordBatch(233L, 0L, 11L, 1, TestUtils.random(20)));
-        right.put(new StreamRecordBatch(235L, 0L, 200L, 1, TestUtils.random(20)));
+        right.put(StreamRecordBatch.of(233L, 0L, 11L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+        right.put(StreamRecordBatch.of(235L, 0L, 200L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
         size += right.size();
 
         LogCache.mergeBlock(left, right);
@@ -165,6 +168,23 @@ public class LogCacheTest {
     }
 
     @Test
+    public void testMergeBlockDoesNotAliasSourceStreamCaches() {
+        LogCacheBlock left = new LogCacheBlock(1024L * 1024);
+        left.put(StreamRecordBatch.of(233L, 0L, 10L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+
+        LogCacheBlock right = new LogCacheBlock(1024L * 1024);
+        right.put(StreamRecordBatch.of(233L, 0L, 11L, 1, TestUtils.random(20), DefaultByteBufSupplier.INSTANCE));
+
+        LogCacheBlock merged = new LogCacheBlock(1024L * 1024);
+        LogCache.mergeBlock(merged, left);
+        LogCache.mergeBlock(merged, right);
+
+        assertEquals(1, left.map.get(233L).records.size());
+        assertEquals(11L, right.map.get(233L).records.get(0).getBaseOffset());
+        assertEquals(2, merged.map.get(233L).records.size());
+    }
+
+    @Test
     public void testTryMergeLogic() throws ExecutionException, InterruptedException {
         LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
         final long streamId = 233L;
@@ -172,7 +192,7 @@ public class LogCacheTest {
 
         // create multiple blocks, each containing one record for the same stream with contiguous offsets
         for (int i = 0; i < blocksToCreate; i++) {
-            logCache.put(new StreamRecordBatch(streamId, 0L, i, 1, TestUtils.random(1)));
+            logCache.put(StreamRecordBatch.of(streamId, 0L, i, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
             logCache.archiveCurrentBlock();
         }
 
@@ -203,6 +223,91 @@ public class LogCacheTest {
         assertEquals(2L, mergedCache.endOffset());
         assertEquals(0L, mergedCache.records.get(0).getBaseOffset());
         assertEquals(1L, mergedCache.records.get(1).getBaseOffset());
+    }
+
+    /**
+     * Verify that freeOpsModCount is incremented when a stream is removed from a block,
+     * and that tryMerge aborts the swap when the count changes between the two lock acquisitions.
+     */
+    @Test
+    public void testMergeAbortedWhenBlockMutatedDuringMerge() throws ExecutionException, InterruptedException {
+        LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
+        final long streamId1 = 1L;
+        final long streamId2 = 2L;
+
+        // Two blocks, each with two streams so clearStreamRecords can mutate one while merge runs.
+        logCache.put(StreamRecordBatch.of(streamId1, 0L, 0L, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+        logCache.put(StreamRecordBatch.of(streamId2, 0L, 0L, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+        LogCacheBlock block0 = logCache.archiveCurrentBlock();
+
+        logCache.put(StreamRecordBatch.of(streamId1, 0L, 1L, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+        logCache.put(StreamRecordBatch.of(streamId2, 0L, 1L, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+        LogCacheBlock block1 = logCache.archiveCurrentBlock();
+
+        assertEquals(0, block0.freeOpsModCount);
+        assertEquals(0, block1.freeOpsModCount);
+
+        // Simulate clearStreamRecords mutating blocks while tryMerge would be running.
+        block0.free = true;
+        block1.free = true;
+        logCache.clearStreamRecords(streamId2);
+
+        assertEquals(1, block0.freeOpsModCount);
+        assertEquals(1, block1.freeOpsModCount);
+
+        // tryMerge should detect the mutation and NOT replace the blocks.
+        int blocksBefore = logCache.blocks.size();
+        logCache.markFree(block0).get();
+        // blocks should not have been merged since freeOpsModCount changed
+        assertEquals(blocksBefore, logCache.blocks.size());
+    }
+
+    /**
+     * Concurrent stress test: markFree (which triggers tryMerge) races with clearStreamRecords.
+     * Without the freeOpsModCount guard this would cause IllegalReferenceCountException.
+     */
+    @Test
+    public void testNoDoubleReleaseUnderConcurrentClearAndMerge() throws Exception {
+        final int iterations = 200;
+        for (int iter = 0; iter < iterations; iter++) {
+            LogCache logCache = new LogCache(Long.MAX_VALUE, 10_000L);
+            final long streamId1 = 1L;
+            final long streamId2 = 2L;
+
+            // Fill enough blocks to exceed MERGE_BLOCK_THRESHOLD so tryMerge actually runs.
+            for (int i = 0; i < LogCache.MERGE_BLOCK_THRESHOLD + 2; i++) {
+                logCache.put(StreamRecordBatch.of(streamId1, 0L, i, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+                logCache.put(StreamRecordBatch.of(streamId2, 0L, i, 1, TestUtils.random(1), DefaultByteBufSupplier.INSTANCE));
+                LogCacheBlock b = logCache.archiveCurrentBlock();
+                b.free = true;
+            }
+
+            CountDownLatch latch = new CountDownLatch(1);
+
+            // Thread 1: trigger tryMerge via markFree
+            CompletableFuture<Void> mergeFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    latch.await();
+                    logCache.markFree(logCache.blocks.get(0)).get();
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            // Thread 2: concurrently clear streamId2 from all blocks
+            CompletableFuture<Void> clearFuture = CompletableFuture.runAsync(() -> {
+                try {
+                    latch.await();
+                    logCache.clearStreamRecords(streamId2);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+
+            latch.countDown();
+            // Should complete without IllegalReferenceCountException
+            CompletableFuture.allOf(mergeFuture, clearFuture).get();
+        }
     }
 
 }

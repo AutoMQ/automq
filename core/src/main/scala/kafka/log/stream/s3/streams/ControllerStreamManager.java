@@ -43,6 +43,13 @@ import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamRespons
 import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.AdvanceEmptyCursor;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePublish;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupCommit;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.CleanupPrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.AbstractRequest.Builder;
@@ -52,16 +59,21 @@ import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsResponse;
 import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
-import com.automq.stream.s3.streams.StreamCloseHook;
+import com.automq.stream.s3.streams.StreamArchiveOperation;
+import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.s3.streams.StreamMetadataListener;
-import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
+import com.google.common.annotations.VisibleForTesting;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
@@ -69,10 +81,12 @@ import org.slf4j.Logger;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class ControllerStreamManager implements StreamManager {
+    private static final long STREAM_BATCH_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
     private final Logger logger;
     private final StreamMetadataManager streamMetadataManager;
     private final int nodeId;
@@ -81,7 +95,6 @@ public class ControllerStreamManager implements StreamManager {
     private final ControllerRequestSender requestSender;
     private final Supplier<AutoMQVersion> version;
     private final boolean failoverMode;
-    private StreamCloseHook streamCloseHook;
 
     public ControllerStreamManager(StreamMetadataManager streamMetadataManager, ControllerRequestSender requestSender,
         int nodeId, long nodeEpoch, Supplier<AutoMQVersion> version, boolean failoverMode) {
@@ -92,7 +105,14 @@ public class ControllerStreamManager implements StreamManager {
         this.requestSender = requestSender;
         this.version = version;
         this.failoverMode = failoverMode;
-        this.streamCloseHook = id -> CompletableFuture.completedFuture(null);
+    }
+
+    /**
+     * Returns whether the finalized cluster version supports ownership transfer before force upload completes.
+     */
+    @Override
+    public boolean isFastCloseSupported() {
+        return version.get().isFastPartitionReassignmentSupported();
     }
 
     @Override
@@ -228,6 +248,11 @@ public class ControllerStreamManager implements StreamManager {
             }
 
             @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
+            }
+
+            @Override
             public Object batchKey() {
                 return Pair.of(nodeId, apiKey());
             }
@@ -345,24 +370,44 @@ public class ControllerStreamManager implements StreamManager {
 
     @Override
     public CompletableFuture<Void> closeStream(long streamId, long epoch) {
-        return closeStream(streamId, epoch, nodeId, nodeEpoch);
+        return closeStream(streamId, epoch, -1L);
+    }
+
+    /**
+     * Closes a stream with an optional fast-close boundary when the finalized version supports it.
+     */
+    @Override
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, long endOffset) {
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, endOffset);
     }
 
     public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch) {
-        try {
-            CompletableFuture<Void> cf = new CompletableFuture<>();
-            this.streamCloseHook.beforeStreamClose(streamId)
-                .whenComplete((nil, ex) -> FutureUtil.propagate(closeStream0(streamId, epoch, nodeId, nodeEpoch), cf));
-            return cf;
-        } catch (Throwable ex) {
-            return closeStream0(streamId, epoch, nodeId, nodeEpoch);
-        }
+        return closeStream(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Closes a stream for the supplied node identity and optional fast-close boundary.
+     */
+    public CompletableFuture<Void> closeStream(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
+        return closeStream0(streamId, epoch, nodeId, nodeEpoch, endOffset);
     }
 
     public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch) {
+        return closeStream0(streamId, epoch, nodeId, nodeEpoch, -1L);
+    }
+
+    /**
+     * Sends the close request without invoking the stream-close hook.
+     */
+    public CompletableFuture<Void> closeStream0(long streamId, long epoch, int nodeId, long nodeEpoch,
+        long endOffset) {
         CloseStreamRequest request = new CloseStreamRequest()
             .setStreamId(streamId)
             .setStreamEpoch(epoch);
+        if (endOffset >= 0 && version.get().isFastPartitionReassignmentSupported()) {
+            request.setEndOffset(endOffset);
+        }
         WrapRequest req = new BatchRequest() {
             @Override
             public Builder addSubRequest(Builder builder) {
@@ -374,6 +419,11 @@ public class ControllerStreamManager implements StreamManager {
             @Override
             public ApiKeys apiKey() {
                 return ApiKeys.CLOSE_STREAMS;
+            }
+
+            @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
             }
 
             @Override
@@ -400,10 +450,13 @@ public class ControllerStreamManager implements StreamManager {
                     logger.error("Node epoch expired or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
                 case STREAM_NOT_EXIST:
-                case STREAM_FENCED:
                 case STREAM_INNER_ERROR:
                     logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_FENCED:
+                    logger.error("Unexpected error while closing stream: {}, code: {}", request, Errors.forCode(resp.errorCode()));
+                    throw new StreamClientException(ErrorCode.EXPIRED_STREAM_EPOCH,
+                        Errors.forCode(resp.errorCode()).message());
                 default:
                     logger.warn("Error while closing stream: {}, code: {}, retry later", request, Errors.forCode(resp.errorCode()));
                     return ResponseHandleResult.withRetry();
@@ -468,8 +521,133 @@ public class ControllerStreamManager implements StreamManager {
         return future;
     }
 
-    @Override
-    public void setStreamCloseHook(StreamCloseHook hook) {
-        this.streamCloseHook = hook;
+    /**
+     * Sends one typed Archive operation through the bounded accumulator.
+     */
+    private CompletableFuture<Void> sendArchiveOperation(StreamArchiveOperation operation) {
+        UpdateStreamArchiveRequestData.StreamArchiveOperation update = toRequest(operation);
+        WrapRequest request = new BatchRequest() {
+            @Override
+            public Builder addSubRequest(Builder builder) {
+                UpdateStreamArchiveRequest.Builder realBuilder = (UpdateStreamArchiveRequest.Builder) builder;
+                return realBuilder.addSubRequest(update);
+            }
+
+            @Override
+            public ApiKeys apiKey() {
+                return ApiKeys.UPDATE_STREAM_ARCHIVE;
+            }
+
+            @Override
+            public long lingerNanos() {
+                return STREAM_BATCH_LINGER_NANOS;
+            }
+
+            @Override
+            public int maxBatchSize() {
+                return 1_000;
+            }
+
+            @Override
+            public Object batchKey() {
+                return Pair.of(nodeId, apiKey());
+            }
+
+            @Override
+            public Builder toRequestBuilder() {
+                return new UpdateStreamArchiveRequest.Builder(new UpdateStreamArchiveRequestData()
+                    .setNodeId(nodeId)
+                    .setNodeEpoch(nodeEpoch)).addSubRequest(update);
+            }
+        };
+        CompletableFuture<Void> senderFuture = new CompletableFuture<>();
+        CompletableFuture<Void> resultFuture = new CompletableFuture<>();
+        RequestTask<UpdateStreamResponse, Void> task = new RequestTask<>(request, senderFuture, response -> {
+            handleArchiveResponse(Errors.forCode(response.errorCode()), resultFuture);
+            return ResponseHandleResult.withSuccess(null);
+        });
+        senderFuture.whenComplete((ignored, exception) -> {
+            if (exception != null) {
+                resultFuture.completeExceptionally(exception);
+            }
+        });
+        requestSender.send(task);
+        return resultFuture;
     }
+
+    @Override
+    public CompletableFuture<Void> updateStreamArchive(StreamArchiveOperation operation) {
+        return sendArchiveOperation(operation);
+    }
+
+    private static UpdateStreamArchiveRequestData.StreamArchiveOperation toRequest(StreamArchiveOperation operation) {
+        UpdateStreamArchiveRequestData.StreamArchiveOperation request =
+            new UpdateStreamArchiveRequestData.StreamArchiveOperation()
+                .setStreamId(operation.streamId()).setStreamEpoch(operation.streamEpoch());
+        if (operation instanceof StreamArchiveOperation.ArchivePrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+                .setArchivePrepare(new ArchivePrepare()
+                    .setExpectedArchiveEndOffset(prepare.expectedArchiveEndOffset())
+                    .setArchivePreparedEndOffset(prepare.archivePreparedEndOffset())
+                    .setArchiveObjectIds(prepare.archiveObjectIds()));
+        }
+        if (operation instanceof StreamArchiveOperation.ArchivePublish publish) {
+            return request.setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+                .setArchivePublish(new ArchivePublish()
+                    .setExpectedArchiveEndOffset(publish.expectedArchiveEndOffset())
+                    .setArchiveEndOffset(publish.archiveEndOffset())
+                    .setArchiveSize(publish.archiveSize()));
+        }
+        if (operation instanceof StreamArchiveOperation.CleanupPrepare prepare) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_PREPARE.value())
+                .setCleanupPrepare(new CleanupPrepare()
+                    .setExpectedArchiveStartOffset(prepare.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(prepare.archiveCleanupEndOffset())
+                    .setArchiveCleanupSize(prepare.archiveCleanupSize()));
+        }
+        if (operation instanceof StreamArchiveOperation.CleanupCommit commit) {
+            return request.setOperation(StreamArchiveOperationType.CLEANUP_COMMIT.value())
+                .setCleanupCommit(new CleanupCommit()
+                    .setExpectedArchiveStartOffset(commit.expectedArchiveStartOffset())
+                    .setArchiveCleanupEndOffset(commit.archiveCleanupEndOffset()));
+        }
+        StreamArchiveOperation.AdvanceEmptyCursor advance = (StreamArchiveOperation.AdvanceEmptyCursor) operation;
+        return request.setOperation(StreamArchiveOperationType.ADVANCE_EMPTY_CURSOR.value())
+            .setAdvanceEmptyCursor(new AdvanceEmptyCursor()
+                .setExpectedArchiveOffset(advance.expectedArchiveOffset())
+                .setNewArchiveOffset(advance.newArchiveOffset()));
+    }
+
+    /**
+     * Returns the locally observed complete Archive state for an owned Stream.
+     */
+    @Override
+    public CompletableFuture<StreamArchiveState> getStreamArchive(long streamId, long streamEpoch) {
+        return CompletableFuture.completedFuture(streamMetadataManager.getStreamArchive(streamId, streamEpoch));
+    }
+
+    @VisibleForTesting
+    void handleArchiveResponse(Errors error, CompletableFuture<Void> resultFuture) {
+        switch (error) {
+            case NONE:
+                resultFuture.complete(null);
+                return;
+            case STREAM_ARCHIVE_STATE_CONFLICT:
+                resultFuture.completeExceptionally(error.exception());
+                return;
+            case UNSUPPORTED_VERSION:
+            case NODE_EPOCH_EXPIRED:
+            case NODE_EPOCH_NOT_EXIST:
+            case NODE_FENCED:
+            case STREAM_NOT_EXIST:
+            case STREAM_FENCED:
+            case INVALID_REQUEST:
+                resultFuture.completeExceptionally(error.exception());
+                return;
+            default:
+                resultFuture.completeExceptionally(Errors.UNKNOWN_SERVER_ERROR.exception(
+                    "Unexpected UpdateStreamArchive error: " + error));
+        }
+    }
+
 }

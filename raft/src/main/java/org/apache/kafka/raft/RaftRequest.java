@@ -20,6 +20,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.network.ListenerName;
 import org.apache.kafka.common.protocol.ApiMessage;
 
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public abstract class RaftRequest implements RaftMessage {
@@ -50,6 +51,9 @@ public abstract class RaftRequest implements RaftMessage {
     public static final class Inbound extends RaftRequest {
         private final short apiVersion;
         private final ListenerName listenerName;
+        // AutoMQ inject start
+        private final Optional<String> connectionId;
+        // AutoMQ inject end
 
         public final CompletableFuture<RaftResponse.Outbound> completion = new CompletableFuture<>();
 
@@ -60,11 +64,37 @@ public abstract class RaftRequest implements RaftMessage {
             ApiMessage data,
             long createdTimeMs
         ) {
+            // AutoMQ inject start
+            this(listenerName, correlationId, apiVersion, data, createdTimeMs, null);
+            // AutoMQ inject end
+        }
+
+        // AutoMQ inject start
+        /**
+         * Create an inbound Raft request with the server-side network connection identifier.
+         */
+        public Inbound(
+            ListenerName listenerName,
+            int correlationId,
+            short apiVersion,
+            ApiMessage data,
+            long createdTimeMs,
+            String connectionId
+        ) {
             super(correlationId, data, createdTimeMs);
 
             this.listenerName = listenerName;
             this.apiVersion = apiVersion;
+            this.connectionId = Optional.ofNullable(connectionId);
         }
+
+        /**
+         * Return the server-side connection identifier when the request came from the network.
+         */
+        public Optional<String> connectionId() {
+            return connectionId;
+        }
+        // AutoMQ inject end
 
         public short apiVersion() {
             return apiVersion;

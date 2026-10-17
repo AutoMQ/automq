@@ -27,6 +27,7 @@ import org.apache.kafka.controller.BrokerHeartbeatManager.UsableBrokerIterator;
 import org.apache.kafka.controller.stream.NodeState;
 import org.apache.kafka.metadata.placement.UsableBroker;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -254,6 +255,30 @@ public class BrokerHeartbeatManagerTest {
         manager.maybeUpdateControlledShutdownOffset(3, 102);
         assertEquals(OptionalLong.of(101), manager.controlledShutdownOffset(3));
     }
+
+    // AutoMQ inject start
+    /**
+     * Given a persisted controlled shutdown whose heartbeat soft state was lost, when a resumed
+     * drain batch completes, then its real metadata offset restores and advances the barrier.
+     */
+    @Test
+    @Tag("S3Unit")
+    public void testAdvanceControlledShutdownOffsetRestoresSoftState() {
+        BrokerHeartbeatManager manager = newBrokerHeartbeatManager();
+        manager.register(0, false);
+        manager.register(1, false);
+        manager.touch(0, false, 98);
+        manager.touch(1, false, 100);
+        assertEquals(BrokerControlState.UNFENCED, manager.currentBrokerState(0));
+        assertEquals(98L, manager.lowestActiveOffset());
+
+        manager.advanceControlledShutdownOffset(0, 101);
+
+        assertEquals(BrokerControlState.CONTROLLED_SHUTDOWN, manager.currentBrokerState(0));
+        assertEquals(OptionalLong.of(101), manager.controlledShutdownOffset(0));
+        assertEquals(100L, manager.lowestActiveOffset());
+    }
+    // AutoMQ inject end
 
     @Test
     public void testBrokerHeartbeatStateList() {

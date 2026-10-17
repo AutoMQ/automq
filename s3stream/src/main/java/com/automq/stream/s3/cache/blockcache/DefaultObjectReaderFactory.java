@@ -46,7 +46,9 @@ public class DefaultObjectReaderFactory implements ObjectReaderFactory {
     public synchronized ObjectReader get(S3ObjectMetadata metadata) {
         AtomicReference<ObjectReader> objectReaderRef = new AtomicReference<>();
         objectReaders.inLockRun(() -> {
-            ObjectReader objectReader = objectReaders.computeIfAbsent(metadata.objectId(), k -> ObjectReader.reader(metadata, objectStorage.get()));
+            ObjectReaderLRUCache.Key key = new ObjectReaderLRUCache.Key(metadata.bucket(), metadata.key());
+            ObjectReader objectReader = objectReaders.computeIfAbsent(key,
+                k -> ObjectReader.reader(metadata, objectStorage.get()));
             objectReader.retain();
             objectReaderRef.set(objectReader);
         });

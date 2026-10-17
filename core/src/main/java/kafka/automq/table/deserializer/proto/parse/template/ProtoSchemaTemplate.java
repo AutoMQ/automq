@@ -67,6 +67,7 @@ public abstract class ProtoSchemaTemplate<T> {
             syntax,
             imports.build(),
             publicImports.build(),
+            Collections.emptyList(), // weak imports
             types.build(),
             services.build(),
             Collections.emptyList(), // extends

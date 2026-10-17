@@ -19,8 +19,12 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -46,7 +50,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
@@ -62,8 +65,16 @@ public class LogCache {
     private static final Consumer<LogCacheBlock> DEFAULT_BLOCK_FREE_LISTENER = block -> {
     };
     private static final int MAX_BLOCKS_COUNT = 64;
-    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(
+    private static final ExecutorService LOG_CACHE_ASYNC_EXECUTOR = Threads.newFixedFastThreadLocalThreadPool(
         1, "LOG_CACHE_ASYNC", true, LOGGER);
+    private static final DeltaHistogram APPEND_STORAGE_LOG_CACHE_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_HIT_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_HIT);
+    private static final DeltaHistogram READ_STORAGE_LOG_CACHE_MISS_LATENCY = OperationLatencyMetrics
+        .operation(MetricsLevel.INFO, S3Operation.READ_STORAGE_LOG_CACHE, S3StreamMetricsConstant.LABEL_STATUS_MISS);
+    // Controlling the overhead of each cached record can prevent excessive heap memory usage for small-sized records
+    private static final int RECORD_OVERHEAD = 1024;
     static final int MERGE_BLOCK_THRESHOLD = 8;
     final List<LogCacheBlock> blocks = new ArrayList<>();
     final AtomicInteger blockCount = new AtomicInteger(1);
@@ -71,6 +82,7 @@ public class LogCache {
     private final long cacheBlockMaxSize;
     private final int maxCacheBlockStreamCount;
     private final AtomicLong size = new AtomicLong();
+    private final AtomicLong evictableSize = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -84,7 +96,7 @@ public class LogCache {
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
-        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, s -> 0);
+        this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
         this.blockFreeListener = blockFreeListener;
     }
@@ -100,20 +112,24 @@ public class LogCache {
     /**
      * Put a record batch into the cache.
      * record batched in the same stream should be put in order.
+     *
+     * @return true if the record was successfully added, false if the block is full (caller should archive and retry)
      */
     public boolean put(StreamRecordBatch recordBatch) {
         long startTime = System.nanoTime();
         tryRealFree();
-        size.addAndGet(recordBatch.occupiedSize());
         readLock.lock();
-        boolean full;
+        boolean added;
         try {
-            full = activeBlock.put(recordBatch);
+            added = activeBlock.put(recordBatch);
         } finally {
             readLock.unlock();
         }
-        StorageOperationStats.getInstance().appendLogCacheStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
-        return full;
+        if (added) {
+            size.addAndGet(recordBatch.size() + RECORD_OVERHEAD);
+        }
+        APPEND_STORAGE_LOG_CACHE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        return added;
     }
 
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -164,8 +180,12 @@ public class LogCache {
 
         long timeElapsed = TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS);
         boolean isCacheHit = !records.isEmpty() && records.get(0).getBaseOffset() <= startOffset;
-        StorageOperationStats.getInstance().readLogCacheStats(isCacheHit).record(timeElapsed);
+        readLogCacheStats(isCacheHit).record(timeElapsed);
         return records;
+    }
+
+    private static DeltaHistogram readLogCacheStats(boolean isCacheHit) {
+        return isCacheHit ? READ_STORAGE_LOG_CACHE_HIT_LATENCY : READ_STORAGE_LOG_CACHE_MISS_LATENCY;
     }
 
     public List<StreamRecordBatch> get0(Long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -221,15 +241,7 @@ public class LogCache {
         try {
             LogCacheBlock block = activeBlock;
             block.lastRecordOffset = lastRecordOffset;
-            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount, streamId -> {
-                StreamCache previousStreamCache = block.map.get(streamId);
-                if (previousStreamCache != null) {
-                    // Let the initial capacity be 10% larger than the previous block's stream cache to avoid frequent resizing.
-                    return previousStreamCache.count() * 10 / 9;
-                } else {
-                    return 0;
-                }
-            });
+            activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
             blocks.add(activeBlock);
             blockCount.set(blocks.size());
             return block;
@@ -265,7 +277,13 @@ public class LogCache {
     }
 
     public CompletableFuture<Void> markFree(LogCacheBlock block) {
-        block.free = true;
+        writeLock.lock();
+        try {
+            block.free = true;
+            updateEvictableSize();
+        } finally {
+            writeLock.unlock();
+        }
         tryRealFree();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> {
@@ -277,6 +295,17 @@ public class LogCache {
             }
         });
         return cf;
+    }
+
+    private void updateEvictableSize() {
+        long size = 0L;
+        for (LogCacheBlock block : blocks) {
+            if (!block.free) {
+                break;
+            }
+            size += block.size();
+        }
+        evictableSize.set(size);
     }
 
     private void tryRealFree() {
@@ -305,10 +334,11 @@ public class LogCache {
                     break;
                 }
             }
+            size.addAndGet(-freeSize);
+            updateEvictableSize();
         } finally {
             writeLock.unlock();
         }
-        size.addAndGet(-freeSize);
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
             blockFreeListener.accept(b);
             b.free();
@@ -321,6 +351,8 @@ public class LogCache {
         for (; ; ) {
             LogCacheBlock left;
             LogCacheBlock right;
+            long leftFreeOpsModCount;
+            long rightFreeOpsModCount;
             writeLock.lock();
             try {
                 if (blocks.size() <= MERGE_BLOCK_THRESHOLD || mergeStartIndex + 1 >= blocks.size()) {
@@ -335,6 +367,8 @@ public class LogCache {
                     mergeStartIndex++;
                     continue;
                 }
+                leftFreeOpsModCount = left.freeOpsModCount;
+                rightFreeOpsModCount = right.freeOpsModCount;
             } finally {
                 writeLock.unlock();
             }
@@ -352,6 +386,8 @@ public class LogCache {
                 if (blocks.size() > mergeStartIndex + 1
                     && blocks.get(mergeStartIndex) == left
                     && blocks.get(mergeStartIndex + 1) == right
+                    && left.freeOpsModCount == leftFreeOpsModCount
+                    && right.freeOpsModCount == rightFreeOpsModCount
                 ) {
                     blocks.set(mergeStartIndex, newBlock);
                     blocks.remove(mergeStartIndex + 1);
@@ -377,6 +413,13 @@ public class LogCache {
 
     public long capacity() {
         return capacity;
+    }
+
+    /**
+     * Returns the size of the contiguous free blocks at the head of the FIFO cache that can be evicted immediately.
+     */
+    public long evictableSize() {
+        return evictableSize.get();
     }
 
     public void clearStreamRecords(long streamId) {
@@ -412,16 +455,14 @@ public class LogCache {
         synchronized (left) {
             left.size.addAndGet(right.size());
             left.lastRecordOffset = right.lastRecordOffset;
-            left.map.forEach((streamId, leftStreamCache) -> {
-                StreamCache rightStreamCache = right.map.get(streamId);
-                if (rightStreamCache != null) {
+            right.map.forEach((streamId, rightStreamCache) -> {
+                StreamCache leftStreamCache = left.map.get(streamId);
+                if (leftStreamCache == null) {
+                    left.map.put(streamId, new StreamCache(rightStreamCache));
+                } else {
                     leftStreamCache.records.addAll(rightStreamCache.records);
                     leftStreamCache.endOffset(rightStreamCache.endOffset());
-                }
-            });
-            right.map.forEach((streamId, rightStreamCache) -> {
-                if (!left.map.containsKey(streamId)) {
-                    left.map.put(streamId, rightStreamCache);
+                    leftStreamCache.offsetIndexMap.clear();
                 }
             });
         }
@@ -436,19 +477,19 @@ public class LogCache {
         private final long createdTimestamp = System.currentTimeMillis();
         private final AtomicLong size = new AtomicLong();
         private final List<FreeListener> freeListeners = new ArrayList<>();
-        private final Function<Long, Integer> streamRecordsCapacityHint;
+        private volatile boolean overflow;
         volatile boolean free;
+        long freeOpsModCount;
         private RecordOffset lastRecordOffset;
 
-        public LogCacheBlock(long maxSize, int maxStreamCount, Function<Long, Integer> streamRecordsCapacityHint) {
+        public LogCacheBlock(long maxSize, int maxStreamCount) {
             this.blockId = BLOCK_ID_ALLOC.getAndIncrement();
             this.maxSize = maxSize;
             this.maxStreamCount = maxStreamCount;
-            this.streamRecordsCapacityHint = streamRecordsCapacityHint;
         }
 
         public LogCacheBlock(long maxSize) {
-            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, s -> 0);
+            this(maxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT);
         }
 
         public long blockId() {
@@ -456,19 +497,35 @@ public class LogCache {
         }
 
         public boolean isFull() {
-            return size.get() >= maxSize || map.size() >= maxStreamCount;
+            return overflow || size.get() >= maxSize || map.size() >= maxStreamCount;
         }
 
+        /**
+         * @return true if the record was successfully added, false if the block is full or would overflow
+         */
         public boolean put(StreamRecordBatch recordBatch) {
-            map.compute(recordBatch.getStreamId(), (id, cache) -> {
-                if (cache == null) {
-                    cache = new StreamCache(streamRecordsCapacityHint.apply(id));
-                }
-                cache.add(recordBatch);
-                return cache;
-            });
-            size.addAndGet(recordBatch.occupiedSize());
-            return isFull();
+            return put(recordBatch, recordBatch.size());
+        }
+
+        /**
+         * Adds a record using the supplied payload size for block accounting. Recovery can account for a link
+         * record's decoded size before allocating its payload. The block takes ownership only when this returns true.
+         *
+         * @param recordBatch record to add in stream offset order
+         * @param recordSize payload size, or an upper bound on the decoded payload size
+         * @return true if added, false if the block is full or the stream offset delta would overflow
+         */
+        public boolean put(StreamRecordBatch recordBatch, int recordSize) {
+            if (isFull()) {
+                return false;
+            }
+            StreamCache cache = map.computeIfAbsent(recordBatch.getStreamId(), id -> new StreamCache());
+            if (!cache.add(recordBatch)) {
+                overflow = true;
+                return false;
+            }
+            size.addAndGet((long) recordSize + RECORD_OVERHEAD);
+            return true;
         }
 
         public List<StreamRecordBatch> get(Long streamId, long startOffset, long endOffset, int maxBytes) {
@@ -508,6 +565,7 @@ public class LogCache {
 
         public void free() {
             suppress(() -> {
+                freeOpsModCount++;
                 List<StreamRangeBound> streams = new ArrayList<>(map.size());
                 map.forEach((streamId, records) -> {
                     streams.add(new StreamRangeBound(streamId, records.startOffset(), records.endOffset()));
@@ -521,6 +579,7 @@ public class LogCache {
         public void free(long streamId) {
             StreamCache streamCache = map.remove(streamId);
             if (streamCache != null) {
+                freeOpsModCount++;
                 LOG_CACHE_ASYNC_EXECUTOR.execute(() -> suppress(streamCache::free, LOGGER));
             }
         }
@@ -587,21 +646,35 @@ public class LogCache {
         long endOffset = NOOP_OFFSET;
         Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
 
-        public StreamCache(int initialCapacity) {
-            this.records = new ArrayList<>(initialCapacity);
+        public StreamCache() {
+            this.records = new ArrayList<>();
         }
 
-        synchronized void add(StreamRecordBatch recordBatch) {
+        StreamCache(StreamCache other) {
+            this.records = new ArrayList<>(other.records);
+            this.startOffset = other.startOffset();
+            this.endOffset = other.endOffset();
+        }
+
+        /**
+         * @return true if the record was successfully added, false if it would cause offset overflow
+         */
+        synchronized boolean add(StreamRecordBatch recordBatch) {
             if (recordBatch.getBaseOffset() != endOffset && endOffset != NOOP_OFFSET) {
                 RuntimeException ex = new IllegalArgumentException(String.format("streamId=%s record batch base offset mismatch, expect %s, actual %s",
                     recordBatch.getStreamId(), endOffset, recordBatch.getBaseOffset()));
                 LOGGER.error("[FATAL]", ex);
+            }
+            long effectiveStartOffset = startOffset == NOOP_OFFSET ? recordBatch.getBaseOffset() : startOffset;
+            if (recordBatch.getLastOffset() - effectiveStartOffset > Integer.MAX_VALUE) {
+                return false;
             }
             records.add(recordBatch);
             if (startOffset == NOOP_OFFSET) {
                 startOffset = recordBatch.getBaseOffset();
             }
             endOffset = recordBatch.getLastOffset();
+            return true;
         }
 
         synchronized List<StreamRecordBatch> get(long startOffset, long endOffset, int maxBytes) {

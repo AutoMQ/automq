@@ -17,7 +17,6 @@
 
 package kafka.server
 
-import com.google.common.util.concurrent.MoreExecutors
 import com.yammer.metrics.core.{Gauge, Meter, Timer}
 import kafka.api._
 import kafka.cluster.PartitionTest.MockPartitionListener
@@ -3448,7 +3447,6 @@ class ReplicaManagerTest {
     val mockProducePurgatory = new DelayedOperationPurgatory[DelayedProduce](
       purgatoryName = "Produce", timer, reaperEnabled = false)
 
-    DelayedFetch.setFetchExecutor(MoreExecutors.newDirectExecutorService())
     val mockFetchPurgatory = new DelayedOperationPurgatory[DelayedFetch](
       purgatoryName = "Fetch", timer, reaperEnabled = false)
 

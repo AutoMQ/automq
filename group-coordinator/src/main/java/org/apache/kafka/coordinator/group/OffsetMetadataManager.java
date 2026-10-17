@@ -20,6 +20,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.errors.ApiException;
 import org.apache.kafka.common.errors.GroupIdNotFoundException;
 import org.apache.kafka.common.errors.StaleMemberEpochException;
+import org.apache.kafka.common.internals.Topic;
 import org.apache.kafka.common.message.OffsetCommitRequestData;
 import org.apache.kafka.common.message.OffsetCommitResponseData;
 import org.apache.kafka.common.message.OffsetCommitResponseData.OffsetCommitResponsePartition;
@@ -81,6 +82,15 @@ import static org.apache.kafka.coordinator.group.metrics.GroupCoordinatorMetrics
  *    handling as well as during the initial loading of the records from the partitions.
  */
 public class OffsetMetadataManager {
+
+    // AutoMQ inject start
+    public static final String FORCE_COMMIT_SENTINEL_TOPIC = Topic.FORCE_COMMIT_SENTINEL_TOPIC;
+
+    private static boolean isForceCommit(OffsetCommitRequestData request) {
+        return request.topics().stream()
+            .anyMatch(t -> FORCE_COMMIT_SENTINEL_TOPIC.equals(t.name()));
+    }
+    // AutoMQ inject end
 
     public static class Builder {
         private LogContext logContext = null;
@@ -302,6 +312,19 @@ public class OffsetMetadataManager {
         RequestContext context,
         OffsetCommitRequestData request
     ) throws ApiException {
+        // AutoMQ inject start
+        if (isForceCommit(request) && request.generationIdOrMemberEpoch() < 0) {
+            if (!request.memberId().isEmpty() || request.groupInstanceId() != null) {
+                throw Errors.INVALID_REQUEST.exception();
+            }
+            try {
+                return groupMetadataManager.group(request.groupId());
+            } catch (GroupIdNotFoundException ex) {
+                return groupMetadataManager.getOrMaybeCreateClassicGroup(request.groupId(), true);
+            }
+        }
+        // AutoMQ inject end
+
         Group group;
         try {
             group = groupMetadataManager.group(request.groupId());
@@ -451,9 +474,15 @@ public class OffsetMetadataManager {
     ) throws ApiException {
         Group group = validateOffsetCommit(context, request);
 
+        // AutoMQ inject start
+        boolean force = isForceCommit(request);
+        // AutoMQ inject end
+
         // In the old consumer group protocol, the offset commits maintain the session if
         // the group is in Stable or PreparingRebalance state.
-        if (group.type() == Group.GroupType.CLASSIC) {
+        // AutoMQ inject start
+        if (!force && group.type() == Group.GroupType.CLASSIC) {
+        // AutoMQ inject end
             ClassicGroup classicGroup = (ClassicGroup) group;
             if (classicGroup.isInState(ClassicGroupState.STABLE) || classicGroup.isInState(ClassicGroupState.PREPARING_REBALANCE)) {
                 groupMetadataManager.rescheduleClassicGroupMemberHeartbeat(
@@ -468,7 +497,35 @@ public class OffsetMetadataManager {
         final long currentTimeMs = time.milliseconds();
         final OptionalLong expireTimestampMs = expireTimestampMs(request.retentionTimeMs(), currentTimeMs);
 
+        // AutoMQ inject start
+        // Step 1: If force and group is non-empty, fence all members.
+        if (force && !group.isEmpty()) {
+            if (group.type() == Group.GroupType.CLASSIC) {
+                ClassicGroup classicGroup = (ClassicGroup) group;
+                classicGroup.completeAllJoinFutures(Errors.UNKNOWN_MEMBER_ID);
+                classicGroup.completeAllSyncFutures(Errors.REBALANCE_IN_PROGRESS);
+                groupMetadataManager.forceRemoveAllClassicGroupMembers(classicGroup, records);
+            } else if (group.type() == Group.GroupType.CONSUMER) {
+                groupMetadataManager.forceRemoveAllConsumerGroupMembers(
+                    (org.apache.kafka.coordinator.group.modern.consumer.ConsumerGroup) group, records);
+            }
+        }
+        // AutoMQ inject end
+
         request.topics().forEach(topic -> {
+            // AutoMQ inject start
+            if (FORCE_COMMIT_SENTINEL_TOPIC.equals(topic.name())) {
+                // Add success response for sentinel topic but don't write offset records.
+                OffsetCommitResponseTopic topicResponse = new OffsetCommitResponseTopic().setName(topic.name());
+                topic.partitions().forEach(p -> topicResponse.partitions().add(
+                    new OffsetCommitResponsePartition()
+                        .setPartitionIndex(p.partitionIndex())
+                        .setErrorCode(Errors.NONE.code())));
+                response.topics().add(topicResponse);
+                return;
+            }
+            // AutoMQ inject end
+
             final OffsetCommitResponseTopic topicResponse = new OffsetCommitResponseTopic().setName(topic.name());
             response.topics().add(topicResponse);
 

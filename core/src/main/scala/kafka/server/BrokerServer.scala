@@ -22,19 +22,23 @@ import kafka.automq.backpressure.{BackPressureConfig, BackPressureManager, Defau
 import kafka.automq.failover.FailoverListener
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.interceptor.{NoopTrafficInterceptor, TrafficInterceptor}
+import kafka.automq.retrystorm.{RetryStormBackoffConfig, RetryStormBackoffManager, RetryStormBackoffStateStore}
 import kafka.automq.table.TableManager
-import kafka.automq.zerozone.{ConfirmWALProvider, DefaultClientRackProvider, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
+import kafka.automq.zerozone.{ConfirmWALProvider, DefaultZeroZoneConfig, DefaultConfirmWALProvider, DefaultRouterChannelProvider, DefaultLinkRecordDecoder, RouterChannelProvider, ZeroZoneTrafficInterceptor}
 import kafka.cluster.EndPoint
 import kafka.coordinator.group.{CoordinatorLoaderImpl, CoordinatorPartitionWriter, GroupCoordinatorAdapter}
 import kafka.coordinator.transaction.{ProducerIdManager, TransactionCoordinator}
 import kafka.log.LogManager
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.reassignment.FastPartitionReassignmentManager
 import kafka.network.{DataPlaneAcceptor, SocketServer}
 import kafka.raft.KafkaRaftManager
 import kafka.server.metadata.{AclPublisher, BrokerMetadataPublisher, ClientQuotaMetadataManager, DelegationTokenPublisher, DynamicClientQuotaPublisher, DynamicConfigPublisher, KRaftMetadataCache, ScramPublisher}
-import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, PartitionLifecycleListener}
+import kafka.server.retrystorm.{RetryStormBackoffPolicy, RetryStormDelayedResponseScheduler, RetryStormResponseGate, SampledRetryStormBackoffLogger}
+import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, FetchListener, PartitionLifecycleListener}
 import kafka.utils.CoreUtils
+import org.apache.kafka.clients.admin.ClusterEventPublisher
 import org.apache.kafka.common.config.ConfigException
 import org.apache.kafka.common.feature.SupportedVersionRange
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
@@ -169,12 +173,14 @@ class BrokerServer(
   var trafficInterceptor: TrafficInterceptor = _
 
   var backPressureManager: BackPressureManager = _
+  var retryStormBackoffManager: RetryStormBackoffManager = _
 
-  val clientRackProvider = new DefaultClientRackProvider()
+  val zeroZoneConfig = new DefaultZeroZoneConfig(config)
   // init reconfigurable before startup
-  config.addReconfigurable(clientRackProvider)
+  config.addReconfigurable(zeroZoneConfig)
 
   var tableManager: TableManager = _
+  var requestErrorAccumulator: RequestErrorAccumulator = _
   // AutoMQ inject end
 
   private def maybeChangeStatus(from: ProcessStatus, to: ProcessStatus): Boolean = {
@@ -218,17 +224,17 @@ class BrokerServer(
 
       quotaManagers = QuotaFactory.instantiate(config, metrics, time, s"broker-${config.nodeId}-")
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       val channelBlockingNum = if (config.elasticStreamEnabled) 100 else config.logDirs.size
       logDirFailureChannel = new LogDirFailureChannel(channelBlockingNum)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       metadataCache = MetadataCache.kRaftMetadataCache(config.nodeId, () => raftManager.client.kraftVersion())
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       // ElasticLogManager should be marked before LogManager is created.
       ElasticLogManager.enable(config.elasticStreamEnabled)
-      // AutoMQ for Kafka inject end
+      // AutoMQ inject end
 
       // Create log manager, but don't start it because we need to delay any potential unclean shutdown log recovery
       // until we catch up on the metadata log and have up-to-date topic and broker configs.
@@ -428,14 +434,32 @@ class BrokerServer(
       // The FetchSessionCache is divided into config.numIoThreads shards, each responsible
       // for Math.max(1, shardNum * sessionIdRange) <= sessionId < (shardNum + 1) * sessionIdRange
       val sessionIdRange = Int.MaxValue / NumFetchSessionCacheShards
+      // AutoMQ inject start
+      val fetchListener = Option(newFetchListener()).getOrElse(FetchListener.NOOP)
+      val sessionRemovalListener = new FetchSessionCacheShard.SessionRemovalListener {
+        override def onRemove(sessionId: Int, partitions: FetchSession.CACHE_MAP): Unit = {
+          fetchListener.onSessionClosedBatch(sessionId, partitions)
+        }
+      }
+      // AutoMQ inject end
       val fetchSessionCacheShards = (0 until NumFetchSessionCacheShards)
         .map(shardNum => new FetchSessionCacheShard(
           config.maxIncrementalFetchSessionCacheSlots / NumFetchSessionCacheShards,
           KafkaServer.MIN_INCREMENTAL_FETCH_SESSION_EVICTION_MS,
           sessionIdRange,
-          shardNum
+          shardNum,
+          // AutoMQ inject start
+          sessionRemovalListener
+          // AutoMQ inject end
         ))
+
       val fetchManager = new FetchManager(Time.SYSTEM, new FetchSessionCache(fetchSessionCacheShards))
+
+      // AutoMQ inject start
+      val retryStormResponseGate = startupRetryStormBackoffManager()
+      socketServer.dataPlaneRequestChannel.setRetryStormResponseGate(retryStormResponseGate)
+      // AutoMQ inject end
+
 
       // Create the request processor objects.
       val raftSupport = RaftSupport(forwardingManager, metadataCache)
@@ -460,11 +484,29 @@ class BrokerServer(
         tokenManager = tokenManager,
         apiVersionManager = apiVersionManager,
         clientMetricsManager = Some(clientMetricsManager))
+      dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setEnterpriseFacade(newEnterpriseBrokerFacade())
 
       dataPlaneRequestHandlerPool = new KafkaRequestHandlerPool(config.nodeId,
         socketServer.dataPlaneRequestChannel, dataPlaneRequestProcessor, time,
         config.numIoThreads, s"${DataPlaneAcceptor.MetricPrefix}RequestHandlerAvgIdlePercent",
         DataPlaneAcceptor.ThreadPrefix)
+
+      // AutoMQ inject start - cluster event publisher and request error accumulator
+      try {
+        val publisherConfig = new java.util.HashMap[String, Object]()
+        kafka.automq.utils.ClientUtils.clusterClientBaseConfig(config).forEach { (k, v) =>
+          publisherConfig.put(k.toString, v)
+        }
+        config.rack.foreach(rack => publisherConfig.put("client.id", "automq_az=" + rack))
+        ClusterEventPublisher.setup(publisherConfig)
+        requestErrorAccumulator = new RequestErrorAccumulator(config.nodeId)
+        ClusterEventPublisher.registerEmitter(requestErrorAccumulator)
+        socketServer.dataPlaneRequestChannel.requestErrorAccumulator = requestErrorAccumulator
+      } catch {
+        case e: Throwable =>
+          error("Failed to initialize ClusterEventPublisher/RequestErrorAccumulator", e)
+      }
+      // AutoMQ inject end
 
       // Start RemoteLogManager before initializing broker metadata publishers.
       remoteLogManagerOpt.foreach { rlm =>
@@ -575,9 +617,12 @@ class BrokerServer(
       if (routerChannelProvider != null) {
         S3Storage.setLinkRecordDecoder(new DefaultLinkRecordDecoder(routerChannelProvider))
       }
+      FastPartitionReassignmentManager.initialize(config, metrics, metadataCache)
       ElasticLogManager.init(config, clusterId, this)
       trafficInterceptor = newTrafficInterceptor()
-      dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(trafficInterceptor)
+      val elasticKafkaApis = dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis]
+      elasticKafkaApis.setTrafficInterceptor(trafficInterceptor)
+      elasticKafkaApis.setFetchListener(fetchListener)
       replicaManager.setTrafficInterceptor(trafficInterceptor)
       replicaManager.setS3StreamContext(com.automq.stream.Context.instance())
 
@@ -710,10 +755,14 @@ class BrokerServer(
       }
       lifecycleManager.beginShutdown()
 
-      // AutoMQ for Kafka inject start
+      // AutoMQ inject start
       if (backPressureManager != null) {
         CoreUtils.swallow(backPressureManager.shutdown(), this)
       }
+      if (retryStormBackoffManager != null) {
+        CoreUtils.swallow(retryStormBackoffManager.shutdown(), this)
+      }
+      // AutoMQ inject end
 
       // https://github.com/AutoMQ/automq-for-kafka/issues/540
       // await partition shutdown:
@@ -725,6 +774,7 @@ class BrokerServer(
         if (routerChannelProvider != null) {
           CoreUtils.swallow(routerChannelProvider.close(), this)
         }
+        CoreUtils.swallow(FastPartitionReassignmentManager.shutdown(), this)
         CoreUtils.swallow(ElasticLogManager.shutdown(), this)
       }
       // AutoMQ for Kafka inject end
@@ -793,6 +843,10 @@ class BrokerServer(
       if (quotaManagers != null)
         CoreUtils.swallow(quotaManagers.shutdown(), this)
 
+      // AutoMQ inject start - shutdown cluster event publisher (also stops emitter scheduler)
+      CoreUtils.swallow(ClusterEventPublisher.shutdown(), this)
+      // AutoMQ inject end
+
       if (socketServer != null)
         CoreUtils.swallow(socketServer.shutdown(), this)
       if (brokerTopicStats != null)
@@ -849,8 +903,7 @@ class BrokerServer(
     if (config.automq.zoneRouterChannels().isEmpty) {
       return null
     }
-    val bucketURI = config.automq.zoneRouterChannels.get.get(0)
-    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, bucketURI, dataPlaneRequestProcessor.clusterId)
+    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, config.automq.zoneRouterChannels.get, dataPlaneRequestProcessor.clusterId)
   }
 
   protected def newConfirmWALProvider(): ConfirmWALProvider = {
@@ -864,12 +917,41 @@ class BrokerServer(
     val trafficInterceptor = if (config.automq.zoneRouterChannels().isEmpty) {
       new NoopTrafficInterceptor(dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache)
     } else {
-      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, confirmWALProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, clientRackProvider, config)
+      val zeroZoneRouter = new ZeroZoneTrafficInterceptor(routerChannelProvider, confirmWALProvider, dataPlaneRequestProcessor.asInstanceOf[ElasticKafkaApis], metadataCache, zeroZoneConfig, config)
       metadataLoader.installPublishers(util.List.of(zeroZoneRouter))
       zeroZoneRouter
     }
     trafficInterceptor
   }
+
+  private def startupRetryStormBackoffManager(): RetryStormResponseGate = {
+    val retryStormBackoffConfig = RetryStormBackoffConfig.from(config)
+    val retryStormBackoffStateStore = new RetryStormBackoffStateStore()
+    val retryStormBackoffScheduler = new RetryStormDelayedResponseScheduler()
+    val retryStormBackoffPolicy = new RetryStormBackoffPolicy(retryStormBackoffConfig, retryStormBackoffStateStore)
+    val retryStormBackoffLogger = new SampledRetryStormBackoffLogger()
+    val retryStormResponseGate = new RetryStormResponseGate(retryStormBackoffPolicy, retryStormBackoffScheduler)
+    retryStormBackoffManager = new RetryStormBackoffManager(
+      retryStormBackoffConfig,
+      retryStormBackoffPolicy,
+      retryStormResponseGate,
+      retryStormBackoffScheduler,
+      retryStormBackoffStateStore,
+      retryStormBackoffLogger
+    )
+    retryStormBackoffManager.startup()
+    retryStormResponseGate
+  }
+
+  // AutoMQ inject start
+  protected def newFetchListener(): FetchListener = {
+    FetchListener.NOOP
+  }
+
+  protected def newEnterpriseBrokerFacade(): AnyRef = {
+    null
+  }
+  // AutoMQ inject end
 
   protected def newPartitionLifecycleListeners(): util.List[PartitionLifecycleListener] = {
     val list = new util.ArrayList[PartitionLifecycleListener]()

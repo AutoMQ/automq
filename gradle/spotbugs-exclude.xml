@@ -635,5 +635,29 @@ For a detailed description of spotbugs bug categories, see https://spotbugs.read
             <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NULL_VALUE"/>
         </Or>
     </Match>
+    <!-- Suppress all warnings for protobuf-generated classes -->
+    <Match>
+        <Package name="~com\.automq\.events"/>
+    </Match>
+    <!-- Suppress singleton-constructor warnings for immutable retry-storm value types that expose public constructors. -->
+    <Match>
+        <Or>
+            <Class name="kafka.automq.retrystorm.RetryStormBackoffStateStore$StateDecision"/>
+            <Class name="kafka.server.ResourceErrorExtractor$ResourceErrorView"/>
+            <Class name="kafka.server.retrystorm.BackoffDecision"/>
+        </Or>
+        <Bug pattern="SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
+    </Match>
+    <!-- AutoMQ inject end -->
+
+    <Match>
+        <!-- Suppress warning about SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR in multiple class -->
+        <Or>
+            <Class name="org.apache.kafka.common.Node"/>
+            <Class name="org.apache.kafka.common.record.UnalignedMemoryRecords"/>
+            <Class name="org.apache.kafka.clients.Metadata$LeaderAndEpoch"/>
+        </Or>
+        <Bug pattern="SING_SINGLETON_HAS_NONPRIVATE_CONSTRUCTOR"/>
+    </Match>
 
 </FindBugsFilter>

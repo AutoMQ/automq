@@ -21,6 +21,7 @@ import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.AutoMQConfig
+import kafka.automq.zerozone.DefaultZeroZoneConfig
 
 import java.util
 import java.util.concurrent.TimeUnit
@@ -99,6 +100,7 @@ object KafkaConfig {
   AutoMQConfig.define(configDef)
   AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  DefaultZeroZoneConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   // AutoMQ inject end
 
 
@@ -790,13 +792,18 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3MockEnable = getBoolean(AutoMQConfig.S3_MOCK_ENABLE_CONFIG)
   val s3ObjectDeleteRetentionTimeInSecond = getLong(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG) * 60
   val s3NetworkBaselineBandwidthProp = getLong(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG)
+  val s3NetworkBandwidthModeProp = getString(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG)
   val s3RefillPeriodMsProp = getInt(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG)
   val s3MetricsLevel = getString(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG)
   val s3ExporterReportIntervalMs = getInt(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG)
-  val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
   val s3BackPressureEnabled = getBoolean(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
+  val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
+  val tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG)
+  val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
+  val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
+  def kafkaGoMetadataCompatibilityEnabled: Boolean = getBoolean(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG)
   // AutoMQ inject end
 
   /** Internal Configurations **/
@@ -1240,6 +1247,9 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     // AutoMQ inject start
     if (tableTopicNamespace != null) {
       logProps.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, tableTopicNamespace)
+    }
+    if (tableTopicLocation != null) {
+      logProps.put(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, tableTopicLocation)
     }
     if (tableTopicSchemaRegistryUrl != null) {
       logProps.put(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, tableTopicSchemaRegistryUrl)

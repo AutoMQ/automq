@@ -20,5 +20,13 @@
 package com.automq.stream.s3.wal;
 
 public interface AppendResult {
+    /**
+     * The offset of the appended record.
+     */
     RecordOffset recordOffset();
+
+    /**
+     * The offset that is valid for the next record.
+     */
+    RecordOffset nextOffset();
 }

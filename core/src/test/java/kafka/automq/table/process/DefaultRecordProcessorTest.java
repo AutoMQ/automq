@@ -195,6 +195,123 @@ public class DefaultRecordProcessorTest {
         assertEquals(ByteBuffer.wrap(value), ByteBuffer.wrap((byte[]) finalRecord.get(RecordAssembler.KAFKA_VALUE_FIELD)));
     }
 
+    /**
+     * Given the Debezium key sentinel, the processor derives identifier columns from the key record schema.
+     */
+    @Test
+    void testIdentifierColumnsFromDebeziumKeySchema() {
+        Schema keySchema = SchemaBuilder.record("Key")
+            .namespace("kafka.automq.table.process")
+            .fields()
+            .name("region_id").type().stringType().noDefault()
+            .name("user_id").type().longType().noDefault()
+            .endRecord();
+        Converter keyConverter = (topic, buffer) -> new ConversionResult(new GenericRecordBuilder(keySchema)
+            .set("region_id", "us-east-1")
+            .set("user_id", 42L)
+            .build(), "key-schema");
+        Converter valueConverter = new StringConverter();
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of("region_id", "user_id"), result.getIdentifierColumns());
+    }
+
+    /**
+     * Given the Debezium key sentinel with a converter that has no key schema, the processor keeps processing silently.
+     */
+    @Test
+    void testIdentifierColumnsFromDebeziumKeySchemaFallbackWhenKeySchemaMissing() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC, new StringConverter(), new StringConverter(),
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of(), result.getIdentifierColumns());
+    }
+
+    /**
+     * Given a schema-id key converter and a null key, the Debezium key sentinel silently resolves no identifiers.
+     */
+    @Test
+    void testIdentifierColumnsFromDebeziumKeySkipsSchemaIdConverterWhenKeyMissing() {
+        DefaultRecordProcessor processor = new DefaultRecordProcessor(TEST_TOPIC,
+            new AvroRegistryConverter(schemaRegistryClient, "http://mock:8081", true), new StringConverter(),
+            List.of(), List.of("_from_debezium_key_"));
+
+        ProcessingResult result = processor.process(TEST_PARTITION,
+            createKafkaRecord(null, "value".getBytes(), new Header[0]));
+
+        assertTrue(result.isSuccess());
+        assertEquals(List.of(), result.getIdentifierColumns());
+    }
+
+    /**
+     * Given unchanged record schemas, changing identifier columns must still change the composite schema identity.
+     */
+    @Test
+    void testSchemaIdentityIncludesIdentifierColumns() {
+        Converter rawConverter = new RawConverter();
+        Record kafkaRecord = createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]);
+        DefaultRecordProcessor idProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("id"));
+        DefaultRecordProcessor appointmentIdProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("appointment_id"));
+
+        ProcessingResult idResult = idProcessor.process(TEST_PARTITION, kafkaRecord);
+        ProcessingResult appointmentIdResult = appointmentIdProcessor.process(TEST_PARTITION, kafkaRecord);
+
+        assertTrue(idResult.isSuccess());
+        assertTrue(appointmentIdResult.isSuccess());
+        assertNotEquals(idResult.getFinalSchemaIdentity(), appointmentIdResult.getFinalSchemaIdentity());
+    }
+
+    /**
+     * Given identifier column names with colliding hash codes, schema identity must still distinguish them.
+     */
+    @Test
+    void testSchemaIdentityDistinguishesIdentifierHashCollisions() {
+        Converter rawConverter = new RawConverter();
+        Record kafkaRecord = createKafkaRecord("key".getBytes(), "value".getBytes(), new Header[0]);
+        DefaultRecordProcessor fbProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("FB"));
+        DefaultRecordProcessor eaProcessor = new DefaultRecordProcessor(TEST_TOPIC, rawConverter, rawConverter,
+            List.of(), List.of("Ea"));
+
+        ProcessingResult fbResult = fbProcessor.process(TEST_PARTITION, kafkaRecord);
+        ProcessingResult eaResult = eaProcessor.process(TEST_PARTITION, kafkaRecord);
+
+        assertEquals(List.of("FB").hashCode(), List.of("Ea").hashCode());
+        assertTrue(fbResult.isSuccess());
+        assertTrue(eaResult.isSuccess());
+        assertNotEquals(fbResult.getFinalSchemaIdentity(), eaResult.getFinalSchemaIdentity());
+    }
+
+    /**
+     * Given otherwise equal processing results, resolved identifier columns participate in equality and hash code.
+     */
+    @Test
+    void testProcessingResultEqualityIncludesIdentifierColumns() {
+        GenericRecord record = new GenericRecordBuilder(USER_SCHEMA_V1)
+            .set("name", "test-user")
+            .build();
+        ProcessingResult emptyIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id");
+        ProcessingResult explicitEmptyIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of());
+        ProcessingResult idIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of("id"));
+        ProcessingResult userIdIdentifiers = new ProcessingResult(record, USER_SCHEMA_V1, "schema-id", List.of("user_id"));
+
+        assertEquals(emptyIdentifiers, explicitEmptyIdentifiers);
+        assertEquals(emptyIdentifiers.hashCode(), explicitEmptyIdentifiers.hashCode());
+        assertNotEquals(idIdentifiers, userIdIdentifiers);
+        assertNotEquals(idIdentifiers.hashCode(), userIdIdentifiers.hashCode());
+    }
+
     @Test
     void testConverterErrorHandling() {
         // Arrange
@@ -382,7 +499,7 @@ public class DefaultRecordProcessorTest {
         ProcessingResult orderedResult = ordered.process(TEST_PARTITION, kafkaRecord);
         assertTrue(orderedResult.isSuccess());
         String orderedIdentity = orderedResult.getFinalSchemaIdentity();
-        assertTrue(orderedIdentity.endsWith("|t:A,B"));
+        assertTrue(orderedIdentity.contains("|t:A,B|id:"));
 
         DefaultRecordProcessor reversed = new DefaultRecordProcessor(TEST_TOPIC, keyConverter, valueConverter,
             List.of(new NamedPassthroughTransform("B"), new NamedPassthroughTransform("A")));

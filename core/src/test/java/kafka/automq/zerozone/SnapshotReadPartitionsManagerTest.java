@@ -20,6 +20,7 @@
 package kafka.automq.zerozone;
 
 import kafka.automq.partition.snapshot.SnapshotOperation;
+import kafka.automq.utils.AsyncSender;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.OperationBatch;
 import kafka.automq.zerozone.SnapshotReadPartitionsManager.Subscriber;
 import kafka.cluster.Partition;
@@ -41,6 +42,7 @@ import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
 
@@ -130,7 +132,7 @@ public class SnapshotReadPartitionsManagerTest {
             }
 
             @Override
-            public CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset) {
+            public CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset, RecordOffset endOffset, List<StreamRecordBatch> walRecords) {
                 return CompletableFuture.completedFuture(null);
             }
         };

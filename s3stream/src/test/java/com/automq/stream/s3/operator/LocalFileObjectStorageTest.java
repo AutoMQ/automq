@@ -126,6 +126,26 @@ public class LocalFileObjectStorageTest {
         );
     }
 
+    /**
+     * Given local files in multiple prefixes, when listing with a cursor and bound, then results are isolated,
+     * ordered, exclusive, and bounded.
+     */
+    @Test
+    public void testOrderedBoundedList() throws Exception {
+        for (String key : List.of("archive/1/005", "archive/1/001", "archive/2/002", "archive/1/003")) {
+            objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, key,
+                Unpooled.wrappedBuffer(key.getBytes(StandardCharsets.UTF_8))).get();
+        }
+
+        List<String> keys = objectStorage.list(new ObjectStorage.ListOptions("archive/1/")
+                .startAfter("archive/1/002")
+                .maxKeys(2))
+            .get().stream().map(ObjectStorage.ObjectPath::key).collect(Collectors.toList());
+
+        assertEquals(List.of("archive/1/003", "archive/1/005"), keys);
+        assertEquals(List.of(), objectStorage.list(new ObjectStorage.ListOptions("archive/1/").maxKeys(0)).get());
+    }
+
     @Test
     public void testDiskFull() throws Throwable {
         objectStorage.availableSpace.set(10);

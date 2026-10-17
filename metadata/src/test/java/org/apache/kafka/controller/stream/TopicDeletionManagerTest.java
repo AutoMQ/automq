@@ -46,6 +46,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -68,7 +69,7 @@ public class TopicDeletionManagerTest {
     TimelineHashMap<Long, StreamRuntimeMetadata> streams;
     StreamControlManager streamControlManager;
 
-    TimelineHashMap<String, ByteBuffer> kvs;
+    Map<String, ByteBuffer> kvs;
     KVControlManager kvControlManager;
 
     TopicDeletionManager topicDeletionManager;
@@ -82,9 +83,8 @@ public class TopicDeletionManagerTest {
         streamControlManager = mock(StreamControlManager.class);
         when(streamControlManager.streamsMetadata()).thenReturn(streams);
 
-        kvs = new TimelineHashMap<>(registry, 0);
+        kvs = new LinkedHashMap<>();
         kvControlManager = mock(KVControlManager.class);
-        when(kvControlManager.kv()).thenReturn(kvs);
 
         topicDeletionManager = new TopicDeletionManager(registry, quorumController, streamControlManager, kvControlManager);
     }
@@ -104,6 +104,7 @@ public class TopicDeletionManagerTest {
         );
         metadataKvList.forEach(str -> kvs.put(str, ByteBuffer.wrap(new byte[0])));
         kvs.put(ObjectUtils.genMetaStreamKvPrefix(topicId + "others") + 1, ByteBuffer.wrap(new byte[0]));
+        when(kvControlManager.namespaceKVs(null)).thenReturn(kvs);
 
         streams.put(1L, new StreamRuntimeMetadata(1L, 0, 0, 0,
             StreamState.CLOSED, Collections.emptyMap(), registry));

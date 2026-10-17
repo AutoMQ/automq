@@ -113,6 +113,9 @@ public class ConsumerGroupCommandOptions extends CommandDefaultOptions {
     final OptionSpec<Void> offsetsOpt;
     final OptionSpec<String> stateOpt;
     final OptionSpec<String> typeOpt;
+    // AutoMQ inject start
+    final OptionSpec<Void> forceOpt;
+    // AutoMQ inject end
 
     final Set<OptionSpec<?>> allGroupSelectionScopeOpts;
     final Set<OptionSpec<?>> allConsumerGroupLevelOpts;
@@ -196,6 +199,9 @@ public class ConsumerGroupCommandOptions extends CommandDefaultOptions {
             .availableIf(listOpt)
             .withOptionalArg()
             .ofType(String.class);
+        // AutoMQ inject start
+        forceOpt = parser.accepts("force", "Force the reset even if the consumer group has active members. The group will be fenced and consumers will rejoin.");
+        // AutoMQ inject end
 
         allGroupSelectionScopeOpts = new HashSet<>(Arrays.asList(groupOpt, allGroupsOpt));
         allConsumerGroupLevelOpts = new HashSet<>(Arrays.asList(listOpt, describeOpt, deleteOpt, resetOffsetsOpt));

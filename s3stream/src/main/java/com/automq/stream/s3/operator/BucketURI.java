@@ -27,6 +27,8 @@ import org.apache.commons.lang3.StringUtils;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,6 +42,11 @@ public class BucketURI {
     private static final String REGION_KEY = "region";
     public static final String ACCESS_KEY_KEY = "accessKey";
     public static final String SECRET_KEY_KEY = "secretKey";
+    public static final String API_CALL_TIMEOUT_KEY = "apiCallTimeoutMs";
+    public static final String API_CALL_ATTEMPT_TIMEOUT_KEY = "apiCallAttemptTimeoutMs";
+    public static final String CONNECTION_TIMEOUT_KEY = "connectionTimeoutMs";
+    public static final String NUM_RETRIES_KEY = "numRetries";
+    public static final String MAX_CONCURRENCY_KEY = "maxConcurrency";
     private static final String EMPTY_STRING = "";
     private final short bucketId;
     private final String protocol;
@@ -150,6 +157,22 @@ public class BucketURI {
 
     public void addExtension(String key, String value) {
         extension.put(key, List.of(value));
+    }
+
+    /**
+     * Returns an independent URI snapshot preserving the bucket and all extension values.
+     * Unlike the masked diagnostic {@link #toString()}, this URI contains credentials and must not be logged.
+     */
+    public IdURI toIdURI() {
+        Map<String, List<String>> queries = new HashMap<>();
+        extension.forEach((key, values) -> queries.put(key, new ArrayList<>(values)));
+        if (!EMPTY_STRING.equals(endpoint)) {
+            queries.put(ENDPOINT_KEY, Collections.singletonList(endpoint));
+        }
+        if (!EMPTY_STRING.equals(region)) {
+            queries.put(REGION_KEY, Collections.singletonList(region));
+        }
+        return new IdURI(bucketId, protocol, bucket, queries);
     }
 
     @Override

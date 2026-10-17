@@ -203,8 +203,8 @@ PY"""
         script_path = f"/tmp/automq_remote_write_server_{int(time.time())}.py"
 
         server_overrides = [
-            ["automq.telemetry.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=1000000"],
-            ["automq.telemetry.exporter.interval.ms", "15000"],
+            ["s3.telemetry.metrics.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=1000000"],
+            ["s3.telemetry.exporter.report.interval.ms", "15000"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-remote-write"],
         ]
@@ -251,8 +251,8 @@ PY"""
         script_path = f"/tmp/automq_remote_write_gzip_server_{int(time.time())}.py"
 
         server_overrides = [
-            ["automq.telemetry.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=500000&compression=gzip"],
-            ["automq.telemetry.exporter.interval.ms", "10000"],
+            ["s3.telemetry.metrics.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=500000&compression=gzip"],
+            ["s3.telemetry.exporter.report.interval.ms", "10000"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-remote-write-gzip"],
         ]
@@ -305,8 +305,8 @@ PY"""
 
         # Test with smaller batch size to ensure multiple requests
         server_overrides = [
-            ["automq.telemetry.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=10000"],
-            ["automq.telemetry.exporter.interval.ms", "5000"],
+            ["s3.telemetry.metrics.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=10000"],
+            ["s3.telemetry.exporter.report.interval.ms", "5000"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-remote-write-batch"],
         ]
@@ -356,8 +356,8 @@ PY"""
         remote_write_port = 19093
 
         server_overrides = [
-            ["automq.telemetry.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=1000000"],
-            ["automq.telemetry.exporter.interval.ms", "10000"],
+            ["s3.telemetry.metrics.exporter.uri", f"rw://?endpoint=http://localhost:{remote_write_port}/api/v1/write&auth=no_auth&maxBatchSize=1000000"],
+            ["s3.telemetry.exporter.report.interval.ms", "10000"],
             ["service.name", cluster_id],
             ["service.instance.id", "broker-remote-write-unavail"],
         ]

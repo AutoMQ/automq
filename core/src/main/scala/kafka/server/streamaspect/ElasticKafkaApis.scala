@@ -3,15 +3,16 @@ package kafka.server.streamaspect
 import com.automq.stream.s3.metrics.TimerUtil
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.Threads
-import com.automq.stream.utils.threads.S3StreamThreadPoolMonitor
 import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
+import kafka.log.streamaspect.reassignment.{FastPartitionReassignmentManager, PartitionHandoff}
 import kafka.metrics.KafkaMetricsUtil
 import kafka.network.RequestChannel
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server._
+import kafka.server.streamaspect.extension.{BrokerExtensionHandleDispatcher, BrokerExtensionContext}
 import kafka.server.metadata.ConfigRepository
 import kafka.server.streamaspect.ElasticKafkaApis.{LAST_RECORD_TIMESTAMP, PRODUCE_ACK_TIME_HIST, PRODUCE_CALLBACK_TIME_HIST, PRODUCE_TIME_HIST}
 import kafka.utils.Implicits.MapExtensionMethods
@@ -19,7 +20,7 @@ import org.apache.kafka.admin.AdminUtils
 import org.apache.kafka.common.acl.AclOperation.{CLUSTER_ACTION, READ, WRITE}
 import org.apache.kafka.common.errors.{ApiException, UnsupportedCompressionTypeException}
 import org.apache.kafka.common.internals.FatalExitError
-import org.apache.kafka.common.message.{DeleteTopicsRequestData, FetchResponseData, MetadataResponseData}
+import org.apache.kafka.common.message.{AutomqPreparePartitionHandoffResponseData, DeleteTopicsRequestData, FetchResponseData, MetadataResponseData}
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.{ListenerName, NetworkSend, Send}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors}
@@ -27,10 +28,10 @@ import org.apache.kafka.common.record._
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.replica.ClientMetadata.DefaultClientMetadata
 import org.apache.kafka.common.requests.ProduceResponse.PartitionResponse
-import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
-import org.apache.kafka.common.requests.{AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
+import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqPreparePartitionHandoffRequest, AutomqPreparePartitionHandoffResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest}
+import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, DeleteTopicsRequest, DeleteTopicsResponse, FetchMetadata => JFetchMetadata, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestUtils}
 import org.apache.kafka.common.resource.Resource.CLUSTER_NAME
-import org.apache.kafka.common.resource.ResourceType.{CLUSTER, TOPIC, TRANSACTIONAL_ID}
+import org.apache.kafka.common.resource.ResourceType.{CLUSTER, GROUP, TOPIC, TRANSACTIONAL_ID}
 import org.apache.kafka.common.utils.Time
 import org.apache.kafka.common.{Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.coordinator.group.GroupCoordinator
@@ -44,7 +45,7 @@ import org.slf4j.LoggerFactory
 import java.util
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{CompletableFuture, ExecutorService, TimeUnit}
-import java.util.function.Supplier
+import java.util.function.{BiConsumer, Supplier}
 import java.util.stream.IntStream
 import java.util.{Collections, Optional}
 import scala.annotation.nowarn
@@ -81,16 +82,29 @@ class ElasticKafkaApis(
   tokenManager: DelegationTokenManager,
   apiVersionManager: ApiVersionManager,
   clientMetricsManager: Option[ClientMetricsManager],
-  val deleteTopicHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-delete-topic-handle-executor", true, 1000),
-  val listOffsetHandleExecutor: ExecutorService = S3StreamThreadPoolMonitor.createAndMonitor(1, 1, 0L, TimeUnit.MILLISECONDS, "kafka-apis-list-offset-handle-executor", true, 1000)
+  val deleteTopicHandleExecutor: ExecutorService = Threads.newFixedThreadPool(1, "kafka-apis-delete-topic-handle-executor", true, 1000, LoggerFactory.getLogger(classOf[ElasticKafkaApis]))
 ) extends KafkaApis(requestChannel, metadataSupport, replicaManager, groupCoordinator, txnCoordinator,
   autoTopicCreationManager, brokerId, config, configRepository, metadataCache, metrics, authorizer, quotas,
   fetchManager, brokerTopicStats, clusterId, time, tokenManager, apiVersionManager, clientMetricsManager) {
 
-  private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
+  private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPool(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
+  @volatile private var enterpriseFacadeRef: AnyRef = null
+  private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
+  private val brokerExtensionHandleDispatcher: BrokerExtensionHandleDispatcher =
+    createBrokerExtensionHandleDispatcher(brokerExtensionContext)
+
+  protected def createBrokerExtensionHandleDispatcher(context: BrokerExtensionContext): BrokerExtensionHandleDispatcher =
+    BrokerExtensionHandleDispatcher.load(context)
+
+  protected def isExtensionApi(apiKey: ApiKeys): Boolean = ApiKeys.isExtensionApi(apiKey)
+
+  /** Receives one authorized handoff request through the broker-lifecycle manager. */
+  protected def receivePartitionHandoffs(handoffs: util.Collection[PartitionHandoff]): Unit =
+    FastPartitionReassignmentManager.instance().receive(handoffs)
+  @volatile private var fetchListener: FetchListener = FetchListener.NOOP
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -176,9 +190,19 @@ class ElasticKafkaApis(
       request.header.apiKey match {
         case ApiKeys.AUTOMQ_ZONE_ROUTER => handleZoneRouterRequest(request, requestLocal)
         case ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleGetPartitionSnapshotRequest(request, requestLocal)
+        case ApiKeys.AUTOMQ_PREPARE_PARTITION_HANDOFF => handlePreparePartitionHandoffRequest(request)
         case ApiKeys.DELETE_TOPICS => maybeForwardTopicDeletionToController(request, handleDeleteTopicsRequest)
         case ApiKeys.GET_NEXT_NODE_ID => forwardToControllerOrFail(request)
         case ApiKeys.AUTOMQ_UPDATE_GROUP => handleUpdateGroupRequest(request, requestLocal)
+        case ApiKeys.UPDATE_LICENSE => forwardToControllerOrFail(request)
+        case ApiKeys.DESCRIBE_LICENSE => forwardToControllerOrFail(request)
+        case ApiKeys.EXPORT_CLUSTER_MANIFEST => forwardToControllerOrFail(request)
+        case apiKey if isExtensionApi(apiKey) =>
+          brokerExtensionHandleDispatcher.handle(request, requestLocal) match {
+            case BrokerExtensionHandleDispatcher.Handled =>
+            case BrokerExtensionHandleDispatcher.NotHandled =>
+              throw new IllegalStateException(s"No handler for request api key ${request.header.apiKey}")
+          }
 
         case _ =>
           throw new IllegalStateException("Message conversion info is recorded only for Produce/Fetch requests")
@@ -208,7 +232,12 @@ class ElasticKafkaApis(
            | ApiKeys.GET_NEXT_NODE_ID
            | ApiKeys.AUTOMQ_ZONE_ROUTER
            | ApiKeys.AUTOMQ_UPDATE_GROUP
-           | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT => handleExtensionRequest(request, requestLocal)
+           | ApiKeys.AUTOMQ_GET_PARTITION_SNAPSHOT
+           | ApiKeys.AUTOMQ_PREPARE_PARTITION_HANDOFF
+           | ApiKeys.UPDATE_LICENSE
+           | ApiKeys.DESCRIBE_LICENSE
+           | ApiKeys.EXPORT_CLUSTER_MANIFEST => handleExtensionRequest(request, requestLocal)
+      case apiKey if isExtensionApi(apiKey) => handleExtensionRequest(request, requestLocal)
       case _ => super.handle(request, requestLocal)
     }
   }
@@ -225,7 +254,8 @@ class ElasticKafkaApis(
           case None => (-1, -1)
         }
     }
-    LeaderNode(leaderId, leaderEpoch, OptionConverters.toScala(trafficInterceptor.getLeaderNode(leaderId, clientIdMetadata, ln.value())))
+    val node = OptionConverters.toScala(trafficInterceptor.getLeaderNode(leaderId, clientIdMetadata, ln.value()))
+    LeaderNode(node.map(_.id()).getOrElse(leaderId), leaderEpoch, node)
   }
 
   /**
@@ -428,6 +458,13 @@ class ElasticKafkaApis(
 
   def handleUpdateGroupRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val updateGroupsRequest = request.body[AutomqUpdateGroupRequest]
+    // AutoMQ inject start
+    if (!authHelper.authorize(request.context, READ, GROUP, updateGroupsRequest.data().groupId())) {
+      requestHelper.sendMaybeThrottle(request, updateGroupsRequest.getErrorResponse(Errors.GROUP_AUTHORIZATION_FAILED.exception))
+      return
+    }
+    // AutoMQ inject end
+
     groupCoordinator.updateGroup(request.context, updateGroupsRequest.data(), requestLocal.bufferSupplier)
         .whenComplete((response, ex) => {
           if (ex != null) {
@@ -440,6 +477,12 @@ class ElasticKafkaApis(
 
   def handleZoneRouterRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val zoneRouterRequest = request.body[AutomqZoneRouterRequest]
+    // AutoMQ inject start
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    // AutoMQ inject end
+
     trafficInterceptor.handleZoneRouterRequest(zoneRouterRequest.data()).thenAccept(response => {
       requestChannel.sendResponse(request, response, None)
     }).exceptionally(ex => {
@@ -447,6 +490,19 @@ class ElasticKafkaApis(
       null
     })
   }
+
+  // AutoMQ inject start
+  private def authorizeClusterActionForAutoMQRequest(request: RequestChannel.Request): Boolean = {
+    if (!authHelper.authorize(request.context, CLUSTER_ACTION, CLUSTER, CLUSTER_NAME)) {
+      requestHelper.sendMaybeThrottle(request, request.body[AbstractRequest].getErrorResponse(
+        0,
+        Errors.CLUSTER_AUTHORIZATION_FAILED.exception))
+      false
+    } else {
+      true
+    }
+  }
+  // AutoMQ inject end
 
   def handleProduceAppendJavaCompatible(
     args: ProduceRequestArgs,
@@ -474,6 +530,12 @@ class ElasticKafkaApis(
         metadataCache.topicIdsToNames()
       else
         Collections.emptyMap[Uuid, String]()
+
+    if (!fetchRequest.isFromFollower) {
+      if (!trafficInterceptor.preHandleFetchRequest(fetchRequest, request, requestChannel)) {
+        return
+      }
+    }
 
     val fetchData = fetchRequest.fetchData(topicNames)
     val forgottenTopics = fetchRequest.forgottenTopics(topicNames)
@@ -611,6 +673,11 @@ class ElasticKafkaApis(
       }
     }
 
+    val requestSessionId = fetchRequest.metadata.sessionId
+    val requestFetchOffsets = interesting.map { case (tp, partitionData) =>
+      tp -> partitionData.fetchOffset
+    }.toMap
+
     // the callback for process a fetch response, invoked before throttling
     def processResponseCallback(responsePartitionData: Seq[(TopicIdPartition, FetchPartitionData)]): Unit = {
       val partitions = new util.LinkedHashMap[TopicIdPartition, FetchResponseData.PartitionData]
@@ -618,6 +685,12 @@ class ElasticKafkaApis(
       val nodeEndpoints = new mutable.HashMap[Int, Node]
       val clientIdMetadata = ClientIdMetadata.of(request.header.clientId(), request.context.clientAddress, request.context.connectionId)
       responsePartitionData.foreach { case (tp, data) =>
+        notifyFetchListener(
+          tp,
+          if (requestSessionId == JFetchMetadata.INVALID_SESSION_ID) FetchListener.NONE_SESSION_ID else requestSessionId,
+          requestFetchOffsets.getOrElse(tp, -1L),
+          data.records
+        )
         val abortedTransactions = data.abortedTransactions.orElse(null)
         val lastStableOffset: Long = data.lastStableOffset.orElse(FetchResponse.INVALID_LAST_STABLE_OFFSET)
         if (data.isReassignmentFetch) reassigningPartitions.add(tp)
@@ -808,7 +881,8 @@ class ElasticKafkaApis(
         fetchMinBytes,
         fetchMaxBytes,
         FetchIsolation.of(fetchRequest),
-        clientMetadata
+        clientMetadata,
+        request.context.connectionId
       )
 
       // call the replica manager to fetch messages from the local replica
@@ -821,18 +895,19 @@ class ElasticKafkaApis(
     }
   }
 
-  override def handleListOffsetRequest(request: RequestChannel.Request): Unit = {
-    // isolate to a separate thread pool to avoid blocking io thread (PRODUCE use io thread).
-    listOffsetHandleExecutor.execute(() => super.handleListOffsetRequest(request))
-  }
-
   override def handleOffsetForLeaderEpochRequest(request: RequestChannel.Request): Unit = {
     val cf = snapshotAwaitReadySupplier.get()
-    offsetForLeaderEpochExecutor.execute(() => {
-      // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
-      cf.join()
-      super.handleOffsetForLeaderEpochRequest(request)
-    })
+    def handleOffsetForLeaderEpoch(): Unit = super.handleOffsetForLeaderEpochRequest(request)
+    // Await new snapshots to be applied to avoid consumers finding the endOffset jumping back when the snapshot-read partition leader changes.
+    cf.whenCompleteAsync(new BiConsumer[Void, Throwable] {
+      override def accept(nil: Void, ex: Throwable): Unit = {
+        if (ex != null) {
+          handleError(request, ex)
+        } else {
+          handleOffsetForLeaderEpoch()
+        }
+      }
+    }, offsetForLeaderEpochExecutor)
   }
 
   override protected def metadataTopicsInterceptor(clientId: ClientIdMetadata, listenerName: String, topics: util.List[MetadataResponseData.MetadataResponseTopic]): util.List[MetadataResponseData.MetadataResponseTopic] = {
@@ -841,6 +916,12 @@ class ElasticKafkaApis(
 
   def handleGetPartitionSnapshotRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     val req = request.body[AutomqGetPartitionSnapshotRequest]
+    // AutoMQ inject start
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    // AutoMQ inject end
+
     replicaManager.asInstanceOf[ElasticReplicaManager].handleGetPartitionSnapshotRequest(req)
       .thenAccept(resp => requestHelper.sendMaybeThrottle(request, resp))
       .exceptionally(ex => {
@@ -849,12 +930,96 @@ class ElasticKafkaApis(
       })
   }
 
+  /**
+   * Receives decoded partition handoffs as optional target-side recovery hints.
+   */
+  def handlePreparePartitionHandoffRequest(request: RequestChannel.Request): Unit = {
+    val prepareRequest = request.body[AutomqPreparePartitionHandoffRequest]
+    if (!authorizeClusterActionForAutoMQRequest(request)) {
+      return
+    }
+    val handoffs = prepareRequest.data.handoffs.asScala.map(PartitionHandoff.fromProtocol).toList.asJava
+    receivePartitionHandoffs(handoffs)
+    requestHelper.sendMaybeThrottle(request, new AutomqPreparePartitionHandoffResponse(
+      new AutomqPreparePartitionHandoffResponseData().setErrorCode(Errors.NONE.code)))
+  }
+
   def setTrafficInterceptor(trafficInterceptor: TrafficInterceptor): Unit = {
     this.trafficInterceptor = trafficInterceptor
   }
 
   def setSnapshotAwaitReadyProvider(supplier: Supplier[CompletableFuture[Void]]): Unit = {
     this.snapshotAwaitReadySupplier = supplier
+  }
+
+  def setFetchListener(fetchListener: FetchListener): Unit = {
+    this.fetchListener = if (fetchListener == null) FetchListener.NOOP else fetchListener
+  }
+
+  def setEnterpriseFacade(enterpriseFacade: AnyRef): Unit = {
+    this.enterpriseFacadeRef = enterpriseFacade
+  }
+
+  private[streamaspect] def enterpriseFacade(): AnyRef = {
+    enterpriseFacadeRef
+  }
+
+  private def notifyFetchListener(topicIdPartition: TopicIdPartition,
+                                  sessionId: Int,
+                                  fetchOffset: Long,
+                                  records: Records): Unit = {
+    if (fetchListener eq FetchListener.NOOP) return
+    val (reportedOffset, timestamp) = extractFetchOffsetAndTimestamp(fetchOffset, records)
+    fetchListener.onFetch(topicIdPartition, sessionId, reportedOffset, timestamp)
+  }
+
+  private def extractFetchOffsetAndTimestamp(defaultOffset: Long, records: Records): (Long, Long) = {
+    if (records == null) {
+      (defaultOffset, RecordBatch.NO_TIMESTAMP)
+    } else {
+      val batches = records.batches().iterator()
+      if (!batches.hasNext) {
+        (defaultOffset, RecordBatch.NO_TIMESTAMP)
+      } else {
+        var lastBatch = batches.next()
+        while (batches.hasNext) {
+          lastBatch = batches.next()
+        }
+        (lastBatch.lastOffset(), lastBatch.maxTimestamp())
+      }
+    }
+  }
+
+  private final class ElasticBrokerExtensionContext extends BrokerExtensionContext {
+    override def forwardToControllerOrFail(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.forwardToControllerOrFail(request)
+
+    override def maybeForward(request: RequestChannel.Request,
+      handler: RequestChannel.Request => Unit,
+      responseCallback: Option[AbstractResponse] => Unit): Unit =
+      metadataSupport.maybeForward(request, handler, responseCallback)
+
+    override def sendForwardedResponse(request: RequestChannel.Request, response: AbstractResponse): Unit =
+      requestHelper.sendForwardedResponse(request, response)
+
+    override def sendResponseMaybeThrottle(request: RequestChannel.Request,
+      responseBuilder: Int => AbstractResponse): Unit =
+      requestHelper.sendResponseMaybeThrottle(request, responseBuilder)
+
+    override def handleError(request: RequestChannel.Request, t: Throwable): Unit =
+      requestHelper.handleError(request, t)
+
+    override def handleInvalidVersionsDuringForwarding(request: RequestChannel.Request): Unit =
+      ElasticKafkaApis.this.handleInvalidVersionsDuringForwarding(request)
+
+    override def getTopicName(topicId: Uuid): Optional[String] =
+      OptionConverters.toJava(metadataCache.getTopicName(topicId))
+
+    override def getPartition(topicPartition: TopicPartition): HostedPartition =
+      replicaManager.getPartition(topicPartition)
+
+    override def enterpriseFacade(): AnyRef =
+      ElasticKafkaApis.this.enterpriseFacade()
   }
 
 }

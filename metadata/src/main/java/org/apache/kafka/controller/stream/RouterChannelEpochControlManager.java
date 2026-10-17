@@ -59,6 +59,10 @@ public class RouterChannelEpochControlManager {
         scheduler.scheduleWithFixedDelay(this::run, 1, 1, TimeUnit.SECONDS);
     }
 
+    public RouterChannelEpoch getRouterChannelEpoch() {
+        return routerChannelEpoch.get();
+    }
+
     private void run() {
         if (!quorumController.isActive()) {
             return;

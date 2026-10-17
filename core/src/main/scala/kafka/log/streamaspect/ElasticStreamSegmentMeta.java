@@ -68,6 +68,23 @@ public class ElasticStreamSegmentMeta {
     public ElasticStreamSegmentMeta() {
     }
 
+    /** Returns a detached snapshot copy suitable for acknowledged log metadata. */
+    public ElasticStreamSegmentMeta copy() {
+        ElasticStreamSegmentMeta copy = new ElasticStreamSegmentMeta();
+        copy.baseOffset(baseOffset);
+        copy.createTimestamp(createTimestamp);
+        copy.lastModifiedTimestamp(lastModifiedTimestamp);
+        copy.streamSuffix(streamSuffix);
+        copy.logSize(logSize);
+        copy.log(SliceRange.of(log.start(), log.end()));
+        copy.time(SliceRange.of(time.start(), time.end()));
+        copy.txn(SliceRange.of(txn.start(), txn.end()));
+        copy.firstBatchTimestamp(firstBatchTimestamp);
+        copy.timeIndexLastEntry(TimestampOffsetData.of(
+            timeIndexLastEntry.timestamp(), timeIndexLastEntry.offset()));
+        return copy;
+    }
+
     public long baseOffset() {
         return baseOffset;
     }

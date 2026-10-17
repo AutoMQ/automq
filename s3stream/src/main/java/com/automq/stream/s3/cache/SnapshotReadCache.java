@@ -1,7 +1,8 @@
 package com.automq.stream.s3.cache;
 
-import com.automq.stream.ByteBufSeqAlloc;
+import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.api.LinkRecordDecoder;
+import com.automq.stream.s3.ByteBufSupplier;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
@@ -49,18 +50,23 @@ import java.util.stream.Collectors;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
+import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 import static com.automq.stream.s3.ByteBufAlloc.SNAPSHOT_READ_CACHE;
 
 public class SnapshotReadCache {
-    public static final ByteBufSeqAlloc ENCODE_ALLOC = new ByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 8);
+    // Owned by this class for the process lifetime so snapshot caches reuse the same slabs.
+    private static final ByteBufSupplier DECODE_LINK_INSTANT_ALLOC =
+        new RecyclingByteBufSeqAlloc(DECODE_RECORD);
+    private static final ByteBufSupplier ENCODE_ALLOC =
+        new RecyclingByteBufSeqAlloc(SNAPSHOT_READ_CACHE, 1);
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
 
     private static final Metrics.HistogramBundle OPERATION_LATENCY = Metrics.instance().histogram("kafka_stream_snapshot_read_cache", "Snapshot read cache operation latency", "nanoseconds");
     private static final DeltaHistogram REPLAY_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "replay"));
-    private static final DeltaHistogram READ_WAL_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "read_wal"));
-    private static final DeltaHistogram DECODE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "decode"));
-    private static final DeltaHistogram PUT_INTO_CACHE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.DEBUG, Attributes.of(AttributeKey.stringKey("operation"), "put_into_cache"));
+    private static final DeltaHistogram READ_WAL_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "read_wal"));
+    private static final DeltaHistogram DECODE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "decode"));
+    private static final DeltaHistogram PUT_INTO_CACHE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "put_into_cache"));
 
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;
@@ -114,13 +120,17 @@ public class SnapshotReadCache {
                     // The LogCacheBlock doesn't accept discontinuous record batches.
                     cache.clearStreamRecords(streamId);
                 }
-                if (cache.put(batch)) {
-                    // the block is full
+                // Copy the record to the SeqAlloc to reduce fragmentation.
+                StreamRecordBatch copy = StreamRecordBatch.parse(batch.encoded(), true, ENCODE_ALLOC);
+                batch.release();
+                if (!cache.put(copy)) {
+                    // record was not added, archive current block and retry
                     LogCache.LogCacheBlock cacheBlock = cache.archiveCurrentBlock();
                     cacheBlock.addFreeListener(cacheFreeListener);
                     cache.markFree(cacheBlock);
+                    cache.put(copy);
                 }
-                expectedNextOffset.set(batch.getLastOffset());
+                expectedNextOffset.set(copy.getLastOffset());
             }
         }
         PUT_INTO_CACHE_LATENCY.record(time.nanoseconds() - startNanos);
@@ -131,9 +141,9 @@ public class SnapshotReadCache {
     }
 
     public synchronized CompletableFuture<Void> replay(WriteAheadLog confirmWAL, RecordOffset startOffset,
-        RecordOffset endOffset) {
+        RecordOffset endOffset, List<StreamRecordBatch> walRecords) {
         long startNanos = time.nanoseconds();
-        return walReplay.replay(confirmWAL, startOffset, endOffset)
+        return walReplay.replay(confirmWAL, startOffset, endOffset, walRecords)
             .whenComplete((nil, ex) -> REPLAY_LATENCY.record(time.nanoseconds() - startNanos));
     }
 
@@ -163,9 +173,10 @@ public class SnapshotReadCache {
         private final BlockingQueue<WalReplayTask> waitingLoadTasks = new ArrayBlockingQueue<>(MAX_WAITING_LOAD_TASK_COUNT);
         private final Queue<WalReplayTask> loadingTasks = new ConcurrentLinkedQueue<>();
 
-        public CompletableFuture<Void> replay(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset) {
-            WalReplayTask task = new WalReplayTask(wal, startOffset, endOffset);
-            while (!waitingLoadTasks.add(task)) {
+        public CompletableFuture<Void> replay(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset,
+            List<StreamRecordBatch> walRecords) {
+            WalReplayTask task = new WalReplayTask(wal, startOffset, endOffset, walRecords);
+            while (!waitingLoadTasks.offer(task)) {
                 // The replay won't be called on the SnapshotReadCache.eventLoop, so there won't be a deadlock.
                 eventLoop.submit(this::clearOverloadedTask).join();
             }
@@ -213,6 +224,9 @@ public class SnapshotReadCache {
                 nodeIds.add(task.wal.metadata().nodeId());
                 task.loadCf.complete(null);
                 task.replayCf.complete(null);
+                if (task.walRecords != null) {
+                    task.walRecords.forEach(StreamRecordBatch::release);
+                }
                 dropCount++;
             }
             nodeIds.forEach(cacheFreeListener::notifyListener);
@@ -239,14 +253,17 @@ public class SnapshotReadCache {
         final WriteAheadLog wal;
         final RecordOffset startOffset;
         final RecordOffset endOffset;
+        final List<StreamRecordBatch> walRecords;
         final CompletableFuture<Void> loadCf;
         final CompletableFuture<Void> replayCf = new CompletableFuture<>();
         final List<StreamRecordBatch> records = new ArrayList<>();
 
-        public WalReplayTask(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset) {
+        public WalReplayTask(WriteAheadLog wal, RecordOffset startOffset, RecordOffset endOffset,
+            List<StreamRecordBatch> walRecords) {
             this.wal = wal;
             this.startOffset = startOffset;
             this.endOffset = endOffset;
+            this.walRecords = walRecords;
             this.loadCf = new CompletableFuture<>();
             loadCf.whenComplete((rst, ex) -> {
                 if (ex != null) {
@@ -257,7 +274,9 @@ public class SnapshotReadCache {
 
         public void run() {
             long startNanos = time.nanoseconds();
-            wal.get(startOffset, endOffset).thenCompose(walRecords -> {
+            CompletableFuture<List<StreamRecordBatch>> walRecordsCf = walRecords != null ?
+                CompletableFuture.completedFuture(walRecords) : wal.get(startOffset, endOffset);
+            walRecordsCf.thenCompose(walRecords -> {
                 long readWalDoneNanos = time.nanoseconds();
                 READ_WAL_LATENCY.record(readWalDoneNanos - startNanos);
                 List<CompletableFuture<StreamRecordBatch>> cfList = new ArrayList<>(walRecords.size());
@@ -265,7 +284,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.decode(walRecord));
+                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC));
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
@@ -277,7 +296,6 @@ public class SnapshotReadCache {
                         return;
                     }
                     records.addAll(cfList.stream().map(CompletableFuture::join).toList());
-                    records.forEach(r -> r.encoded(ENCODE_ALLOC));
                     loadCf.complete(null);
                 });
             }).whenComplete((rst, ex) -> {

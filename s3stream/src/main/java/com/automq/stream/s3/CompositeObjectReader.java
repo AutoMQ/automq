@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3;
 
-import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.utils.biniarysearch.AbstractOrderedCollection;
@@ -67,7 +66,7 @@ public class CompositeObjectReader implements ObjectReader {
 
     @Override
     public String objectKey() {
-        return ObjectUtils.genKey(0, objectMetadata.objectId());
+        return objectMetadata.key();
     }
 
     @Override

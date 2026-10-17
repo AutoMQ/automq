@@ -26,39 +26,77 @@ import com.automq.stream.utils.IdURI;
 import org.apache.commons.lang3.StringUtils;
 
 public class ObjectWALConfig {
+    private final String uri;
     private final ReservationService reservationService;
     private final long batchInterval;
     private final long maxBytesInBatch;
     private final long maxUnflushedBytes;
     private final int maxInflightUploadCount;
-    private final int readAheadObjectCount;
+    private final int readaheadDataSize;
     private final String clusterId;
     private final int nodeId;
     private final long epoch;
     private final OpenMode openMode;
     private final short bucketId;
     private final String type;
+    private final boolean manualMode;
+    private final int version;
 
     public static Builder builder() {
         return new Builder();
     }
 
-    public ObjectWALConfig(ReservationService reservationService, long batchInterval, long maxBytesInBatch,
+    public ObjectWALConfig(String uri, ReservationService reservationService, long batchInterval, long maxBytesInBatch,
         long maxUnflushedBytes, int maxInflightUploadCount,
-        int readAheadObjectCount, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
+        int readaheadDataSize, String clusterId, int nodeId, long epoch, OpenMode openMode, short bucketId,
         String type) {
+        this.uri = uri;
         this.reservationService = reservationService;
         this.batchInterval = batchInterval;
         this.maxBytesInBatch = maxBytesInBatch;
         this.maxUnflushedBytes = maxUnflushedBytes;
         this.maxInflightUploadCount = maxInflightUploadCount;
-        this.readAheadObjectCount = readAheadObjectCount;
+        this.readaheadDataSize = readaheadDataSize;
         this.clusterId = clusterId;
         this.nodeId = nodeId;
         this.epoch = epoch;
         this.openMode = openMode;
         this.bucketId = bucketId;
         this.type = type;
+        this.manualMode = false;
+        this.version = 0;
+    }
+
+    private ObjectWALConfig(Builder builder) {
+        this.uri = builder.uri;
+        this.reservationService = builder.reservationService;
+        this.batchInterval = builder.batchInterval;
+        this.maxBytesInBatch = builder.maxBytesInBatch;
+        this.maxUnflushedBytes = builder.maxUnflushedBytes;
+        this.maxInflightUploadCount = builder.maxInflightUploadCount;
+        this.readaheadDataSize = builder.readaheadDataSize;
+        this.clusterId = builder.clusterId;
+        this.nodeId = builder.nodeId;
+        this.epoch = builder.epoch;
+        this.openMode = builder.openMode;
+        this.bucketId = builder.bucketId;
+        this.type = builder.type;
+        this.manualMode = builder.manualMode;
+        this.version = builder.version;
+    }
+
+    /** Returns the key layout version: 0 for legacy writes, or 1 for writes across 256 fixed shards. */
+    public int version() {
+        return version;
+    }
+
+    /** Returns whether callers control batching through explicit flushes instead of size or timer triggers. */
+    public boolean manualMode() {
+        return manualMode;
+    }
+
+    public String uri() {
+        return uri;
     }
 
     public ReservationService reservationService() {
@@ -81,8 +119,8 @@ public class ObjectWALConfig {
         return maxInflightUploadCount;
     }
 
-    public int readAheadObjectCount() {
-        return readAheadObjectCount;
+    public int readaheadDataSize() {
+        return readaheadDataSize;
     }
 
     public String clusterId() {
@@ -116,34 +154,39 @@ public class ObjectWALConfig {
             ", maxBytesInBatch=" + maxBytesInBatch +
             ", maxUnflushedBytes=" + maxUnflushedBytes +
             ", maxInflightUploadCount=" + maxInflightUploadCount +
-            ", readAheadObjectCount=" + readAheadObjectCount +
+            ", readaheadDataSize=" + readaheadDataSize +
             ", clusterId='" + clusterId + '\'' +
             ", nodeId=" + nodeId +
             ", epoch=" + epoch +
             ", openMode=" + openMode +
             ", bucketId=" + bucketId +
             ", type='" + type + '\'' +
+            ", version=" + version +
             '}';
     }
 
     public static final class Builder {
+        private String uri = "";
         private ReservationService reservationService = ReservationService.NOOP;
         private long batchInterval = 250; // 250ms
         private long maxBytesInBatch = 8 * 1024 * 1024L; // 8MB
         private long maxUnflushedBytes = 1024 * 1024 * 1024L; // 1GB
         private int maxInflightUploadCount = 50;
-        private int readAheadObjectCount = 4;
+        private int readaheadDataSize = 100 * 1024 * 1024; // 100MiB
         private String clusterId;
         private int nodeId;
         private long epoch;
         private OpenMode openMode = OpenMode.READ_WRITE;
         private short bucketId;
         private String type = "";
+        private boolean manualMode;
+        private int version;
 
         private Builder() {
         }
 
         public Builder withURI(IdURI uri) {
+            this.uri = uri.toString();
             withBucketId(uri.id());
 
             String batchInterval = uri.extensionString("batchInterval");
@@ -162,11 +205,29 @@ public class ObjectWALConfig {
             if (StringUtils.isNumeric(maxInflightUploadCount)) {
                 withMaxInflightUploadCount(Integer.parseInt(maxInflightUploadCount));
             }
-            String readAheadObjectCount = uri.extensionString("readAheadObjectCount");
-            if (StringUtils.isNumeric(readAheadObjectCount)) {
-                withReadAheadObjectCount(Integer.parseInt(readAheadObjectCount));
+            String readaheadDataSize = uri.extensionString("readaheadDataSize");
+            if (StringUtils.isNumeric(readaheadDataSize)) {
+                withReadaheadDataSize(Integer.parseInt(readaheadDataSize));
             }
+            withVersion(Integer.parseInt(uri.extensionString("version", "0")));
             return this;
+        }
+
+        /**
+         * Sets the key layout version: 0 (default) writes legacy keys; 1 writes keys across 256 fixed shards.
+         * Both versions read both layouts, preferring their write layout and falling back only on not-found.
+         * This version does not change the WAL object contents or record offset encoding.
+         */
+        public Builder withVersion(int version) {
+            if (version != 0 && version != 1) {
+                throw new IllegalArgumentException("WAL version must be 0 or 1");
+            }
+            this.version = version;
+            return this;
+        }
+
+        public Builder withURI(String uri) {
+            return withURI(IdURI.parse(uri));
         }
 
         public Builder withReservationService(ReservationService reservationService) {
@@ -198,12 +259,12 @@ public class ObjectWALConfig {
             return this;
         }
 
-        public Builder withReadAheadObjectCount(int readAheadObjectCount) {
-            if (readAheadObjectCount < 1) {
-                readAheadObjectCount = 1;
+        public Builder withReadaheadDataSize(int readaheadDataSize) {
+            if (readaheadDataSize < 1) {
+                readaheadDataSize = 1;
             }
 
-            this.readAheadObjectCount = readAheadObjectCount;
+            this.readaheadDataSize = readaheadDataSize;
             return this;
         }
 
@@ -237,8 +298,14 @@ public class ObjectWALConfig {
             return this;
         }
 
+        /** Enables caller-controlled flushing; defaults to automatic size and timer batching. */
+        public Builder withManualMode(boolean manualMode) {
+            this.manualMode = manualMode;
+            return this;
+        }
+
         public ObjectWALConfig build() {
-            return new ObjectWALConfig(reservationService, batchInterval, maxBytesInBatch, maxUnflushedBytes, maxInflightUploadCount, readAheadObjectCount, clusterId, nodeId, epoch, openMode, bucketId, type);
+            return new ObjectWALConfig(this);
         }
     }
 }

@@ -120,6 +120,7 @@ object RequestConvertToJson {
       case req: OpenStreamsRequest => OpenStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: CloseStreamsRequest => CloseStreamsRequestDataJsonConverter.write(req.data, request.version)
       case req: TrimStreamsRequest => TrimStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: UpdateStreamArchiveRequest => UpdateStreamArchiveRequestDataJsonConverter.write(req.data, request.version)
       case req: PrepareS3ObjectRequest => PrepareS3ObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: CommitStreamSetObjectRequest => CommitStreamSetObjectRequestDataJsonConverter.write(req.data, request.version)
       case req: CommitStreamObjectRequest => CommitStreamObjectRequestDataJsonConverter.write(req.data, request.version)
@@ -131,8 +132,13 @@ object RequestConvertToJson {
       case req: AutomqGetNodesRequest => AutomqGetNodesRequestDataJsonConverter.write(req.data, request.version)
       case req: AutomqZoneRouterRequest => AutomqZoneRouterRequestDataJsonConverter.write(req.data, request.version)
       case req: AutomqGetPartitionSnapshotRequest => AutomqGetPartitionSnapshotRequestDataJsonConverter.write(req.data, request.version)
+      case req: AutomqUpdateGroupRequest => AutomqUpdateGroupRequestDataJsonConverter.write(req.data, request.version)
+      case req: AutomqPreparePartitionHandoffRequest => AutomqPreparePartitionHandoffRequestDataJsonConverter.write(req.data, request.version)
       case req: GetNextNodeIdRequest => GetNextNodeIdRequestDataJsonConverter.write(req.data, request.version)
       case req: DescribeStreamsRequest => DescribeStreamsRequestDataJsonConverter.write(req.data, request.version)
+      case req: UpdateLicenseRequest => UpdateLicenseRequestDataJsonConverter.write(req.data, request.version)
+      case req: DescribeLicenseRequest => DescribeLicenseRequestDataJsonConverter.write(req.data, request.version)
+      case req: ExportClusterManifestRequest => ExportClusterManifestRequestDataJsonConverter.write(req.data, request.version)
       // AutoMQ for Kafka inject end
       
       case req: AddRaftVoterRequest => AddRaftVoterRequestDataJsonConverter.write(req.data, request.version)
@@ -237,6 +243,7 @@ object RequestConvertToJson {
       case res: OpenStreamsResponse => OpenStreamsResponseDataJsonConverter.write(res.data, version)
       case res: CloseStreamsResponse => CloseStreamsResponseDataJsonConverter.write(res.data, version)
       case res: TrimStreamsResponse => TrimStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: UpdateStreamArchiveResponse => UpdateStreamArchiveResponseDataJsonConverter.write(res.data, version)
       case res: PrepareS3ObjectResponse => PrepareS3ObjectResponseDataJsonConverter.write(res.data, version)
       case res: CommitStreamSetObjectResponse => CommitStreamSetObjectResponseDataJsonConverter.write(res.data, version)
       case res: CommitStreamObjectResponse => CommitStreamObjectResponseDataJsonConverter.write(res.data, version)
@@ -248,7 +255,13 @@ object RequestConvertToJson {
       case res: AutomqGetNodesResponse => AutomqGetNodesResponseDataJsonConverter.write(res.data, version)
       case res: GetNextNodeIdResponse => GetNextNodeIdResponseDataJsonConverter.write(res.data, version)
       case res: AutomqZoneRouterResponse => AutomqZoneRouterResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqGetPartitionSnapshotResponse => AutomqGetPartitionSnapshotResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqUpdateGroupResponse => AutomqUpdateGroupResponseDataJsonConverter.write(res.data, version)
+      case res: AutomqPreparePartitionHandoffResponse => AutomqPreparePartitionHandoffResponseDataJsonConverter.write(res.data, version)
       case res: DescribeStreamsResponse => DescribeStreamsResponseDataJsonConverter.write(res.data, version)
+      case res: UpdateLicenseResponse => UpdateLicenseResponseDataJsonConverter.write(res.data, version)
+      case res: DescribeLicenseResponse => DescribeLicenseResponseDataJsonConverter.write(res.data, version)
+      case res: ExportClusterManifestResponse => ExportClusterManifestResponseDataJsonConverter.write(res.data, version)
       // AutoMQ for Kafka inject end
       
       case res: AddRaftVoterResponse => AddRaftVoterResponseDataJsonConverter.write(res.data, version)

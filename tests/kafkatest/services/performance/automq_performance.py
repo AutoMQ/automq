@@ -44,7 +44,7 @@ class AutoMQPerformanceService(HttpMetricsCollector, PerformanceService):
                  topic_prefix="tt", await_topic_ready=False,
                  topic_configs=None, producer_configs=None, consumer_configs=None,
                  test_duration_minutes=1, warmup_duration_minutes=0,
-                 value_schema=None, values_file=None):
+                 value_schema=None, values_file=None, replication_factor=1):
         super(AutoMQPerformanceService, self).__init__(context=context, num_nodes=num_nodes)
 
         self.logs = {
@@ -71,6 +71,7 @@ class AutoMQPerformanceService(HttpMetricsCollector, PerformanceService):
             "consumers_per_group": consumers_per_group,
             "topics": topics,
             "partitions_per_topic": partitions_per_topic,
+            "replication_factor": replication_factor,
             "send_rate": send_rate,
             "record_size": record_size,
             "topic_prefix": topic_prefix,
@@ -98,6 +99,7 @@ class AutoMQPerformanceService(HttpMetricsCollector, PerformanceService):
         args.append(f"-c {self.params['consumers_per_group']}")
         args.append(f"-t {self.params['topics']}")
         args.append(f"-n {self.params['partitions_per_topic']}")
+        args.append(f"--replication-factor {self.params['replication_factor']}")
         args.append(f"-r {self.params['send_rate']}")
         args.append(f"-s {self.params['record_size']}")
         args.append(f"-X {self.params['topic_prefix']}")

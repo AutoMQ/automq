@@ -19,11 +19,7 @@
 
 package kafka.autobalancer.config;
 
-import org.apache.kafka.clients.CommonClientConfigs;
-import org.apache.kafka.common.config.ConfigException;
-import org.apache.kafka.common.config.SaslConfigs;
-import org.apache.kafka.common.config.types.Password;
-
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -33,41 +29,21 @@ import java.util.Properties;
 public class StaticAutoBalancerConfigUtils {
 
     /**
-     * Parse AdminClient configs based on the given {@link StaticAutoBalancerConfig configs}.
+     * Convert shared Auto Balancer client settings to standard Kafka client settings. The Kafka producer and
+     * consumer ConfigDefs are responsible for validation and type conversion.
      *
-     * @param clientConfigs Configs that will be return with SSL configs.
-     * @param configs            Configs to be used for parsing AdminClient SSL configs.
+     * @param configs Auto Balancer settings
+     * @return shared Kafka client settings
      */
-    public static void addSslConfigs(Properties clientConfigs, StaticAutoBalancerConfig configs) {
-        // Add security protocol (if specified).
-        try {
-            setStringConfigIfExists(configs, clientConfigs, StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL,
-                    CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
-            setStringConfigIfExists(configs, clientConfigs, StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM,
-                    SaslConfigs.SASL_MECHANISM);
-            setPasswordConfigIfExists(configs, clientConfigs, StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG,
-                    SaslConfigs.SASL_JAAS_CONFIG);
-        } catch (ConfigException ce) {
-            // let it go.
-        }
-    }
-
-    private static void setPasswordConfigIfExists(StaticAutoBalancerConfig configs, Properties props, String name, String originalName) {
-        try {
-            Password pwd = configs.getPassword(name);
-            if (pwd != null) {
-                props.put(originalName, pwd);
+    public static Properties parseClientConfigs(Map<String, ?> configs) {
+        Properties clientConfigs = new Properties();
+        for (Map.Entry<String, ?> entry : configs.entrySet()) {
+            if (entry.getKey().startsWith(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_PREFIX)
+                    && entry.getValue() != null) {
+                clientConfigs.put(entry.getKey().substring(StaticAutoBalancerConfig.AUTO_BALANCER_CLIENT_AUTH_PREFIX.length()),
+                        entry.getValue());
             }
-        } catch (ConfigException ce) {
-            // let it go.
         }
-    }
-
-    private static void setStringConfigIfExists(StaticAutoBalancerConfig configs, Properties props, String name, String originalName) {
-        try {
-            props.put(originalName, configs.getString(name));
-        } catch (ConfigException ce) {
-            // let it go.
-        }
+        return clientConfigs;
     }
 }

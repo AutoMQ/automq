@@ -29,6 +29,7 @@ import org.apache.kafka.common.metadata.FenceBrokerRecord;
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.ProducerIdsRecord;
@@ -41,12 +42,14 @@ import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
 import org.apache.kafka.common.metadata.RemoveS3ObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.RemoveUserScramCredentialRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
@@ -370,6 +373,15 @@ public final class MetadataDelta {
             case S3_STREAM_END_OFFSETS_RECORD:
                 replay((S3StreamEndOffsetsRecord) record);
                 break;
+            case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
+                replay((NodeWALUncommittedOffsetsRecord) record);
+                break;
+            case S3_STREAM_ARCHIVE_RECORD:
+                replay((S3StreamArchiveRecord) record);
+                break;
+            case REMOVE_S3_STREAM_ARCHIVE_RECORD:
+                replay((RemoveS3StreamArchiveRecord) record);
+                break;
                 // AutoMQ for Kafka inject end
             default:
                 throw new RuntimeException("Unknown metadata record type " + type);
@@ -545,6 +557,27 @@ public final class MetadataDelta {
     public void replay(S3StreamEndOffsetsRecord record) {
         getOrCreateStreamsMetadataDelta().replay(record);
     }
+
+    /**
+     * Replay node WAL responsibility entry upserts and tombstones into the streams image delta.
+     */
+    public void replay(NodeWALUncommittedOffsetsRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    /**
+     * Replays a complete per-Stream Archive state replacement into the streams image delta.
+     */
+    public void replay(S3StreamArchiveRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
+
+    /**
+     * Replays a per-Stream Archive state removal into the streams image delta.
+     */
+    public void replay(RemoveS3StreamArchiveRecord record) {
+        getOrCreateStreamsMetadataDelta().replay(record);
+    }
     // AutoMQ for Kafka inject end
 
     /**
@@ -561,6 +594,9 @@ public final class MetadataDelta {
         getOrCreateAclsDelta().finishSnapshot();
         getOrCreateScramDelta().finishSnapshot();
         getOrCreateDelegationTokenDelta().finishSnapshot();
+        getOrCreateStreamsMetadataDelta().finishSnapshot();
+        getOrCreateObjectsMetadataDelta().finishSnapshot();
+        getOrCreateKVDelta().finishSnapshot();
     }
 
     public MetadataImage apply(MetadataProvenance provenance) {

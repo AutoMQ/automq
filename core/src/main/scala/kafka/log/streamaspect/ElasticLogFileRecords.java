@@ -65,10 +65,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.ByteBufAlloc.POOLED_MEMORY_RECORDS;
-import static com.automq.stream.utils.FutureUtil.suppress;
 
 public class ElasticLogFileRecords implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogFileRecords.class);
+    static final int FETCH_BATCH_SIZE = 512 * 1024;
 
     protected final AtomicInteger size;
     // only used for recover
@@ -254,9 +254,63 @@ public class ElasticLogFileRecords implements AutoCloseable {
         streamSlice.seal();
     }
 
+    /**
+     * Finds the S3Stream batch containing {@code targetOffset}, then shortens the
+     * logical slice at that batch boundary and updates the visible payload size. The underlying stream is never
+     * changed.
+     *
+     * @param targetOffset requested exclusive Kafka truncation offset within this segment
+     * @return the number of discarded payload bytes
+     * @throws IllegalArgumentException if the target is outside this segment or does not intersect a stream batch
+     * @throws IOException if the stream slice cannot be fetched or sealed
+     */
+    public int truncateTo(long targetOffset) throws IOException {
+        if (targetOffset < baseOffset || targetOffset >= nextOffset()) {
+            throw new IllegalArgumentException("target offset outside segment: " + targetOffset);
+        }
+        long sliceEnd = streamSlice.nextOffset();
+        // Stream.fetch returns the complete first batch when the start offset falls inside that batch.
+        long nextFetchOffset = targetOffset - baseOffset;
+        long truncateOffset = -1L;
+        int discardedBytes = 0;
+        while (nextFetchOffset < sliceEnd) {
+            FetchResult result;
+            try {
+                result = streamSlice.fetch(new FetchContext(), nextFetchOffset, sliceEnd, FETCH_BATCH_SIZE).get();
+            } catch (Throwable e) {
+                throw new IOException("Failed to read stream slice for truncation", FutureUtil.cause(e));
+            }
+            try {
+                if (result.recordBatchList().isEmpty()) {
+                    throw new IOException("Empty stream fetch before truncation target " + targetOffset);
+                }
+                for (RecordBatchWithContext batch : result.recordBatchList()) {
+                    if (truncateOffset == -1L) {
+                        truncateOffset = batch.baseOffset();
+                    }
+                    discardedBytes += batch.rawPayload().remaining();
+                    nextFetchOffset = batch.lastOffset();
+                }
+            } finally {
+                result.free();
+            }
+        }
+        streamSlice.seal(truncateOffset);
+        // A reloaded segment with missing persisted size uses its offset count as an estimate. Since the discarded
+        // payload size is exact, subtracting it from that estimate can underflow. Keep non-empty segments visible to
+        // the segment manager while preserving zero for a segment whose retained logical range is empty.
+        int minimumSize = truncateOffset > 0 ? 1 : 0;
+        int discardedPayloadBytes = discardedBytes;
+        size.updateAndGet(current -> Math.max(minimumSize, current - discardedPayloadBytes));
+        return discardedBytes;
+    }
+
+    /**
+     * Prevents new operations without waiting for the last append. The owning log performs its explicit final flush
+     * after segment metadata has been finalized.
+     */
     public void close() {
         status = ElasticResourceStatus.CLOSED;
-        suppress(this::flush, LOGGER);
     }
 
     public void closeHandlers() {
@@ -311,7 +365,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     public Iterable<RecordBatch> batchesFrom(final long startOffset) {
-        return batchesFrom(FetchContext.DEFAULT, startOffset);
+        return () -> batchIterator(new FetchContext(), startOffset, Long.MAX_VALUE, Integer.MAX_VALUE);
     }
 
     public Iterable<RecordBatch> batchesFrom(FetchContext fetchContext, final long startOffset) {
@@ -319,7 +373,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(long startOffset, long maxOffset, int fetchSize) {
-        return batchIterator(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize);
+        return batchIterator(new FetchContext(), startOffset, maxOffset, fetchSize);
     }
 
     protected RecordBatchIterator<RecordBatch> batchIterator(FetchContext fetchContext, long startOffset, long maxOffset, int fetchSize) {
@@ -409,7 +463,6 @@ public class ElasticLogFileRecords implements AutoCloseable {
 
     static class StreamSegmentInputStream implements LogInputStream<RecordBatch> {
         @VisibleForTesting
-        protected static final int FETCH_BATCH_SIZE = 512 * 1024;
         private final ElasticLogFileRecords elasticLogFileRecords;
         private final Queue<RecordBatch> remaining = new LinkedList<>();
         private final int maxSize;
@@ -457,7 +510,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
                             ElasticStreamSlice slice = elasticLogFileRecords.streamSlice;
                             byte[] bytes = new byte[streamRecord.rawPayload().remaining()];
                             streamRecord.rawPayload().get(bytes);
-                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes);
+                            LOGGER.error("next batch parse error, stream={} baseOffset={} payload={}", slice.stream().streamId(), slice.sliceRange().start() + streamRecord.baseOffset(), bytes, e);
                             throw new RuntimeException(e);
                         }
                     });
@@ -539,7 +592,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
             }
             Records records;
             try {
-                records = elasticLogFileRecords.readAll0(FetchContext.DEFAULT, startOffset, maxOffset, fetchSize).get();
+                records = elasticLogFileRecords.readAll0(new FetchContext(), startOffset, maxOffset, fetchSize).get();
             } catch (Throwable t) {
                 throw new IOException(FutureUtil.cause(t));
             }

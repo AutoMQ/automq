@@ -19,7 +19,7 @@ from ducktape.mark.resource import cluster
 from kafkatest.services.kafka import quorum
 from kafkatest.tests.kafka_test import KafkaTest
 from kafkatest.services.streams import StreamsSmokeTestDriverService, StreamsSmokeTestJobRunnerService
-from kafkatest.tests.monitor_util import get_monitor_with_offset
+from kafkatest.monitor_util import get_monitor_with_offset
 
 class StreamsSmokeTest(KafkaTest):
     """

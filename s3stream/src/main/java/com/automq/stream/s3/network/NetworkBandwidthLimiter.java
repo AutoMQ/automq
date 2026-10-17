@@ -45,6 +45,14 @@ public interface NetworkBandwidthLimiter {
 
     long getAvailableTokens();
 
+    /**
+     * Returns the current number of requests waiting for this limiter. Implementations without a
+     * backing queue return {@code 0}; wrappers may return the delegate's physical queue size.
+     */
+    default int getQueueSize() {
+        return 0;
+    }
+
     void shutdown();
 
 

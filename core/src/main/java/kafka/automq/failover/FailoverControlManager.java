@@ -79,7 +79,15 @@ public class FailoverControlManager implements AutoCloseable {
         this.clusterControlManager = clusterControlManager;
         this.nodeControlManager = nodeControlManager;
         this.streamControlManager = streamControlManager;
-        this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 10, 10, TimeUnit.SECONDS);
+        this.scheduler.scheduleWithFixedDelay(this::runFailoverTask, 1, 1, TimeUnit.SECONDS);
+    }
+
+    public void triggerFailover() {
+        try {
+            scheduler.execute(this::runFailoverTask);
+        } catch (Throwable e) {
+            LOGGER.error("Trigger failover task failed", e);
+        }
     }
 
     void runFailoverTask() {
@@ -181,7 +189,7 @@ public class FailoverControlManager implements AutoCloseable {
                 node.getNodeId(),
                 // There are node epochs in both streamControlManager and nodeControlManager, and they are the same in most cases.
                 // However, in some rare cases, the node epoch in streamControlManager may be updated earlier than the node epoch in nodeControlManager.
-                // So we use the node epoch in nodeControlManager as the source of truth.
+                // So we use the node epoch in streamControlManager as the source of truth.
                 nodeEpochMap.get(node.getNodeId()),
                 node.getWalConfig(),
                 node.getTags(),

@@ -41,37 +41,56 @@ import org.apache.kafka.common.message.OpenStreamsRequestData.OpenStreamRequest;
 import org.apache.kafka.common.message.OpenStreamsResponseData.OpenStreamResponse;
 import org.apache.kafka.common.message.TrimStreamsRequestData.TrimStreamRequest;
 import org.apache.kafka.common.message.TrimStreamsResponseData.TrimStreamResponse;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.ArchivePrepare;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData.StreamArchiveOperation;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData.UpdateStreamResponse;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
 import org.apache.kafka.common.metadata.MetadataRecordType;
 import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
 import org.apache.kafka.common.metadata.RangeRecord;
 import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
 import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
 import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
 import org.apache.kafka.common.metadata.S3ObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
 import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.common.protocol.ApiMessage;
 import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.requests.s3.StreamArchiveOperationType;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.controller.ClusterControlManager;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3Object;
 import org.apache.kafka.metadata.stream.S3ObjectState;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
 import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
+import com.automq.stream.s3.CompositeObjectWriter;
+import com.automq.stream.s3.DataBlockIndex;
+import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.ObjectWriter;
+import com.automq.stream.s3.compact.CompactOperations;
+import com.automq.stream.s3.metadata.ArchiveObjectKey;
 import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
@@ -79,6 +98,7 @@ import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 
@@ -88,19 +108,25 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.mockito.Mockito;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -113,6 +139,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
@@ -121,6 +148,7 @@ import static org.mockito.Mockito.when;
 
 @Timeout(value = 40)
 @Tag("S3Unit")
+@SuppressWarnings("checkstyle:JavaNCSS")
 public class StreamControlManagerTest {
 
     private static final long STREAM0 = 0;
@@ -147,6 +175,8 @@ public class StreamControlManagerTest {
     private ClusterControlManager clusterControlManager;
     private FeatureControlManager featureControlManager;
     private ReplicationControlManager replicationControlManager;
+    private MemoryObjectStorage objectStorage;
+    private MockTime time;
 
     @BeforeEach
     public void setUp() {
@@ -158,12 +188,14 @@ public class StreamControlManagerTest {
         clusterControlManager = mock(ClusterControlManager.class);
         featureControlManager = mock(FeatureControlManager.class);
         replicationControlManager = mock(ReplicationControlManager.class);
+        objectStorage = new MemoryObjectStorage();
+        time = new MockTime();
         when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.LATEST);
         when(replicationControlManager.getTopicId(TOPIC)).thenReturn(TOPIC_ID);
         when(replicationControlManager.getTopic(TOPIC_ID)).thenReturn(new ReplicationControlManager.TopicControlInfo(TOPIC, new SnapshotRegistry(new LogContext()), TOPIC_ID));
 
         manager = new StreamControlManager(quorumController, registry, context, objectControlManager,
-            clusterControlManager, featureControlManager, replicationControlManager);
+            clusterControlManager, featureControlManager, replicationControlManager, objectStorage, time);
         doAnswer(args -> {
             QuorumController.ControllerWriteOperation<?> op = args.getArgument(2);
             ControllerResult<?> rst = op.generateRecordsAndResult();
@@ -350,6 +382,383 @@ public class StreamControlManagerTest {
         RangeMetadata range = streamMetadata1.ranges().get(streamMetadata1.currentRangeIndex());
         assertEquals(EPOCH1, range.epoch());
         assertEquals(BROKER1, range.nodeId());
+    }
+
+    /**
+     * Given a V5 cluster, a fast close is rejected while a legacy close retains the existing record contract.
+     */
+    @Test
+    public void testV5RejectsFastCloseAndAcceptsLegacyClose() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V5);
+        createAndOpenStream0();
+
+        ControllerResult<CloseStreamResponse> fastClose = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.UNSUPPORTED_VERSION.code(), fastClose.response().errorCode());
+        assertEquals(0, fastClose.records().size());
+
+        ControllerResult<CloseStreamResponse> legacyClose = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        assertEquals(Errors.NONE.code(), legacyClose.response().errorCode());
+        assertEquals(1, legacyClose.records().size());
+        assertInstanceOf(S3StreamRecord.class, legacyClose.records().get(0).message());
+    }
+
+    /**
+     * Given a finalized V6 cluster, a non-negative close end offset is accepted.
+     */
+    @Test
+    public void testV6AcceptsFastClose() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+
+        ControllerResult<CloseStreamResponse> result = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(3, result.records().size());
+    }
+
+    /**
+     * Given a V6 stream with a logical end, verify fast close rejects regression, avoids an empty
+     * responsibility entry at the boundary, and atomically records a later handoff boundary.
+     */
+    @Test
+    public void testV6FastCloseRecordsNodeWALResponsibility() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+        manager.replay(new S3StreamEndOffsetsRecord().setEndOffsets(
+            S3StreamEndOffsetsCodec.encode(List.of(new StreamEndOffset(STREAM0, 10L)))));
+
+        ControllerResult<CloseStreamResponse> belowEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(9L));
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), belowEnd.response().errorCode());
+        assertEquals(0, belowEnd.records().size());
+
+        ControllerResult<CloseStreamResponse> atEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.NONE.code(), atEnd.response().errorCode());
+        assertEquals(2, atEnd.records().size());
+        assertInstanceOf(S3StreamRecord.class, atEnd.records().get(0).message());
+        assertInstanceOf(RangeRecord.class, atEnd.records().get(1).message());
+
+        ControllerResult<CloseStreamResponse> afterEnd = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(20L));
+        assertEquals(Errors.NONE.code(), afterEnd.response().errorCode());
+        assertEquals(3, afterEnd.records().size());
+        assertInstanceOf(S3StreamRecord.class, afterEnd.records().get(0).message());
+        assertInstanceOf(RangeRecord.class, afterEnd.records().get(1).message());
+        NodeWALUncommittedOffsetsRecord entryRecord = assertInstanceOf(
+            NodeWALUncommittedOffsetsRecord.class, afterEnd.records().get(2).message());
+        assertEquals(BROKER0, entryRecord.nodeId());
+        assertEquals(List.of(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+            .setStreamId(STREAM0).setStartOffset(10L).setEndOffset(20L)), entryRecord.entries());
+
+        replay(manager, afterEnd.records());
+        assertEquals(20L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(20L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a fast close exactly at logical end, verify replay seals the range and closes without
+     * recording historical WAL responsibility.
+     */
+    @Test
+    public void testV6FastCloseAtLogicalEndSealsRangeWithoutEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        createAndOpenStream0();
+        manager.replay(new S3StreamEndOffsetsRecord().setEndOffsets(
+            S3StreamEndOffsetsCodec.encode(List.of(new StreamEndOffset(STREAM0, 10L)))));
+
+        ControllerResult<CloseStreamResponse> result = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(10L));
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(2, result.records().size());
+        assertTrue(result.records().stream()
+            .noneMatch(record -> record.message() instanceof NodeWALUncommittedOffsetsRecord));
+
+        replay(manager, result.records());
+        StreamRuntimeMetadata stream = manager.streamsMetadata().get(STREAM0);
+        assertEquals(StreamState.CLOSED, stream.currentState());
+        assertEquals(10L, stream.endOffset());
+        assertEquals(10L, stream.currentRangeMetadata().endOffset());
+        assertTrue(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().isEmpty());
+    }
+
+    /**
+     * Given a completed fast close, verify an exact retry is record-free, a conflicting retry is
+     * rejected, and an old owner cannot retry after a new owner opens the stream.
+     */
+    @Test
+    public void testV6FastCloseRetryIsIdempotentAndFencedAfterReopen() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<CloseStreamResponse> close = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        replay(manager, close.records());
+
+        ControllerResult<CloseStreamResponse> exactRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.NONE.code(), exactRetry.response().errorCode());
+        assertTrue(exactRetry.records().isEmpty());
+
+        ControllerResult<CloseStreamResponse> conflictingRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(101L));
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), conflictingRetry.response().errorCode());
+        assertTrue(conflictingRetry.records().isEmpty());
+
+        openStream(BROKER1, EPOCH1, STREAM0);
+        ControllerResult<CloseStreamResponse> staleRetry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.STREAM_FENCED.code(), staleRetry.response().errorCode());
+        assertTrue(staleRetry.records().isEmpty());
+    }
+
+    /**
+     * Given historical commits have advanced a fast-close entry, verify an exact close retry does
+     * not recreate the original responsibility interval.
+     */
+    @Test
+    public void testV6FastCloseRetryDoesNotRecreateAdvancedEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> commit = commitRange(
+            BROKER0, BROKER_EPOCH0, 1L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
+
+        ControllerResult<CloseStreamResponse> retry = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        assertEquals(Errors.NONE.code(), retry.response().errorCode());
+        assertTrue(retry.records().isEmpty());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a node retains active historical WAL responsibility, verify both normal open and a
+     * same-epoch retry open are rejected until that responsibility becomes inactive.
+     */
+    @Test
+    public void testOpenRejectsActiveHistoricalEntryForTargetNode() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+
+        ControllerResult<OpenStreamResponse> retryOpen = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), retryOpen.response().errorCode());
+        assertTrue(retryOpen.records().isEmpty());
+
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1)).records());
+        ControllerResult<OpenStreamResponse> normalOpen = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(2L));
+        assertEquals(Errors.STREAM_NOT_CLOSED.code(), normalOpen.response().errorCode());
+        assertTrue(normalOpen.records().isEmpty());
+    }
+
+    /**
+     * Given trim makes a raw historical entry inactive, verify open succeeds at the logical end
+     * without physically deleting that entry.
+     */
+    @Test
+    public void testOpenPermitsAndRetainsInactiveHistoricalEntry() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(100L)).records());
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1)).records());
+
+        NodeWALUncommittedOffset inactiveEntry =
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0);
+        ControllerResult<OpenStreamResponse> result = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(2L));
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(100L, result.response().nextOffset());
+        assertTrue(result.records().stream()
+            .noneMatch(record -> record.message() instanceof NodeWALUncommittedOffsetsRecord));
+        replay(manager, result.records());
+        assertEquals(inactiveEntry,
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().startOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).currentRangeMetadata().endOffset());
+    }
+
+    /**
+     * Given a node owns both an opened stream and a trimmed historical interval, verify failover
+     * returns both responsibilities with the historical range epoch and visible recovery start.
+     */
+    @Test
+    public void testGetOpeningStreamsIncludesActiveHistoricalResponsibility() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, commitRange(BROKER0, BROKER_EPOCH0, 1L, 0L, 40L).records());
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(60L)).records());
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        Map<Long, GetOpeningStreamsResponseData.StreamMetadata> streams = result.response()
+            .streamMetadataList().stream().collect(Collectors.toMap(
+                GetOpeningStreamsResponseData.StreamMetadata::streamId, metadata -> metadata));
+        assertEquals(2, streams.size());
+        assertEquals(EPOCH0, streams.get(STREAM0).epoch());
+        assertEquals(60L, streams.get(STREAM0).startOffset());
+        assertEquals(60L, streams.get(STREAM0).endOffset());
+        assertEquals(EPOCH0, streams.get(STREAM1).epoch());
+        assertEquals(0L, streams.get(STREAM1).endOffset());
+
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM1).setStreamEpoch(EPOCH0)).records());
+        assertTrue(manager.hasOpeningStreams(BROKER0));
+    }
+
+    /**
+     * Given historical WAL metadata no longer has one matching sealed ownership range, verify
+     * failover reports corruption instead of silently omitting responsibility.
+     */
+    @Test
+    public void testGetOpeningStreamsRejectsMissingHistoricalRange() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        manager.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(101L))));
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result.response().errorCode());
+        assertTrue(result.response().streamMetadataList().isEmpty());
+        assertTrue(result.records().isEmpty());
+    }
+
+    /**
+     * Given two sealed ranges both match one historical responsibility entry, verify failover
+     * reports ambiguous ownership as metadata corruption.
+     */
+    @Test
+    public void testGetOpeningStreamsRejectsAmbiguousHistoricalRange() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        manager.replay(new RangeRecord()
+            .setStreamId(STREAM0)
+            .setRangeIndex(1)
+            .setEpoch(EPOCH1)
+            .setNodeId(BROKER0)
+            .setStartOffset(0L)
+            .setEndOffset(100L));
+
+        ControllerResult<GetOpeningStreamsResponseData> result = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+
+        assertEquals(Errors.STREAM_INNER_ERROR.code(), result.response().errorCode());
+        assertTrue(result.response().streamMetadataList().isEmpty());
+        assertTrue(result.records().isEmpty());
+    }
+
+    /**
+     * Given trim advances beyond historical WAL progress before failover establishes its node
+     * barrier, verify normal commits are fenced while failover recovery commits from the visible
+     * start returned by getOpeningStreams.
+     */
+    @Test
+    public void testGetOpeningStreamsFailoverBarrierFencesNormalCommit() {
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<CommitStreamSetObjectResponseData> beforeBarrier = commitRange(
+            BROKER0, BROKER_EPOCH0, 1L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), beforeBarrier.response().errorCode());
+        replay(manager, beforeBarrier.records());
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(60L)).records());
+
+        ControllerResult<GetOpeningStreamsResponseData> barrier = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(1, barrier.records().size());
+        assertEquals(1, barrier.response().streamMetadataList().size());
+        assertEquals(60L, barrier.response().streamMetadataList().get(0).endOffset());
+        replay(manager, barrier.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> normalCommit = commitRange(
+            BROKER0, BROKER_EPOCH0, 2L, 60L, 100L);
+        assertEquals(Errors.NODE_FENCED.code(), normalCommit.response().errorCode());
+        assertTrue(normalCommit.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> failoverCommit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(3L)
+                .setOrderId(3L)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM0)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(60L)
+                    .setEndOffset(100L))));
+        assertEquals(Errors.NONE.code(), failoverCommit.response().errorCode());
+        replay(manager, failoverCommit.records());
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+    }
+
+    /**
+     * Given nodes A and B each own one current range and one crossed historical range, verify
+     * failing over A then B and B then A converges to the same openable state.
+     */
+    @Test
+    public void testCrossedHistoricalOwnershipIsFailoverOrderIndependent() {
+        assertEquals(recoverCrossedOwnership(List.of(BROKER0, BROKER1)),
+            recoverCrossedOwnership(List.of(BROKER1, BROKER0)));
     }
 
     @Test
@@ -564,6 +973,8 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamSetObject() {
         List<Long> committed = new LinkedList<>();
+        when(objectControlManager.getObject(anyLong())).thenAnswer(args -> committed.contains(args.getArgument(0))
+            ? new S3Object(args.getArgument(0), 999L, 0L, S3ObjectState.COMMITTED, 0) : null);
         when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (committed.contains(objectId)) {
@@ -607,6 +1018,8 @@ public class StreamControlManagerTest {
     @Test
     public void testCommitStreamSetObject_theSameStreamObject() {
         List<Long> committed = new LinkedList<>();
+        when(objectControlManager.getObject(anyLong())).thenAnswer(args -> committed.contains(args.getArgument(0))
+            ? new S3Object(args.getArgument(0), 999L, 0L, S3ObjectState.COMMITTED, 0) : null);
         when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
             long objectId = args.getArgument(0);
             if (objectId == NOOP_OBJECT_ID) {
@@ -675,6 +1088,7 @@ public class StreamControlManagerTest {
         ControllerResult<TrimStreamResponse> trimRst = manager.trimStream(BROKER0, EPOCH0, new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L));
         replay(manager, trimRst.records());
         assertEquals(100L, manager.streamsMetadata().get(STREAM0).startOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
 
         ControllerResult<CommitStreamSetObjectResponseData> commitRst = manager.commitStreamSetObject(new CommitStreamSetObjectRequestData().setNodeId(BROKER0).setNodeEpoch(EPOCH0).setObjectStreamRanges(
             List.of(
@@ -682,8 +1096,1186 @@ public class StreamControlManagerTest {
             )
         ));
         replay(manager, commitRst.records());
-        assertEquals(10L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
         assertEquals((short) 0, commitRst.response().errorCode());
+    }
+
+    /**
+     * Given a trim beyond committed data, verify fully trimmed, first trim-cross, continuous,
+     * repeated-overlap, and gap commits follow the logical-end contract.
+     */
+    @Test
+    public void testCurrentOwnerCommitClassificationAfterTrim() {
+        Mockito.when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).then(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(List.of(new ApiMessageAndVersion(
+                new S3ObjectRecord().setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()),
+                (short) 0)), true);
+        });
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<TrimStreamResponse> trimResult = manager.trimStream(BROKER0, BROKER_EPOCH0,
+            new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L));
+        replay(manager, trimResult.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> fullyTrimmed = commitRange(1L, 0L, 90L);
+        assertEquals(Errors.NONE.code(), fullyTrimmed.response().errorCode());
+        replay(manager, fullyTrimmed.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(2L, 90L, 110L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(110L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        ControllerResult<CommitStreamSetObjectResponseData> repeatedOverlap = commitRange(3L, 95L, 120L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), repeatedOverlap.response().errorCode());
+        assertTrue(repeatedOverlap.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> gap = commitRange(4L, 120L, 130L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), gap.response().errorCode());
+        assertTrue(gap.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> continuous = commitRange(5L, 110L, 120L);
+        assertEquals(Errors.NONE.code(), continuous.response().errorCode());
+        replay(manager, continuous.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    /**
+     * Given trim reaches the current owner's logical end before broker failover, verify recovery and
+     * the first failover upload both start at the visible offset returned by getOpeningStreams.
+     */
+    @Test
+    public void testCurrentOwnerFailoverCommitStartsAtTrimmedEnd() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.trimStream(BROKER0, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(100L)).records());
+
+        ControllerResult<GetOpeningStreamsResponseData> openingStreams = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(BROKER0).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(Errors.NONE.code(), openingStreams.response().errorCode());
+        assertEquals(1, openingStreams.response().streamMetadataList().size());
+        assertEquals(100L, openingStreams.response().streamMetadataList().get(0).endOffset());
+        replay(manager, openingStreams.records());
+
+        ControllerResult<CommitStreamSetObjectResponseData> commit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(6L)
+                .setOrderId(6L)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM0)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(100L)
+                    .setEndOffset(120L))));
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    /**
+     * Given a fast-closed range with a new owner, verify historical and current-owner commits
+     * advance only their respective logical state and historical commits stay within the seal.
+     */
+    @Test
+    public void testHistoricalAndCurrentOwnerCommitsAreRoutedIndependently() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ControllerResult<CloseStreamResponse> closeResult = manager.closeStream(BROKER0, BROKER_EPOCH0,
+            new CloseStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L));
+        replay(manager, closeResult.records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<CommitStreamSetObjectResponseData> historical = commitRange(
+            BROKER0, BROKER_EPOCH0, 10L, 0L, 40L);
+        assertEquals(Errors.NONE.code(), historical.response().errorCode());
+        replay(manager, historical.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> currentOwner = commitRange(
+            BROKER1, BROKER_EPOCH0, 11L, 100L, 120L);
+        assertEquals(Errors.NONE.code(), currentOwner.response().errorCode());
+        replay(manager, currentOwner.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> pastHistoricalEnd = commitRange(
+            BROKER0, BROKER_EPOCH0, 12L, 40L, 101L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), pastHistoricalEnd.response().errorCode());
+        assertTrue(pastHistoricalEnd.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> historicalComplete = commitRange(
+            BROKER0, BROKER_EPOCH0, 13L, 40L, 100L);
+        assertEquals(Errors.NONE.code(), historicalComplete.response().errorCode());
+        replay(manager, historicalComplete.records());
+        assertEquals(120L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given trim establishes the fast-close logical end, verify an object formed before trim can
+     * still commit across the visible start while the old owner retains historical responsibility.
+     */
+    @Test
+    public void testHistoricalCommitCrossesTrimAtInitialWALProgress() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        replay(manager, manager.trimStream(BROKER0, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setNewStartOffset(40L)).records());
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 40L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(
+            BROKER0, BROKER_EPOCH0, 14L, 0L, 60L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 60L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> repeatedOverlap = commitRange(
+            BROKER0, BROKER_EPOCH0, 15L, 0L, 80L);
+        assertEquals(Errors.OFFSET_NOT_MATCHED.code(), repeatedOverlap.response().errorCode());
+    }
+
+    /**
+     * Given trim over a historical range, verify late commits remain fenced, fully trimmed data
+     * preserves metadata without logical advances, and the first trim-cross advances the entry.
+     */
+    @Test
+    public void testHistoricalCommitClassificationAfterTrim() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(40L)).records());
+
+        replay(manager, manager.getOpeningStreams(new GetOpeningStreamsRequestData()
+            .setNodeId(BROKER0).setNodeEpoch(1L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> fenced = commitRange(
+            BROKER0, BROKER_EPOCH0, 20L, 0L, 30L);
+        assertEquals(Errors.NODE_EPOCH_EXPIRED.code(), fenced.response().errorCode());
+        assertTrue(fenced.records().isEmpty());
+
+        ControllerResult<CommitStreamSetObjectResponseData> fullyTrimmed = commitRange(
+            BROKER0, 1L, 21L, 0L, 30L);
+        assertEquals(Errors.NONE.code(), fullyTrimmed.response().errorCode());
+        assertTrue(fullyTrimmed.records().stream().anyMatch(record -> record.message() instanceof S3StreamSetObjectRecord));
+        assertTrue(fullyTrimmed.records().stream().noneMatch(record -> record.message() instanceof S3StreamEndOffsetsRecord));
+        replay(manager, fullyTrimmed.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        ControllerResult<CommitStreamSetObjectResponseData> trimCross = commitRange(
+            BROKER0, 1L, 22L, 0L, 60L);
+        assertEquals(Errors.NONE.code(), trimCross.response().errorCode());
+        replay(manager, trimCross.records());
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 60L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+
+        replay(manager, manager.trimStream(BROKER1, BROKER_EPOCH0, new TrimStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(100L)).records());
+        ControllerResult<CommitStreamSetObjectResponseData> afterFullTrim = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(BROKER0)
+                .setNodeEpoch(1L)
+                .setObjectId(23L)
+                .setObjectSize(999L)
+                .setOrderId(23L)
+                .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                    .setStreamId(STREAM1)
+                    .setStreamEpoch(EPOCH0)
+                    .setStartOffset(0L)
+                    .setEndOffset(10L))));
+        assertEquals(Errors.NONE.code(), afterFullTrim.response().errorCode());
+        replay(manager, afterFullTrim.records());
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a sealed historical range and a later owner, when the later owner trims within that range,
+     * then trim advances its own range without expanding it beyond the existing logical end.
+     */
+    @Test
+    public void testTrimDoesNotExpandLaterOwnershipRange() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        ControllerResult<TrimStreamResponse> result = manager.trimStream(BROKER1, BROKER_EPOCH0,
+            new TrimStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH1).setNewStartOffset(40L));
+        replay(manager, result.records());
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertEquals(new RangeMetadata(STREAM0, EPOCH0, 0, 40L, 100L, BROKER0),
+            manager.streamsMetadata().get(STREAM0).ranges().get(0));
+        assertEquals(new RangeMetadata(STREAM0, EPOCH1, 1, 100L, 100L, BROKER1),
+            manager.streamsMetadata().get(STREAM0).ranges().get(1));
+    }
+
+    /**
+     * Given a shared object containing deleted and live streams, verify the deleted range is
+     * terminal success, its node entry is removed, and the live range still commits.
+     */
+    @Test
+    public void testDeletedStreamRangeDoesNotFailSharedObject() {
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        replay(manager, manager.deleteStream(new DeleteStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0)).records());
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
+            .setNodeId(BROKER0)
+            .setNodeEpoch(BROKER_EPOCH0)
+            .setObjectId(40L)
+            .setObjectSize(999L)
+            .setObjectStreamRanges(List.of(
+                new ObjectStreamRange().setStreamId(STREAM0).setStartOffset(0L).setEndOffset(100L),
+                new ObjectStreamRange().setStreamId(STREAM1).setStartOffset(0L).setEndOffset(20L)));
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(request);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        assertNull(manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(20L, manager.streamsMetadata().get(STREAM1).endOffset());
+        assertTrue(manager.nodesMetadata().get(BROKER0).streamSetObjects().containsKey(40L));
+    }
+
+    /**
+     * Given compaction over an active historical range, verify it does not advance logical or WAL
+     * state.
+     */
+    @Test
+    public void testCompactionDoesNotAdvanceLogicalState() {
+        mockSuccessfulObjectCommits();
+        when(objectControlManager.markDestroyObjects(anyList()))
+            .thenReturn(ControllerResult.of(Collections.emptyList(), true));
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+        manager.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(999L).setStartOffset(0L).setEndOffset(50L))));
+        manager.replay(new S3StreamSetObjectRecord().setNodeId(BROKER0).setObjectId(70L)
+            .setOrderId(70L).setDataTimeInMs(1L));
+
+        CommitStreamSetObjectRequestData request = new CommitStreamSetObjectRequestData()
+            .setNodeId(BROKER0)
+            .setNodeEpoch(BROKER_EPOCH0)
+            .setObjectId(71L)
+            .setObjectSize(999L)
+            .setCompactedObjectIds(List.of(70L))
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(40L)));
+        ControllerResult<CommitStreamSetObjectResponseData> result = manager.commitStreamSetObject(request);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 100L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(999L, 0L, 50L),
+            manager.nodesMetadata().get(BROKER0).uncommittedOffsets().get(999L));
+    }
+
+    /**
+     * Given out-of-order stream and range records, verify runtime logical end only advances.
+     */
+    @Test
+    public void testLogicalEndReplayIsMonotonic() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(100L));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(100L).setEndOffset(150L).setNodeId(BROKER0));
+        assertEquals(150L, manager.streamsMetadata().get(STREAM0).endOffset());
+
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(80L));
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(80L).setEndOffset(120L).setNodeId(BROKER0));
+        assertEquals(100L, manager.streamsMetadata().get(STREAM0).startOffset());
+        assertEquals(150L, manager.streamsMetadata().get(STREAM0).endOffset());
+    }
+
+    /**
+     * Given Stream Archive records, verify Controller replay resolves defaults, replaces complete
+     * state, retains Archive state after Stream deletion, and removes it only on its own record.
+     */
+    @Test
+    public void testArchiveStateReplay() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(100L));
+        assertEquals(S3StreamArchiveMetadata.defaultAt(STREAM0, 100L),
+            manager.getStreamArchiveMetadata(STREAM0));
+
+        manager.replay(new S3StreamArchiveRecord()
+            .setStreamId(STREAM0)
+            .setArchiveStartOffset(10L)
+            .setArchiveMetadataEndOffset(20L)
+            .setArchiveEndOffset(30L)
+            .setArchivePreparedEndOffset(40L)
+            .setArchiveSize(500L)
+            .setArchiveCleanupEndOffset(25L)
+            .setArchiveCleanupSize(100L));
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L),
+            manager.getStreamArchiveMetadata(STREAM0));
+
+        manager.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        assertEquals(500L, manager.getStreamArchiveMetadata(STREAM0).archiveSize());
+
+        manager.replay(new RemoveS3StreamArchiveRecord().setStreamId(STREAM0));
+        assertNull(manager.getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given a live owned Stream, verify prepare and publish persist complete Archive states and
+     * equal retries are idempotent.
+     */
+    @Test
+    public void testUpdateStreamArchivePreparePublishAndIdempotency() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setNodeId(BROKER0).setEpoch(EPOCH0).setStartOffset(0L).setEndOffset(100L));
+        addCommittedNormal(10L, 0L, 50L);
+
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 50L, 0L, 0L, 0L)
+            .setArchiveObjectIds(List.of(10L));
+        ControllerResult<UpdateStreamResponse> prepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        assertEquals(Errors.NONE.code(), prepareResult.response().errorCode());
+        replay(manager, prepareResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archivePreparedEndOffset());
+
+        assertTrue(manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare).records().isEmpty());
+
+        ArchiveUpdate publish = archiveUpdate(0L, 50L, 50L, 1_000L, 0L, 0L);
+        ControllerResult<UpdateStreamResponse> publishResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, publish);
+        assertEquals(Errors.NONE.code(), publishResult.response().errorCode());
+        replay(manager, publishResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveEndOffset());
+        assertEquals(1_000L, manager.getStreamArchiveMetadata(STREAM0).archiveSize());
+    }
+
+    /**
+     * Given Controller metadata cleanup advances between Broker operations, verify prepare, publish, and retention
+     * cleanup preserve that Controller-owned progress instead of conflicting with or overwriting it.
+     */
+    @Test
+    public void testBrokerArchiveUpdatesPreserveControllerMetadataProgress() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setNodeId(BROKER0).setEpoch(EPOCH0).setStartOffset(0L).setEndOffset(100L));
+        addCommittedNormal(10L, 50L, 100L);
+        replay(manager, List.of(archiveMetadata(0L, 25L, 50L, 50L, 500L, 0L, 0L).toRecord()));
+
+        ArchiveUpdate prepare = archiveUpdate(0L, 50L, 100L, 500L, 0L, 0L)
+            .setArchiveObjectIds(List.of(10L));
+        ControllerResult<UpdateStreamResponse> prepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        assertEquals(Errors.NONE.code(), prepareResult.response().errorCode());
+        replay(manager, prepareResult.records());
+        assertEquals(25L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+
+        replay(manager, List.of(archiveMetadata(0L, 50L, 50L, 100L, 500L, 0L, 0L).toRecord()));
+        ArchiveUpdate publish = archiveUpdate(0L, 100L, 100L, 1_000L, 0L, 0L);
+        ControllerResult<UpdateStreamResponse> publishResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, publish);
+        assertEquals(Errors.NONE.code(), publishResult.response().errorCode());
+        replay(manager, publishResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+
+        ArchiveUpdate cleanupPrepare = archiveUpdate(0L, 100L, 100L, 1_000L, 50L, 100L);
+        ControllerResult<UpdateStreamResponse> cleanupPrepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, cleanupPrepare);
+        assertEquals(Errors.NONE.code(), cleanupPrepareResult.response().errorCode());
+        replay(manager, cleanupPrepareResult.records());
+        ArchiveUpdate cleanupCommit = archiveUpdate(50L, 100L, 100L, 900L, 50L, 0L);
+        ControllerResult<UpdateStreamResponse> cleanupCommitResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, cleanupCommit);
+        assertEquals(Errors.NONE.code(), cleanupCommitResult.response().errorCode());
+        replay(manager, cleanupCommitResult.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+    }
+
+    /**
+     * Given more than one cleanup round of published Composite metadata, verify one atomic round
+     * removes at most 1,000 mappings, shallow-deletes their manifests, and advances only to the
+     * last removed Composite boundary.
+     */
+    @Test
+    public void testArchiveMetadataCleanupIsBoundedAtomicAndShallow() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        for (long objectId = 0; objectId < 1_003; objectId++) {
+            manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(objectId)
+                .setStartOffset(objectId).setEndOffset(objectId + 1));
+        }
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 0L, 1_002L, 1_002L, 10_020L, 0L, 0L).toRecord().message());
+        when(objectControlManager.getObject(anyLong())).thenAnswer(invocation -> new S3Object(
+            invocation.getArgument(0), 10L, 0L, S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
+        when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenAnswer(invocation -> {
+            List<Long> objectIds = invocation.getArgument(0);
+            List<ApiMessageAndVersion> records = objectIds.stream()
+                .map(objectId -> new ApiMessageAndVersion(
+                    new S3ObjectRecord().setObjectId(objectId).setObjectSize(10L)
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                        .setAttributes(ObjectAttributes.builder()
+                            .type(ObjectAttributes.Type.Composite).build().attributes()), (short) 0))
+                .collect(Collectors.toList());
+            return ControllerResult.atomicOf(records, true);
+        });
+
+        ControllerResult<Void> result = manager.cleanupStreamArchiveMetadata(STREAM0);
+
+        verify(objectControlManager).markDestroyObjects(anyList(),
+            eq(Collections.nCopies(1_000, CompactOperations.DELETE)));
+        assertTrue(result.isAtomic());
+        assertEquals(2_001, result.records().size());
+        assertEquals(1_000, result.records().stream()
+            .filter(record -> record.message() instanceof S3ObjectRecord).count());
+        assertEquals(1_000, result.records().stream()
+            .filter(record -> record.message() instanceof RemoveS3StreamObjectRecord).count());
+        S3StreamArchiveRecord progress = result.records().stream()
+            .map(ApiMessageAndVersion::message)
+            .filter(S3StreamArchiveRecord.class::isInstance)
+            .map(S3StreamArchiveRecord.class::cast)
+            .findFirst()
+            .orElseThrow();
+        assertEquals(1_000L, progress.archiveMetadataEndOffset());
+        assertEquals(1_002L, progress.archiveEndOffset());
+    }
+
+    /**
+     * Given publication with more than one cleanup round, verify replay triggers cleanup and each
+     * progress replay appends the remaining work after the current Controller event.
+     */
+    @Test
+    public void testArchivePublicationTriggersMetadataCleanupUntilCaughtUp() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        for (long objectId = 0; objectId < 1_003; objectId++) {
+            manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(objectId)
+                .setStartOffset(objectId).setEndOffset(objectId + 1));
+        }
+        when(objectControlManager.getObject(anyLong())).thenAnswer(invocation -> new S3Object(
+            invocation.getArgument(0), 10L, 0L, S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
+        when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenAnswer(invocation -> {
+            List<Long> objectIds = invocation.getArgument(0);
+            return ControllerResult.atomicOf(objectIds.stream()
+                .map(objectId -> new ApiMessageAndVersion(
+                    new S3ObjectRecord().setObjectId(objectId).setObjectSize(10L)
+                        .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                        .setAttributes(ObjectAttributes.builder()
+                            .type(ObjectAttributes.Type.Composite).build().attributes()), (short) 0))
+                .collect(Collectors.toList()), true);
+        });
+        when(quorumController.isActive()).thenReturn(true);
+
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 0L, 1_002L, 1_002L, 10_020L, 0L, 0L).toRecord().message());
+        manager.reconcileStreamArchiveMetadataCleanup();
+
+        assertEquals(Set.of(1_002L), manager.streamsMetadata().get(STREAM0).streamObjects().keySet());
+        assertEquals(1_002L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+        verify(objectControlManager, times(2)).markDestroyObjects(anyList(), anyList());
+    }
+
+    /**
+     * Given publication leaves source metadata pending cleanup, verify Broker retention cleanup
+     * cannot deep-delete linked objects from the authoritative Archive range.
+     */
+    @Test
+    public void testPublishedArchiveRangeFencesDeepDeleteUntilMetadataCleanup() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        addCommittedComposite(10L, 0L, 50L);
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 0L, 50L, 50L, 500L, 0L, 0L).toRecord().message());
+        CommitStreamObjectRequestData cleanup = commitStreamObject(
+            NOOP_OBJECT_ID, ObjectUtils.NOOP_OFFSET, ObjectUtils.NOOP_OFFSET, List.of(10L))
+            .setOperations(List.of(CompactOperations.DEEP_DELETE.value()));
+
+        ControllerResult<CommitStreamObjectResponseData> result = manager.commitStreamObject(cleanup);
+
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), result.response().errorCode());
+        assertTrue(result.records().isEmpty());
+        verify(objectControlManager, never()).markDestroyObjects(anyList(), anyList());
+    }
+
+    /**
+     * Given cleanup scheduling was lost before a Controller leadership change, verify periodic
+     * reconciliation rediscovers the durable backlog and reclaims it.
+     */
+    @Test
+    public void testArchiveMetadataCleanupReconciliationRediscoversBacklog() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(0L).setEndOffset(50L));
+        when(objectControlManager.getObject(10L)).thenReturn(new S3Object(
+            10L, 500L, 0L, S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
+        when(objectControlManager.markDestroyObjects(anyList(), anyList())).thenReturn(
+            ControllerResult.atomicOf(List.of(new ApiMessageAndVersion(
+                new S3ObjectRecord().setObjectId(10L).setObjectSize(500L)
+                    .setObjectState(S3ObjectState.MARK_DESTROYED.toByte())
+                    .setAttributes(ObjectAttributes.builder()
+                        .type(ObjectAttributes.Type.Composite).build().attributes()), (short) 0)), true));
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 0L, 50L, 50L, 500L, 0L, 0L).toRecord().message());
+        when(quorumController.isActive()).thenReturn(true);
+
+        manager.reconcileStreamArchiveMetadataCleanup();
+
+        assertTrue(manager.streamsMetadata().get(STREAM0).streamObjects().isEmpty());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+        verify(objectControlManager).markDestroyObjects(anyList(), anyList());
+    }
+
+    /**
+     * Given Archive records are added, replaced, and removed, verify capacity accounting follows those records
+     * independently of Stream deletion.
+     */
+    @Test
+    public void testStreamArchiveSizeFollowsArchiveRecords() {
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM1).setStartOffset(0L));
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 50L, 50L, 50L, 500L, 0L, 0L).toRecord().message());
+        manager.replay(new S3StreamArchiveRecord()
+            .setStreamId(STREAM1)
+            .setArchiveStartOffset(0L)
+            .setArchiveMetadataEndOffset(70L)
+            .setArchiveEndOffset(70L)
+            .setArchivePreparedEndOffset(70L)
+            .setArchiveSize(700L)
+            .setArchiveCleanupEndOffset(0L)
+            .setArchiveCleanupSize(0L));
+
+        assertEquals(1_200L, manager.streamArchiveSize());
+
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 50L, 50L, 50L, 600L, 0L, 0L).toRecord().message());
+        assertEquals(1_300L, manager.streamArchiveSize());
+
+        manager.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        assertEquals(1_300L, manager.streamArchiveSize());
+
+        manager.replay(new RemoveS3StreamArchiveRecord().setStreamId(STREAM0));
+        assertEquals(700L, manager.streamArchiveSize());
+    }
+
+    /**
+     * Given a closed Stream with a published Archive record and an empty Archive prefix, when the
+     * Stream is deleted, then visible Stream metadata disappears immediately and the Controller
+     * removes the durable deletion task after the empty prefix remains quiescent for five minutes.
+     */
+    @Test
+    public void testDeleteStreamCompletesPublishedArchiveTaskAfterQuiescence() {
+        when(quorumController.isActive()).thenReturn(true);
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 50L, 50L, 50L, 500L, 0L, 0L).toRecord().message());
+        when(objectControlManager.markDestroyObjects(List.of(), List.of()))
+            .thenReturn(ControllerResult.atomicOf(List.of(), true));
+
+        ControllerResult<DeleteStreamResponse> result = manager.deleteStream(new DeleteStreamRequest()
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0));
+        replay(manager, result.records());
+        manager.reconcileStreamArchiveMetadataCleanup();
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
+        manager.reconcileStreamArchiveMetadataCleanup();
+        verify(quorumController, timeout(5_000)).appendWriteEvent(
+            eq("completeDeletedStreamArchiveCleanup"), eq(OptionalLong.empty()), any());
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        assertNull(manager.streamsMetadata().get(STREAM0));
+        assertNull(manager.getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given more than one page of canonical Composite manifests and a malformed top-level object, when a new
+     * Controller rediscovers the deleted Stream's durable task, then it repeatedly deletes bounded first pages,
+     * deep-deletes known Composites, and directly deletes the malformed object.
+     */
+    @Test
+    public void testDeletedStreamArchiveCleanupIsBoundedFormatAgnosticAndRecoveredAfterFailover()
+        throws Exception {
+        objectStorage = spy(new MemoryObjectStorage());
+        manager = new StreamControlManager(quorumController, new SnapshotRegistry(new LogContext()),
+            new LogContext(), objectControlManager, clusterControlManager, featureControlManager,
+            replicationControlManager, objectStorage, time);
+        List<String> manifestKeys = new ArrayList<>();
+        List<String> linkedKeys = new ArrayList<>();
+        for (int i = 0; i < 101; i++) {
+            long linkedObjectId = 10_000L + i;
+            String manifestKey = ArchiveObjectKey.manifestKey(
+                STREAM0, i, i + 1L, ObjectAttributes.Type.Composite, linkedObjectId, 1L);
+            String linkedKey = writeArchiveComposite(manifestKey, linkedObjectId, i);
+            manifestKeys.add(manifestKey);
+            linkedKeys.add(linkedKey);
+        }
+        String malformedKey = ArchiveObjectKey.manifestPrefix(STREAM0) + "non-canonical";
+        objectStorage.write(new ObjectStorage.WriteOptions(), malformedKey,
+            Unpooled.wrappedBuffer(new byte[] {1})).get();
+        manifestKeys.add(malformedKey);
+        S3StreamArchiveRecord archive = (S3StreamArchiveRecord) archiveMetadata(
+            0L, 101L, 101L, 101L, 101L, 0L, 0L).toRecord().message();
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        manager.replay(archive);
+        when(objectControlManager.markDestroyObjects(List.of(), List.of()))
+            .thenReturn(ControllerResult.atomicOf(List.of(), true));
+        replay(manager, manager.deleteStream(new DeleteStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0)).records());
+        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
+
+        manager = new StreamControlManager(quorumController, new SnapshotRegistry(new LogContext()),
+            new LogContext(), objectControlManager, clusterControlManager, featureControlManager,
+            replicationControlManager, objectStorage, time);
+        when(quorumController.isActive()).thenReturn(true);
+        manager.replay(archive);
+        manager.reconcileStreamArchiveMetadataCleanup();
+
+        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
+        awaitCondition(() -> manifestKeys.stream().noneMatch(objectStorage::contains));
+        linkedKeys.forEach(key -> assertFalse(objectStorage.contains(key)));
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
+        manager.reconcileStreamArchiveMetadataCleanup();
+        awaitCondition(() -> manager.getStreamArchiveMetadata(STREAM0) == null);
+        manifestKeys.forEach(key -> assertFalse(objectStorage.contains(key)));
+        org.mockito.ArgumentCaptor<ObjectStorage.ListOptions> options =
+            org.mockito.ArgumentCaptor.forClass(ObjectStorage.ListOptions.class);
+        verify(objectStorage, Mockito.atLeast(3)).list(options.capture());
+        assertTrue(options.getAllValues().stream().allMatch(value -> value.maxKeys() == 100));
+    }
+
+    /**
+     * Given unpublished prepared Archive work, verify an empty prefix must remain quiescent for five
+     * minutes, an observed late write is deleted and restarts the window, and a write after durable
+     * task removal is the explicitly accepted leak boundary.
+     */
+    @Test
+    public void testDeletedPreparedArchiveRequiresQuiescenceAndRecordsAcceptedLateLeak() throws Exception {
+        registerAlwaysSuccessEpoch(BROKER0);
+        when(quorumController.isActive()).thenReturn(true);
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        manager.replay((S3StreamArchiveRecord) archiveMetadata(
+            0L, 50L, 50L, 100L, 500L, 0L, 0L).toRecord().message());
+        when(objectControlManager.markDestroyObjects(List.of(), List.of()))
+            .thenReturn(ControllerResult.atomicOf(List.of(), true));
+        replay(manager, manager.deleteStream(new DeleteStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0)).records());
+        manager.reconcileStreamArchiveMetadataCleanup();
+        assertNotNull(manager.getStreamArchiveMetadata(STREAM0));
+        List<ArchiveUpdate> postDeleteUpdates = List.of(
+            archiveUpdate(0L, 50L, 100L, 500L, 0L, 0L),
+            archiveUpdate(0L, 100L, 100L, 600L, 0L, 0L),
+            archiveUpdate(0L, 50L, 100L, 500L, 25L, 100L),
+            archiveUpdate(25L, 50L, 100L, 400L, 25L, 0L));
+        postDeleteUpdates.forEach(update -> assertEquals(Errors.STREAM_NOT_EXIST.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, update).response().errorCode()));
+
+        time.sleep(TimeUnit.MINUTES.toMillis(4));
+        String lateManifest = ArchiveObjectKey.manifestPrefix(STREAM0) + "late-prepared";
+        writeArchiveComposite(lateManifest, 20_000L, 0L);
+        manager.reconcileStreamArchiveMetadataCleanup();
+        assertTrue(objectStorage.contains(lateManifest));
+
+        time.sleep(TimeUnit.MINUTES.toMillis(1));
+        manager.reconcileStreamArchiveMetadataCleanup();
+        awaitCondition(() -> !objectStorage.contains(lateManifest));
+
+        time.sleep(TimeUnit.MINUTES.toMillis(5));
+        manager.reconcileStreamArchiveMetadataCleanup();
+        awaitCondition(() -> manager.getStreamArchiveMetadata(STREAM0) == null);
+
+        String acceptedLeak = ArchiveObjectKey.manifestPrefix(STREAM0) + "accepted-late-leak";
+        writeArchiveComposite(acceptedLeak, 30_000L, 0L);
+        manager.reconcileStreamArchiveMetadataCleanup();
+        assertTrue(objectStorage.contains(acceptedLeak));
+    }
+
+    private String writeArchiveComposite(String manifestKey, long linkedObjectId, long startOffset)
+        throws Exception {
+        String linkedKey = ObjectUtils.genKey(0, linkedObjectId);
+        objectStorage.write(new ObjectStorage.WriteOptions(), linkedKey,
+            Unpooled.wrappedBuffer(new byte[] {1})).get();
+        CompositeObjectWriter writer = new CompositeObjectWriter(
+            objectStorage.writer(new ObjectStorage.WriteOptions(), manifestKey));
+        writer.addComponent(new S3ObjectMetadata(linkedObjectId,
+                ObjectAttributes.builder().bucket(objectStorage.bucketId()).build().attributes()),
+            List.of(new DataBlockIndex(STREAM0, startOffset, 1, 1, 0L, 1)));
+        writer.close().get();
+        return linkedKey;
+    }
+
+    private void awaitCondition(BooleanSupplier condition) throws InterruptedException {
+        long deadlineNs = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!condition.getAsBoolean() && System.nanoTime() < deadlineNs) {
+            Thread.sleep(10L);
+        }
+        assertTrue(condition.getAsBoolean());
+    }
+
+    /**
+     * Given compaction replaces the selected objects first, verify Archive prepare rejects the stale object list.
+     */
+    @Test
+    public void testArchivePrepareConflictsAfterCompaction() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        addCommittedComposite(10L, 0L, 50L);
+        addCommittedComposite(11L, 50L, 100L);
+        mockSuccessfulObjectCommits();
+
+        ControllerResult<CommitStreamObjectResponseData> compaction = manager.commitStreamObject(
+            commitStreamObject(12L, 0L, 100L, List.of(10L, 11L)));
+        assertEquals(Errors.NONE.code(), compaction.response().errorCode());
+        replay(manager, compaction.records());
+
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L)
+            .setArchiveObjectIds(List.of(10L, 11L));
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare).response().errorCode());
+    }
+
+    /**
+     * Given Archive prepare freezes an online range, verify every overlapping layout mutation is rejected.
+     */
+    @Test
+    public void testArchivePrepareFencesOverlappingCompactionVariants() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        addCommittedComposite(10L, 0L, 50L);
+        addCommittedComposite(11L, 50L, 100L);
+        mockSuccessfulObjectCommits();
+        ControllerResult<UpdateStreamResponse> prepare = manager.updateStreamArchive(BROKER0, BROKER_EPOCH0,
+            archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L).setArchiveObjectIds(List.of(10L, 11L)));
+        replay(manager, prepare.records());
+
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
+            commitStreamObject(12L, 0L, 100L, List.of(10L, 11L))).response().errorCode());
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
+            commitStreamObject(10L, 0L, 50L, List.of(10L))).response().errorCode());
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
+            commitStreamObject(NOOP_OBJECT_ID, ObjectUtils.NOOP_OFFSET, ObjectUtils.NOOP_OFFSET, List.of(10L)))
+                .response().errorCode());
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
+            commitStreamObject(13L, 25L, 75L, Collections.emptyList())).response().errorCode());
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.commitStreamObject(
+            commitStreamObject(14L, 100L, 150L, List.of(11L))).response().errorCode());
+
+        verify(objectControlManager, never()).commitObject(anyLong(), anyLong(), anyLong(), anyInt());
+        verify(objectControlManager, never()).replaceCommittedObject(anyLong(), anyInt());
+        verify(objectControlManager, never()).markDestroyObjects(anyList(), anyList());
+
+        assertEquals(Errors.NONE.code(), manager.commitStreamObject(
+            commitStreamObject(15L, 100L, 150L, Collections.emptyList())).response().errorCode());
+    }
+
+    /**
+     * Given a well-formed prepare payload, verify only the exact continuous committed Stream Object sequence is accepted.
+     */
+    @Test
+    public void testArchivePrepareValidatesCurrentObjectSequence() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        addCommittedComposite(10L, 0L, 50L);
+        addCommittedComposite(11L, 50L, 100L);
+
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 100L, 0L, 0L, 0L);
+        prepare.setArchiveObjectIds(List.of(11L, 10L));
+        assertArchiveConflict(prepare);
+        prepare.setArchiveObjectIds(List.of(10L));
+        assertArchiveConflict(prepare);
+        prepare.setArchiveObjectIds(List.of(10L, 11L));
+        prepare.setArchivePreparedEndOffset(75L);
+        assertArchiveConflict(prepare);
+        prepare.setArchivePreparedEndOffset(100L);
+
+        when(objectControlManager.getObject(11L)).thenReturn(null);
+        assertArchiveConflict(prepare);
+        when(objectControlManager.getObject(11L)).thenReturn(new S3Object(11L, 999L, 0L,
+            S3ObjectState.PREPARED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
+        assertArchiveConflict(prepare);
+        addCommittedComposite(11L, 60L, 100L);
+        assertArchiveConflict(prepare);
+        addCommittedComposite(11L, 50L, 100L);
+        assertEquals(Errors.NONE.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare).response().errorCode());
+    }
+
+    /**
+     * Given a prepare was already persisted, verify an equal retry trusts the range fence established by prepare.
+     */
+    @Test
+    public void testIdempotentArchivePrepareUsesPersistedIntent() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        addCommittedComposite(10L, 0L, 50L);
+        ArchiveUpdate prepare = archiveUpdate(0L, 0L, 50L, 0L, 0L, 0L)
+            .setArchiveObjectIds(List.of(10L));
+        ControllerResult<UpdateStreamResponse> result =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        replay(manager, result.records());
+
+        manager.replay(new RemoveS3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L));
+        ControllerResult<UpdateStreamResponse> retry =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepare);
+        assertEquals(Errors.NONE.code(), retry.response().errorCode());
+        assertTrue(retry.records().isEmpty());
+    }
+
+    /**
+     * Given an unreadable operation payload and a stale cursor, verify they return distinct non-retriable errors.
+     */
+    @Test
+    public void testUpdateStreamArchiveInvalidRequestAndConflict() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+
+        ArchiveUpdate malformed = new ArchiveUpdate().setStreamId(STREAM0).setStreamEpoch(EPOCH0)
+            .setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value());
+        assertEquals(Errors.INVALID_REQUEST.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
+
+        ArchiveUpdate stale = archiveUpdate(0L, 10L, 10L, 100L, 0L, 0L);
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, stale).response().errorCode());
+    }
+
+    /**
+     * Given published data and cleanup intent, verify cleanup prepare and commit are exact full-state transitions.
+     */
+    @Test
+    public void testUpdateStreamArchiveCleanupTransitions() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 50L, 50L, 100L, 0L, 0L).toRecord()));
+
+        ArchiveUpdate prepareCleanup = archiveUpdate(0L, 50L, 50L, 100L, 25L, 40L);
+        ControllerResult<UpdateStreamResponse> prepareResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, prepareCleanup);
+        assertEquals(Errors.NONE.code(), prepareResult.response().errorCode());
+        replay(manager, prepareResult.records());
+
+        ArchiveUpdate commitCleanup = archiveUpdate(25L, 50L, 50L, 60L, 25L, 0L);
+        ControllerResult<UpdateStreamResponse> commitResult =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, commitCleanup);
+        assertEquals(Errors.NONE.code(), commitResult.response().errorCode());
+        replay(manager, commitResult.records());
+        assertEquals(25L, manager.getStreamArchiveMetadata(STREAM0).archiveStartOffset());
+        assertEquals(60L, manager.getStreamArchiveMetadata(STREAM0).archiveSize());
+    }
+
+    /**
+     * Given one Archive lifecycle has a durable prepare intent, verify the Controller rejects a stale request that
+     * attempts to prepare the other lifecycle concurrently.
+     */
+    @Test
+    public void testArchiveAndCleanupPrepareAreMutuallyExclusive() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 50L, 100L, 100L, 0L, 0L).toRecord()));
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(0L, 50L, 50L, 100L, 25L, 40L))
+            .response().errorCode());
+    }
+
+    /**
+     * Given retention ahead of an empty Archive, verify the cursor advances only to a current online boundary.
+     */
+    @Test
+    public void testUpdateStreamArchiveEmptyCursorTransition() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setEpoch(EPOCH0)
+            .setRangeIndex(0).setStartOffset(100L).setStreamState(StreamState.OPENED.toByte()));
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(50L).setEndOffset(150L));
+
+        ArchiveUpdate advance = archiveUpdate(50L, 50L, 50L, 0L, 50L, 0L);
+        ControllerResult<UpdateStreamResponse> result =
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, advance);
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+        replay(manager, result.records());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveStartOffset());
+        assertEquals(0L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+        assertTrue(manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, advance).records().isEmpty());
+
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(75L, 75L, 75L, 0L, 75L, 0L))
+            .response().errorCode());
+    }
+
+    /**
+     * Given expired and living Stream Objects, verify the Controller accepts the boundary of the object containing
+     * Stream start.
+     */
+    @Test
+    public void testUpdateStreamArchiveEmptyCursorAcceptsLivingStreamObjectBoundary() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setEpoch(EPOCH0)
+            .setRangeIndex(0).setStartOffset(100L).setStreamState(StreamState.OPENED.toByte()));
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(50L).setEndOffset(80L));
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(11L)
+            .setStartOffset(80L).setEndOffset(150L));
+
+        ControllerResult<UpdateStreamResponse> result = manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(80L, 80L, 80L, 0L, 80L, 0L));
+
+        assertEquals(Errors.NONE.code(), result.response().errorCode());
+    }
+
+    /**
+     * Given no living Stream Object, verify the Controller rejects empty Archive cursor advancement.
+     */
+    @Test
+    public void testUpdateStreamArchiveEmptyCursorWaitsWithoutLivingStreamObject() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setEpoch(EPOCH0)
+            .setRangeIndex(0).setStartOffset(100L).setStreamState(StreamState.OPENED.toByte()));
+
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(99L, 99L, 99L, 0L, 99L, 0L))
+            .response().errorCode());
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(100L, 100L, 100L, 0L, 100L, 0L))
+            .response().errorCode());
+    }
+
+    /**
+     * Given overlapping failures, verify Archive validation uses the specified error precedence.
+     */
+    @Test
+    public void testUpdateStreamArchiveErrorPrecedence() {
+        ArchiveUpdate malformed = archiveUpdate(-1L, 0L, 0L, 0L, 0L, 0L);
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V5);
+        assertEquals(Errors.UNSUPPORTED_VERSION.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
+
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        assertEquals(Errors.NODE_EPOCH_NOT_EXIST.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
+
+        registerAlwaysSuccessEpoch(BROKER0);
+        assertEquals(Errors.STREAM_NOT_EXIST.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
+
+        createAndOpenStream(BROKER0, EPOCH0);
+        malformed.setStreamEpoch(EPOCH1);
+        assertEquals(Errors.STREAM_FENCED.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, malformed).response().errorCode());
+    }
+
+    private S3StreamArchiveMetadata archiveMetadata(long startOffset, long metadataEndOffset, long endOffset,
+        long preparedEndOffset, long size, long cleanupEndOffset, long cleanupSize) {
+        return new S3StreamArchiveMetadata(STREAM0, startOffset, metadataEndOffset, endOffset,
+            preparedEndOffset, size, cleanupEndOffset, cleanupSize);
+    }
+
+    private ArchiveUpdate archiveUpdate(long startOffset, long endOffset,
+        long preparedEndOffset, long size, long cleanupEndOffset, long cleanupSize) {
+        S3StreamArchiveMetadata current = manager.getStreamArchiveMetadata(STREAM0);
+        long currentStart = current == null ? 0L : current.archiveStartOffset();
+        long currentEnd = current == null ? 0L : current.archiveEndOffset();
+        ArchiveUpdate operation = new ArchiveUpdate().setStreamId(STREAM0).setStreamEpoch(EPOCH0);
+        if (preparedEndOffset > endOffset) {
+            return operation.setOperation(StreamArchiveOperationType.ARCHIVE_PREPARE.value())
+                .setArchivePrepare(new ArchivePrepare().setExpectedArchiveEndOffset(endOffset)
+                    .setArchivePreparedEndOffset(preparedEndOffset));
+        }
+        if (cleanupSize > 0) {
+            return operation.setOperation(StreamArchiveOperationType.CLEANUP_PREPARE.value())
+                .setCleanupPrepare(new UpdateStreamArchiveRequestData.CleanupPrepare()
+                    .setExpectedArchiveStartOffset(startOffset).setArchiveCleanupEndOffset(cleanupEndOffset)
+                    .setArchiveCleanupSize(cleanupSize));
+        }
+        if (current != null && current.archiveCleanupSize() > 0 && startOffset == cleanupEndOffset) {
+            return operation.setOperation(StreamArchiveOperationType.CLEANUP_COMMIT.value())
+                .setCleanupCommit(new UpdateStreamArchiveRequestData.CleanupCommit()
+                    .setExpectedArchiveStartOffset(currentStart).setArchiveCleanupEndOffset(cleanupEndOffset));
+        }
+        if (startOffset == endOffset && size == 0 && startOffset > currentStart) {
+            return operation.setOperation(StreamArchiveOperationType.ADVANCE_EMPTY_CURSOR.value())
+                .setAdvanceEmptyCursor(new UpdateStreamArchiveRequestData.AdvanceEmptyCursor()
+                    .setExpectedArchiveOffset(currentStart).setNewArchiveOffset(startOffset));
+        }
+        return operation.setOperation(StreamArchiveOperationType.ARCHIVE_PUBLISH.value())
+            .setArchivePublish(new UpdateStreamArchiveRequestData.ArchivePublish()
+                .setExpectedArchiveEndOffset(currentEnd).setArchiveEndOffset(endOffset).setArchiveSize(size));
+    }
+
+    private static final class ArchiveUpdate extends StreamArchiveOperation {
+        @Override
+        public ArchiveUpdate setStreamId(long streamId) {
+            super.setStreamId(streamId);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setStreamEpoch(long streamEpoch) {
+            super.setStreamEpoch(streamEpoch);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setOperation(byte operation) {
+            super.setOperation(operation);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setArchivePrepare(ArchivePrepare payload) {
+            super.setArchivePrepare(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setCleanupPrepare(UpdateStreamArchiveRequestData.CleanupPrepare payload) {
+            super.setCleanupPrepare(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setCleanupCommit(UpdateStreamArchiveRequestData.CleanupCommit payload) {
+            super.setCleanupCommit(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setAdvanceEmptyCursor(UpdateStreamArchiveRequestData.AdvanceEmptyCursor payload) {
+            super.setAdvanceEmptyCursor(payload);
+            return this;
+        }
+
+        @Override
+        public ArchiveUpdate setArchivePublish(UpdateStreamArchiveRequestData.ArchivePublish payload) {
+            super.setArchivePublish(payload);
+            return this;
+        }
+
+        ArchiveUpdate setArchiveObjectIds(List<Long> objectIds) {
+            archivePrepare().setArchiveObjectIds(objectIds);
+            return this;
+        }
+
+        ArchiveUpdate setArchivePreparedEndOffset(long offset) {
+            archivePrepare().setArchivePreparedEndOffset(offset);
+            return this;
+        }
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> commitRange(long objectId, long startOffset,
+        long endOffset) {
+        return commitRange(BROKER0, BROKER_EPOCH0, objectId, startOffset, endOffset);
+    }
+
+    private ControllerResult<CommitStreamSetObjectResponseData> commitRange(int nodeId, long nodeEpoch,
+        long objectId, long startOffset, long endOffset) {
+        return manager.commitStreamSetObject(new CommitStreamSetObjectRequestData()
+            .setNodeId(nodeId)
+            .setNodeEpoch(nodeEpoch)
+            .setObjectId(objectId)
+            .setObjectSize(999L)
+            .setOrderId(objectId)
+            .setObjectStreamRanges(List.of(new ObjectStreamRange()
+                .setStreamId(STREAM0)
+                .setStreamEpoch(EPOCH0)
+                .setStartOffset(startOffset)
+                .setEndOffset(endOffset))));
+    }
+
+    private void mockSuccessfulObjectCommits() {
+        when(objectControlManager.commitObject(anyLong(), anyLong(), anyLong(), anyInt())).thenAnswer(args -> {
+            long objectId = args.getArgument(0);
+            return ControllerResult.of(List.of(new ApiMessageAndVersion(new S3ObjectRecord()
+                .setObjectId(objectId).setObjectState(S3ObjectState.COMMITTED.toByte()), (short) 0)), Errors.NONE);
+        });
+        when(objectControlManager.markDestroyObjects(anyList(), anyList()))
+            .thenReturn(ControllerResult.of(Collections.emptyList(), true));
+    }
+
+    private void addCommittedComposite(long objectId, long startOffset, long endOffset) {
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(objectId)
+            .setStartOffset(startOffset).setEndOffset(endOffset));
+        when(objectControlManager.getObject(objectId)).thenReturn(new S3Object(objectId, 999L, 0L,
+            S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes()));
+    }
+
+    private void addCommittedNormal(long objectId, long startOffset, long endOffset) {
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(objectId)
+            .setStartOffset(startOffset).setEndOffset(endOffset));
+        when(objectControlManager.getObject(objectId)).thenReturn(new S3Object(objectId, 999L, 0L,
+            S3ObjectState.COMMITTED,
+            ObjectAttributes.builder().type(ObjectAttributes.Type.Normal).build().attributes()));
+    }
+
+    private void assertArchiveConflict(ArchiveUpdate update) {
+        assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(),
+            manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, update).response().errorCode());
+    }
+
+    private CommitStreamObjectRequestData commitStreamObject(long objectId, long startOffset, long endOffset,
+        List<Long> sourceObjectIds) {
+        return new CommitStreamObjectRequestData()
+            .setNodeId(BROKER0)
+            .setNodeEpoch(BROKER_EPOCH0)
+            .setObjectId(objectId)
+            .setObjectSize(999L)
+            .setStreamId(STREAM0)
+            .setStreamEpoch(EPOCH0)
+            .setStartOffset(startOffset)
+            .setEndOffset(endOffset)
+            .setAttributes(ObjectAttributes.builder().type(ObjectAttributes.Type.Composite).build().attributes())
+            .setSourceObjectIds(sourceObjectIds);
     }
 
     private long createStream() {
@@ -1162,11 +2754,12 @@ public class StreamControlManagerTest {
         // 4. verify
         streamMetadata = manager.streamsMetadata().get(STREAM0);
         assertEquals(100, streamMetadata.startOffset());
+        assertEquals(100, streamMetadata.endOffset());
         assertEquals(1, streamMetadata.ranges().size());
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
-        assertEquals(70, rangeMetadata.startOffset());
-        assertEquals(70, rangeMetadata.endOffset());
+        assertEquals(100, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.endOffset());
         assertEquals(1, streamMetadata.streamObjects().size());
 
         // 5. commit stream set object with stream0-[70, 100)
@@ -1189,7 +2782,7 @@ public class StreamControlManagerTest {
         assertEquals(1, streamMetadata.ranges().size());
         rangeMetadata = streamMetadata.currentRangeMetadata();
         assertEquals(1, rangeMetadata.rangeIndex());
-        assertEquals(70, rangeMetadata.startOffset());
+        assertEquals(100, rangeMetadata.startOffset());
         assertEquals(100, streamMetadata.endOffset());
     }
 
@@ -1433,6 +3026,113 @@ public class StreamControlManagerTest {
         replay(manager, result.records());
     }
 
+    private CrossedRecoveryState recoverCrossedOwnership(List<Integer> failoverOrder) {
+        setUp();
+        when(featureControlManager.autoMQVersion()).thenReturn(AutoMQVersion.V6);
+        mockSuccessfulObjectCommits();
+        registerAlwaysSuccessEpoch(BROKER0);
+        registerAlwaysSuccessEpoch(BROKER1);
+        registerAlwaysSuccessEpoch(BROKER2);
+
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, manager.closeStream(BROKER0, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM0).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER1, EPOCH1, STREAM0);
+
+        createAndOpenStream(BROKER1, EPOCH0);
+        replay(manager, manager.closeStream(BROKER1, BROKER_EPOCH0, new CloseStreamRequest()
+            .setStreamId(STREAM1).setStreamEpoch(EPOCH0).setEndOffset(100L)).records());
+        openStream(BROKER0, EPOCH1, STREAM1);
+
+        failoverOrder.forEach(this::recoverCrossedNode);
+
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+        assertFalse(manager.hasOpeningStreams(BROKER1));
+        openStream(BROKER2, EPOCH2, STREAM0);
+        openStream(BROKER2, EPOCH2, STREAM1);
+        return new CrossedRecoveryState(
+            List.of(crossedStreamState(STREAM0), crossedStreamState(STREAM1)),
+            List.of(nodeObjectState(BROKER0), nodeObjectState(BROKER1)));
+    }
+
+    private void recoverCrossedNode(int nodeId) {
+        ControllerResult<GetOpeningStreamsResponseData> barrier = manager.getOpeningStreams(
+            new GetOpeningStreamsRequestData().setNodeId(nodeId).setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true));
+        assertEquals(Errors.NONE.code(), barrier.response().errorCode());
+        assertEquals(2, barrier.response().streamMetadataList().size());
+        replay(manager, barrier.records());
+
+        long historicalStreamId = nodeId == BROKER0 ? STREAM0 : STREAM1;
+        long currentStreamId = nodeId == BROKER0 ? STREAM1 : STREAM0;
+        ControllerResult<CommitStreamSetObjectResponseData> commit = manager.commitStreamSetObject(
+            new CommitStreamSetObjectRequestData()
+                .setNodeId(nodeId)
+                .setNodeEpoch(BROKER_EPOCH0)
+                .setFailoverMode(true)
+                .setObjectId(10L + nodeId)
+                .setOrderId(10L + nodeId)
+                .setObjectSize(999L)
+                .setObjectStreamRanges(List.of(
+                    new ObjectStreamRange().setStreamId(historicalStreamId).setStreamEpoch(EPOCH0)
+                        .setStartOffset(0L).setEndOffset(100L),
+                    new ObjectStreamRange().setStreamId(currentStreamId).setStreamEpoch(EPOCH1)
+                        .setStartOffset(100L).setEndOffset(200L))));
+        assertEquals(Errors.NONE.code(), commit.response().errorCode());
+        replay(manager, commit.records());
+
+        for (GetOpeningStreamsResponseData.StreamMetadata stream : barrier.response().streamMetadataList()) {
+            ControllerResult<CloseStreamResponse> close = manager.closeStream(nodeId, BROKER_EPOCH0,
+                new CloseStreamRequest().setStreamId(stream.streamId()).setStreamEpoch(stream.epoch()));
+            Errors closeError = Errors.forCode(close.response().errorCode());
+            assertTrue(closeError == Errors.NONE || closeError == Errors.STREAM_FENCED);
+            replay(manager, close.records());
+        }
+    }
+
+    private CrossedStreamState crossedStreamState(long streamId) {
+        StreamRuntimeMetadata stream = manager.streamsMetadata().get(streamId);
+        return new CrossedStreamState(streamId, stream.currentState(), stream.currentEpoch(),
+            stream.startOffset(), stream.endOffset(), stream.currentRangeOwner());
+    }
+
+    private CrossedNodeObjectState nodeObjectState(int nodeId) {
+        return new CrossedNodeObjectState(nodeId,
+            manager.nodesMetadata().get(nodeId).streamSetObjects().values().stream()
+                .map(object -> new CrossedObjectState(object.objectId(), object.nodeId(), object.orderId(),
+                    object.offsetRangeList()))
+                .sorted((left, right) -> Long.compare(left.objectId(), right.objectId()))
+                .collect(Collectors.toList()));
+    }
+
+    private record CrossedRecoveryState(
+        List<CrossedStreamState> streams,
+        List<CrossedNodeObjectState> nodes
+    ) {
+    }
+
+    private record CrossedStreamState(
+        long streamId,
+        StreamState state,
+        long epoch,
+        long startOffset,
+        long endOffset,
+        int owner
+    ) {
+    }
+
+    private record CrossedNodeObjectState(int nodeId, List<CrossedObjectState> objects) {
+    }
+
+    private record CrossedObjectState(
+        long objectId,
+        int nodeId,
+        long orderId,
+        List<StreamOffsetRange> ranges
+    ) {
+    }
+
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
     private void replay(StreamControlManager manager, List<ApiMessageAndVersion> records) {
         List<ApiMessage> messages = records.stream().map(x -> x.message())
             .collect(Collectors.toList());
@@ -1473,9 +3173,19 @@ public class StreamControlManagerTest {
                     manager.replay((RemoveS3StreamObjectRecord) message);
                     break;
                 case S3_OBJECT_RECORD:
+                case REMOVE_S3_OBJECT_RECORD:
                     break;
                 case S3_STREAM_END_OFFSETS_RECORD:
                     manager.replay((S3StreamEndOffsetsRecord) message);
+                    break;
+                case S3_STREAM_ARCHIVE_RECORD:
+                    manager.replay((S3StreamArchiveRecord) message);
+                    break;
+                case REMOVE_S3_STREAM_ARCHIVE_RECORD:
+                    manager.replay((RemoveS3StreamArchiveRecord) message);
+                    break;
+                case NODE_WALUNCOMMITTED_OFFSETS_RECORD:
+                    manager.replay((NodeWALUncommittedOffsetsRecord) message);
                     break;
                 default:
                     throw new IllegalStateException("Unknown metadata record type " + type);
@@ -1488,6 +3198,16 @@ public class StreamControlManagerTest {
         assertEquals(S3StreamConstant.INIT_EPOCH, metadata.currentEpoch());
         assertEquals(S3StreamConstant.INIT_RANGE_INDEX, metadata.currentRangeIndex());
         assertEquals(S3StreamConstant.INIT_START_OFFSET, metadata.startOffset());
+    }
+
+    private void createAndOpenStream0() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        ControllerResult<CreateStreamResponse> createResult = manager.createStream(BROKER0, BROKER_EPOCH0,
+            new CreateStreamRequest().setNodeId(BROKER0));
+        replay(manager, createResult.records());
+        ControllerResult<OpenStreamResponse> openResult = manager.openStream(BROKER0, BROKER_EPOCH0,
+            new OpenStreamRequest().setStreamId(STREAM0).setStreamEpoch(EPOCH0));
+        replay(manager, openResult.records());
     }
 
     private void verifyFirstTimeOpenStreamResult(ControllerResult<OpenStreamResponse> result,
@@ -1537,7 +3257,7 @@ public class StreamControlManagerTest {
             objectWriter.write(
                 range.streamId(),
                 List.of(
-                    new StreamRecordBatch(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1))
+                    StreamRecordBatch.of(range.streamId(), 0, range.startOffset(), (int) (range.endOffset() - range.startOffset()), Unpooled.buffer(1), DefaultByteBufSupplier.INSTANCE)
                 )
             )
         );

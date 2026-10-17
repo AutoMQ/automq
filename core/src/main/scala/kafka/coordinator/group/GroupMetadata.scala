@@ -755,6 +755,10 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
 
           val currentOffsetOpt = offsets.get(topicPartition)
           if (currentOffsetOpt.forall(_.olderThan(commitRecordMetadataAndOffset))) {
+            // AutoMQ for Kafka inject start
+            if (!offsets.contains(topicPartition))
+              recreateOffsetMetric(topicPartition)
+            // AutoMQ for Kafka inject end
             trace(s"TxnOffsetCommit for producer $producerId and group $groupId with offset $commitRecordMetadataAndOffset " +
               "committed and loaded into the cache.")
             offsets.put(topicPartition, commitRecordMetadataAndOffset)
@@ -904,4 +908,3 @@ private[group] class GroupMetadata(val groupId: String, initialState: GroupState
   }
 
 }
-

@@ -19,6 +19,7 @@
 
 package kafka.automq;
 
+import kafka.automq.zerozone.LocalWriteMode;
 import kafka.server.KafkaConfig;
 
 import org.apache.kafka.common.config.ConfigDef;
@@ -26,6 +27,7 @@ import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.utils.Utils;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
+import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
 import org.apache.commons.lang3.StringUtils;
@@ -42,6 +44,8 @@ import java.util.concurrent.TimeUnit;
 import static org.apache.kafka.common.config.ConfigDef.Importance.HIGH;
 import static org.apache.kafka.common.config.ConfigDef.Importance.LOW;
 import static org.apache.kafka.common.config.ConfigDef.Importance.MEDIUM;
+import static org.apache.kafka.common.config.ConfigDef.Range.atLeast;
+import static org.apache.kafka.common.config.ConfigDef.Range.between;
 import static org.apache.kafka.common.config.ConfigDef.Type.BOOLEAN;
 import static org.apache.kafka.common.config.ConfigDef.Type.INT;
 import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
@@ -67,7 +71,16 @@ public class AutoMQConfig {
     public static final String S3_OPS_BUCKETS_DOC = "With the same format as s3.data.buckets";
 
     public static final String S3_WAL_PATH_CONFIG = "s3.wal.path";
-    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    private static final String WAL_VERSION_DOC = " The object WAL URI option version selects the key layout:"
+        + " version=0 (default) writes legacy keys; version=1 writes keys across 256 fixed shards to distribute S3 requests."
+        + " Both versions read both layouts, preferring the configured layout and falling back only on object-not-found."
+        + " To upgrade, first upgrade all nodes to a release that reads both layouts, leaving version=0."
+        + " Then set version=1 on the WAL bucket URIs and roll out the configuration with broker restarts."
+        + " Mixed versions are supported during this configuration rollout; completing the software upgrade first is the operator's responsibility."
+        + " After any version=1 objects have been written, binary rollback must stay on a release that reads both layouts;"
+        + " setting version=0 only changes new writes. Existing objects are removed by normal trimming.";
+    public static final String S3_WAL_PATH_DOC = "The WAL path for AutoMQ, The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&version=0]'."
+        + WAL_VERSION_DOC;
 
     public static final String S3_WAL_CACHE_SIZE_CONFIG = "s3.wal.cache.size";
     public static final String S3_WAL_CACHE_SIZE_DOC = "The WAL (Write-Ahead Log) cache is a FIFO (First In, First Out) queue that contains data that has not yet been uploaded to object storage, as well as data that has been uploaded but not yet evicted from the cache." +
@@ -79,7 +92,7 @@ public class AutoMQConfig {
 
     public static final String S3_WAL_UPLOAD_INTERVAL_MS_CONFIG = "s3.wal.upload.interval.ms";
     public static final String S3_WAL_UPLOAD_INTERVAL_MS_DOC = "The interval at which WAL triggers upload to object storage. -1 means only upload by size trigger";
-    public static final long S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT = -1L;
+    public static final long S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT = 60000L;
 
     public static final String S3_STREAM_SPLIT_SIZE_CONFIG = "s3.stream.object.split.size";
     public static final String S3_STREAM_SPLIT_SIZE_DOC = "The S3 stream object split size threshold when upload delta WAL or compact stream set object.";
@@ -155,6 +168,10 @@ public class AutoMQConfig {
         "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s.";
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 1024 * 1024 * 1024; // 1GBps
 
+    public static final String S3_NETWORK_BANDWIDTH_MODE_CONFIG = "s3.network.bandwidth.mode";
+    public static final String S3_NETWORK_BANDWIDTH_MODE_DOC = "The network bandwidth limiting mode. Valid values are separate and shared. " +
+        "In separate mode, inbound and outbound traffic use independent bandwidth buckets. In shared mode, inbound and outbound traffic share one bandwidth bucket.";
+
     public static final String S3_NETWORK_REFILL_PERIOD_MS_CONFIG = "s3.network.refill.period.ms";
     public static final String S3_NETWORK_REFILL_PERIOD_MS_DOC = "The network bandwidth token refill period in milliseconds.";
     public static final int S3_REFILL_PERIOD_MS = 10; // 10ms
@@ -192,12 +209,35 @@ public class AutoMQConfig {
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
+    public static final String RETRY_STORM_BACKOFF_ENABLED_CONFIG = "automq.retry.storm.backoff.enabled";
+    public static final String RETRY_STORM_BACKOFF_ENABLED_DOC = "Whether retry storm delayed response backoff is enabled";
+    public static final boolean RETRY_STORM_BACKOFF_ENABLED_DEFAULT = false;
+
+    public static final String KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG =
+        "automq.kafka-go.metadata.compatibility.enabled";
+    public static final String KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC =
+        "Whether kafka-go Metadata compatibility mode is enabled";
+    public static final boolean KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT = true;
+
+    public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG = "automq.retry.storm.backoff.max.delay.ms";
+    public static final String RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC = "The maximum retry storm delayed response time in milliseconds, from 0 to 10000";
+    public static final long RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT = 1000L;
+    public static final long RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX = TimeUnit.SECONDS.toMillis(10);
+
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
     private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
+    public static final String TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX = "automq.table.topic.schema.registry.config.";
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
-    public static final String ZONE_ROUTER_CHANNELS_DOC = "The channels to use for cross zone router. Currently it only support object storage channel."
-        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608]'";
+    public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
+        + " The format is '0@s3://$bucket?region=$region[&batchInterval=250][&maxBytesInBatch=8388608][&mode=rw][&version=0]'."
+        + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching."
+        + " The mode option controls bucket write eligibility independently of the WAL layout version."
+        + WAL_VERSION_DOC;
+    public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
+    public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
+        + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
+        + "In direct mode, local records are written directly to the Partition. Forwarded records always use RouterChannel.";
 
     // Deprecated config start
     public static final String S3_ENDPOINT_CONFIG = "s3.endpoint";
@@ -285,14 +325,22 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_MOCK_ENABLE_DOC)
             .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
             .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
+            .define(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG, STRING, NetworkBandwidthMode.SEPARATE.getName(),
+                ConfigDef.CaseInsensitiveValidString.in(NetworkBandwidthMode.SEPARATE.getName(), NetworkBandwidthMode.SHARED.getName()),
+                MEDIUM, AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_DOC)
             .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, S3_REFILL_PERIOD_MS, MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG, PASSWORD, null, HIGH, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_CONFIG, STRING, null, MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_BASE_LABELS_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
-            .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
+            .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, atLeast(0), MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
+            .define(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DOC)
+            .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, between(0, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
+            .define(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG, STRING, LocalWriteMode.ROUTER_CHANNEL.configName(),
+                ConfigDef.CaseInsensitiveValidString.in(LocalWriteMode.configNames()), MEDIUM, AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_DOC)
             // Deprecated config start
             .define(AutoMQConfig.S3_ENDPOINT_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_REGION_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_REGION_DOC)
@@ -321,6 +369,7 @@ public class AutoMQConfig {
     private List<Pair<String, String>> baseLabels;
     @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     private Optional<List<BucketURI>> zoneRouterChannels;
+    private LocalWriteMode zoneRouterLocalWriteMode;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -329,6 +378,7 @@ public class AutoMQConfig {
         metricsExporterURI = genMetricsExporterURI(config);
         baseLabels = parseBaseLabels(config);
         zoneRouterChannels = genZoneRouterChannels(config);
+        zoneRouterLocalWriteMode = LocalWriteMode.fromName(config.getString(ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG));
         return this;
     }
 
@@ -358,6 +408,13 @@ public class AutoMQConfig {
 
     public Optional<List<BucketURI>> zoneRouterChannels() {
         return zoneRouterChannels;
+    }
+
+    /**
+     * Returns the configured persistence path for ZeroZone writes targeting a local Partition.
+     */
+    public LocalWriteMode zoneRouterLocalWriteMode() {
+        return zoneRouterLocalWriteMode;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {

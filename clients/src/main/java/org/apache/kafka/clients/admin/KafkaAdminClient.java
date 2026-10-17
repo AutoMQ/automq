@@ -112,6 +112,7 @@ import org.apache.kafka.common.message.AlterUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.ApiVersionsResponseData.FinalizedFeatureKey;
 import org.apache.kafka.common.message.ApiVersionsResponseData.SupportedFeatureKey;
 import org.apache.kafka.common.message.AutomqGetNodesRequestData;
+import org.apache.kafka.common.message.AutomqGetNodesResponseData;
 import org.apache.kafka.common.message.CreateAclsRequestData;
 import org.apache.kafka.common.message.CreateAclsRequestData.AclCreation;
 import org.apache.kafka.common.message.CreateAclsResponseData.AclCreationResult;
@@ -139,6 +140,7 @@ import org.apache.kafka.common.message.DescribeClusterRequestData;
 import org.apache.kafka.common.message.DescribeClusterResponseData;
 import org.apache.kafka.common.message.DescribeConfigsRequestData;
 import org.apache.kafka.common.message.DescribeConfigsResponseData;
+import org.apache.kafka.common.message.DescribeLicenseRequestData;
 import org.apache.kafka.common.message.DescribeLogDirsRequestData;
 import org.apache.kafka.common.message.DescribeLogDirsRequestData.DescribableLogDirTopic;
 import org.apache.kafka.common.message.DescribeLogDirsResponseData;
@@ -152,6 +154,7 @@ import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsRequestData.UserName;
 import org.apache.kafka.common.message.DescribeUserScramCredentialsResponseData;
 import org.apache.kafka.common.message.ExpireDelegationTokenRequestData;
+import org.apache.kafka.common.message.ExportClusterManifestRequestData;
 import org.apache.kafka.common.message.GetNextNodeIdRequestData;
 import org.apache.kafka.common.message.GetTelemetrySubscriptionsRequestData;
 import org.apache.kafka.common.message.LeaveGroupRequestData.MemberIdentity;
@@ -165,6 +168,7 @@ import org.apache.kafka.common.message.RenewDelegationTokenRequestData;
 import org.apache.kafka.common.message.UnregisterBrokerRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData.UpdatableFeatureResult;
+import org.apache.kafka.common.message.UpdateLicenseRequestData;
 import org.apache.kafka.common.metrics.KafkaMetricsContext;
 import org.apache.kafka.common.metrics.MetricConfig;
 import org.apache.kafka.common.metrics.Metrics;
@@ -250,8 +254,14 @@ import org.apache.kafka.common.requests.UpdateFeaturesRequest;
 import org.apache.kafka.common.requests.UpdateFeaturesResponse;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesResponse;
+import org.apache.kafka.common.requests.s3.DescribeLicenseRequest;
+import org.apache.kafka.common.requests.s3.DescribeLicenseResponse;
+import org.apache.kafka.common.requests.s3.ExportClusterManifestRequest;
+import org.apache.kafka.common.requests.s3.ExportClusterManifestResponse;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdResponse;
+import org.apache.kafka.common.requests.s3.UpdateLicenseRequest;
+import org.apache.kafka.common.requests.s3.UpdateLicenseResponse;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.scram.internals.ScramFormatter;
 import org.apache.kafka.common.security.token.delegation.DelegationToken;
@@ -409,6 +419,10 @@ public class KafkaAdminClient extends AdminClient {
     private final ExponentialBackoff retryBackoff;
     private final boolean clientTelemetryEnabled;
     private final MetadataRecoveryStrategy metadataRecoveryStrategy;
+
+    // AutoMQ inject start
+    private final AdminClientConfig adminClientConfig;
+    // AutoMQ inject end
 
     /**
      * The telemetry requests client instance id.
@@ -623,6 +637,9 @@ public class KafkaAdminClient extends AdminClient {
             CommonClientConfigs.RETRY_BACKOFF_JITTER);
         this.clientTelemetryEnabled = config.getBoolean(AdminClientConfig.ENABLE_METRICS_PUSH_CONFIG);
         this.metadataRecoveryStrategy = MetadataRecoveryStrategy.forName(config.getString(AdminClientConfig.METADATA_RECOVERY_STRATEGY_CONFIG));
+        // AutoMQ inject start
+        this.adminClientConfig = config;
+        // AutoMQ inject end
         config.logUnused();
         AppInfoParser.registerAppInfo(JMX_PREFIX, clientId, metrics, time.milliseconds());
         log.debug("Kafka admin client initialized");
@@ -2437,7 +2454,7 @@ public class KafkaAdminClient extends AdminClient {
         return new TopicDescription(topic.name(), topic.isInternal(), partitions, authorisedOperations, topic.topicId());
     }
 
-    // AutoMQ for Kafka inject start
+    // AutoMQ inject start
     @Override
     public GetNextNodeIdResult getNextNodeId(GetNextNodeIdOptions options) {
         KafkaFutureImpl<Integer> nodeIdFuture = new KafkaFutureImpl<>();
@@ -2464,7 +2481,142 @@ public class KafkaAdminClient extends AdminClient {
         }, now);
         return new GetNextNodeIdResult(nodeIdFuture);
     }
-    // AutoMQ for Kafka inject end
+
+    @Override
+    public DescribeLicenseResult describeLicense(final DescribeLicenseOptions options) {
+        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("describeLicense", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider()) {
+
+            @Override
+            DescribeLicenseRequest.Builder createRequest(int timeoutMs) {
+                return new DescribeLicenseRequest.Builder(new DescribeLicenseRequestData());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final DescribeLicenseResponse response =
+                    (DescribeLicenseResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(response.data().license());
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new DescribeLicenseResult(future);
+    }
+
+    @Override
+    public UpdateLicenseResult updateLicense(final String license,
+                                             final UpdateLicenseOptions options) {
+        if (license == null || license.isEmpty()) {
+            throw new IllegalArgumentException("License can not be null or empty.");
+        }
+
+        final KafkaFutureImpl<Void> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("updateLicense", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider(true)) {
+
+            @Override
+            UpdateLicenseRequest.Builder createRequest(int timeoutMs) {
+                return new UpdateLicenseRequest.Builder(
+                    new UpdateLicenseRequestData()
+                        .setLicense(license));
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final UpdateLicenseResponse response =
+                    (UpdateLicenseResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(null);
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception(response.data().errorMessage()));
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new UpdateLicenseResult(future);
+    }
+
+    @Override
+    public ExportClusterManifestResult exportClusterManifest(final ExportClusterManifestOptions options) {
+        final KafkaFutureImpl<String> future = new KafkaFutureImpl<>();
+
+        final long now = time.milliseconds();
+        final Call call = new Call("exportClusterManifest", calcDeadlineMs(now, options.timeoutMs()),
+            new ControllerNodeProvider(true)) {
+
+            @Override
+            ExportClusterManifestRequest.Builder createRequest(int timeoutMs) {
+                return new ExportClusterManifestRequest.Builder(new ExportClusterManifestRequestData());
+            }
+
+            @Override
+            void handleResponse(AbstractResponse abstractResponse) {
+                final ExportClusterManifestResponse response =
+                    (ExportClusterManifestResponse) abstractResponse;
+                Errors topLevelError = Errors.forCode(response.data().errorCode());
+                switch (topLevelError) {
+                    case NONE:
+                        future.complete(response.data().manifest());
+                        break;
+                    case NOT_CONTROLLER:
+                        handleNotControllerError(topLevelError);
+                        break;
+                    default:
+                        future.completeExceptionally(topLevelError.exception());
+                        break;
+                }
+            }
+
+            @Override
+            void handleFailure(Throwable throwable) {
+                future.completeExceptionally(throwable);
+            }
+        };
+
+        runnable.call(call, now);
+        return new ExportClusterManifestResult(future);
+    }
+
+    @Override
+    public ClusterEventsReader describeClusterEvents(Long sinceMs) {
+        return new ClusterEventsReader(ClusterEventsReader.buildConsumerConfig(adminClientConfig), sinceMs);
+    }
+    // AutoMQ inject end
 
     private TopicDescription getTopicDescriptionFromCluster(Cluster cluster, String topicName, Uuid topicId,
                                                             Integer authorizedOperations) {
@@ -4057,7 +4209,7 @@ public class KafkaAdminClient extends AdminClient {
     ) {
         SimpleAdminApiFuture<CoordinatorKey, Map<TopicPartition, Errors>> future =
                 AlterConsumerGroupOffsetsHandler.newFuture(groupId);
-        AlterConsumerGroupOffsetsHandler handler = new AlterConsumerGroupOffsetsHandler(groupId, offsets, logContext);
+        AlterConsumerGroupOffsetsHandler handler = new AlterConsumerGroupOffsetsHandler(groupId, offsets, logContext, options.force()); // AutoMQ
         invokeDriver(handler, future, options.timeoutMs);
         return new AlterConsumerGroupOffsetsResult(future.get(CoordinatorKey.byGroupId(groupId)));
     }
@@ -4824,13 +4976,21 @@ public class KafkaAdminClient extends AdminClient {
 
     @Override
     public GetNodesResult getNodes(Collection<Integer> nodeIdList, GetNodesOptions options) {
-        final KafkaFutureImpl<List<NodeMetadata>> future = new KafkaFutureImpl<>();
+        final KafkaFutureImpl<GetNodesResult.Response> future = new KafkaFutureImpl<>();
         final long now = time.milliseconds();
         final Call call = new Call(
             "getNodes", calcDeadlineMs(now, options.timeoutMs()), new LeastLoadedBrokerOrActiveKController()) {
 
-            private List<NodeMetadata> createResult(final AutomqGetNodesResponse response) {
-                return response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+            private GetNodesResult.Response createResult(final AutomqGetNodesResponse response) {
+                List<NodeMetadata> nodes = response.data().nodes().stream().map(NodeMetadata::new).collect(Collectors.toList());
+                AutomqGetNodesResponseData.RouterChannelEpoch epochData = response.data().routerChannelEpoch();
+                GetNodesResult.RouterChannelEpoch routerChannelEpoch = new GetNodesResult.RouterChannelEpoch(
+                    epochData.committed(),
+                    epochData.fenced(),
+                    epochData.current(),
+                    epochData.lastBumpUpTimestamp()
+                );
+                return new GetNodesResult.Response(nodes, routerChannelEpoch);
             }
 
             @Override
@@ -4850,7 +5010,7 @@ public class KafkaAdminClient extends AdminClient {
 
             @Override
             void handleFailure(Throwable throwable) {
-                completeAllExceptionally(Collections.singletonList(future), throwable);
+                future.completeExceptionally(throwable);
             }
         };
 

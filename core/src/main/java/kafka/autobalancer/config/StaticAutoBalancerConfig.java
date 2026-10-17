@@ -30,11 +30,12 @@ import java.util.Map;
 public class StaticAutoBalancerConfig extends AbstractConfig {
     protected static final ConfigDef CONFIG;
     private static final String PREFIX = "autobalancer.";
+    public static final String AUTO_BALANCER_CLIENT_AUTH_PREFIX = PREFIX + "client.auth.";
 
     /* Configurations */
-    public static final String AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL = PREFIX + "client.auth." + CommonClientConfigs.SECURITY_PROTOCOL_CONFIG;
-    public static final String AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM = PREFIX + "client.auth." + SaslConfigs.SASL_MECHANISM;
-    public static final String AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG = PREFIX + "client.auth." + SaslConfigs.SASL_JAAS_CONFIG;
+    public static final String AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL = clientAuthConfig(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG);
+    public static final String AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM = clientAuthConfig(SaslConfigs.SASL_MECHANISM);
+    public static final String AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG = clientAuthConfig(SaslConfigs.SASL_JAAS_CONFIG);
     public static final String AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG = PREFIX + "client.listener.name";
     /* Default values */
     public static final String DEFAULT_AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL = CommonClientConfigs.DEFAULT_SECURITY_PROTOCOL;
@@ -50,21 +51,6 @@ public class StaticAutoBalancerConfig extends AbstractConfig {
 
     static {
         CONFIG = new ConfigDef()
-                .define(AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL,
-                        ConfigDef.Type.STRING,
-                        DEFAULT_AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL,
-                        ConfigDef.Importance.MEDIUM,
-                        AUTO_BALANCER_CLIENT_AUTH_SECURITY_PROTOCOL_DOC)
-                .define(AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM,
-                        ConfigDef.Type.STRING,
-                        DEFAULT_AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM,
-                        ConfigDef.Importance.MEDIUM,
-                        AUTO_BALANCER_CLIENT_AUTH_SASL_MECHANISM_DOC)
-                .define(AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG,
-                        ConfigDef.Type.PASSWORD,
-                        DEFAULT_AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG,
-                        ConfigDef.Importance.MEDIUM,
-                        AUTO_BALANCER_CLIENT_AUTH_SASL_JAAS_CONFIG_DOC)
                 .define(AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG,
                         ConfigDef.Type.STRING,
                         DEFAULT_AUTO_BALANCER_CLIENT_LISTENER_NAME_CONFIG,
@@ -75,4 +61,15 @@ public class StaticAutoBalancerConfig extends AbstractConfig {
     public StaticAutoBalancerConfig(Map<?, ?> originals, boolean doLogs) {
         super(CONFIG, originals, doLogs);
     }
+
+    /**
+     * Build the Auto Balancer client authentication key for a standard Kafka client configuration.
+     *
+     * @param baseConfigName standard Kafka client configuration name
+     * @return configuration name shared by the Auto Balancer producer and consumer
+     */
+    public static String clientAuthConfig(String baseConfigName) {
+        return AUTO_BALANCER_CLIENT_AUTH_PREFIX + baseConfigName;
+    }
+
 }

@@ -52,6 +52,7 @@ import org.apache.kafka.metadata.placement.PlacementSpec;
 import org.apache.kafka.metadata.placement.UsableBroker;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.MetadataVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
 import org.junit.jupiter.api.Assertions;
@@ -728,7 +729,7 @@ public class ClusterControlManagerTest {
     public void testReusableNodeIds() {
         MockTime time = new MockTime(0, 0, 0);
         SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
-        KVControlManager kvControl = new KVControlManager(snapshotRegistry, new LogContext());
+        KVControlManager kvControl = new KVControlManager(snapshotRegistry, new LogContext(), () -> AutoMQVersion.LATEST);
         FeatureControlManager featureControl = new FeatureControlManager.Builder().
             setSnapshotRegistry(snapshotRegistry).
             setQuorumFeatures(new QuorumFeatures(0,

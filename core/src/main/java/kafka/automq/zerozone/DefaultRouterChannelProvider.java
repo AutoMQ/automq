@@ -19,11 +19,11 @@
 
 package kafka.automq.zerozone;
 
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -50,21 +50,23 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     public static final String WAL_TYPE = "rc";
     private final int nodeId;
     private final long nodeEpoch;
-    private final short channelId;
-    private final BucketURI bucketURI;
+    private final List<BucketURI> buckets;
     private volatile RouterChannel routerChannel;
-    private ObjectStorage objectStorage;
+    private final Map<Short, ObjectStorage> objectStorages = new ConcurrentHashMap<>();
     private final Map<Integer, RouterChannel> routerChannels = new ConcurrentHashMap<>();
     private final String clusterId;
 
     private final List<EpochListener> epochListeners = new CopyOnWriteArrayList<>();
     private volatile RouterChannelEpoch epoch = new RouterChannelEpoch(-3L, -2L, 0, 0);
 
-    public DefaultRouterChannelProvider(int nodeId, long nodeEpoch, BucketURI bucketURI, String clusterId) {
+    /**
+     * Creates a provider whose local writer and remote readers share per-bucket storage clients.
+     * Bucket IDs must remain stable while offsets referencing them are retained.
+     */
+    public DefaultRouterChannelProvider(int nodeId, long nodeEpoch, List<BucketURI> buckets, String clusterId) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
-        this.bucketURI = bucketURI;
-        this.channelId = bucketURI.bucketId();
+        this.buckets = List.copyOf(buckets);
         this.clusterId = clusterId;
     }
 
@@ -75,15 +77,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         }
         synchronized (this) {
             if (routerChannel == null) {
-                ObjectWALConfig config = ObjectWALConfig.builder()
-                    .withClusterId(clusterId)
-                    .withNodeId(nodeId)
-                    .withEpoch(nodeEpoch)
-                    .withOpenMode(OpenMode.READ_WRITE)
-                    .withType(WAL_TYPE)
-                    .build();
-                ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage(), config);
-                RouterChannel routerChannel = new ObjectRouterChannel(this.nodeId, channelId, wal);
+                RouterChannel routerChannel = newChannel(nodeId, false);
                 routerChannel.nextEpoch(epoch.getCurrent());
                 routerChannel.trim(epoch.getCommitted());
                 this.routerChannel = routerChannel;
@@ -97,10 +91,32 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (nodeId == node) {
             return channel();
         }
-        return routerChannels.computeIfAbsent(node, nodeId -> {
-            ObjectWALConfig config = ObjectWALConfig.builder().withClusterId(clusterId).withNodeId(node).withOpenMode(OpenMode.READ_ONLY).withType(WAL_TYPE).build();
-            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage(), config);
-            return new ObjectRouterChannel(nodeId, channelId, wal);
+        return routerChannels.computeIfAbsent(node, id -> newChannel(id, true));
+    }
+
+    private RouterChannel newChannel(int ownerNodeId, boolean readOnly) {
+        return new MultiBucketsRouterChannel(ownerNodeId, buckets, readOnly, (bucket, bucketReadOnly) -> {
+            ObjectWALConfig.Builder builder = ObjectWALConfig.builder()
+                .withURI(bucket.toIdURI())
+                .withClusterId(clusterId)
+                .withNodeId(ownerNodeId)
+                .withBucketId(bucket.bucketId())
+                .withOpenMode(bucketReadOnly ? OpenMode.READ_ONLY : OpenMode.READ_WRITE)
+                .withType(WAL_TYPE)
+                .withManualMode(true);
+            if (!bucketReadOnly) {
+                builder.withEpoch(nodeEpoch);
+            }
+            ObjectWALConfig config = builder.build();
+            ObjectStorage storage = objectStorage(bucket);
+            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
+            try {
+                wal.start();
+                return wal;
+            } catch (Throwable error) {
+                wal.shutdownGracefully();
+                throw new RuntimeException("Failed to start router channel WAL", error);
+            }
         });
     }
 
@@ -116,8 +132,11 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
 
     @Override
     public void close() {
-        FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
+        if (routerChannel != null) {
+            FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
+        }
         routerChannels.forEach((nodeId, channel) -> FutureUtil.suppress(() -> channel.close().get(), LOGGER));
+        objectStorages.values().forEach(storage -> FutureUtil.suppress(storage::close, LOGGER));
     }
 
     @Override
@@ -125,7 +144,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         if (delta.kvDelta() == null) {
             return;
         }
-        ByteBuffer value = delta.kvDelta().changedKV().get(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY);
+        ByteBuffer value = delta.kvDelta().getChangedKV(KVKey.of(RouterChannelEpoch.ROUTER_CHANNEL_EPOCH_KEY));
         if (value == null) {
             return;
         }
@@ -151,14 +170,11 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         }
     }
 
-    synchronized ObjectStorage objectStorage() {
-        if (objectStorage == null) {
-            this.objectStorage = ObjectStorageFactory.instance().builder(bucketURI)
-                .readWriteIsolate(true)
-                .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-                .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
-                .build();
-        }
-        return objectStorage;
+    synchronized ObjectStorage objectStorage(BucketURI bucket) {
+        return objectStorages.computeIfAbsent(bucket.bucketId(), id -> ObjectStorageFactory.instance().builder(bucket)
+            .readWriteIsolate(true)
+            .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+            .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
+            .build());
     }
 }

@@ -74,6 +74,7 @@ import static org.apache.kafka.common.config.ConfigDef.Type.LONG;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 import static org.apache.kafka.common.config.ConfigDef.ValidString.in;
 import static org.apache.kafka.server.common.MetadataVersion.IBP_3_0_IV1;
+import static org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY;
 import static org.apache.kafka.server.record.TableTopicConvertType.BY_LATEST_SCHEMA;
 import static org.apache.kafka.server.record.TableTopicConvertType.BY_SCHEMA_ID;
 import static org.apache.kafka.server.record.TableTopicConvertType.RAW;
@@ -267,6 +268,7 @@ public class LogConfig extends AbstractConfig {
 
             // AutoMQ inject start
             .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+            .define(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_LOCATION_DOC)
             // AutoMQ inject end
 
             .defineInternal(ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_CONFIG, LONG, ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_DEFAULT, atLeast(0), LOW, ServerLogConfigs.LOG_INITIAL_TASK_DELAY_MS_DOC);
@@ -347,6 +349,7 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG, LONG, TimeUnit.MINUTES.toMillis(1), between(1, TimeUnit.MINUTES.toMillis(15)), MEDIUM, TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_DOC)
                 .define(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_NAMESPACE_DOC)
+                .define(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_LOCATION_DOC)
                 .define(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG, STRING, TableTopicSchemaType.NONE.name, in(TableTopicSchemaType.names().toArray(new String[0])), MEDIUM, TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, STRING, RAW.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, STRING, TableTopicConvertType.STRING.name, in(TableTopicConvertType.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_DOC)
@@ -360,6 +363,10 @@ public class LogConfig extends AbstractConfig {
                 .define(TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_CONFIG, BOOLEAN, false, null, MEDIUM, TopicConfig.TABLE_TOPIC_UPSERT_ENABLE_DOC)
                 .define(TopicConfig.TABLE_TOPIC_CDC_FIELD_CONFIG, STRING, null, null, MEDIUM, TopicConfig.TABLE_TOPIC_CDC_FIELD_DOC)
                 .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_CONFIG, STRING, ErrorsTolerance.INVALID_DATA.name, in(ErrorsTolerance.names().toArray(new String[0])), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ERRORS_TOLERANCE_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG, BOOLEAN, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DEFAULT, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG, INT, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT, atLeast(1), MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC)
+                .define(TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG, LIST, TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DEFAULT, TableTopicConfigValidator.IcebergAutoCreatePropertiesValidator.INSTANCE, MEDIUM, TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DOC)
                 .define(TopicConfig.KAFKA_LINKS_ID_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_ID_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG, LONG, ListOffsetsRequest.LATEST_TIMESTAMP, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_DOC)
                 .define(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG, STRING, null, null, MEDIUM, TopicConfig.KAFKA_LINKS_TOPIC_STATE_DOC)
@@ -417,6 +424,7 @@ public class LogConfig extends AbstractConfig {
     public final boolean tableTopicEnable;
     public final long tableTopicCommitInterval;
     public final String tableTopicNamespace;
+    public final String tableTopicLocation;
     @Deprecated
     public final TableTopicSchemaType tableTopicSchemaType;
     public final TableTopicConvertType valueConvertType;
@@ -432,6 +440,11 @@ public class LogConfig extends AbstractConfig {
     public final String kafkaLinksId;
     public final long kafkaLinksTopicStartTime;
     public final String kafkaLinksTopicState;
+
+    public final boolean tableTopicExpireSnapshotEnabled;
+    public final int tableTopicExpireSnapshotOlderThanHours;
+    public final int tableTopicExpireSnapshotRetainLast;
+    public final List<String> tableTopicIcebergAutoCreateProperties;
     // AutoMQ inject end
 
     private final int maxMessageSize;
@@ -488,6 +501,7 @@ public class LogConfig extends AbstractConfig {
         this.tableTopicEnable = getBoolean(TopicConfig.TABLE_TOPIC_ENABLE_CONFIG);
         this.tableTopicCommitInterval = getLong(TopicConfig.TABLE_TOPIC_COMMIT_INTERVAL_CONFIG);
         this.tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG);
+        this.tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG);
         this.tableTopicSchemaType = TableTopicSchemaType.forName(getString(TopicConfig.TABLE_TOPIC_SCHEMA_TYPE_CONFIG));
         this.valueConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG));
         this.keyConvertType = TableTopicConvertType.forName(getString(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG));
@@ -501,6 +515,11 @@ public class LogConfig extends AbstractConfig {
         this.kafkaLinksId = getString(TopicConfig.KAFKA_LINKS_ID_CONFIG);
         this.kafkaLinksTopicStartTime = getLong(TopicConfig.KAFKA_LINKS_TOPIC_START_TIME_CONFIG);
         this.kafkaLinksTopicState = getString(TopicConfig.KAFKA_LINKS_TOPIC_STATE_CONFIG);
+
+        this.tableTopicExpireSnapshotEnabled = getBoolean(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_ENABLED_CONFIG);
+        this.tableTopicExpireSnapshotOlderThanHours = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_OLDER_THAN_HOURS_CONFIG);
+        this.tableTopicExpireSnapshotRetainLast = getInt(TopicConfig.AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG);
+        this.tableTopicIcebergAutoCreateProperties = getList(TopicConfig.AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG);
         // AutoMQ inject end
 
         remoteLogConfig = new RemoteLogConfig(this);
@@ -783,6 +802,9 @@ public class LogConfig extends AbstractConfig {
         String valueConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG);
         String keyConvertProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG);
         String transformProperty = props.getProperty(TopicConfig.AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG);
+        List<String> idColumns = TableTopicConfigValidator.stringToList(
+            props.getProperty(TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG),
+            TableTopicConfigValidator.COMMA_NO_PARENS_REGEX);
 
         // Validation logic using new (or mapped) configs
         if ((BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && (tableTopicSchemaRegistryUrl == null || tableTopicSchemaRegistryUrl.isEmpty())) {
@@ -793,6 +815,11 @@ public class LogConfig extends AbstractConfig {
         }
         if (!(BY_SCHEMA_ID.name.equals(valueConvertProperty) || BY_LATEST_SCHEMA.name.equals(valueConvertProperty)) && FLATTEN_DEBEZIUM.name.equals(transformProperty)) {
             throw new InvalidConfigurationException(valueConvertProperty + " convert type cannot be used with '" + FLATTEN_DEBEZIUM.name + "' transform type");
+        }
+        if (idColumns.equals(List.of(FROM_DEBEZIUM_KEY)) && !BY_SCHEMA_ID.name.equals(keyConvertProperty)) {
+            throw new InvalidConfigurationException(
+                TopicConfig.TABLE_TOPIC_ID_COLUMNS_CONFIG + "=[" + FROM_DEBEZIUM_KEY + "] requires "
+                    + TopicConfig.AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG + " to be '" + BY_SCHEMA_ID.name + "'");
         }
     }
 

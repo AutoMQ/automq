@@ -20,12 +20,13 @@
 package com.automq.stream;
 
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.ByteBufSupplier;
 
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.netty.buffer.ByteBuf;
 
-public class ByteBufSeqAlloc {
+public class ByteBufSeqAlloc implements ByteBufSupplier {
     public static final int HUGE_BUF_SIZE = ByteBufAlloc.getChunkSize().orElse(4 << 20);
     // why not use ThreadLocal? the partition open has too much threads
     final AtomicReference<HugeBuf>[] hugeBufArray;
@@ -40,7 +41,8 @@ public class ByteBufSeqAlloc {
         }
     }
 
-    public ByteBuf byteBuffer(int capacity) {
+    @Override
+    public ByteBuf alloc(int capacity) {
         if (capacity > HUGE_BUF_SIZE) {
             // if the request capacity is larger than HUGE_BUF_SIZE, just allocate a new ByteBuf
             return ByteBufAlloc.byteBuffer(capacity, allocType);

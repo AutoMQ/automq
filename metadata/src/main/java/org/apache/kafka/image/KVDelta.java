@@ -19,19 +19,24 @@ package org.apache.kafka.image;
 
 import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
+import org.apache.kafka.controller.stream.KVKey;
+import org.apache.kafka.controller.stream.KVNamespace;
 import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.google.common.annotations.VisibleForTesting;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 public final class KVDelta {
     private final KVImage image;
 
-    private final Map<String/*key*/, ByteBuffer/*value*/> changedKV = new HashMap<>();
-    private final Set<String/*key*/> removedKeys = new HashSet<>();
+    private final Map<KVKey, ByteBuffer> changedKV = new HashMap<>();
+    private final Set<KVKey> removedKeys = new HashSet<>();
 
     public KVDelta(KVImage image) {
         this.image = image;
@@ -43,33 +48,60 @@ public final class KVDelta {
 
     public void replay(KVRecord record) {
         record.keyValues().forEach(keyValue -> {
-            changedKV.put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
-            removedKeys.remove(keyValue.key());
+            KVKey kvKey = KVKey.of(keyValue.namespace(), keyValue.key());
+            changedKV.put(kvKey, ByteBuffer.wrap(keyValue.value()));
+            removedKeys.remove(kvKey);
         });
     }
 
     public void replay(RemoveKVRecord record) {
-        record.keys().forEach(key -> {
-            removedKeys.add(key);
-            changedKV.remove(key);
+        List<String> keys = record.keys();
+        List<String> namespaces = record.namespaces();
+        if (namespaces != null && namespaces.size() != keys.size()) {
+            throw new IllegalArgumentException("RemoveKVRecord: namespaces length " + namespaces.size()
+                + " does not match keys length " + keys.size());
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            String ns = namespaces != null ? namespaces.get(i) : null;
+            KVKey kvKey = KVKey.of(ns, keys.get(i));
+            removedKeys.add(kvKey);
+            changedKV.remove(kvKey);
+        }
+    }
+
+    public void finishSnapshot() {
+        image.forEachEntry((key, value) -> {
+            if (!changedKV.containsKey(key)) {
+                removedKeys.add(key);
+            }
         });
     }
 
     public KVImage apply() {
         RegistryRef registry = image.registryRef();
         // get original objects first
-        TimelineHashMap<String, ByteBuffer> newKVs;
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> newKVs;
 
         if (registry == RegistryRef.NOOP) {
             registry = new RegistryRef();
-            newKVs = new TimelineHashMap<>(registry.registry(), 100000);
+            newKVs = new TimelineHashMap<>(registry.registry(), 0);
         } else {
-            newKVs = image.timelineKVs();
+            newKVs = image.timelineKVsByNamespace();
         }
 
-        registry.inLock(() -> {
-            newKVs.putAll(changedKV);
-            removedKeys.forEach(newKVs::remove);
+        RegistryRef finalRegistry = registry;
+        finalRegistry.inLock(() -> {
+            changedKV.forEach((key, value) -> namespaceKVs(finalRegistry, newKVs, key.namespace())
+                .put(key.key(), value));
+            removedKeys.forEach(key -> {
+                TimelineHashMap<String, ByteBuffer> namespaceKVs = newKVs.get(KVNamespace.of(key.namespace()));
+                if (namespaceKVs != null) {
+                    namespaceKVs.remove(key.key());
+                    if (namespaceKVs.isEmpty()) {
+                        newKVs.remove(KVNamespace.of(key.namespace()));
+                    }
+                }
+            });
         });
 
         registry = registry.next();
@@ -77,7 +109,31 @@ public final class KVDelta {
         return new KVImage(newKVs, registry);
     }
 
-    public Map<String, ByteBuffer> changedKV() {
+    public ByteBuffer getChangedKV(KVKey kvKey) {
+        return changedKV.get(kvKey);
+    }
+
+    @VisibleForTesting
+    Map<KVKey, ByteBuffer> changedKV() {
         return changedKV;
+    }
+
+    @VisibleForTesting
+    Set<KVKey> removedKeys() {
+        return removedKeys;
+    }
+
+    private static TimelineHashMap<String, ByteBuffer> namespaceKVs(
+        RegistryRef registry,
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> kvsByNamespace,
+        String namespace
+    ) {
+        KVNamespace kvNamespace = KVNamespace.of(namespace);
+        TimelineHashMap<String, ByteBuffer> namespaceKVs = kvsByNamespace.get(kvNamespace);
+        if (namespaceKVs == null) {
+            namespaceKVs = new TimelineHashMap<>(registry.registry(), namespace == null ? 100000 : 0);
+            kvsByNamespace.put(kvNamespace, namespaceKVs);
+        }
+        return namespaceKVs;
     }
 }

@@ -27,6 +27,7 @@ import org.apache.kafka.metadata.stream.RangeMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 
 import com.automq.stream.s3.metadata.StreamState;
+import com.google.common.annotations.VisibleForTesting;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -52,6 +53,7 @@ public class S3StreamMetadataDelta {
     private final Set<Integer/*rangeIndex*/> removedRanges = new HashSet<>();
     private final Map<Long/*objectId*/, S3StreamObject> changedS3StreamObjects = new HashMap<>();
     private final Set<Long/*objectId*/> removedS3StreamObjectIds = new HashSet<>();
+    private boolean snapshotReplay = false;
 
     public S3StreamMetadataDelta(S3StreamMetadataImage image) {
         this.image = image;
@@ -96,6 +98,30 @@ public class S3StreamMetadataDelta {
         changedS3StreamObjects.remove(record.objectId());
     }
 
+    public void finishSnapshot() {
+        snapshotReplay = true;
+        image.getRanges().forEach(range -> {
+            if (!changedRanges.containsKey(range.rangeIndex())) {
+                removedRanges.add(range.rangeIndex());
+            }
+        });
+        image.streamObjects.toList().forEach(object -> {
+            if (!changedS3StreamObjects.containsKey(object.objectId())) {
+                removedS3StreamObjectIds.add(object.objectId());
+            }
+        });
+    }
+
+    @VisibleForTesting
+    Map<Long, S3StreamObject> changedS3StreamObjects() {
+        return changedS3StreamObjects;
+    }
+
+    @VisibleForTesting
+    Set<Long> removedS3StreamObjectIds() {
+        return removedS3StreamObjectIds;
+    }
+
     public S3StreamMetadataImage apply() {
         List<RangeMetadata> newRanges;
         if (changedRanges.isEmpty() && removedRanges.isEmpty()) {
@@ -113,9 +139,18 @@ public class S3StreamMetadataDelta {
         DeltaList<S3StreamObject> newS3StreamObjects;
         if (changedS3StreamObjects.isEmpty() && removedS3StreamObjectIds.isEmpty()) {
             newS3StreamObjects = image.streamObjects;
+        } else if (snapshotReplay) {
+            // Snapshot replay is a full-state replacement over a non-empty image. Rebuild
+            // a clean list by object id so old DeltaList tombstones cannot hide updated
+            // stream objects with the same object id from toList/getStreamObjects readers.
+            Map<Long, S3StreamObject> objects = new HashMap<>();
+            image.streamObjects.toList().forEach(object -> objects.put(object.objectId(), object));
+            removedS3StreamObjectIds.forEach(objects::remove);
+            changedS3StreamObjects.forEach(objects::put);
+            newS3StreamObjects = new DeltaList<>(new ArrayList<>(objects.values()));
         } else {
             newS3StreamObjects = image.streamObjects.copy();
-            changedS3StreamObjects.forEach((id, obj) -> newS3StreamObjects.add(obj));
+            changedS3StreamObjects.values().forEach(newS3StreamObjects::add);
             removedS3StreamObjectIds.forEach(id -> newS3StreamObjects.remove(obj -> Objects.equals(obj.objectId(), id)));
         }
         return new S3StreamMetadataImage(streamId, newEpoch, currentState, tags, newStartOffset, newRanges, newS3StreamObjects);

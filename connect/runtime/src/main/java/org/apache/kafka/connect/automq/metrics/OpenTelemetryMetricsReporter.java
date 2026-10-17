@@ -38,6 +38,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.common.AttributesBuilder;
@@ -88,13 +90,13 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
     private String excludePattern = null;
     
     private Meter meter;
-    private final Map<String, AutoCloseable> observableHandles = new ConcurrentHashMap<>();
-    private final Map<String, KafkaMetric> registeredMetrics = new ConcurrentHashMap<>();
+    private final Map<String, MetricHandle> metricHandles = new ConcurrentHashMap<>();
+    private final Map<KafkaMetric, String> metricToKey = new ConcurrentHashMap<>();
     
     public static void initializeTelemetry(Properties props) {
         String exportURIStr = props.getProperty(MetricsConfigConstants.EXPORTER_URI_KEY);
         String serviceName = props.getProperty(MetricsConfigConstants.SERVICE_NAME_KEY, "connect-default");
-        String instanceId = props.getProperty(MetricsConfigConstants.SERVICE_INSTANCE_ID_KEY, "instance-default");
+        String instanceId = props.getProperty(MetricsConfigConstants.SERVICE_INSTANCE_ID_KEY, "0");
         String clusterId = props.getProperty(MetricsConfigConstants.S3_CLIENT_ID_KEY, "cluster-default");
         int intervalMs = Integer.parseInt(props.getProperty(MetricsConfigConstants.EXPORTER_INTERVAL_MS_KEY, "60000"));
         BucketURI metricsBucket = getMetricsBucket(props);
@@ -216,29 +218,15 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
             return;
         }
         
-        try {
-            String metricKey = buildMetricKey(metric.metricName());
-            closeHandle(metricKey);
-            registeredMetrics.remove(metricKey);
-            LOGGER.debug("Removed metric: {}", metricKey);
-        } catch (Exception e) {
-            LOGGER.warn("Failed to remove metric {}", metric.metricName(), e);
-        }
+        removeMetricInternal(metric);
     }
 
     @Override
     public void close() {
         if (enabled) {
-            // Close all observable handles to prevent memory leaks
-            observableHandles.values().forEach(handle -> {
-                try {
-                    handle.close();
-                } catch (Exception e) {
-                    LOGGER.debug("Error closing observable handle", e);
-                }
-            });
-            observableHandles.clear();
-            registeredMetrics.clear();
+            metricHandles.forEach((metricKey, handle) -> closeHandle(metricKey, handle));
+            metricHandles.clear();
+            metricToKey.clear();
         }
         LOGGER.info("OpenTelemetryMetricsReporter closed");
     }
@@ -261,84 +249,127 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
         
         Attributes attributes = buildAttributes(metricName);
-        
-        // Close existing handle if present (for metric updates)
-        closeHandle(metricKey);
-        
-        // Register the metric for future access
-        registeredMetrics.put(metricKey, metric);
-        
-        // Determine metric type and register accordingly
-        if (isCounterMetric(metricName)) {
-            registerAsyncCounter(metricKey, metricName, metric, attributes, (Number) testValue);
-        } else {
-            registerAsyncGauge(metricKey, metricName, metric, attributes);
+
+        // Remove any stale registration before re-adding the metric
+        removeMetricInternal(metric);
+
+        AtomicBoolean creationFailed = new AtomicBoolean(false);
+        AtomicBoolean entryAdded = new AtomicBoolean(false);
+        metricHandles.compute(metricKey, (key, existingHandle) -> {
+            MetricHandle handle = existingHandle;
+            if (handle == null) {
+                MetricHandle newHandle = createMetricHandle(key, metricName, (Number) testValue, isCounterMetric(metricName));
+                if (newHandle == null || newHandle.handle == null) {
+                    creationFailed.set(true);
+                    return null;
+                }
+                handle = newHandle;
+            }
+            handle.entries.add(new MetricEntry(metric, attributes));
+            entryAdded.set(true);
+            return handle;
+        });
+
+        if (creationFailed.get()) {
+            LOGGER.warn("Failed to register metric handle for {}", metricKey);
+            return;
+        }
+
+        if (entryAdded.get()) {
+            metricToKey.put(metric, metricKey);
         }
     }
     
-    private void registerAsyncGauge(String metricKey, MetricName metricName, KafkaMetric metric, Attributes attributes) {
+    private MetricHandle createMetricHandle(String metricKey, MetricName metricName, Number initialValue, boolean isCounter) {
+        MetricHandle handle = new MetricHandle();
+        String description = buildDescription(metricName);
+        // Kafka Connect metrics have already encoded their semantic unit in the Kafka metric
+        // name, for example "record-age-ms-avg", "byte-rate", and
+        // "offset-commit-avg-time-ms". Keep the OpenTelemetry unit empty here so the
+        // Prometheus-compatible exporter does not append another inferred suffix such as
+        // "_ratio", "_milliseconds", or "_bytes_per_second".
+        String unit = "";
+
+        if (isCounter) {
+            boolean useLongCounter = initialValue instanceof Long || initialValue instanceof Integer;
+            AutoCloseable counterHandle = registerSharedAsyncCounter(metricKey, description, unit, handle, useLongCounter);
+            if (counterHandle == null) {
+                return null;
+            }
+            handle.handle = counterHandle;
+        } else {
+            AutoCloseable gaugeHandle = registerSharedAsyncGauge(metricKey, description, unit, handle);
+            if (gaugeHandle == null) {
+                return null;
+            }
+            handle.handle = gaugeHandle;
+        }
+        return handle;
+    }
+
+    private AutoCloseable registerSharedAsyncGauge(String metricKey, String description, String unit, MetricHandle metricHandle) {
         try {
-            String description = buildDescription(metricName);
-            String unit = determineUnit(metricName);
-            
             ObservableDoubleGauge gauge = meter.gaugeBuilder(metricKey)
                 .setDescription(description)
                 .setUnit(unit)
                 .buildWithCallback(measurement -> {
-                    Number value = (Number) safeMetricValue(metric);
-                    if (value != null) {
-                        measurement.record(value.doubleValue(), attributes);
+                    for (MetricEntry entry : metricHandle.entries) {
+                        Number value = (Number) safeMetricValue(entry.metric);
+                        if (value != null) {
+                            measurement.record(value.doubleValue(), entry.attributes);
+                        }
                     }
                 });
-            
-            observableHandles.put(metricKey, gauge);
-            LOGGER.debug("Registered async gauge: {}", metricKey);
+            LOGGER.debug("Registered shared async gauge: {}", metricKey);
+            return gauge;
         } catch (Exception e) {
-            LOGGER.warn("Failed to register async gauge for {}", metricKey, e);
+            LOGGER.warn("Failed to register shared async gauge for {}", metricKey, e);
+            return null;
         }
     }
-    
-    private void registerAsyncCounter(String metricKey, MetricName metricName, KafkaMetric metric, 
-                                    Attributes attributes, Number initialValue) {
+
+    private AutoCloseable registerSharedAsyncCounter(String metricKey, String description, String unit,
+                                                     MetricHandle metricHandle, boolean useLongCounter) {
         try {
-            String description = buildDescription(metricName);
-            String unit = determineUnit(metricName);
-            
-            // Use appropriate counter type based on initial value type
-            if (initialValue instanceof Long || initialValue instanceof Integer) {
+            if (useLongCounter) {
                 ObservableLongCounter counter = meter.counterBuilder(metricKey)
                     .setDescription(description)
                     .setUnit(unit)
                     .buildWithCallback(measurement -> {
-                        Number value = (Number) safeMetricValue(metric);
-                        if (value != null) {
-                            long longValue = value.longValue();
-                            if (longValue >= 0) {
-                                measurement.record(longValue, attributes);
+                        for (MetricEntry entry : metricHandle.entries) {
+                            Number value = (Number) safeMetricValue(entry.metric);
+                            if (value != null) {
+                                long longValue = value.longValue();
+                                if (longValue >= 0) {
+                                    measurement.record(longValue, entry.attributes);
+                                }
                             }
                         }
                     });
-                observableHandles.put(metricKey, counter);
-            } else {
-                ObservableDoubleCounter counter = meter.counterBuilder(metricKey)
-                    .ofDoubles()
-                    .setDescription(description)
-                    .setUnit(unit)
-                    .buildWithCallback(measurement -> {
-                        Number value = (Number) safeMetricValue(metric);
+                LOGGER.debug("Registered shared async long counter: {}", metricKey);
+                return counter;
+            }
+
+            ObservableDoubleCounter counter = meter.counterBuilder(metricKey)
+                .ofDoubles()
+                .setDescription(description)
+                .setUnit(unit)
+                .buildWithCallback(measurement -> {
+                    for (MetricEntry entry : metricHandle.entries) {
+                        Number value = (Number) safeMetricValue(entry.metric);
                         if (value != null) {
                             double doubleValue = value.doubleValue();
                             if (doubleValue >= 0) {
-                                measurement.record(doubleValue, attributes);
+                                measurement.record(doubleValue, entry.attributes);
                             }
                         }
-                    });
-                observableHandles.put(metricKey, counter);
-            }
-            
-            LOGGER.debug("Registered async counter: {}", metricKey);
+                    }
+                });
+            LOGGER.debug("Registered shared async double counter: {}", metricKey);
+            return counter;
         } catch (Exception e) {
-            LOGGER.warn("Failed to register async counter for {}", metricKey, e);
+            LOGGER.warn("Failed to register shared async counter for {}", metricKey, e);
+            return null;
         }
     }
     
@@ -351,15 +382,35 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
     }
     
-    private void closeHandle(String metricKey) {
-        AutoCloseable handle = observableHandles.remove(metricKey);
-        if (handle != null) {
+    private void closeHandle(String metricKey, MetricHandle handle) {
+        if (handle != null && handle.handle != null) {
             try {
-                handle.close();
+                handle.handle.close();
             } catch (Exception e) {
                 LOGGER.debug("Error closing handle for {}", metricKey, e);
             }
         }
+    }
+
+    private void removeMetricInternal(KafkaMetric metric) {
+        String metricKey = metricToKey.remove(metric);
+        if (metricKey == null) {
+            return;
+        }
+
+        metricHandles.compute(metricKey, (key, handle) -> {
+            if (handle == null) {
+                return null;
+            }
+
+            handle.entries.removeIf(entry -> entry.metric == metric);
+
+            if (handle.entries.isEmpty()) {
+                closeHandle(key, handle);
+                return null;
+            }
+            return handle;
+        });
     }
     
     private String buildMetricKey(MetricName metricName) {
@@ -416,37 +467,6 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         description.append(metricName.name());
         
         return description.toString();
-    }
-    
-    private String determineUnit(MetricName metricName) {
-        String name = metricName.name().toLowerCase(Locale.ROOT);
-        String group = metricName.group() != null ? metricName.group().toLowerCase(Locale.ROOT) : "";
-
-        if (isKafkaConnectMetric(group)) {
-            return determineConnectMetricUnit(name);
-        }
-
-        if (isTimeMetric(name)) {
-            return determineTimeUnit(name);
-        }
-
-        if (isBytesMetric(name)) {
-            return determineBytesUnit(name);
-        }
-
-        if (isRateMetric(name)) {
-            return "1/s";
-        }
-
-        if (isRatioOrPercentageMetric(name)) {
-            return "1";
-        }
-
-        if (isCountMetric(name)) {
-            return "1";
-        }
-        
-        return "1";
     }
     
     private boolean isCounterMetric(MetricName metricName) {
@@ -601,220 +621,7 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         return group.contains("connector") || group.contains("task") || 
                group.contains("connect") || group.contains("worker");
     }
-    
-    private String determineConnectMetricUnit(String name) {
-        String timeUnit = getTimeUnit(name);
-        if (timeUnit != null) {
-            return timeUnit;
-        }
-        
-        String countUnit = getCountUnit(name);
-        if (countUnit != null) {
-            return countUnit;
-        }
-        
-        String specialUnit = getSpecialUnit(name);
-        if (specialUnit != null) {
-            return specialUnit;
-        }
-        
-        return "1";
-    }
-    
-    private String getTimeUnit(String name) {
-        if (isTimeBasedMetric(name)) {
-            return "ms";
-        }
-        if (isTimestampMetric(name)) {
-            return "ms";
-        }
-        if (isTimeSinceMetric(name)) {
-            return "ms";
-        }
-        return null;
-    }
-    
-    private String getCountUnit(String name) {
-        if (isSequenceOrCountMetric(name)) {
-            return "1";
-        }
-        if (isLagMetric(name)) {
-            return "1";
-        }
-        if (isTotalOrCounterMetric(name)) {
-            return "1";
-        }
-        return null;
-    }
-    
-    private String getSpecialUnit(String name) {
-        if (isStatusOrMetadataMetric(name)) {
-            return "1";
-        }
-        if (isConnectRateMetric(name)) {
-            return "1/s";
-        }
-        if (isRatioMetric(name)) {
-            return "1";
-        }
-        return null;
-    }
-    
-    private boolean isTimeBasedMetric(String name) {
-        return hasTimeMs(name) || hasCommitBatchTime(name);
-    }
-    
-    private boolean hasTimeMs(String name) {
-        return name.endsWith("-time-ms") || name.endsWith("-avg-time-ms") || 
-               name.endsWith("-max-time-ms");
-    }
-    
-    private boolean hasCommitBatchTime(String name) {
-        return name.contains("commit-time") || name.contains("batch-time") || 
-               name.contains("rebalance-time");
-    }
-    
-    private boolean isSequenceOrCountMetric(String name) {
-        return hasSequenceNumbers(name) || hasCountSuffix(name);
-    }
-    
-    private boolean hasSequenceNumbers(String name) {
-        return name.contains("seq-no") || name.contains("seq-num");
-    }
-    
-    private boolean hasCountSuffix(String name) {
-        return name.endsWith("-count") || name.contains("task-count") ||
-               name.contains("partition-count");
-    }
-    
-    private boolean isLagMetric(String name) {
-        return name.contains("lag");
-    }
-    
-    private boolean isStatusOrMetadataMetric(String name) {
-        return isStatusMetric(name) || hasProtocolLeaderMetrics(name) || 
-               hasConnectorMetrics(name);
-    }
-    
-    private boolean isStatusMetric(String name) {
-        return "status".equals(name) || name.contains("protocol");
-    }
-    
-    private boolean hasProtocolLeaderMetrics(String name) {
-        return name.contains("leader-name");
-    }
-    
-    private boolean hasConnectorMetrics(String name) {
-        return name.contains("connector-type") || name.contains("connector-class") ||
-               name.contains("connector-version");
-    }
-    
-    private boolean isRatioMetric(String name) {
-        return name.contains("ratio") || name.contains("percentage");
-    }
-    
-    private boolean isTotalOrCounterMetric(String name) {
-        return hasTotalSum(name) || hasAttempts(name) || hasSuccessFailure(name) ||
-               hasErrorsRetries(name);
-    }
-    
-    private boolean hasTotalSum(String name) {
-        return name.contains("total") || name.contains("sum");
-    }
-    
-    private boolean hasAttempts(String name) {
-        return name.contains("attempts");
-    }
-    
-    private boolean hasSuccessFailure(String name) {
-        return name.contains("success") || name.contains("failure");
-    }
-    
-    private boolean hasErrorsRetries(String name) {
-        return name.contains("errors") || name.contains("retries") || name.contains("skipped");
-    }
-    
-    private boolean isTimestampMetric(String name) {
-        return name.contains("timestamp") || name.contains("epoch");
-    }
-    
-    private boolean isConnectRateMetric(String name) {
-        return name.contains("rate") && !name.contains("ratio");
-    }
-    
-    private boolean isTimeSinceMetric(String name) {
-        return name.contains("time-since-last") || name.contains("since-last");
-    }
-    
-    private boolean isTimeMetric(String name) {
-        return hasTimeKeywords(name) && !hasTimeExclusions(name);
-    }
-    
-    private boolean hasTimeKeywords(String name) {
-        return name.contains("time") || name.contains("latency") || 
-               name.contains("duration");
-    }
-    
-    private boolean hasTimeExclusions(String name) {
-        return name.contains("ratio") || name.contains("rate") ||
-               name.contains("count") || name.contains("since-last");
-    }
-    
-    private String determineTimeUnit(String name) {
-        if (name.contains("ms") || name.contains("millisecond")) {
-            return "ms";
-        } else if (name.contains("us") || name.contains("microsecond")) {
-            return "us";
-        } else if (name.contains("ns") || name.contains("nanosecond")) {
-            return "ns";
-        } else if (name.contains("s") && !name.contains("ms")) {
-            return "s";
-        } else {
-            return "ms";
-        }
-    }
-    
-    private boolean isBytesMetric(String name) {
-        return name.contains("byte") || name.contains("bytes") || 
-               name.contains("size") && !name.contains("batch-size");
-    }
-    
-    private String determineBytesUnit(String name) {
-        boolean isRate = name.contains("rate") || name.contains("per-sec") || 
-                        name.contains("persec") || name.contains("/s");
-        return isRate ? "By/s" : "By";
-    }
-    
-    private boolean isRateMetric(String name) {
-        return hasRateKeywords(name) && !hasExcludedKeywords(name);
-    }
-    
-    private boolean hasRateKeywords(String name) {
-        return name.contains("rate") || name.contains("per-sec") || 
-               name.contains("persec") || name.contains("/s");
-    }
-    
-    private boolean hasExcludedKeywords(String name) {
-        return name.contains("byte") || name.contains("ratio");
-    }
-    
-    private boolean isRatioOrPercentageMetric(String name) {
-        return hasPercentKeywords(name) || hasRatioKeywords(name);
-    }
-    
-    private boolean hasPercentKeywords(String name) {
-        return name.contains("percent") || name.contains("pct");
-    }
-    
-    private boolean hasRatioKeywords(String name) {
-        return name.contains("ratio");
-    }
-    
-    private boolean isCountMetric(String name) {
-        return name.contains("count") || name.contains("total") || 
-               name.contains("sum") || name.endsWith("-num");
-    }
-    
+
     private boolean shouldIncludeMetric(String metricKey) {
         if (excludePattern != null && metricKey.matches(excludePattern)) {
             return false;
@@ -825,5 +632,20 @@ public class OpenTelemetryMetricsReporter implements MetricsReporter {
         }
         
         return true;
+    }
+
+    private static final class MetricEntry {
+        final KafkaMetric metric;
+        final Attributes attributes;
+
+        MetricEntry(KafkaMetric metric, Attributes attributes) {
+            this.metric = metric;
+            this.attributes = attributes;
+        }
+    }
+
+    private static final class MetricHandle {
+        final CopyOnWriteArrayList<MetricEntry> entries = new CopyOnWriteArrayList<>();
+        AutoCloseable handle;
     }
 }

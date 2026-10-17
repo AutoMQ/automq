@@ -45,6 +45,10 @@ plugins {
   id "com.github.spotbugs" version '5.1.3' apply false
   id 'org.scoverage' version '8.0.3' apply false
   id 'io.github.goooler.shadow' version '8.1.3' apply false
+  // Updating the shadow plugin version to 8.1.1 causes issue with signing and publishing the shadowed
+  // artifacts - see https://github.com/johnrengelman/shadow/issues/901
+  id 'com.github.johnrengelman.shadow' version '8.1.0' apply false
+  id 'com.google.protobuf' version '0.9.4' apply false
   //  Spotless 6.13.0 has issue with Java 21 (see https://github.com/diffplug/spotless/pull/1920), and Spotless 6.14.0+ requires JRE 11
   //  We are going to drop JDK8 support. Hence, the spotless is upgrade to newest version and be applied only if the build env is compatible with JDK 11.
   //  spotless 6.15.0+ has issue in runtime with JDK8 even through we define it with `apply:false`. see https://github.com/diffplug/spotless/issues/2156 for more details
@@ -158,6 +162,16 @@ allprojects {
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
       resolutionStrategy {
+        // AutoMQ inject start
+        eachDependency { details ->
+          if (details.requested.group == 'io.netty' &&
+              details.requested.name != 'netty' &&
+              !details.requested.name.startsWith('netty-tcnative')) {
+            details.useVersion versions.netty
+            details.because('Release packaging must align all Netty modules to a single version')
+          }
+        }
+        // AutoMQ inject end
         force(
           // be explicit about the javassist dependency version instead of relying on the transitive version
           libs.javassist,
@@ -169,9 +183,23 @@ allprojects {
           // ZooKeeper (potentially older and containing CVEs)
           libs.nettyHandler,
           libs.nettyTransportNativeEpoll,
-	  // be explicit about the reload4j version instead of relying on the transitive versions
-	  libs.reload4j
+          // be explicit about the reload4j version instead of relying on the transitive versions
+          libs.reload4j,
+          // AutoMQ inject start
+          // pin OTel sender versions to prevent version conflicts with Strimzi thirdparty-libs
+          libs.opentelemetryExporterSenderJdk,
+          libs.opentelemetryExporterSenderGrpcManagedChannel,
+          // unify JAXB versions across all modules to avoid duplicate jars in release packaging
+          libs.jaxbApi,
+          libs.jaxbImpl
+          // AutoMQ inject end
         )
+        // AutoMQ inject start
+        // swagger is only used for doc generation and still depends on jackson-yaml compatible with SnakeYAML 1.x.
+        if (name != "swagger") {
+          force(libs.snakeyaml)
+        }
+        // AutoMQ inject end
       }
     }
   }
@@ -769,7 +797,7 @@ subprojects {
     apply plugin: 'com.diffplug.spotless'
     spotless {
       java {
-        targetExclude('src/generated/**/*.java','src/generated-test/**/*.java')
+        targetExclude('src/generated/**/*.java', 'src/generated-test/**/*.java', 'build/generated/**/*.java')
         importOrder('kafka', 'org.apache.kafka', 'com', 'net', 'org', 'java', 'javax', '', '\\#')
         removeUnusedImports()
       }
@@ -956,6 +984,33 @@ project(':core') {
     implementation libs.jacksonJDK8Datatypes
     implementation libs.joptSimple
     implementation libs.jose4j
+
+    // AutoMQ inject start
+    // Keep table-topic transitive dependencies on supported patch versions at the core runtime boundary.
+    constraints {
+      implementation("org.slf4j:slf4j-api:${versions.slf4j}") {
+        version {
+          strictly versions.slf4j
+        }
+        because('Kafka uses the SLF4J 1.7.x reload4j binding')
+      }
+      implementation "org.apache.parquet:parquet-avro:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-column:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-common:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-encoding:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-format-structures:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-hadoop:${versions.parquet}"
+      implementation "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
+      implementation "org.apache.thrift:libthrift:${versions.thrift}"
+      implementation "org.apache.ant:ant:${versions.ant}"
+      implementation "org.apache.ant:ant-launcher:${versions.ant}"
+      implementation "io.airlift:aircompressor:${versions.aircompressor}"
+      implementation "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
+      implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
+      implementation "commons-beanutils:commons-beanutils:${versions.beanutils}"
+      implementation "org.bouncycastle:bcprov-jdk18on:${versions.bcprov}"
+    }
+    // AutoMQ inject end
     implementation libs.metrics
     implementation libs.scalaCollectionCompat
     implementation libs.scalaJava8Compat
@@ -992,7 +1047,7 @@ project(':core') {
     // table topic start
     implementation ("org.apache.avro:avro:${versions.avro}")
     implementation ("org.apache.avro:avro-protobuf:${versions.avro}")
-    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation libs.protobuf
     implementation ("org.apache.iceberg:iceberg-core:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-api:${versions.iceberg}")
     implementation ("org.apache.iceberg:iceberg-data:${versions.iceberg}")
@@ -1002,11 +1057,12 @@ project(':core') {
     implementation ("org.apache.iceberg:iceberg-nessie:${versions.iceberg}")
     implementation ("software.amazon.awssdk:glue:${versions.awsSdk}")
     implementation ("software.amazon.awssdk:s3tables:${versions.awsSdk}")
-    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.0'
+    implementation 'software.amazon.s3tables:s3-tables-catalog-for-iceberg:0.1.8'
 
     implementation ('org.apache.hadoop:hadoop-common:3.4.1') {
       exclude group: 'org.eclipse.jetty', module: '*'
       exclude group: 'com.sun.jersey', module: '*'
+      exclude group: 'com.github.pjfanning', module: 'jersey-json'
     }
     // for hadoop common
     implementation ("org.eclipse.jetty:jetty-webapp:${versions.jetty}")
@@ -1050,7 +1106,7 @@ project(':core') {
     //   Wire Runtime for schema handling
     implementation ("com.squareup.wire:wire-schema:${versions.wire}")
     implementation ("com.squareup.wire:wire-runtime:${versions.wire}")
-    implementation 'com.google.api.grpc:proto-google-common-protos:2.52.0'
+    implementation libs.protoGoogleCommonProtos
     // > Protobuf ext end
 
     // table topic end
@@ -1673,6 +1729,8 @@ project(':generator') {
 }
 
 project(':clients') {
+  apply plugin: 'com.google.protobuf'
+
   base {
     archivesName = "kafka-clients"
   }
@@ -1688,6 +1746,13 @@ project(':clients') {
     implementation libs.snappy
     implementation libs.slf4jApi
     implementation libs.opentelemetryProto
+    implementation libs.protobuf
+
+    // AutoMQ inject start
+    implementation (libs.cloudeventsKafka) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
+    // AutoMQ inject end
 
     // libraries which should be added as runtime dependencies in generated pom.xml should be defined here:
     shadowed libs.zstd
@@ -1806,7 +1871,7 @@ project(':clients') {
   sourceSets {
     main {
       java {
-        srcDirs = ["src/generated/java", "src/main/java"]
+        srcDirs = ["src/generated/java", "src/main/java", "$buildDir/generated/source/proto/main/java"] // AutoMQ: add proto source
       }
     }
     test {
@@ -1816,7 +1881,29 @@ project(':clients') {
     }
   }
 
+  protobuf {
+    protoc {
+      artifact = "com.google.protobuf:protoc:$versions.protobuf"
+    }
+  }
+
+  // Exclude protobuf-generated sources from checkstyle and spotless
+  afterEvaluate {
+    checkstyleMain.source = checkstyleMain.source.filter { !it.path.contains('/generated/source/proto/') }
+    if (tasks.findByName('spotlessJava')) {
+      spotless {
+        java {
+          targetExclude('build/generated/source/proto/**/*.java')
+        }
+      }
+    }
+  }
+
   compileJava.dependsOn 'processMessages'
+  // AutoMQ inject start: ensure proto sources are generated before compilation
+  compileJava.dependsOn 'generateProto'
+  srcJar.dependsOn 'generateProto'
+  // AutoMQ inject end
   srcJar.dependsOn 'processMessages'
 
   compileTestJava.dependsOn 'processTestMessages'
@@ -1961,7 +2048,7 @@ project(':server-common') {
     implementation libs.joptSimple
     implementation libs.jacksonDatabind
     implementation libs.pcollections
-    implementation libs.opentelemetrySdk
+    api libs.opentelemetrySdk
 
     // AutoMQ inject start
     implementation project(':s3stream')
@@ -2341,6 +2428,12 @@ project(':automq-metrics') {
     configProperties = checkstyleConfigProperties("import-control-server.xml")
   }
 
+  configurations {
+    all {
+      exclude group: 'io.opentelemetry', module: 'opentelemetry-exporter-sender-okhttp'
+    }
+  }
+    
   dependencies {
     // OpenTelemetry core dependencies
     api libs.opentelemetryJava8
@@ -2350,6 +2443,9 @@ project(':automq-metrics') {
     api libs.opentelemetryExporterLogging
     api libs.opentelemetryExporterProm
     api libs.opentelemetryExporterOTLP
+    api libs.opentelemetryExporterSenderJdk
+    api libs.opentelemetryExporterSenderGrpcManagedChannel
+    api libs.grpcNettyShaded
     api libs.opentelemetryJmx
 
     // Logging dependencies
@@ -2391,7 +2487,7 @@ project(':automq-metrics') {
     implementation('io.opentelemetry:opentelemetry-sdk:1.40.0')
     implementation("io.opentelemetry.semconv:opentelemetry-semconv:1.25.0-alpha")
     implementation("io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:2.6.0-alpha")
-    implementation('com.google.protobuf:protobuf-java:3.25.5')
+    implementation libs.protobuf
     implementation('org.xerial.snappy:snappy-java:1.1.10.5')
   }
 
@@ -2449,9 +2545,13 @@ project(':tools') {
       exclude group: 'org.apache.kafka', module: 'kafka-clients'
     }
     implementation libs.bucket4j
-    implementation (libs.oshi){
-      exclude group: 'org.slf4j', module: '*'
+    implementation (libs.oshi) {
+      exclude group: 'org.slf4j', module: 'slf4j-api'
     }
+    implementation (libs.cloudeventsKafka) {
+      exclude group: 'org.apache.kafka', module: 'kafka-clients'
+    }
+    implementation libs.protobuf
     // AutoMQ inject end
 
     implementation project(':storage')
@@ -3555,6 +3655,12 @@ project(':connect:runtime') {
     implementation libs.reflections
     implementation libs.mavenArtifact
     implementation libs.swaggerAnnotations
+
+    // AutoMQ inject start
+    constraints {
+      implementation "org.codehaus.plexus:plexus-utils:${versions.plexusUtils}"
+    }
+    // AutoMQ inject end
 
     // We use this library to generate OpenAPI docs for the REST API, but we don't want or need it at compile
     // or run time. So, we add it to a separate configuration, which we use later on during docs generation

@@ -21,7 +21,7 @@ package kafka.automq.failover;
 
 import kafka.automq.utils.JsonUtils;
 
-import org.apache.kafka.image.KVDelta;
+import org.apache.kafka.controller.stream.KVKey;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.image.loader.LoaderManifest;
@@ -76,8 +76,7 @@ public class FailoverListener implements MetadataPublisher, AutoCloseable {
      */
     private Optional<FailoverContext[]> getContexts(MetadataDelta delta) {
         return Optional.ofNullable(delta.kvDelta())
-            .map(KVDelta::changedKV)
-            .map(kv -> kv.get(FailoverConstants.FAILOVER_KEY))
+            .map(kvDelta -> kvDelta.getChangedKV(KVKey.of(FailoverConstants.FAILOVER_KEY)))
             .map(this::decodeContexts);
     }
     

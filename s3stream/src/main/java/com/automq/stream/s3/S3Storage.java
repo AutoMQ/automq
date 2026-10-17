@@ -21,7 +21,9 @@ package com.automq.stream.s3;
 
 import com.automq.stream.Context;
 import com.automq.stream.api.LinkRecordDecoder;
+import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
+import com.automq.stream.api.exceptions.StreamClientException;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -31,10 +33,15 @@ import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.Failover;
 import com.automq.stream.s3.failover.StorageFailureHandler;
+import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metrics.S3StreamMetricsManager;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.TimerUtil;
-import com.automq.stream.s3.metrics.stats.StorageOperationStats;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3Stage;
+import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
+import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -45,7 +52,6 @@ import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
-import com.automq.stream.utils.ExceptionUtil;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -60,20 +66,18 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -85,16 +89,44 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import io.netty.buffer.ByteBuf;
+import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.instrumentation.annotations.SpanAttribute;
 import io.opentelemetry.instrumentation.annotations.WithSpan;
 
+import static com.automq.stream.s3.ByteBufAlloc.ENCODE_RECORD;
+import static com.automq.stream.utils.FutureUtil.suppress;
 
+/** Owns the broker-local WAL, upload pipeline, and read caches for shared stream storage. */
 public class S3Storage implements Storage {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3Storage.class);
+    private static final Metrics.LongGaugeBundle.LongGauge DELTA_WAL_CACHE_SIZE = Metrics.instance()
+        .longGauge("kafka_stream_delta_wal_cache_size", "Delta WAL cache size", "bytes")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge WAL_PENDING_UPLOAD_BYTES = Metrics.instance()
+        .longGauge("kafka_stream_wal_pending_upload_bytes", "Delta WAL pending upload bytes", "")
+        .register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongGaugeBundle.LongGauge INFLIGHT_WAL_UPLOAD_TASKS_COUNT = Metrics.instance()
+        .longGauge("kafka_stream_inflight_wal_upload_tasks_count", "Inflight upload WAL tasks count", "")
+        .register(MetricsLevel.DEBUG, Attributes.empty());
+    private static final DeltaHistogram APPEND_STORAGE_LATENCY = OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE);
+    private static final DeltaHistogram APPEND_STORAGE_APPEND_CALLBACK_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.DEBUG, S3Operation.APPEND_STORAGE_APPEND_CALLBACK);
+    private static final DeltaHistogram APPEND_STORAGE_LOG_CACHE_FULL_LATENCY =
+        OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.APPEND_STORAGE_LOG_CACHE_FULL);
+    private static final DeltaHistogram UPLOAD_WAL_PREPARE_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_PREPARE);
+    private static final DeltaHistogram UPLOAD_WAL_UPLOAD_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_UPLOAD);
+    private static final DeltaHistogram UPLOAD_WAL_COMMIT_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMMIT);
+    private static final DeltaHistogram UPLOAD_WAL_COMPLETE_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.UPLOAD_WAL_COMPLETE);
+    private static final DeltaHistogram FORCE_UPLOAD_WAL_AWAIT_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_AWAIT);
+    private static final DeltaHistogram FORCE_UPLOAD_WAL_COMPLETE_LATENCY = OperationLatencyMetrics.stage(MetricsLevel.INFO, S3Stage.FORCE_UPLOAD_WAL_COMPLETE);
+    private static final DeltaHistogram READ_STORAGE_LATENCY = OperationLatencyMetrics.operation(MetricsLevel.INFO, S3Operation.READ_STORAGE);
     private static final FastReadFailFastException FAST_READ_FAIL_FAST_EXCEPTION = new FastReadFailFastException();
+    private static final ByteBufSupplier ENCODE_LINK_RECORD_INSTANT_ALLOC = new DefaultByteBufSupplier(ENCODE_RECORD);
 
     private static final int NUM_STREAM_CALLBACK_LOCKS = 128;
 
@@ -111,6 +143,7 @@ public class S3Storage implements Storage {
 
     protected final Config config;
     private final WriteAheadLog deltaWAL;
+    private final ConfirmWAL confirmWAL;
     /**
      * WAL log cache
      */
@@ -126,12 +159,12 @@ public class S3Storage implements Storage {
      */
     private final AtomicBoolean forceUploadScheduled = new AtomicBoolean();
     /**
-     * A lock to ensure only one thread can trigger {@link #forceUpload()} in {@link #forceUploadCallback()}
+     * A flag to trigger another force upload after the scheduled one completes.
      */
     private final AtomicBoolean needForceUpload = new AtomicBoolean();
     private final ScheduledExecutorService backgroundExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("s3-storage-background", true), LOGGER);
-    private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPoolWithMonitor(
+    private final ExecutorService uploadWALExecutor = Threads.newFixedThreadPool(
         4, "s3-storage-upload-wal", true, LOGGER);
     private final DelayTrim delayTrim;
     /**
@@ -140,7 +173,7 @@ public class S3Storage implements Storage {
      * @see #forceUpload
      */
     private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
-    private final Queue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
+    private final BlockingQueue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     protected final StreamManager streamManager;
     protected final ObjectManager objectManager;
@@ -160,6 +193,13 @@ public class S3Storage implements Storage {
     private volatile double maxDataWriteRate = 0.0;
 
     private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
+    private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
+    private final Lock lifecycleReadLock = lifecycleLock.readLock();
+    private final Lock lifecycleWriteLock = lifecycleLock.writeLock();
+    private boolean shutdownStarted = false;
+    private final Set<CompletableFuture<Void>> inflightAppends = ConcurrentHashMap.newKeySet();
+    private final Map<Long, CompletableFuture<Void>> pendingStreamUploads = new ConcurrentHashMap<>();
+    private LocalStreamRangeIndexCache localStreamRangeIndexCache;
 
     @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
@@ -176,253 +216,52 @@ public class S3Storage implements Storage {
         } else {
             delayTrim = new DelayTrim(0);
         }
-        this.deltaWALCache = new LogCache(deltaWALCacheSize, config.walUploadThreshold(), config.maxStreamNumPerStreamSetObject());
+        // Adjust the walUploadThreshold to be less than 1/3 of deltaWALCacheSize to leave enough cache capacity
+        // for inflight uploads and new appends.
+        long walUploadThreshold = Math.min(deltaWALCacheSize / 3, config.walUploadThreshold());
+        if (walUploadThreshold != config.walUploadThreshold()) {
+            LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreshold);
+        }
+        this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreshold, config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
-        S3StreamMetricsManager.registerDeltaWalCacheSizeSupplier(() -> deltaWALCache.size() + snapshotReadCache.size());
+        DELTA_WAL_CACHE_SIZE.record(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
-        Context.instance().confirmWAL(new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit)));
+        this.confirmWAL = new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit));
+        Context.instance().confirmWAL(this.confirmWAL);
         this.streamManager = streamManager;
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
         this.storageFailureHandler = storageFailureHandler;
         this.drainBackoffTask = this.backgroundExecutor.scheduleWithFixedDelay(this::tryDrainBackoffRecords, 100, 100, TimeUnit.MILLISECONDS);
-        S3StreamMetricsManager.registerInflightWALUploadTasksCountSupplier(this.inflightWALUploadTasks::size);
-        S3StreamMetricsManager.registerDeltaWalPendingUploadBytesSupplier(this.pendingUploadBytes::get);
+        INFLIGHT_WAL_UPLOAD_TASKS_COUNT.record(this.inflightWALUploadTasks::size);
+        WAL_PENDING_UPLOAD_BYTES.record(this.pendingUploadBytes::get);
         if (config.walUploadIntervalMs() > 0) {
-            this.backgroundExecutor.scheduleWithFixedDelay(this::maybeForceUpload, config.walUploadIntervalMs(), config.walUploadIntervalMs(), TimeUnit.MILLISECONDS);
+            long walUploadIntervalMs = config.walUploadIntervalMs();
+            this.backgroundExecutor.scheduleWithFixedDelay(() ->
+                    lazyUpload(new LazyCommit(walUploadIntervalMs, false)),
+                walUploadIntervalMs, walUploadIntervalMs, TimeUnit.MILLISECONDS);
         }
     }
 
     /**
-     * Recover continuous records in each stream from the WAL, and put them into the returned {@link LogCache.LogCacheBlock}.
-     * <p>
-     * It will filter out
-     * <ul>
-     *     <li>the records that are not in the opening streams</li>
-     *     <li>the records that have been committed</li>
-     *     <li>the records that are not continuous, which means, all records after the first discontinuous record</li>
-     * </ul>
-     * <p>
-     * It throws {@link IllegalStateException} if the start offset of the first recovered record mismatches
-     * the end offset of any opening stream, which indicates data loss.
-     * <p>
-     * If there are out of order records (which should never happen or there is a BUG), it will try to re-order them.
-     * <p>
-     * For example, if we recover following records from the WAL in a stream:
-     * <pre>    1, 2, 3, 5, 4, 6, 10, 11</pre>
-     * and the {@link StreamMetadata#endOffset()} of this stream is 3. Then the returned {@link LogCache.LogCacheBlock}
-     * will contain records
-     * <pre>    3, 4, 5, 6</pre>
-     * Here,
-     * <ul>
-     *     <li>The record 1 and 2 are discarded because they have been committed (less than 3, the end offset of the stream)</li>
-     *     <li>The record 10 and 11 are discarded because they are not continuous (10 is not 7, the next offset of 6)</li>
-     *     <li>The record 5 and 4 are reordered because they are out of order, and we handle this bug here</li>
-     * </ul>
-     * <p>
-     * It will return when any of the following conditions is met:
-     * <ul>
-     *     <li>all the records in the WAL have been recovered</li>
-     *     <li>the cache block is full</li>
-     * </ul>
-     * Visible for testing.
+     * Sets the broker-local sparse stream range index cache.
      *
-     * @param it                      WAL recover iterator
-     * @param openingStreamEndOffsets the end offset of each opening stream
-     * @param maxCacheSize            the max size of the returned {@link RecoveryBlockResult#cacheBlock}
-     * @param logger                  logger
+     * @param localStreamRangeIndexCache local sparse stream range index cache
      */
-    static RecoveryBlockResult recoverContinuousRecords(
-        Iterator<RecoverResult> it,
-        Map<Long, Long> openingStreamEndOffsets,
-        long maxCacheSize,
-        Logger logger
-    ) {
-        RecordOffset logEndOffset = null;
-        Map<Long, Long> streamNextOffsets = new HashMap<>();
-        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords = new HashMap<>();
-        LogCache.LogCacheBlock cacheBlock = new LogCache.LogCacheBlock(maxCacheSize);
-
-        boolean first = true;
-        try {
-            while (it.hasNext() && !cacheBlock.isFull()) {
-                RecoverResult recoverResult = it.next();
-                logEndOffset = recoverResult.recordOffset();
-                if (first) {
-                    LOGGER.info("recover start offset {}", logEndOffset);
-                    first = false;
-                }
-                StreamRecordBatch streamRecordBatch = recoverResult.record();
-                processRecoveredRecord(streamRecordBatch, openingStreamEndOffsets, streamDiscontinuousRecords, cacheBlock, streamNextOffsets, logger);
-            }
-        } catch (Throwable e) {
-            // {@link RuntimeIOException} may be thrown by {@code it.next()}
-            releaseAllRecords(streamDiscontinuousRecords.values());
-            releaseAllRecords(cacheBlock.records().values());
-            throw e;
-        }
-        if (logEndOffset != null) {
-            cacheBlock.lastRecordOffset(logEndOffset);
-        }
-
-        releaseDiscontinuousRecords(streamDiscontinuousRecords, logger);
-        RecoveryBlockResult rst = filterOutInvalidStreams(cacheBlock, openingStreamEndOffsets);
-        return decodeLinkRecord(rst);
+    public void setLocalStreamRangeIndexCache(LocalStreamRangeIndexCache localStreamRangeIndexCache) {
+        this.localStreamRangeIndexCache = localStreamRangeIndexCache;
     }
 
-    /**
-     * Processes recovered stream records. Caches continuous ones or queues discontinuous based on offset order.
-     *
-     * @param streamRecordBatch          the recovered record batch to process
-     * @param openingStreamEndOffsets    the end offsets of each opening stream
-     * @param streamDiscontinuousRecords the out-of-order records of each stream (to be filled)
-     * @param cacheBlock                 the cache block (to be filled)
-     * @param streamNextOffsets          the next offsets of each stream (to be updated)
-     * @param logger                     logger
-     */
-    private static void processRecoveredRecord(
-        StreamRecordBatch streamRecordBatch,
-        Map<Long, Long> openingStreamEndOffsets,
-        Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
-        LogCache.LogCacheBlock cacheBlock,
-        Map<Long, Long> streamNextOffsets,
-        Logger logger
-    ) {
-        long streamId = streamRecordBatch.getStreamId();
-
-        Long openingStreamEndOffset = openingStreamEndOffsets.get(streamId);
-        if (openingStreamEndOffset == null || openingStreamEndOffset > streamRecordBatch.getBaseOffset()) {
-            // stream is already safe closed, or the record have been committed, skip it
-            streamRecordBatch.release();
-            return;
+    @Override
+    public void beforeStreamClose(long streamId) {
+        LocalStreamRangeIndexCache indexCache = localStreamRangeIndexCache;
+        if (indexCache != null) {
+            indexCache.uploadOnStreamClose();
         }
-
-        Long expectedNextOffset = streamNextOffsets.get(streamId);
-        Queue<StreamRecordBatch> discontinuousRecords = streamDiscontinuousRecords.get(streamId);
-        boolean isContinuous = expectedNextOffset == null || expectedNextOffset == streamRecordBatch.getBaseOffset();
-        if (!isContinuous) {
-            // unexpected record, put it into discontinuous records queue.
-            if (discontinuousRecords == null) {
-                discontinuousRecords = new PriorityQueue<>(Comparator.comparingLong(StreamRecordBatch::getBaseOffset));
-                streamDiscontinuousRecords.put(streamId, discontinuousRecords);
-            }
-            discontinuousRecords.add(streamRecordBatch);
-            return;
-        }
-        // continuous record, put it into cache, and check if there is any historical discontinuous records can be polled.
-        cacheBlock.put(streamRecordBatch);
-        expectedNextOffset = maybePollDiscontinuousRecords(streamRecordBatch, cacheBlock, discontinuousRecords, logger);
-        streamNextOffsets.put(streamId, expectedNextOffset);
-    }
-
-    private static long maybePollDiscontinuousRecords(
-        StreamRecordBatch streamRecordBatch,
-        LogCache.LogCacheBlock cacheBlock,
-        Queue<StreamRecordBatch> discontinuousRecords,
-        Logger logger
-    ) {
-        long expectedNextOffset = streamRecordBatch.getLastOffset();
-        if (discontinuousRecords == null) {
-            return expectedNextOffset;
-        }
-        // check and poll historical discontinuous records.
-        while (!discontinuousRecords.isEmpty()) {
-            StreamRecordBatch peek = discontinuousRecords.peek();
-            if (peek.getBaseOffset() != expectedNextOffset) {
-                break;
-            }
-            // should never happen, log it.
-            logger.error("[BUG] recover an out of order record, streamId={}, expectedNextOffset={}, record={}", streamRecordBatch.getStreamId(), expectedNextOffset, peek);
-            discontinuousRecords.poll();
-            cacheBlock.put(peek);
-            expectedNextOffset = peek.getLastOffset();
-        }
-        return expectedNextOffset;
-    }
-
-    private static void releaseDiscontinuousRecords(Map<Long, Queue<StreamRecordBatch>> streamDiscontinuousRecords,
-        Logger logger) {
-        streamDiscontinuousRecords.values().stream()
-            .filter(q -> !q.isEmpty())
-            .peek(q -> logger.info("drop discontinuous records, records={}", q))
-            .forEach(S3Storage::releaseRecords);
-    }
-
-    /**
-     * Filter out invalid streams (the recovered start offset mismatches the stream end offset from controller) from the cache block if there are any.
-     */
-    private static RecoveryBlockResult filterOutInvalidStreams(LogCache.LogCacheBlock cacheBlock,
-        Map<Long, Long> openingStreamEndOffsets) {
-        Set<Long> invalidStreams = new HashSet<>();
-        List<RuntimeException> exceptions = new ArrayList<>();
-
-        cacheBlock.records().forEach((streamId, records) -> {
-            if (!records.isEmpty()) {
-                long startOffset = records.get(0).getBaseOffset();
-                long expectedStartOffset = openingStreamEndOffsets.getOrDefault(streamId, startOffset);
-                if (startOffset != expectedStartOffset) {
-                    RuntimeException exception = new IllegalStateException(String.format("[BUG] WAL data may lost, streamId %d endOffset=%d from controller, " +
-                        "but WAL recovered records startOffset=%s", streamId, expectedStartOffset, startOffset));
-                    LOGGER.error("invalid stream records", exception);
-                    invalidStreams.add(streamId);
-                    exceptions.add(exception);
-                }
-            }
-        });
-
-        if (invalidStreams.isEmpty()) {
-            return new RecoveryBlockResult(cacheBlock, null);
-        }
-
-        // Only streams not in invalidStreams should be uploaded and closed,
-        // so re-new a cache block and put only valid records into it, and release all invalid records.
-        LogCache.LogCacheBlock newCacheBlock = new LogCache.LogCacheBlock(1024L * 1024 * 1024);
-        cacheBlock.records().forEach((streamId, records) -> {
-            if (!invalidStreams.contains(streamId)) {
-                records.forEach(newCacheBlock::put);
-            } else {
-                // release invalid records.
-                releaseRecords(records);
-            }
-        });
-        return new RecoveryBlockResult(newCacheBlock, ExceptionUtil.combine(exceptions));
-    }
-
-    private static void releaseAllRecords(Collection<? extends Collection<StreamRecordBatch>> allRecords) {
-        allRecords.forEach(S3Storage::releaseRecords);
     }
 
     private static void releaseRecords(Collection<StreamRecordBatch> records) {
         records.forEach(StreamRecordBatch::release);
-    }
-
-    private static RecoveryBlockResult decodeLinkRecord(RecoveryBlockResult recoverBlockRst) {
-        LogCache.LogCacheBlock cacheBlock = recoverBlockRst.cacheBlock;
-        int size = 0;
-        for (List<StreamRecordBatch> l : cacheBlock.records().values()) {
-            size += l.size();
-        }
-        List<CompletableFuture<Void>> futures = new ArrayList<>(size);
-        for (Map.Entry<Long, List<StreamRecordBatch>> entry : cacheBlock.records().entrySet()) {
-            List<StreamRecordBatch> records = entry.getValue();
-            for (int i = 0; i < records.size(); i++) {
-                StreamRecordBatch record = records.get(i);
-                if (record.getCount() >= 0) {
-                    continue;
-                }
-                int finalI = i;
-                futures.add(linkRecordDecoder.decode(record).thenAccept(r -> {
-                    records.set(finalI, r);
-                }));
-            }
-        }
-        try {
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get();
-            return recoverBlockRst;
-        } catch (Throwable ex) {
-            releaseAllRecords(cacheBlock.records().values());
-            throw new RuntimeException(ex);
-        }
     }
 
     @Override
@@ -460,36 +299,23 @@ public class S3Storage implements Storage {
      */
     void recover0(WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         Logger logger) throws InterruptedException, ExecutionException {
-        List<StreamMetadata> streams = streamManager.getOpeningStreams().get();
-        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
+        CompletableFuture<List<StreamMetadata>> streamsCf = streamManager.getOpeningStreams();
         Iterator<RecoverResult> iterator = deltaWAL.recover();
 
-        LogCache.LogCacheBlock cacheBlock;
-        List<RuntimeException> exceptions = new ArrayList<>();
-        do {
-            RecoveryBlockResult result = recoverContinuousRecords(iterator, streamEndOffsets, 1 << 29, logger);
-            cacheBlock = result.cacheBlock;
-            Optional.ofNullable(result.exception).ifPresent(exceptions::add);
-            updateStreamEndOffsets(cacheBlock, streamEndOffsets);
-            uploadRecoveredRecords(objectManager, cacheBlock, logger);
-        }
-        while (cacheBlock.isFull());
+        List<StreamMetadata> streams = streamsCf.get();
+        Map<Long, Long> streamEndOffsets = streams.stream().collect(Collectors.toMap(StreamMetadata::streamId, StreamMetadata::endOffset));
 
-        deltaWAL.reset().get();
-        closeStreams(streamManager, streams, streamEndOffsets, logger);
-
-        // fail it if there is any invalid stream.
-        if (!exceptions.isEmpty()) {
-            throw ExceptionUtil.combine(exceptions);
-        }
-    }
-
-    private static void updateStreamEndOffsets(LogCache.LogCacheBlock cacheBlock, Map<Long, Long> streamEndOffsets) {
-        cacheBlock.records().forEach((streamId, records) -> {
-            if (!records.isEmpty()) {
-                streamEndOffsets.put(streamId, records.get(records.size() - 1).getLastOffset());
+        WALRecovery.recover(iterator, streamEndOffsets, 1 << 29, logger, cacheBlock -> {
+            try {
+                uploadRecoveredRecords(objectManager, cacheBlock, logger);
+            } catch (InterruptedException | ExecutionException e) {
+                throw new RuntimeException(e);
             }
         });
+
+        CompletableFuture<Void> resetCf = deltaWAL.reset();
+        closeStreams(streamManager, streams, streamEndOffsets, logger);
+        resetCf.get();
     }
 
     private void uploadRecoveredRecords(ObjectManager objectManager, LogCache.LogCacheBlock cacheBlock, Logger logger)
@@ -500,7 +326,7 @@ public class S3Storage implements Storage {
                 UploadWriteAheadLogTask task = newUploadWriteAheadLogTask(cacheBlock.records(), objectManager, Long.MAX_VALUE);
                 task.prepare().thenCompose(nil -> task.upload()).thenCompose(nil -> task.commit()).get();
             } finally {
-                releaseAllRecords(cacheBlock.records().values());
+                WALRecovery.releaseAllRecords(cacheBlock.records().values());
             }
         }
     }
@@ -513,19 +339,50 @@ public class S3Storage implements Storage {
         }
         CompletableFuture.allOf(
             streams.stream()
-                .map(s -> streamManager.closeStream(s.streamId(), s.epoch()))
+                .map(s -> closeRecoveredStream(streamManager, s, logger))
                 .toArray(CompletableFuture[]::new)
         ).get();
     }
 
+    private static CompletableFuture<Void> closeRecoveredStream(
+        StreamManager streamManager,
+        StreamMetadata stream,
+        Logger logger
+    ) {
+        return streamManager.closeStream(stream.streamId(), stream.epoch()).handle((nil, exception) -> {
+            if (exception == null) {
+                return null;
+            }
+            Throwable cause = FutureUtil.cause(exception);
+            if (cause instanceof StreamClientException
+                && ((StreamClientException) cause).getCode() == ErrorCode.EXPIRED_STREAM_EPOCH) {
+                logger.info("recover close reached terminal fenced state for stream {}", stream);
+                return null;
+            }
+            throw new CompletionException(cause);
+        });
+    }
+
+    /**
+     * Rejects new appends and drains accepted WAL work without a storage-local timeout.
+     *
+     * <p>Shutdown establishes the append admission boundary and drains every append accepted before that boundary
+     * through object commit. WAL trim is best-effort because an untrimmed committed record is safe to replay.
+     */
     @Override
     public void shutdown() {
-        drainBackoffTask.cancel(false);
-        for (WalWriteRequest request : backoffRecords) {
-            request.cf.completeExceptionally(new IOException("S3Storage is shutdown"));
+        lifecycleWriteLock.lock();
+        try {
+            shutdownStarted = true;
+        } finally {
+            lifecycleWriteLock.unlock();
         }
-        FutureUtil.suppress(() -> delayTrim.close(), LOGGER);
+        CompletableFuture.allOf(inflightAppends.toArray(new CompletableFuture[0])).join();
+        drainBackoffTask.cancel(false);
+        forceUpload().join();
+        suppress(() -> delayTrim.close(), LOGGER);
         deltaWAL.shutdownGracefully();
+        uploadWALExecutor.shutdown();
         ThreadUtils.shutdownExecutor(backgroundExecutor, 10, TimeUnit.SECONDS, LOGGER);
         for (EventLoop executor : callbackExecutors) {
             executor.shutdownGracefully();
@@ -537,13 +394,22 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> append(AppendContext context, StreamRecordBatch streamRecord) {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        // encoded before append to free heap ByteBuf.
-        streamRecord.encoded();
         WalWriteRequest writeRequest = new WalWriteRequest(streamRecord, null, cf, context);
-        append0(context, writeRequest, false);
+        lifecycleReadLock.lock();
+        try {
+            if (shutdownStarted) {
+                cf.completeExceptionally(new IOException("S3Storage is shutdown"));
+            } else {
+                inflightAppends.add(cf);
+                append0(context, writeRequest, false);
+            }
+        } finally {
+            lifecycleReadLock.unlock();
+        }
         return cf.whenComplete((nil, ex) -> {
+            inflightAppends.remove(cf);
             streamRecord.release();
-            StorageOperationStats.getInstance().appendStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+            APPEND_STORAGE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
         });
     }
 
@@ -563,7 +429,7 @@ public class S3Storage implements Storage {
             if (!fromBackoff) {
                 backoffRecords.offer(request);
             }
-            StorageOperationStats.getInstance().appendLogCacheFullStats.record(0L);
+            APPEND_STORAGE_LOG_CACHE_FULL_LATENCY.record(0L);
             if (System.currentTimeMillis() - lastLogTimestamp > 1000L) {
                 LOGGER.warn("[BACKOFF] log cache size {} is larger than {}", deltaWALCache.size(), deltaWALCache.capacity());
                 lastLogTimestamp = System.currentTimeMillis();
@@ -579,9 +445,7 @@ public class S3Storage implements Storage {
                     appendCf = deltaWAL.append(new TraceContext(context), streamRecord);
                 } else {
                     StreamRecordBatch record = request.record;
-                    // TODO: add StreamRecordBatch attr to represent the link record.
-                    StreamRecordBatch linkStreamRecord = new StreamRecordBatch(record.getStreamId(), record.getEpoch(),
-                        record.getBaseOffset(), -record.getCount(), context.linkRecord());
+                    StreamRecordBatch linkStreamRecord = toLinkRecord(record, context.linkRecord().retainedSlice());
                     appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
                 }
 
@@ -602,21 +466,56 @@ public class S3Storage implements Storage {
             request.cf.completeExceptionally(e);
             return false;
         }
-        appendCf.whenComplete((rst, ex) -> {
-            if (ex != null) {
-                LOGGER.error("append WAL fail, request {}", request, ex);
-                storageFailureHandler.handle(ex);
-                return;
-            }
+        appendCf.thenAccept(rst -> {
             request.offset = rst.recordOffset();
+            // Execute the ConfirmWAL#append before run callback.
+            if (request.context.linkRecord() == null) {
+                this.confirmWAL.onAppend(request.record, rst.recordOffset(), rst.nextOffset());
+            } else {
+                StreamRecordBatch linkRecord = toLinkRecord(request.record, request.context.linkRecord());
+                this.confirmWAL.onAppend(linkRecord, rst.recordOffset(), rst.nextOffset());
+                linkRecord.release();
+            }
             handleAppendCallback(request);
+        }).whenComplete((nil, ex) -> {
+            if (ex != null) {
+                LOGGER.error("append WAL fail", ex);
+                Throwable cause = FutureUtil.cause(ex);
+                EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
+                try {
+                    executor.execute(() -> request.cf.completeExceptionally(cause));
+                } catch (IllegalStateException ignored) {
+                    // Callback executor might already be shut down during broker/stream shutdown; complete directly to avoid hanging callers.
+                    request.cf.completeExceptionally(cause);
+                }
+                storageFailureHandler.handle(ex);
+            }
         });
         return false;
     }
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean tryAcquirePermit() {
-        return deltaWALCache.size() < deltaWALCache.capacity();
+        long cacheSize = deltaWALCache.size();
+        long cacheCapacity = deltaWALCache.capacity();
+        long forceUploadThreshold = cacheCapacity * 4 / 5;
+        boolean acquired = cacheSize < cacheCapacity;
+        if (!acquired) {
+            // Keep cache-full escalation as a fallback because concurrent callbacks or a large record may cause the
+            // cache to cross the pressure threshold before the next append checks it.
+            maybeForceUpload();
+            return false;
+        }
+        if (cacheSize >= forceUploadThreshold) {
+            long uploadPressureSize = cacheSize - deltaWALCache.evictableSize();
+            if (uploadPressureSize >= forceUploadThreshold) {
+                // Two upload blocks may occupy about 2/3 of the cache while being rate limited. Force them to burst
+                // when the non-evictable data reaches 80%, leaving 20% capacity for new appends while uploads drain
+                // instead of waiting for the cache to fill and putting foreground appends into backoff.
+                maybeForceUpload();
+            }
+        }
+        return true;
     }
 
     private void tryDrainBackoffRecords() {
@@ -647,7 +546,7 @@ public class S3Storage implements Storage {
         final long startTime = System.nanoTime();
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
         FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().readStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> READ_STORAGE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
 
@@ -729,21 +628,16 @@ public class S3Storage implements Storage {
      * Limit the number of inflight force upload tasks to 1 to avoid too many S3 objects.
      */
     private void maybeForceUpload() {
-        if (hasInflightForceUploadTask()) {
-            // There is already an inflight force upload task, trigger another one later after it completes.
+        if (!forceUploadScheduled.compareAndSet(false, true)) {
             needForceUpload.set(true);
             return;
         }
-        if (forceUploadScheduled.compareAndSet(false, true)) {
-            forceUpload();
-        } else {
-            // There is already a force upload task scheduled, do nothing.
-            needForceUpload.set(true);
-        }
-    }
-
-    private boolean hasInflightForceUploadTask() {
-        return inflightWALUploadTasks.stream().anyMatch(it -> it.force);
+        forceUpload().whenComplete((nil, ignored) -> {
+            forceUploadScheduled.set(false);
+            if (needForceUpload.compareAndSet(true, false)) {
+                maybeForceUpload();
+            }
+        });
     }
 
     /**
@@ -752,36 +646,45 @@ public class S3Storage implements Storage {
     private CompletableFuture<Void> lazyUpload(LazyCommit lazyCommit) {
         lazyUploadQueue.add(lazyCommit);
         backgroundExecutor.schedule(() -> {
-            if (!lazyCommit.cf.isDone()) {
-                forceUpload();
+            if (lazyUploadQueue.contains(lazyCommit)) {
+                // If the queue does not contain the lazyCommit, it means another commit has happened after this lazyCommit.
+                if (lazyCommit.lazyLingerMs == 0) {
+                    // If the lazyLingerMs is 0, we need to force upload as soon as possible.
+                    forceUpload();
+                } else {
+                    uploadDeltaWAL();
+                }
             }
         }, lazyCommit.lazyLingerMs, TimeUnit.MILLISECONDS);
-        return lazyCommit.cf;
+        return lazyCommit.awaitTrim ? lazyCommit.trimCf : lazyCommit.commitCf;
     }
 
-    private void completeLazyUpload(List<LazyCommit> tasks, Throwable ex) {
-        tasks.forEach(task -> {
-            if (ex != null) {
-                task.cf.completeExceptionally(ex);
-            } else {
-                task.cf.complete(null);
-            }
-        });
+    private void notifyLazyUpload(List<LazyCommit> tasks, List<DeltaWALUploadTaskContext> uploadTasks) {
+        CompletableFuture.allOf(uploadTasks.stream().map(t -> t.cf).toArray(CompletableFuture[]::new))
+            .whenComplete((nil, ex) -> {
+                for (LazyCommit task : tasks) {
+                    if (ex != null) {
+                        task.commitCf.completeExceptionally(ex);
+                    } else {
+                        task.commitCf.complete(null);
+                    }
+                }
+            });
+
+        CompletableFuture.allOf(uploadTasks.stream().map(t -> t.trimCf).toArray(CompletableFuture[]::new))
+            .whenComplete((nil, ex) -> {
+                for (LazyCommit task : tasks) {
+                    if (ex != null) {
+                        task.trimCf.completeExceptionally(ex);
+                    } else {
+                        task.trimCf.complete(null);
+                    }
+                }
+            });
     }
 
     private CompletableFuture<Void> forceUpload() {
-        CompletableFuture<Void> cf = forceUpload(LogCache.MATCH_ALL_STREAMS);
-        cf.whenComplete((nil, ignored) -> forceUploadCallback());
-        return cf;
-    }
-
-    private void forceUploadCallback() {
-        // Reset the force upload flag after the task completes.
-        forceUploadScheduled.set(false);
-        if (needForceUpload.compareAndSet(true, false)) {
-            // Force upload needs to be triggered again.
-            forceUpload();
-        }
+        return forceUpload(LogCache.MATCH_ALL_STREAMS);
     }
 
     /**
@@ -792,43 +695,68 @@ public class S3Storage implements Storage {
     public CompletableFuture<Void> forceUpload(long streamId) {
         final long startTime = System.nanoTime();
         CompletableFuture<Void> cf = new CompletableFuture<>();
+        if (streamId != LogCache.MATCH_ALL_STREAMS) {
+            pendingStreamUploads.put(streamId, cf);
+        }
         // Wait for a while to group force upload tasks.
         forceUploadTicker.tick().whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().forceUploadWALAwaitStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+            FORCE_UPLOAD_WAL_AWAIT_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
             FutureUtil.propagate(CompletableFuture.allOf(this.inflightWALUploadTasks.stream()
                 .filter(it -> it.cache.containsStream(streamId))
                 .map(it -> it.cf).toArray(CompletableFuture[]::new)), cf);
         });
-        cf.whenComplete((nil, ex) -> StorageOperationStats.getInstance().forceUploadWALCompleteStats.record(
-            TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
+        cf.whenComplete((nil, ex) -> {
+            FORCE_UPLOAD_WAL_COMPLETE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+            if (ex == null && streamId != LogCache.MATCH_ALL_STREAMS) {
+                pendingStreamUploads.remove(streamId, cf);
+            }
+        });
         return cf;
     }
 
-    private void handleAppendCallback(WalWriteRequest request) {
-        // parallel execute append callback in streamId based executor.
-        EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
-        executor.execute(() -> {
-            try {
-                handleAppendCallback0(request);
-            } catch (Throwable e) {
-                LOGGER.error("[UNEXPECTED], handle append callback fail, request {}", request, e);
+    private void burstInflightUploadTasks() {
+        inflightWALUploadTasks.forEach(context -> {
+            synchronized (context) {
+                context.force = true;
+                if (context.task != null) {
+                    context.task.burst();
+                }
             }
         });
     }
 
-    private void handleAppendCallback0(WalWriteRequest request) {
+    @Override
+    public CompletableFuture<Void> awaitUpload(long streamId) {
+        return pendingStreamUploads.getOrDefault(streamId, CompletableFuture.completedFuture(null));
+    }
+
+    private void handleAppendCallback(WalWriteRequest request) {
         final long startTime = System.nanoTime();
         request.record.retain();
-        boolean full = deltaWALCache.put(request.record);
-        deltaWALCache.setLastRecordOffset(request.offset);
-        if (full) {
+        boolean added;
+        synchronized (deltaWALCache) {
+            // Because LogCacheBlock will use request.offset to execute WAL#trim after being uploaded,
+            // this cache put order should keep consistence with WAL put order.
+            added = deltaWALCache.put(request.record);
+            if (!added) {
+                // record was not added, archive current block and retry
+                uploadDeltaWAL();
+                added = deltaWALCache.put(request.record);
+            }
+            deltaWALCache.setLastRecordOffset(request.offset);
+        }
+        if (!added) {
             // cache block is full, trigger WAL upload.
             uploadDeltaWAL();
         }
-        request.cf.complete(null);
-        StorageOperationStats.getInstance().appendCallbackStats.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        // parallel execute append callback in streamId based executor.
+        EventLoop executor = callbackExecutors[Math.abs((int) (request.record.getStreamId() % callbackExecutors.length))];
+        executor.execute(() -> {
+            request.cf.complete(null);
+            APPEND_STORAGE_APPEND_CALLBACK_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
+        });
     }
 
     private Lock getStreamCallbackLock(long streamId) {
@@ -848,8 +776,6 @@ public class S3Storage implements Storage {
 
     CompletableFuture<Void> uploadDeltaWAL(long streamId, boolean force) {
         CompletableFuture<Void> cf;
-        List<LazyCommit> lazyUploadTasks = new ArrayList<>();
-        lazyUploadQueue.drainTo(lazyUploadTasks);
 
         synchronized (deltaWALCache) {
             Optional<LogCache.LogCacheBlock> blockOpt = deltaWALCache.archiveCurrentBlockIfContains(streamId);
@@ -861,19 +787,16 @@ public class S3Storage implements Storage {
                 cf = uploadDeltaWAL(context);
             } else {
                 cf = CompletableFuture.completedFuture(null);
+                if (streamId == LogCache.MATCH_ALL_STREAMS) {
+                    List<LazyCommit> lazyUploadTasks = new ArrayList<>();
+                    lazyUploadQueue.drainTo(lazyUploadTasks);
+                    notifyLazyUpload(lazyUploadTasks, new ArrayList<>(inflightWALUploadTasks));
+                }
+            }
+            if (force) {
+                burstInflightUploadTasks();
             }
         }
-
-        // notify lazy upload tasks
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.cf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
-            .whenComplete((nil, ex) -> {
-                completeLazyUpload(lazyUploadTasks.stream().filter(t -> !t.awaitTrim).collect(Collectors.toList()), ex);
-            });
-
-        CompletableFuture.allOf(inflightWALUploadTasks.stream().map(t -> t.trimCf).collect(Collectors.toList()).toArray(new CompletableFuture[0]))
-            .whenComplete((nil, ex) -> {
-                completeLazyUpload(lazyUploadTasks.stream().filter(t -> t.awaitTrim).collect(Collectors.toList()), ex);
-            });
         return cf;
     }
 
@@ -893,45 +816,43 @@ public class S3Storage implements Storage {
         context.cf = cf;
         inflightWALUploadTasks.add(context);
 
+        List<LazyCommit> lazyUploadTasks = new ArrayList<>();
+        lazyUploadQueue.drainTo(lazyUploadTasks);
+        notifyLazyUpload(lazyUploadTasks, new ArrayList<>(inflightWALUploadTasks));
+
         long size = context.cache.size();
         pendingUploadBytes.addAndGet(size);
 
-        if (context.force) {
-            // trigger previous task burst.
-            inflightWALUploadTasks.forEach(ctx -> {
-                ctx.force = true;
-                if (ctx.task != null) {
-                    ctx.task.burst();
-                }
-            });
-        }
-
-        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
+        // Keep committed uploads visible to later lazy commits until their WAL trim completes.
+        context.trimCf.whenComplete((nil, ex) -> inflightWALUploadTasks.remove(context));
         cf.whenComplete((nil, ex) -> {
-            StorageOperationStats.getInstance().uploadWALCompleteStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            UPLOAD_WAL_COMPLETE_LATENCY.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             pendingUploadBytes.addAndGet(-size);
-            inflightWALUploadTasks.remove(context);
             if (ex != null) {
+                context.trimCf.completeExceptionally(ex);
                 LOGGER.error("upload delta WAL fail", ex);
             }
         });
+        backgroundExecutor.execute(() -> FutureUtil.exec(() -> uploadDeltaWAL0(context), cf, LOGGER, "uploadDeltaWAL"));
         return cf;
     }
 
     private void uploadDeltaWAL0(DeltaWALUploadTaskContext context) {
-        // calculate upload rate
-        long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
-        double rate;
-        if (context.force || elapsed <= 100L) {
-            rate = Long.MAX_VALUE;
-        } else {
-            rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
-            if (rate > maxDataWriteRate) {
-                maxDataWriteRate = rate;
+        synchronized (context) {
+            // calculate upload rate
+            long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
+            double rate;
+            if (context.force || elapsed <= 100L) {
+                rate = Long.MAX_VALUE;
+            } else {
+                rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);
+                if (rate > maxDataWriteRate) {
+                    maxDataWriteRate = rate;
+                }
+                rate = maxDataWriteRate;
             }
-            rate = maxDataWriteRate;
+            context.task = newUploadWriteAheadLogTask(context.cache.records(), objectManager, rate);
         }
-        context.task = newUploadWriteAheadLogTask(context.cache.records(), objectManager, rate);
         boolean walObjectPrepareQueueEmpty = walPrepareQueue.isEmpty();
         walPrepareQueue.add(context);
         if (!walObjectPrepareQueueEmpty) {
@@ -943,11 +864,11 @@ public class S3Storage implements Storage {
 
     private void prepareDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.prepare().thenAcceptAsync(nil -> {
-            StorageOperationStats.getInstance().uploadWALPrepareStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            UPLOAD_WAL_PREPARE_LATENCY.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task and trigger upload.
             DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
-            Objects.requireNonNull(peek).task.upload().thenAccept(nil2 -> StorageOperationStats.getInstance()
-                .uploadWALUploadStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
+            Objects.requireNonNull(peek).task.upload().thenAccept(nil2 ->
+                UPLOAD_WAL_UPLOAD_LATENCY.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS)));
             // 2. add task to commit queue.
             boolean walObjectCommitQueueEmpty = walCommitQueue.isEmpty();
             walCommitQueue.add(peek);
@@ -961,17 +882,27 @@ public class S3Storage implements Storage {
             }
         }, backgroundExecutor).exceptionally(ex -> {
             LOGGER.error("Unexpected exception when prepare commit stream set object", ex);
+            // poll out current task so the prepare pipeline isn't wedged, and fail the remaining queued tasks.
+            DeltaWALUploadTaskContext peek = walPrepareQueue.poll();
+            Objects.requireNonNull(peek).cf.completeExceptionally(ex);
+            for (DeltaWALUploadTaskContext remaining : walPrepareQueue) {
+                remaining.cf.completeExceptionally(ex);
+            }
+            walPrepareQueue.clear();
+            storageFailureHandler.handle(ex);
             return null;
         });
     }
 
     private void commitDeltaWALUpload(DeltaWALUploadTaskContext context) {
         context.task.commit().thenAcceptAsync(nil -> {
-            StorageOperationStats.getInstance().uploadWALCommitStats.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
+            UPLOAD_WAL_COMMIT_LATENCY.record(context.timer.elapsedAs(TimeUnit.NANOSECONDS));
             // 1. poll out current task
             walCommitQueue.poll();
             if (context.cache.lastRecordOffset() != null) {
                 delayTrim.trim(context.cache.lastRecordOffset(), context.trimCf);
+            } else {
+                context.trimCf.complete(null);
             }
             // transfer records ownership to block cache.
             freeCache(context.cache);
@@ -1000,12 +931,15 @@ public class S3Storage implements Storage {
     class DelayTrim {
         private final long delayMillis;
         private final BlockingQueue<Pair<RecordOffset, CompletableFuture<Void>>> offsets = new LinkedBlockingQueue<>();
+        private final Set<CompletableFuture<Void>> inflightTrims = ConcurrentHashMap.newKeySet();
 
         public DelayTrim(long delayMillis) {
             this.delayMillis = delayMillis;
         }
 
         public void trim(RecordOffset recordOffset, CompletableFuture<Void> cf) {
+            inflightTrims.add(cf);
+            cf.whenComplete((nil, ex) -> inflightTrims.remove(cf));
             if (delayMillis == 0) {
                 LOGGER.info("try trim WAL to {}", recordOffset);
                 FutureUtil.propagate(deltaWAL.trim(recordOffset), cf);
@@ -1027,15 +961,17 @@ public class S3Storage implements Storage {
         }
 
         public void close() {
-            List<CompletableFuture<Void>> futures = new ArrayList<>();
             List<Pair<RecordOffset, CompletableFuture<Void>>> pending = new ArrayList<>();
             offsets.drainTo(pending);
             for (Pair<RecordOffset, CompletableFuture<Void>> pair : pending) {
                 FutureUtil.propagate(deltaWAL.trim(pair.getKey()), pair.getValue());
-                futures.add(pair.getValue());
             }
-            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            CompletableFuture.allOf(inflightTrims.toArray(new CompletableFuture[0])).join();
         }
+    }
+
+    static StreamRecordBatch toLinkRecord(StreamRecordBatch origin, ByteBuf link) {
+        return StreamRecordBatch.of(origin.getStreamId(), origin.getEpoch(), origin.getBaseOffset(), -origin.getCount(), link, ENCODE_LINK_RECORD_INSTANT_ALLOC);
     }
 
     public static class DeltaWALUploadTaskContext {
@@ -1056,28 +992,9 @@ public class S3Storage implements Storage {
         }
     }
 
-    /**
-     * Recover result of {@link #recoverContinuousRecords(Iterator, Map, long, Logger)}
-     */
-    static class RecoveryBlockResult {
-        /**
-         * Recovered records. All invalid streams have been filtered out.
-         */
-        final LogCache.LogCacheBlock cacheBlock;
-
-        /**
-         * Any exception occurred during recovery. It is null if no exception occurred.
-         */
-        final RuntimeException exception;
-
-        public RecoveryBlockResult(LogCache.LogCacheBlock cacheBlock, RuntimeException exception) {
-            this.cacheBlock = cacheBlock;
-            this.exception = exception;
-        }
-    }
-
     public static class LazyCommit {
-        final CompletableFuture<Void> cf = new CompletableFuture<>();
+        final CompletableFuture<Void> trimCf = new CompletableFuture<>();
+        final CompletableFuture<Void> commitCf = new CompletableFuture<>();
         final long lazyLingerMs;
         final boolean awaitTrim;
 

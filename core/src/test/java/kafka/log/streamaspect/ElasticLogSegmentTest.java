@@ -116,10 +116,6 @@ public class ElasticLogSegmentTest {
         checkEquals(ms.records().iterator(), read.records.records().iterator());
     }
 
-    /**
-     * This test was intended to test truncation and rolling in LogSegment. However, truncation is not supported in
-     * ElasticLogSegment. Therefore, we cut this test down to just verify the rolling and leave the test name as is.
-     */
     @Test
     public void testTruncateEmptySegment() throws IOException {
         // This tests the scenario in which the follower truncates to an empty segment. In this
@@ -151,6 +147,24 @@ public class ElasticLogSegmentTest {
         rollParams = new RollParams(maxSegmentMs, Integer.MAX_VALUE, RecordBatch.NO_TIMESTAMP,
             Integer.MAX_VALUE + 200L, 1024, time.milliseconds());
         assertTrue(reopened.shouldRoll(rollParams));
+    }
+
+    /**
+     * Given a segment containing retained and discarded records, truncation returns the discarded payload size and
+     * leaves the retained record and timestamp state visible.
+     */
+    @Test
+    public void testTruncateReturnsDiscardedBytes() throws IOException {
+        ElasticLogSegment segment = createOrLoadSegment(0);
+        MemoryRecords retained = records(0, "retained");
+        MemoryRecords discarded = records(1, "discarded");
+        segment.append(0L, 0L, 0L, retained);
+        segment.append(1L, 10L, 1L, discarded);
+
+        assertEquals(discarded.sizeInBytes(), segment.truncateTo(1L));
+        assertEquals(retained.sizeInBytes(), segment.size());
+        assertEquals(0L, segment.readMaxTimestampAndOffsetSoFar().offset);
+        assertEquals(0L, segment.readMaxTimestampAndOffsetSoFar().timestamp);
     }
 
     @Test
@@ -190,6 +204,24 @@ public class ElasticLogSegmentTest {
         assertEquals(41, seg.findOffsetByTimestamp(401, 0).get().offset);
         // Search before the first timestamp
         assertEquals(40, seg.findOffsetByTimestamp(399, 0).get().offset);
+    }
+
+    /**
+     * Given a sealed segment whose timestamp index points below the requested starting offset, verify timestamp
+     * searches begin at that offset for both the boundary timestamp and the following millisecond.
+     */
+    @Test
+    public void testFindOffsetByTimestampRespectsStartingOffsetInSealedSegment() throws IOException {
+        int messageSize = records(0, "msg00").sizeInBytes();
+        ElasticLogSegment seg = createOrLoadSegment(40, messageSize * 2 - 1, Time.SYSTEM);
+        for (int i = 40; i < 50; i++) {
+            seg.append(i, i * 10, i, records(i, "msg" + i));
+        }
+        seg.onBecomeInactiveSegment();
+
+        long startingOffset = 44;
+        assertEquals(startingOffset, seg.findOffsetByTimestamp(400, startingOffset).orElseThrow().offset);
+        assertEquals(startingOffset, seg.findOffsetByTimestamp(401, startingOffset).orElseThrow().offset);
     }
 
     @Test
@@ -262,6 +294,26 @@ public class ElasticLogSegmentTest {
 //        assertEquals(75L, abortedTxn.firstOffset)
 //        assertEquals(106L, abortedTxn.lastOffset)
 //        assertEquals(100L, abortedTxn.lastStableOffset)
+    }
+
+    /** A truncation that removes an abort marker must also hide its transaction-index entry. */
+    @Test
+    public void testTruncateRemovesCompletionMarkerFromTransactionIndex() throws IOException {
+        ElasticLogSegment segment = createOrLoadSegment(0);
+        long producerId = 11L;
+        short producerEpoch = 0;
+        segment.append(1L, RecordBatch.NO_TIMESTAMP, 0L, MemoryRecords.withTransactionalRecords(0L, Compression.NONE,
+            producerId, producerEpoch, 0, 0, new SimpleRecord("txn".getBytes())));
+        segment.append(2L, RecordBatch.NO_TIMESTAMP, 1L, endTxnRecords(ControlRecordType.ABORT, producerId, producerEpoch, 1L));
+        segment.append(3L, RecordBatch.NO_TIMESTAMP, 2L, MemoryRecords.withRecords(2L, Compression.NONE, 0,
+            new SimpleRecord("after".getBytes())));
+
+        segment.recover(newProducerStateManager(), Optional.empty());
+        assertEquals(1, segment.txnIndex().allAbortedTxns().size());
+
+        segment.truncateTo(1L);
+
+        assertTrue(segment.txnIndex().allAbortedTxns().isEmpty());
     }
 
     @Test
@@ -338,14 +390,12 @@ public class ElasticLogSegmentTest {
             return m;
         });
         ElasticStreamSliceManager manager = segmentStreams.computeIfAbsent(offset, k -> {
-            try {
-                return new ElasticStreamSliceManager(new ElasticLogStreamManager(new HashMap<>(), new MemoryClient.StreamClientImpl(), 1, 0, new HashMap<>(), false));
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
+            ElasticLogStreamManager streamManager = ElasticLogStreamManager.create(new HashMap<>(),
+                new MemoryClient.StreamClientImpl(), 1, 0, new HashMap<>(), false).join();
+            return new ElasticStreamSliceManager(streamManager);
         });
 
-        return new ElasticLogSegment(logDir, meta, manager, new LogConfig(props), time, (a, b) -> {
+        return new ElasticLogSegment(logDir, meta, manager, new LogConfig(props), time, (a,  b, c) -> {
         }, "");
     }
 

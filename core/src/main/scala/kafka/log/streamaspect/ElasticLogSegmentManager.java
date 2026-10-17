@@ -21,9 +21,11 @@ package kafka.log.streamaspect;
 
 import kafka.cluster.LogEventListener;
 
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
+import com.automq.stream.utils.AsyncLogger;
 import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
@@ -40,15 +42,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 public class ElasticLogSegmentManager {
-    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticLogSegmentManager.class);
+    private static final Logger LOGGER = AsyncLogger.wrap(LoggerFactory.getLogger(ElasticLogSegmentManager.class));
     /**
      * The lock of {@link #segments} and {@link #inflightCleanedSegments}
      */
     private final ReentrantLock segmentLock = new ReentrantLock();
-    private final Map<Long, ElasticLogSegment> segments = new HashMap<>();
+    // visible to test
+    final Map<Long, ElasticLogSegment> segments = new HashMap<>();
     private final Map<Long, ElasticLogSegment> inflightCleanedSegments = new HashMap<>();
     private final EventListener innerListener = new EventListener();
     private final List<LogEventListener> logEventListeners = new CopyOnWriteArrayList<>();
@@ -56,16 +60,44 @@ public class ElasticLogSegmentManager {
     private final MetaStream metaStream;
     private final ElasticLogStreamManager streamManager;
     private final String logIdent;
+    private final Supplier<AutoMQVersion> autoMQVersionSupplier;
 
     private volatile ElasticLogMeta logMeta;
 
     public ElasticLogSegmentManager(MetaStream metaStream, ElasticLogStreamManager streamManager, String logIdent) {
+        this(metaStream, streamManager, logIdent,
+            ElasticLogManager$.MODULE$.autoMQVersionSupplier());
+    }
+
+    /**
+     * Creates a manager whose writer policy follows the live finalized AutoMQ version.
+     * The supplier is evaluated for every metadata persistence and must be safe to call concurrently.
+     *
+     * @param metaStream metadata stream receiving complete log metadata values
+     * @param streamManager owner of the streams referenced by the metadata
+     * @param logIdent log prefix identifying the owning Partition
+     * @param autoMQVersionSupplier live finalized AutoMQ version supplier
+     */
+    public ElasticLogSegmentManager(MetaStream metaStream, ElasticLogStreamManager streamManager, String logIdent,
+        Supplier<AutoMQVersion> autoMQVersionSupplier) {
         this.metaStream = metaStream;
         this.streamManager = streamManager;
         this.logIdent = logIdent;
+        this.autoMQVersionSupplier = autoMQVersionSupplier;
     }
 
     public void put(long baseOffset, ElasticLogSegment segment) {
+        put(baseOffset, segment, true);
+    }
+
+    /**
+     * Adds a segment to the in-memory manager and optionally emits the segment-create event.
+     *
+     * @param baseOffset segment base offset
+     * @param segment segment to add
+     * @param notify whether to notify segment listeners after the map update
+     */
+    public void put(long baseOffset, ElasticLogSegment segment, boolean notify) {
         segmentLock.lock();
         try {
             segments.put(baseOffset, segment);
@@ -73,7 +105,9 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
+        if (notify) {
+            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
+        }
     }
 
     public void putInflightCleaned(long baseOffset, ElasticLogSegment segment) {
@@ -92,17 +126,55 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenApply(rst -> null);
+        return asyncPersistLogMeta().thenAccept(rst ->
+            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE)
+        );
     }
 
     public ElasticLogSegment remove(long baseOffset) {
+        return remove(baseOffset, true);
+    }
+
+    /**
+     * Removes a segment from the in-memory manager and optionally emits the segment-delete event.
+     *
+     * @param baseOffset segment base offset
+     * @param notify whether to notify segment listeners after the map update
+     * @return the removed segment, or {@code null} when no segment has this base offset
+     */
+    public ElasticLogSegment remove(long baseOffset, boolean notify) {
         segmentLock.lock();
         try {
             ElasticLogSegment segment = segments.remove(baseOffset);
-            if (segment != null) {
+            if (notify && segment != null) {
                 notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
             }
             return segment;
+        } finally {
+            segmentLock.unlock();
+        }
+    }
+
+    public boolean remove(long baseOffset, ElasticLogSegment segment) {
+        return remove(baseOffset, segment, true);
+    }
+
+    /**
+     * Removes a specific segment from the in-memory manager and optionally emits the segment-delete event.
+     *
+     * @param baseOffset segment base offset
+     * @param segment expected segment instance
+     * @param notify whether to notify segment listeners after the map update
+     * @return whether the expected segment was removed
+     */
+    public boolean remove(long baseOffset, ElasticLogSegment segment, boolean notify) {
+        segmentLock.lock();
+        try {
+            boolean removed = segments.remove(baseOffset, segment);
+            if (notify && removed) {
+                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
+            }
+            return removed;
         } finally {
             segmentLock.unlock();
         }
@@ -117,6 +189,16 @@ public class ElasticLogSegmentManager {
     }
 
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
+        return asyncPersistLogMeta(true);
+    }
+
+    /**
+     * Persists the current log metadata asynchronously.
+     *
+     * @param trimStreams whether to trigger stream trims after the metadata append succeeds
+     * @return the persisted log metadata
+     */
+    public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta(boolean trimStreams) {
         ElasticLogMeta meta;
         Map<String, Long> trimOffsets;
 
@@ -126,10 +208,10 @@ public class ElasticLogSegmentManager {
             List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
                 .sorted()
                 .map(ElasticLogSegment::meta)
+                .map(ElasticStreamSegmentMeta::copy)
                 .collect(Collectors.toList());
 
             meta = logMeta(streams, segmentList);
-            this.logMeta = meta;
             // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
             trimOffsets = calTrimOffset(
                 streams,
@@ -140,10 +222,14 @@ public class ElasticLogSegmentManager {
             segmentLock.unlock();
         }
 
-        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
+        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY,
+            ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
         return metaStream.append(kv).thenApply(nil -> {
+            this.logMeta = meta;
             LOGGER.info("{} save log meta {}", logIdent, meta);
-            trimStream(trimOffsets);
+            if (trimStreams) {
+                trimStream(trimOffsets);
+            }
             return meta;
         }).whenComplete((nil, ex) -> {
             if (ex != null) {
@@ -242,6 +328,7 @@ public class ElasticLogSegmentManager {
         List<ElasticStreamSegmentMeta> segmentList = segments.values().stream()
             .sorted()
             .map(ElasticLogSegment::meta)
+            .map(ElasticStreamSegmentMeta::copy)
             .collect(Collectors.toList());
         return logMeta(streams, segmentList);
     }
@@ -261,10 +348,10 @@ public class ElasticLogSegmentManager {
         private volatile CompletableFuture<ElasticLogMeta> pendingPersistentMetaCf = null;
 
         @Override
-        public void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event) {
+        public void onEvent(long segmentBaseOffset, ElasticLogSegment segment, ElasticLogSegmentEvent event) {
             switch (event) {
                 case SEGMENT_DELETE: {
-                    boolean deleted = remove(segmentBaseOffset) != null;
+                    boolean deleted = remove(segmentBaseOffset, segment);
                     if (deleted) {
                         // This may happen since kafka.log.LocalLog.deleteSegmentFiles schedules the delayed deletion task.
                         if (metaStream.isFenced()) {

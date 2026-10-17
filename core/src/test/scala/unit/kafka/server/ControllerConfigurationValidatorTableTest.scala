@@ -24,8 +24,9 @@ import kafka.server.{ControllerConfigurationValidator, KafkaConfig}
 import kafka.utils.TestUtils
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.config.ConfigResource.Type.TOPIC
-import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG}
+import org.apache.kafka.common.config.TopicConfig.{AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TABLE_TOPIC_ID_COLUMNS_CONFIG}
 import org.apache.kafka.common.errors.InvalidConfigurationException
+import org.apache.kafka.server.common.automq.TableTopicConfigValidator.FROM_DEBEZIUM_KEY
 import org.apache.kafka.server.record.{TableTopicConvertType, TableTopicTransformType}
 import org.junit.jupiter.api.Assertions.{assertDoesNotThrow, assertEquals, assertThrows}
 import org.junit.jupiter.api.{BeforeEach, Tag, Test, Timeout}
@@ -94,6 +95,32 @@ class ControllerConfigurationValidatorTableTest {
             validator.validate(new ConfigResource(TOPIC, "foo"), config)
         })
         assertEquals("raw convert type cannot be used with 'flatten_debezium' transform type", exception.getMessage)
+    }
+
+    /**
+     * Given the Debezium key identifier sentinel, controller-side validation only accepts by_schema_id key conversion.
+     */
+    @Test
+    def testDebeziumKeyIdentifierRequiresKeyBySchemaId(): Unit = {
+        val config = new util.TreeMap[String, String]()
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_VALUE_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
+        config.put(AUTOMQ_TABLE_TOPIC_TRANSFORM_VALUE_TYPE_CONFIG, TableTopicTransformType.FLATTEN_DEBEZIUM.name)
+        config.put(TABLE_TOPIC_ID_COLUMNS_CONFIG, s"[$FROM_DEBEZIUM_KEY]")
+
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.STRING.name)
+        var exception = assertThrows(classOf[InvalidConfigurationException], () => {
+            validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config)
+        })
+        assertEquals("automq.table.topic.id.columns=[_from_debezium_key_] requires automq.table.topic.convert.key.type to be 'by_schema_id'", exception.getMessage)
+
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.BY_LATEST_SCHEMA.name)
+        exception = assertThrows(classOf[InvalidConfigurationException], () => {
+            validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config)
+        })
+        assertEquals("automq.table.topic.id.columns=[_from_debezium_key_] requires automq.table.topic.convert.key.type to be 'by_schema_id'", exception.getMessage)
+
+        config.put(AUTOMQ_TABLE_TOPIC_CONVERT_KEY_TYPE_CONFIG, TableTopicConvertType.BY_SCHEMA_ID.name)
+        assertDoesNotThrow(new org.junit.jupiter.api.function.Executable { def execute(): Unit = validatorWithSchemaRegistry.validate(new ConfigResource(TOPIC, "foo"), config) })
     }
 
     @Test

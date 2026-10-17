@@ -71,41 +71,75 @@ public class SortedStreamSetObjectsListTest {
     }
 
     @Test
-    public void testAddAndRemove() {
+    public void testDuplicateOrderIds() {
         SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
-        S3StreamSetObject obj1 = new S3StreamSetObject(10, -1, Collections.emptyList(), 1);
-        S3StreamSetObject obj2 = new S3StreamSetObject(20, -1, Collections.emptyList(), 2);
-        S3StreamSetObject obj3 = new S3StreamSetObject(30, -1, Collections.emptyList(), 2);
-        S3StreamSetObject obj4 = new S3StreamSetObject(40, -1, Collections.emptyList(), 3);
+        // Add multiple objects with the same orderId but different objectIds
+        objects.add(new S3StreamSetObject(100, -1, Collections.emptyList(), 5));
+        objects.add(new S3StreamSetObject(101, -1, Collections.emptyList(), 5));
+        objects.add(new S3StreamSetObject(102, -1, Collections.emptyList(), 5));
+        objects.add(new S3StreamSetObject(200, -1, Collections.emptyList(), 3));
+        objects.add(new S3StreamSetObject(300, -1, Collections.emptyList(), 7));
 
-        objects.add(obj2);
-        objects.add(obj4);
-        objects.add(obj1);
-        objects.add(obj3);
+        assertEquals(5, objects.size());
+        
+        // Verify all objects with orderId=5 are grouped together
+        List<Long> orderIds = objects.list().stream()
+            .map(S3StreamSetObject::orderId)
+            .collect(Collectors.toList());
+        assertEquals(List.of(3L, 5L, 5L, 5L, 7L), orderIds);
 
+        // Test contains with duplicate orderIds
+        assertEquals(true, objects.contains(new S3StreamSetObject(101, -1, Collections.emptyList(), 5)));
+        assertEquals(false, objects.contains(new S3StreamSetObject(999, -1, Collections.emptyList(), 5)));
+
+        // Test remove with duplicate orderIds - should only remove the exact match
+        boolean removed = objects.remove(new S3StreamSetObject(101, -1, Collections.emptyList(), 5));
+        assertEquals(true, removed);
         assertEquals(4, objects.size());
-        assertEquals(1L, objects.get(0).orderId());
-        assertEquals(3L, objects.get(3).orderId());
+        
+        // Verify the correct object was removed (objectId 101 should be gone)
+        List<Long> objectIds = objects.list().stream()
+            .map(S3StreamSetObject::objectId)
+            .collect(Collectors.toList());
+        assertEquals(false, objectIds.contains(101L));
+        assertEquals(true, objectIds.contains(100L));
+        assertEquals(true, objectIds.contains(102L));
+        assertEquals(List.of(200L, 300L), List.of(objectIds.get(0), objectIds.get(3)));
+    }
 
-        // Remove non-existent
-        S3StreamSetObject nonExistent = new S3StreamSetObject(99, -1, Collections.emptyList(), 2);
-        assertEquals(false, objects.remove(nonExistent));
-        assertEquals(false, objects.remove(new Object()));
+    @Test
+    public void testRemoveNonExistent() {
+        SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
+        objects.add(new S3StreamSetObject(1, -1, Collections.emptyList(), 10));
+        objects.add(new S3StreamSetObject(2, -1, Collections.emptyList(), 20));
 
-        // Remove obj3 (which shares orderId 2 with obj2)
-        assertEquals(true, objects.remove(obj3));
-        assertEquals(3, objects.size());
-        assertEquals(false, objects.contains(obj3));
-        assertEquals(true, objects.contains(obj2));
-
-        // Remove obj2
-        assertEquals(true, objects.remove(obj2));
+        // Try to remove object that doesn't exist
+        boolean removed = objects.remove(new S3StreamSetObject(999, -1, Collections.emptyList(), 15));
+        assertEquals(false, removed);
         assertEquals(2, objects.size());
+    }
 
-        // Remove remaining
-        assertEquals(true, objects.remove(obj1));
-        assertEquals(true, objects.remove(obj4));
+    @Test
+    public void testEmptyList() {
+        SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
+        assertEquals(0, objects.size());
+        assertEquals(true, objects.isEmpty());
+        assertEquals(false, objects.contains(new S3StreamSetObject(1, -1, Collections.emptyList(), 1)));
+    }
+
+    @Test
+    public void testSingleElement() {
+        SortedStreamSetObjects objects = new SortedStreamSetObjectsList();
+        S3StreamSetObject obj = new S3StreamSetObject(42, -1, Collections.emptyList(), 100);
+        
+        objects.add(obj);
+        assertEquals(1, objects.size());
+        assertEquals(true, objects.contains(obj));
+        
+        objects.remove(obj);
         assertEquals(0, objects.size());
         assertEquals(true, objects.isEmpty());
     }
+
+
 }

@@ -59,7 +59,7 @@ class RouterIn {
     private final Semaphore inflightAppendLimiter = new Semaphore(Math.min(50 * 1024 * 1024 * Systems.CPU_CORES, Integer.MAX_VALUE));
     private CompletableFuture<Void> lastRouterCf = CompletableFuture.completedFuture(null);
 
-    private final ExecutorService executor = Threads.newFixedFastThreadLocalThreadPoolWithMonitor(1, "object-cross-zone-produce-router-in", true, LOGGER);
+    private final ExecutorService executor = Threads.newFixedFastThreadLocalThreadPool(1, "object-cross-zone-produce-router-in", true, LOGGER);
     private final FastThreadLocal<RequestLocal> requestLocals = new FastThreadLocal<>() {
         @Override
         protected RequestLocal initialValue() {

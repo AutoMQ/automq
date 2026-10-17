@@ -55,6 +55,15 @@
           "versions": "0+",
           "entityType": "streamEpoch",
           "about": "The epoch of the requesting stream"
+        },
+        {
+          "name": "EndOffset",
+          "type": "int64",
+          "versions": "0+",
+          "taggedVersions": "0+",
+          "tag": 0,
+          "default": "-1",
+          "about": "The exclusive stream end offset for fast close, or -1 for legacy close"
         }
       ]
     }

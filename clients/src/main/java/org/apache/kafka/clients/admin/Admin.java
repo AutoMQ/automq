@@ -1739,6 +1739,32 @@ public interface Admin extends AutoCloseable {
      * @return {@link UpdateGroupResult}
      */
     UpdateGroupResult updateGroup(String groupId, UpdateGroupSpec groupSpec, UpdateGroupOptions options);
+
+    default UpdateLicenseResult updateLicense(String license) {
+        return updateLicense(license, new UpdateLicenseOptions());
+    }
+
+    UpdateLicenseResult updateLicense(String license, UpdateLicenseOptions options);
+
+    default DescribeLicenseResult describeLicense() {
+        return describeLicense(new DescribeLicenseOptions());
+    }
+
+    DescribeLicenseResult describeLicense(DescribeLicenseOptions options);
+
+    default ExportClusterManifestResult exportClusterManifest() {
+        return exportClusterManifest(new ExportClusterManifestOptions());
+    }
+
+    ExportClusterManifestResult exportClusterManifest(ExportClusterManifestOptions options);
+
+    /**
+     * Create a reader for the {@code __automq_cluster_events} internal topic.
+     *
+     * @param sinceMs only return events at or after this epoch-millisecond timestamp, or null for all
+     * @return a {@link ClusterEventsReader} that must be closed when done
+     */
+    ClusterEventsReader describeClusterEvents(Long sinceMs);
     // AutoMQ inject end
 
     /**

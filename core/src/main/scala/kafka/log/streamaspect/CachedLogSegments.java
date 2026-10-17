@@ -38,20 +38,17 @@ public class CachedLogSegments extends LogSegments {
     @Override
     public LogSegment add(LogSegment segment) {
         synchronized (this) {
-            if (null == activeSegment || segment.baseOffset() >= activeSegment.baseOffset()) {
-                activeSegment = segment;
-            }
-            return super.add(segment);
+            LogSegment prev = super.add(segment);
+            activeSegment = super.lastSegment().orElse(null);
+            return prev;
         }
     }
 
     @Override
     public void remove(long offset) {
         synchronized (this) {
-            if (null != activeSegment && offset == activeSegment.baseOffset()) {
-                activeSegment = super.lastSegment().orElse(null);
-            }
             super.remove(offset);
+            activeSegment = super.lastSegment().orElse(null);
         }
     }
 
@@ -66,7 +63,7 @@ public class CachedLogSegments extends LogSegments {
     @Override
     public Optional<LogSegment> lastSegment() {
         synchronized (this) {
-            return Optional.of(activeSegment);
+            return Optional.ofNullable(activeSegment);
         }
     }
 

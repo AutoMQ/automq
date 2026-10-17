@@ -29,6 +29,7 @@ import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
 import org.apache.kafka.timeline.TimelineHashMap;
 
@@ -38,6 +39,7 @@ import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static org.apache.kafka.common.protocol.Errors.KEY_EXIST;
 import static org.apache.kafka.common.protocol.Errors.KEY_NOT_EXIST;
@@ -46,30 +48,37 @@ public class KVControlManager {
 
     private final SnapshotRegistry registry;
     private final Logger log;
-    private final TimelineHashMap<String, ByteBuffer> kv;
+    private final TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> kvByNamespace;
+    private final Supplier<AutoMQVersion> autoMQVersionSupplier;
 
-    public KVControlManager(SnapshotRegistry registry, LogContext logContext) {
+    public KVControlManager(SnapshotRegistry registry, LogContext logContext,
+        Supplier<AutoMQVersion> autoMQVersionSupplier) {
         this.registry = registry;
         this.log = logContext.logger(KVControlManager.class);
-        this.kv = new TimelineHashMap<>(registry, 0);
+        this.kvByNamespace = new TimelineHashMap<>(registry, 0);
+        this.autoMQVersionSupplier = autoMQVersionSupplier;
     }
 
     public GetKVResponse getKV(GetKVRequest request) {
-        String key = request.key();
-        byte[] value = kv.containsKey(key) ? kv.get(key).array() : null;
+        ByteBuffer valueBuffer = getValue(request.namespace(), request.key());
+        byte[] value = valueBuffer == null ? null : valueBuffer.array();
         return new GetKVResponse()
             .setValue(value);
     }
 
     public ControllerResult<PutKVResponse> putKV(PutKVRequest request) {
+        AutoMQVersion version = autoMQVersionSupplier.get();
+        String namespace = version.isKVNamespaceSupported() ? request.namespace() : null;
         String key = request.key();
-        ByteBuffer value = kv.get(key);
+        ByteBuffer value = getValue(namespace, key);
         if (value == null || request.overwrite()) {
             // generate kv record
             ApiMessageAndVersion record = new ApiMessageAndVersion(new KVRecord()
                 .setKeyValues(Collections.singletonList(new KeyValue()
                     .setKey(key)
-                    .setValue(request.value()))), (short) 0);
+                    .setValue(request.value())
+                    .setNamespace(namespace))),
+                version.kvRecordVersion());
             return ControllerResult.of(Collections.singletonList(record), new PutKVResponse().setValue(request.value()));
         }
         // exist and not allow overwriting
@@ -80,12 +89,19 @@ public class KVControlManager {
 
     public ControllerResult<DeleteKVResponse> deleteKV(DeleteKVRequest request) {
         log.trace("DeleteKVRequestData: {}", request);
+        AutoMQVersion version = autoMQVersionSupplier.get();
+        String namespace = version.isKVNamespaceSupported() ? request.namespace() : null;
         DeleteKVResponse resp = new DeleteKVResponse();
-        ByteBuffer value = kv.get(request.key());
+        ByteBuffer value = getValue(namespace, request.key());
         if (value != null) {
             // generate remove-kv record
-            ApiMessageAndVersion record = new ApiMessageAndVersion(new RemoveKVRecord()
-                .setKeys(Collections.singletonList(request.key())), (short) 0);
+            RemoveKVRecord removeRecord = new RemoveKVRecord()
+                .setKeys(Collections.singletonList(request.key()));
+            if (namespace != null) {
+                removeRecord.setNamespaces(Collections.singletonList(namespace));
+            }
+            ApiMessageAndVersion record = new ApiMessageAndVersion(removeRecord,
+                version.isKVNamespaceSupported() ? (short) 1 : (short) 0);
             return ControllerResult.of(Collections.singletonList(record), resp.setValue(value.array()));
         }
         return ControllerResult.of(Collections.emptyList(), resp.setErrorCode(KEY_NOT_EXIST.code()));
@@ -94,18 +110,50 @@ public class KVControlManager {
     public void replay(KVRecord record) {
         List<KeyValue> keyValues = record.keyValues();
         for (KeyValue keyValue : keyValues) {
-            kv.put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
+            createNamespaceKVsIfAbsent(keyValue.namespace()).put(keyValue.key(), ByteBuffer.wrap(keyValue.value()));
         }
     }
 
     public void replay(RemoveKVRecord record) {
         List<String> keys = record.keys();
-        for (String key : keys) {
-            kv.remove(key);
+        List<String> namespaces = record.namespaces();
+        if (namespaces != null && namespaces.size() != keys.size()) {
+            throw new IllegalArgumentException("RemoveKVRecord: namespaces length " + namespaces.size()
+                + " does not match keys length " + keys.size());
+        }
+        for (int i = 0; i < keys.size(); i++) {
+            String ns = namespaces != null ? namespaces.get(i) : null;
+            TimelineHashMap<String, ByteBuffer> namespaceKVs = kvByNamespace.get(KVNamespace.of(ns));
+            if (namespaceKVs != null) {
+                namespaceKVs.remove(keys.get(i));
+                if (namespaceKVs.isEmpty()) {
+                    kvByNamespace.remove(KVNamespace.of(ns));
+                }
+            }
         }
     }
 
-    public Map<String, ByteBuffer> kv() {
-        return kv;
+    public boolean containsKey(KVKey key) {
+        return getValue(key.namespace(), key.key()) != null;
+    }
+
+    public Map<String, ByteBuffer> namespaceKVs(String namespace) {
+        TimelineHashMap<String, ByteBuffer> namespaceKVs = kvByNamespace.get(KVNamespace.of(namespace));
+        return namespaceKVs == null ? Collections.emptyMap() : namespaceKVs;
+    }
+
+    private ByteBuffer getValue(String namespace, String key) {
+        TimelineHashMap<String, ByteBuffer> namespaceKVs = kvByNamespace.get(KVNamespace.of(namespace));
+        return namespaceKVs == null ? null : namespaceKVs.get(key);
+    }
+
+    private TimelineHashMap<String, ByteBuffer> createNamespaceKVsIfAbsent(String namespace) {
+        KVNamespace kvNamespace = KVNamespace.of(namespace);
+        TimelineHashMap<String, ByteBuffer> namespaceKVs = kvByNamespace.get(kvNamespace);
+        if (namespaceKVs == null) {
+            namespaceKVs = new TimelineHashMap<>(registry, namespace == null ? 100000 : 0);
+            kvByNamespace.put(kvNamespace, namespaceKVs);
+        }
+        return namespaceKVs;
     }
 }

@@ -19,7 +19,6 @@
 
 package kafka.automq.zerozone;
 
-import com.automq.stream.s3.network.AsyncNetworkBandwidthLimiter;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -48,11 +47,17 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
     @Override
     public CompletableFuture<WriteAheadLog> readOnly(String walConfig, int nodeId) {
         BucketURI bucketURI = BucketURI.parse(walConfig);
+        ObjectWALConfig objectWALConfig = ObjectWALConfig.builder()
+            .withURI(bucketURI.toIdURI())
+            .withClusterId(clusterId)
+            .withNodeId(nodeId)
+            .withOpenMode(OpenMode.READ_ONLY)
+            .build();
         ObjectStorage objectStorage = objectStorages.computeIfAbsent(bucketURI.bucketId(), id -> {
                 try {
                     return ObjectStorageFactory.instance().builder(bucketURI).readWriteIsolate(false)
-                        .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.INBOUND))
-                        .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().get(AsyncNetworkBandwidthLimiter.Type.OUTBOUND))
+                        .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
+                        .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
                         .build();
                 } catch (IllegalArgumentException e) {
                     return null;
@@ -62,11 +67,6 @@ public class DefaultConfirmWALProvider implements ConfirmWALProvider {
         if (objectStorage == null) {
             throw new IllegalArgumentException("Cannot parse " + walConfig);
         }
-        ObjectWALConfig objectWALConfig = ObjectWALConfig.builder()
-            .withClusterId(clusterId)
-            .withNodeId(nodeId)
-            .withOpenMode(OpenMode.READ_ONLY)
-            .build();
         ObjectWALService wal = new ObjectWALService(time, objectStorage, objectWALConfig);
         return CompletableFuture.runAsync(() -> {
             try {

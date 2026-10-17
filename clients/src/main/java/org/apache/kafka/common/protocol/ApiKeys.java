@@ -145,14 +145,19 @@ public enum ApiKeys {
     GET_KVS(ApiMessageType.GET_KVS, false, true),
     PUT_KVS(ApiMessageType.PUT_KVS, false, true),
     DELETE_KVS(ApiMessageType.DELETE_KVS, false, true),
+    UPDATE_LICENSE(ApiMessageType.UPDATE_LICENSE, false, true),
+    DESCRIBE_LICENSE(ApiMessageType.DESCRIBE_LICENSE, false, true),
+    EXPORT_CLUSTER_MANIFEST(ApiMessageType.EXPORT_CLUSTER_MANIFEST, false, true),
     AUTOMQ_REGISTER_NODE(ApiMessageType.AUTOMQ_REGISTER_NODE, false, false),
     AUTOMQ_GET_NODES(ApiMessageType.AUTOMQ_GET_NODES, false, true),
     AUTOMQ_ZONE_ROUTER(ApiMessageType.AUTOMQ_ZONE_ROUTER, false, false),
     AUTOMQ_GET_PARTITION_SNAPSHOT(ApiMessageType.AUTOMQ_GET_PARTITION_SNAPSHOT, false, false),
+    AUTOMQ_PREPARE_PARTITION_HANDOFF(ApiMessageType.AUTOMQ_PREPARE_PARTITION_HANDOFF, true, false),
 
     GET_NEXT_NODE_ID(ApiMessageType.GET_NEXT_NODE_ID, false, true),
     DESCRIBE_STREAMS(ApiMessageType.DESCRIBE_STREAMS, false, true),
-    AUTOMQ_UPDATE_GROUP(ApiMessageType.AUTOMQ_UPDATE_GROUP);
+    AUTOMQ_UPDATE_GROUP(ApiMessageType.AUTOMQ_UPDATE_GROUP),
+    UPDATE_STREAM_ARCHIVE(ApiMessageType.UPDATE_STREAM_ARCHIVE, false, true);
     // AutoMQ for Kafka inject end
 
     private static final Map<ApiMessageType.ListenerType, EnumSet<ApiKeys>> APIS_BY_LISTENER =
@@ -235,6 +240,13 @@ public enum ApiKeys {
 
     public static boolean hasId(int id) {
         return ID_TO_TYPE.containsKey(id);
+    }
+
+    /**
+     * Extension APIs use apiKey IDs in [10000, 19999], reserved for enterprise features.
+     */
+    public static boolean isExtensionApi(ApiKeys apiKey) {
+        return apiKey.id >= 10000 && apiKey.id <= 19999;
     }
 
     public short latestVersion() {

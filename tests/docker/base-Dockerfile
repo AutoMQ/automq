@@ -13,10 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG jdk_version=openjdk:17-bullseye
+# The openjdk image has been officially deprecated. For more information, see: https://hub.docker.com/_/openjdk
+ARG jdk_version=eclipse-temurin:17-jdk-jammy
 FROM $jdk_version
 
 MAINTAINER AutoMQ for Apache Kafka dev@automq.com
+
+RUN apt update && apt install -y sudo curl
 
 # Install binary test dependencies.
 # we use the same versions as in vagrant/base.sh
@@ -50,5 +53,6 @@ RUN mkdir -p "/opt/kafka-3.8.0" && chmod a+rw /opt/kafka-3.8.0 && curl -s "$KAFK
 
 
 # AutoMQ
-ARG AUTOMQ_DOWNLOAD="https://github.com/AutoMQ/automq/releases/download"
-RUN mkdir -p "/opt/automq-1.1.0" && chmod a+rw /opt/automq-1.1.0 && wget "$AUTOMQ_DOWNLOAD/1.1.0/automq-1.1.0_kafka-3.7.0.tgz" && tar xz --strip-components=1 -f automq-1.1.0_kafka-3.7.0.tgz -C "/opt/automq-1.1.0"
+# FIXME: version_upgrade_test
+#ARG AUTOMQ_DOWNLOAD="https://github.com/AutoMQ/automq/releases/download"
+#RUN mkdir -p "/opt/automq-1.1.0" && chmod a+rw /opt/automq-1.1.0 && wget "$AUTOMQ_DOWNLOAD/1.1.0/automq-1.1.0_kafka-3.7.0.tgz" && tar xz --strip-components=1 -f automq-1.1.0_kafka-3.7.0.tgz -C "/opt/automq-1.1.0"

@@ -21,6 +21,8 @@ import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.KVRecord.KeyValue;
 import org.apache.kafka.common.metadata.RemoveKVRecord;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.controller.stream.KVKey;
+import org.apache.kafka.controller.stream.KVNamespace;
 import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
@@ -35,6 +37,8 @@ import org.junit.jupiter.api.Timeout;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -53,10 +57,10 @@ public class KVImageTest {
 
     static {
         SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
-        TimelineHashMap<String, ByteBuffer> map = new TimelineHashMap<>(registry, 10000);
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> map = kvMap(registry);
         RegistryRef ref = new RegistryRef(registry, 0, new ArrayList<>());
-        map.put("key1", ByteBuffer.wrap(new String("value1").getBytes()));
-        map.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
+        put(map, registry, null, "key1", ByteBuffer.wrap("value1".getBytes()));
+        put(map, registry, null, "key2", ByteBuffer.wrap("value2".getBytes()));
         registry.getOrCreateSnapshot(0);
 
         IMAGE1 = new KVImage(map, ref);
@@ -75,11 +79,11 @@ public class KVImageTest {
         RecordTestUtils.replayAll(DELTA1, DELTA1_RECORDS);
 
         registry = new SnapshotRegistry(new LogContext());
-        TimelineHashMap<String, ByteBuffer> map2 = new TimelineHashMap<>(registry, 10000);
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> map2 = kvMap(registry);
         RegistryRef ref2 = new RegistryRef(registry, 0, new ArrayList<>());
 
-        map2.put("key2", ByteBuffer.wrap(new String("value2").getBytes()));
-        map2.put("key3", ByteBuffer.wrap(new String("value3").getBytes()));
+        put(map2, registry, null, "key2", ByteBuffer.wrap("value2".getBytes()));
+        put(map2, registry, null, "key3", ByteBuffer.wrap("value3".getBytes()));
         registry.getOrCreateSnapshot(0);
 
         IMAGE2 = new KVImage(map2, ref2);
@@ -101,6 +105,26 @@ public class KVImageTest {
     }
 
     @Test
+    public void testFinishSnapshotRemovesMissingKVs() {
+        SnapshotRegistry registry = new SnapshotRegistry(new LogContext());
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> map = kvMap(registry);
+        put(map, registry, null, "key1", ByteBuffer.wrap("value1".getBytes()));
+        put(map, registry, null, "key2", ByteBuffer.wrap("value2".getBytes()));
+        registry.getOrCreateSnapshot(0);
+        KVDelta delta = new KVDelta(new KVImage(map, new RegistryRef(registry, 0, new ArrayList<>())));
+        delta.replay(new KVRecord()
+            .setKeyValues(List.of(new KeyValue()
+                .setKey("key2")
+                .setValue("value2".getBytes()))));
+        delta.finishSnapshot();
+
+        assertEquals(Set.of(KVKey.of("key1")), delta.removedKeys());
+        assertEquals(Set.of(KVKey.of("key2")), delta.changedKV().keySet());
+
+        assertEquals(Map.of("key2", ByteBuffer.wrap("value2".getBytes())), delta.apply().namespaceKVs(null));
+    }
+
+    @Test
     public void testImage2RoundTrip() {
         testToImageAndBack(IMAGE2);
     }
@@ -113,5 +137,25 @@ public class KVImageTest {
         RecordTestUtils.replayAll(delta, writer.records());
         KVImage newImage = delta.apply();
         assertEquals(image, newImage);
+    }
+
+    private static TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> kvMap(SnapshotRegistry registry) {
+        return new TimelineHashMap<>(registry, 10000);
+    }
+
+    private static void put(
+        TimelineHashMap<KVNamespace, TimelineHashMap<String, ByteBuffer>> map,
+        SnapshotRegistry registry,
+        String namespace,
+        String key,
+        ByteBuffer value
+    ) {
+        KVNamespace kvNamespace = KVNamespace.of(namespace);
+        TimelineHashMap<String, ByteBuffer> namespaceKVs = map.get(kvNamespace);
+        if (namespaceKVs == null) {
+            namespaceKVs = new TimelineHashMap<>(registry, 1000);
+            map.put(kvNamespace, namespaceKVs);
+        }
+        namespaceKVs.put(key, value);
     }
 }

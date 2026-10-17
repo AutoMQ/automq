@@ -1,0 +1,71 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+{
+  "apiKey": 521,
+  "type": "request",
+  "listeners": ["controller", "broker"],
+  "name": "UpdateStreamArchiveRequest",
+  "validVersions": "0",
+  "flexibleVersions": "0+",
+  "fields": [
+    { "name": "NodeId", "type": "int32", "versions": "0+", "about": "The node id." },
+    { "name": "NodeEpoch", "type": "int64", "versions": "0+", "about": "The node epoch." },
+    { "name": "Operations", "type": "[]StreamArchiveOperation", "versions": "0+",
+      "about": "The ordered Broker-owned Archive operations.", "fields": [
+      { "name": "StreamId", "type": "int64", "versions": "0+", "entityType": "streamId",
+        "about": "The Stream id." },
+      { "name": "StreamEpoch", "type": "int64", "versions": "0+", "entityType": "streamEpoch",
+        "about": "The Stream epoch held by the requesting node." },
+      { "name": "Operation", "type": "int8", "versions": "0+", "default": "-1",
+        "about": "The Stream Archive operation." },
+      { "name": "ArchivePrepare", "type": "ArchivePrepare", "versions": "0+",
+        "nullableVersions": "0+", "default": "null", "about": "The Archive prepare payload." },
+      { "name": "ArchivePublish", "type": "ArchivePublish", "versions": "0+",
+        "nullableVersions": "0+", "default": "null", "about": "The Archive publish payload." },
+      { "name": "CleanupPrepare", "type": "CleanupPrepare", "versions": "0+",
+        "nullableVersions": "0+", "default": "null", "about": "The retention-cleanup prepare payload." },
+      { "name": "CleanupCommit", "type": "CleanupCommit", "versions": "0+",
+        "nullableVersions": "0+", "default": "null", "about": "The retention-cleanup commit payload." },
+      { "name": "AdvanceEmptyCursor", "type": "AdvanceEmptyCursor", "versions": "0+",
+        "nullableVersions": "0+", "default": "null", "about": "The empty Archive cursor advance payload." }
+    ]}
+  ],
+  "commonStructs": [
+    { "name": "ArchivePrepare", "versions": "0+", "fields": [
+      { "name": "ExpectedArchiveEndOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchivePreparedEndOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveObjectIds", "type": "[]int64", "versions": "0+" }
+    ]},
+    { "name": "ArchivePublish", "versions": "0+", "fields": [
+      { "name": "ExpectedArchiveEndOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveEndOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveSize", "type": "int64", "versions": "0+" }
+    ]},
+    { "name": "CleanupPrepare", "versions": "0+", "fields": [
+      { "name": "ExpectedArchiveStartOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveCleanupEndOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveCleanupSize", "type": "int64", "versions": "0+" }
+    ]},
+    { "name": "CleanupCommit", "versions": "0+", "fields": [
+      { "name": "ExpectedArchiveStartOffset", "type": "int64", "versions": "0+" },
+      { "name": "ArchiveCleanupEndOffset", "type": "int64", "versions": "0+" }
+    ]},
+    { "name": "AdvanceEmptyCursor", "versions": "0+", "fields": [
+      { "name": "ExpectedArchiveOffset", "type": "int64", "versions": "0+" },
+      { "name": "NewArchiveOffset", "type": "int64", "versions": "0+" }
+    ]}
+  ]
+}

@@ -20,88 +20,58 @@
 package kafka.server;
 
 /**
- * A limiter that limits the number of permits that can be acquired at a time.
+ * Limits retained fetch memory and exposes the response lifecycle needed to release it.
  */
 public interface Limiter {
 
     /**
-     * Acquire permits, if not enough, block until enough.
+     * Acquires permits, waiting until the request is admitted or its timeout expires.
      *
-     * @param permit the number of permits to acquire, should not be negative
-     * @return a handler to release the permits, never null. The handler should be closed after use.
+     * @param permits requested permits, which must not be negative
+     * @param context acquisition timeout and owning connection
+     * @return a permit handle that must be closed after use, or {@code null} when the acquisition times out
      * @throws InterruptedException if interrupted while waiting
      */
-    Handler acquire(int permit) throws InterruptedException;
+    Permit acquire(long permits, AcquireContext context) throws InterruptedException;
 
     /**
-     * Acquire permits, if not enough, block until enough or timeout.
+     * Executes a fetch task in the lane selected for its owning connection.
      *
-     * @param permit    the number of permits to acquire, should not be negative
-     * @param timeoutMs the maximum time to wait for the permits, in milliseconds. A non-positive value means not to wait.
-     * @return a handler to release the permits or null if timeout. If not null, the handler should be closed after use.
-     * @throws InterruptedException if interrupted while waiting
+     * @param connectionId connection that owns the task, or {@code null} for an internal fetch
+     * @param task task to execute
      */
-    Handler acquire(int permit, long timeoutMs) throws InterruptedException;
+    void execute(String connectionId, Runnable task);
 
     /**
-     * Return the maximum number of permits that can be acquired at a time.
+     * Carries request information needed for admission and connection classification.
      *
-     * @return the maximum number of permits that can be acquired at a time
+     * @param timeoutMs maximum wait time in milliseconds; a non-positive value means waiting indefinitely
+     * @param connectionId connection that owns the acquired permit, or {@code null} for an internal fetch
      */
-    int maxPermits();
+    record AcquireContext(long timeoutMs, String connectionId) {
+    }
 
     /**
-     * Return the number of permits available.
-     *
-     * @return the number of permits available
+     * Owns permits granted by a limiter and tracks the retained fetch response lifecycle.
      */
-    int availablePermits();
-
-    /**
-     * Return the number of threads waiting for permits.
-     */
-    int waitingThreads();
-
-    /**
-     * Return the name of this limiter.
-     */
-    String name();
-
-    /**
-     * A handler to release acquired permits.
-     */
-    interface Handler extends AutoCloseable {
+    interface Permit extends AutoCloseable {
 
         /**
-         * Release part of the acquired permits.
-         *
-         * @param permits the number of permits to release, should not be negative or greater than the permits held
-         *                by this handler
-         * @throws IllegalArgumentException if the permits is negative or greater than the permits held by this handler
+         * Marks the fetch response retaining this permit as ready to be sent.
          */
-        void release(int permits);
+        void markResponseReady();
 
         /**
-         * Release part of the acquired permits to a new number of permits.
+         * Releases permits until this handle owns the supplied amount.
          *
-         * @param newPermits the new number of permits, should not be negative or greater than the permits held
-         *                   by this handler
-         * @return true if the permits are released to the new number, false if the new number is invalid
+         * @param newPermits permits that should remain held
+         * @return {@code true} if permits were released, or {@code false} if the value is outside the valid range
          */
-        default boolean releaseTo(int newPermits) {
-            int held = permitsHeld();
-            if (newPermits < 0 || newPermits > held) {
-                return false;
-            }
-            release(held - newPermits);
-            return true;
-        }
+        boolean releaseTo(long newPermits);
 
         /**
-         * Return the number of permits held by this handler.
-         *
-         * @return the number of permits held by this handler
+         * Returns the permits still held by this handle.
          */
-        int permitsHeld();
+        long permitsHeld();
     }
 }

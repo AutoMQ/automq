@@ -19,6 +19,7 @@
 
 package kafka.automq.table.worker;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.table.Channel;
 import kafka.automq.table.events.CommitRequest;
 import kafka.automq.table.events.Envelope;
@@ -36,6 +37,7 @@ import org.apache.iceberg.catalog.Catalog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -71,7 +73,17 @@ public class TableWorkers {
         this.eventLoops = new EventLoops(eventLoops);
         executor.submit(new ControlListener());
         this.config = config;
-        this.recordProcessorFactory = new RecordProcessorFactory(config.tableTopicSchemaRegistryUrl());
+        this.recordProcessorFactory = new RecordProcessorFactory(
+            config.tableTopicSchemaRegistryUrl(),
+            tableTopicSchemaRegistryClientConfigs(config)
+        );
+    }
+
+    static Map<String, Object> tableTopicSchemaRegistryClientConfigs(KafkaConfig config) {
+        Map<String, Object> configs = config.originalsWithPrefix(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX);
+        Map<String, Object> clientConfigs = new HashMap<>();
+        configs.forEach((key, value) -> clientConfigs.put("schema.registry." + key, value));
+        return clientConfigs;
     }
 
     public void add(Partition partition) {

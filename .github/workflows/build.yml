@@ -21,11 +21,29 @@ on:
     branches: [ "main" ]
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            build:
+              - '**'
+              - '!.agents/**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!specs/**'
   build-automq:
+    needs: [ changes ]
+    if: ${{ needs.changes.outputs.build == 'true' }}
     uses: ./.github/workflows/build_automq.yml
   build-result:
     runs-on: ubuntu-latest
-    needs: [ build-automq ]
+    needs: [ changes, build-automq ]
     if: ${{ always() }}
     steps:
       - uses: actions/checkout@v4

@@ -20,5 +20,5 @@
 package kafka.log.streamaspect;
 
 public interface ElasticLogSegmentEventListener {
-    void onEvent(long segmentBaseOffset, ElasticLogSegmentEvent event);
+    void onEvent(long segmentBaseOffset, ElasticLogSegment segment, ElasticLogSegmentEvent event);
 }

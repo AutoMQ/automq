@@ -78,6 +78,20 @@
           "about": "The tag value."
         }
       ]}
-    ]}
+    ]},
+    {
+      "name": "RouterChannelEpoch",
+      "type": "RouterChannelEpoch",
+      "versions": "0+",
+      "taggedVersions": "0+",
+      "tag": 0,
+      "about": "The cluster-level router channel epoch",
+      "fields": [
+        { "name": "Committed", "type": "int64", "versions": "0+", "about": "The committed epoch" },
+        { "name": "Fenced", "type": "int64", "versions": "0+", "about": "The fenced epoch" },
+        { "name": "Current", "type": "int64", "versions": "0+", "about": "The current epoch" },
+        { "name": "LastBumpUpTimestamp", "type": "int64", "versions": "0+", "about": "The last bump up timestamp in ms" }
+      ]
+    }
   ]
 }

@@ -22,11 +22,10 @@ package com.automq.stream.s3.compact.operator;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.StreamDataBlock;
+import com.automq.stream.s3.compact.CompactionMetrics;
 import com.automq.stream.s3.compact.utils.CompactionUtils;
 import com.automq.stream.s3.compact.utils.GroupByLimitPredicate;
 import com.automq.stream.s3.metadata.ObjectUtils;
-import com.automq.stream.s3.metrics.MetricsLevel;
-import com.automq.stream.s3.metrics.stats.CompactionStats;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage.WriteOptions;
@@ -75,7 +74,7 @@ public class DataBlockWriter {
 
     public void write(StreamDataBlock dataBlock) {
         CompletableFuture<Void> cf = new CompletableFuture<>();
-        cf.whenComplete((nil, ex) -> CompactionStats.getInstance().compactionWriteSizeStats.add(MetricsLevel.INFO, dataBlock.getBlockSize()));
+        cf.whenComplete((nil, ex) -> CompactionMetrics.COMPACTION_WRITE_SIZE.add(dataBlock.getBlockSize()));
         waitingUploadBlockCfs.put(dataBlock, cf);
         waitingUploadBlocks.add(dataBlock);
         long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();

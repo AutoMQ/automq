@@ -394,7 +394,13 @@ class ConnectDistributedTest(Test):
 
         wait_until(lambda: self.is_running(self.sink), timeout_sec=30,
                    err_msg="Failed to see connector transition to the RUNNING state")
-        
+
+        # // AutoMQ inject start
+        # RUNNING means the sink task has started, but the consumer may still be reconciling assignment.
+        wait_until(lambda: len(self.sink.received_messages()) > 0, timeout_sec=30,
+                   err_msg="Timeout expired waiting for sink task to consume a message")
+        # // AutoMQ inject end
+
         self.cc.pause_connector(self.sink.name)
 
         # wait until all nodes report the paused transition
@@ -886,7 +892,10 @@ class ConnectDistributedTest(Test):
         self.source.stop()
         self.cc.stop()
 
-        consumer = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, message_validator=json.loads, consumer_timeout_ms=1000, isolation_level="read_committed")
+        # // AutoMQ inject start
+        # Keep the validation consumer short, but avoid timing out before the first read_committed fetch returns.
+        consumer = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, message_validator=json.loads, consumer_timeout_ms=5000, isolation_level="read_committed")
+        # // AutoMQ inject end
         consumer.run()
         src_messages = consumer.messages_consumed[1]
 
@@ -920,7 +929,9 @@ class ConnectDistributedTest(Test):
         if not success:
             self.mark_for_collect(self.cc)
             # Also collect the data in the topic to aid in debugging
-            consumer_validator = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, consumer_timeout_ms=1000, print_key=True)
+            # // AutoMQ inject start
+            consumer_validator = ConsoleConsumer(self.test_context, 1, self.kafka, self.source.topic, consumer_timeout_ms=5000, print_key=True)
+            # // AutoMQ inject end
             consumer_validator.run()
             self.mark_for_collect(consumer_validator, "consumer_stdout")
 

@@ -35,6 +35,7 @@ import org.apache.kafka.common.message._
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.MetadataResponse
+import org.apache.kafka.controller.stream.KVKey
 import org.apache.kafka.image.{MetadataImage, S3StreamMetadataImage}
 import org.apache.kafka.metadata.{BrokerRegistration, PartitionRegistration, Replicas}
 import org.apache.kafka.server.common.automq.AutoMQVersion
@@ -42,7 +43,7 @@ import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, Metadata
 
 import java.nio.ByteBuffer
 import java.util
-import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.{CopyOnWriteArrayList, ThreadLocalRandom}
 import java.util.concurrent.locks.ReentrantLock
 import java.util.function.Supplier
 import java.util.{Collections, OptionalLong, Properties}
@@ -67,6 +68,15 @@ class KRaftMetadataCache(
   @volatile private var _currentImage: MetadataImage = MetadataImage.EMPTY
 
   private final val imageLock = new ReentrantLock();
+
+  // AutoMQ inject start
+  private val newImageListeners = new CopyOnWriteArrayList[Runnable]()
+
+  def addNewImageListener(listener: Runnable): AutoCloseable = {
+    newImageListeners.add(listener)
+    () => newImageListeners.remove(listener)
+  }
+  // AutoMQ inject end
 
   // This method is the main hotspot when it comes to the performance of metadata requests,
   // we should be careful about adding additional logic here.
@@ -97,7 +107,7 @@ class KRaftMetadataCache(
   private def checkFailoverSuccess(topicPartition: TopicPartition, topicId: Uuid, tpRegistration: PartitionRegistration): Boolean = {
     safeRun((image: MetadataImage) => {
       val key = ElasticLog.formatStreamKey(ElasticLogManager.NAMESPACE, topicPartition, Some(topicId))
-      val buffer = image.kv().getValue(key)
+      val buffer = image.kv().getValue(KVKey.of(key))
       if (buffer == null) {
         // when immediately request after topic creation, the key may not be found
         return false
@@ -592,6 +602,15 @@ class KRaftMetadataCache(
     } finally {
       lock.unlock()
     }
+    // AutoMQ inject start
+    newImageListeners.forEach(listener => {
+      try {
+        listener.run()
+      } catch {
+        case e: Throwable => error("Failed to notify new metadata image listener", e)
+      }
+    })
+    // AutoMQ inject end
   }
 
   override def config(configResource: ConfigResource): Properties =
@@ -661,7 +680,7 @@ class KRaftMetadataCache(
   }
 
   override def getValue(key: String): ByteBuffer = {
-    _currentImage.kv().getValue(key)
+    _currentImage.kv().getValue(KVKey.of(key))
   }
 
   override def getStreamEndOffset(streamId: Long): OptionalLong = {

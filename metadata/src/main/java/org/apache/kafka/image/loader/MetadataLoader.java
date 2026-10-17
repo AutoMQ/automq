@@ -366,11 +366,16 @@ public class MetadataLoader implements RaftClient.Listener<ApiMessageAndVersion>
     private void tryReleaseOldImage(MetadataImage oldImage, MetadataImage newImage) {
         // Expect the old image is already replaced by the new image.
         // If there is any reference to the old image, it should invoke the #retain and release after used.
-        if (oldImage != null && newImage.objectsMetadata() != oldImage.objectsMetadata()) {
-            oldImage.objectsMetadata().release();
-        }
-        if (oldImage != null && newImage.streamsMetadata() != oldImage.streamsMetadata()) {
-            oldImage.streamsMetadata().release();
+        if (oldImage != null) {
+            if (newImage.objectsMetadata() != oldImage.objectsMetadata()) {
+                oldImage.objectsMetadata().release();
+            }
+            if (newImage.streamsMetadata() != oldImage.streamsMetadata()) {
+                oldImage.streamsMetadata().release();
+            }
+            if (newImage.kv() != oldImage.kv()) {
+                oldImage.kv().release();
+            }
         }
     }
     // AutoMQ inject end

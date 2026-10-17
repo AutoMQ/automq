@@ -20,14 +20,16 @@
 package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
-import com.automq.stream.utils.{FutureUtil, Threads}
+import com.automq.stream.utils.AsyncLogger
+import com.automq.stream.utils.Threads
+import com.typesafe.scalalogging.Logger
+import kafka.automq.runtime.{ElasticFailureHandler, ElasticFailureHandlers}
 import kafka.cluster.PartitionSnapshot
 import kafka.log._
 import kafka.log.streamaspect.ElasticUnifiedLog.{CheckpointExecutor, MaxCheckpointIntervalBytes, MinCheckpointIntervalMs}
 import kafka.server._
 import kafka.utils.Logging
 import org.apache.kafka.common.errors.OffsetOutOfRangeException
-import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.record.{MemoryRecords, RecordVersion}
 import org.apache.kafka.common.utils.{Time, Utils}
 import org.apache.kafka.common.{TopicPartition, Uuid}
@@ -35,6 +37,7 @@ import org.apache.kafka.server.common.{MetadataVersion, OffsetAndEpoch}
 import org.apache.kafka.server.util.Scheduler
 import org.apache.kafka.storage.internals.epoch.LeaderEpochFileCache
 import org.apache.kafka.storage.internals.log._
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.ByteBuffer
@@ -57,6 +60,9 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 )
     extends UnifiedLog(_logStartOffset, elasticLog, brokerTopicStats, producerIdExpirationCheckIntervalMs,
         _leaderEpochCache, producerStateManager, __topicId, false, false, logOffsetsListener) {
+
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
 
     var confirmOffsetChangeListener: Option[() => Unit] = None
 
@@ -209,14 +215,12 @@ class ElasticUnifiedLog(_logStartOffset: Long,
                 // We take a snapshot at the last written offset to hopefully avoid the need to scan the log
                 // after restarting and to ensure that we cannot inadvertently hit the upgrade optimization
                 // (the clean shutdown file is written after the logs are all closed).
-                producerStateManager.takeSnapshot()
+                producerStateManager.takeSnapshot(false)
             }
-            // flush all inflight data/index
-            flush(true)
             elasticLog.close()
         }
-        // graceful await append ack
-        elasticLog.lastAppendAckFuture.get()
+        // Await the callback outside the UnifiedLog lock because it may advance the high watermark under the same lock.
+        elasticLog.lastAppendAckFuture.handle[Void]((_, _) => null).join()
         elasticLog.isMemoryMappedBufferClosed = true
         // Since https://github.com/AutoMQ/automq/pull/2837 , AutoMQ won't create the partition directory when the partition opens
         // The deletion here aims to clean the old directory.
@@ -227,7 +231,7 @@ class ElasticUnifiedLog(_logStartOffset: Long,
      * Only close streams.
      */
     def closeStreams(): CompletableFuture[Void] = {
-        elasticLog.closeStreams()
+        elasticLog.closeStreams(false)
     }
 
     override private[log] def delete(): Unit = {
@@ -309,10 +313,13 @@ class ElasticUnifiedLog(_logStartOffset: Long,
 }
 
 object ElasticUnifiedLog extends Logging {
+    override protected lazy val logger: Logger =
+        Logger(AsyncLogger.wrap(LoggerFactory.getLogger(loggerName)))
+
     private val CheckpointExecutor = {
       Threads.newSingleThreadScheduledExecutor("checkpoint-executor", true, logger.underlying)
     }
-  private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
+    private val MaxCheckpointIntervalBytes = 50 * 1024 * 1024
     private val MinCheckpointIntervalMs = 10 * 1000
     private val Logs = new ConcurrentHashMap[TopicPartition, ElasticUnifiedLog]()
     // fuzzy dirty bytes for checkpoint, it's ok not thread safe
@@ -343,23 +350,17 @@ object ElasticUnifiedLog extends Logging {
         val partitionLogDirFailureChannel = new PartitionLogDirFailureChannel(logDirFailureChannel, dir.getPath);
         LocalLog.maybeHandleIOException(partitionLogDirFailureChannel, dir.getPath, s"failed to open ElasticUnifiedLog $topicPartition in dir $dir") {
             val start = System.currentTimeMillis()
-            var localLog: ElasticLog = null
-            while(localLog == null) {
-                try {
-                    localLog = ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
+            val openFailureContext = topicId
+                .map(id => ElasticFailureHandler.OpenFailureContext.withRecreateOperation(() =>
+                    ElasticLog.destroy(client, namespace, topicPartition, id, leaderEpoch)))
+                .getOrElse(ElasticFailureHandler.OpenFailureContext.none())
+            val localLog = ElasticFailureHandlers.openWithRetry(topicPartition, forceCleanShutdownRecovery =>
+                    ElasticLog(client, namespace, dir, config, scheduler, time, topicPartition,
                         partitionLogDirFailureChannel, new ConcurrentHashMap[String, Int](), maxTransactionTimeoutMs,
-                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead)
-                } catch {
-                    case e: Throwable =>
-                        val cause = FutureUtil.cause(e)
-                        cause match {
-                            case e1: StreamFencedException => throw e1
-                            case e1: Throwable =>
-                                error(s"open $topicPartition failed, retry open after 1s", e)
-                                Thread.sleep(1000)
-                        }
-                }
-            }
+                        producerStateManagerConfig, topicId, leaderEpoch, openStreamChecker, snapshotRead = snapshotRead,
+                        forceCleanShutdownRecovery = forceCleanShutdownRecovery),
+                openFailureContext
+            )
             val leaderEpochFileCache = ElasticUnifiedLog.maybeCreateLeaderEpochCache(topicPartition, config.recordVersion, new ElasticLeaderEpochCheckpoint(localLog.leaderEpochCheckpointMeta, localLog.saveLeaderEpochCheckpoint), scheduler)
             // The real logStartOffset should be set by loaded offsets from ElasticLogLoader.
             // Since the real value has been passed to localLog, we just pass it to ElasticUnifiedLog.

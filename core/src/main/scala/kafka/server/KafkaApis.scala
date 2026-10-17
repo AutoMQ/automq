@@ -19,6 +19,7 @@ package kafka.server
 
 import kafka.api.ElectLeadersRequestOps
 import kafka.automq.interceptor.ClientIdMetadata
+import kafka.automq.metadata.KafkaGoMetadataResponseRewriter
 import kafka.controller.ReplicaAssignment
 import kafka.coordinator.transaction.{InitProducerIdResult, TransactionCoordinator}
 import kafka.network.RequestChannel
@@ -27,6 +28,7 @@ import kafka.server.handlers.DescribeTopicPartitionsRequestHandler
 import kafka.server.metadata.{ConfigRepository, KRaftMetadataCache}
 import kafka.utils.Implicits._
 import kafka.utils.{CoreUtils, Logging}
+import com.automq.stream.utils.{Systems, ThreadUtils}
 import org.apache.kafka.admin.AdminUtils
 import org.apache.kafka.clients.admin.AlterConfigOp.OpType
 import org.apache.kafka.clients.admin.{AlterConfigOp, ConfigEntry, EndpointType}
@@ -34,7 +36,7 @@ import org.apache.kafka.common.acl.AclOperation
 import org.apache.kafka.common.acl.AclOperation._
 import org.apache.kafka.common.config.ConfigResource
 import org.apache.kafka.common.errors._
-import org.apache.kafka.common.internals.Topic.{GROUP_METADATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
+import org.apache.kafka.common.internals.Topic.{FORCE_COMMIT_SENTINEL_TOPIC, GROUP_METADATA_TOPIC_NAME, TRANSACTION_STATE_TOPIC_NAME, isInternal}
 import org.apache.kafka.common.internals.{FatalExitError, Topic}
 import org.apache.kafka.common.message.AddPartitionsToTxnResponseData.{AddPartitionsToTxnResult, AddPartitionsToTxnResultCollection}
 import org.apache.kafka.common.message.AlterConfigsResponseData.AlterConfigsResourceResponse
@@ -81,7 +83,7 @@ import java.nio.ByteBuffer
 import java.time.Duration
 import java.util
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, ExecutorService, LinkedBlockingQueue, ThreadPoolExecutor, TimeUnit}
 import java.util.{Collections, Optional, OptionalInt}
 import scala.annotation.nowarn
 import scala.collection.mutable.ArrayBuffer
@@ -127,8 +129,23 @@ class KafkaApis(val requestChannel: RequestChannel,
     case _ => None
   }
 
+  // AutoMQ inject start
+  private val listOffsetFastExecutor = KafkaApis.newListOffsetExecutor("kafka-apis-list-offset-fast-%d")
+  private val listOffsetSlowExecutor = KafkaApis.newListOffsetExecutor("kafka-apis-list-offset-slow-%d")
+  private val listOffsetRequestExecutor = KafkaApis.newListOffsetExecutor("kafka-apis-list-offset-request-%d")
+  private val listOffsetInflightPartitions = new AtomicInteger(0)
+  private val kafkaGoMetadataResponseRewriter = new KafkaGoMetadataResponseRewriter(config)
+  config.addReconfigurable(kafkaGoMetadataResponseRewriter)
+  // AutoMQ inject end
+
 
   def close(): Unit = {
+    // AutoMQ inject start
+    ThreadUtils.shutdownExecutor(listOffsetFastExecutor, 5, TimeUnit.SECONDS, logger.underlying)
+    ThreadUtils.shutdownExecutor(listOffsetSlowExecutor, 5, TimeUnit.SECONDS, logger.underlying)
+    ThreadUtils.shutdownExecutor(listOffsetRequestExecutor, 5, TimeUnit.SECONDS, logger.underlying)
+    config.removeReconfigurable(kafkaGoMetadataResponseRewriter)
+    // AutoMQ inject end
     aclApis.close()
     info("Shutdown complete.")
   }
@@ -485,7 +502,12 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBuilder = new OffsetCommitResponse.Builder()
       val authorizedTopicsRequest = new mutable.ArrayBuffer[OffsetCommitRequestData.OffsetCommitRequestTopic]()
       offsetCommitRequest.data.topics.forEach { topic =>
-        if (!authorizedTopics.contains(topic.name)) {
+        // AutoMQ inject start
+        if (topic.name == FORCE_COMMIT_SENTINEL_TOPIC) {
+          // Sentinel topic for force offset commit — bypass auth and metadata checks.
+          authorizedTopicsRequest += topic
+        } else if (!authorizedTopics.contains(topic.name)) {
+        // AutoMQ inject end
           // If the topic is not authorized, we add the topic and all its partitions
           // to the response with TOPIC_AUTHORIZATION_FAILED.
           responseBuilder.addPartitions[OffsetCommitRequestData.OffsetCommitRequestPartition](
@@ -1088,7 +1110,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         fetchMinBytes,
         fetchMaxBytes,
         FetchIsolation.of(fetchRequest),
-        clientMetadata
+        clientMetadata,
+        // AutoMQ inject start
+        request.context.connectionId
+        // AutoMQ inject end
       )
 
       // call the replica manager to fetch messages from the local replica
@@ -1106,15 +1131,38 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   def handleListOffsetRequest(request: RequestChannel.Request): Unit = {
     val version = request.header.apiVersion
+    val offsetRequest = request.body[ListOffsetsRequest]
+    val partitionCount = offsetRequest.topics.asScala.map(_.partitions.size).sum
 
-    val topics = if (version == 0) {
-      handleListOffsetRequestV0(request)
-    } else
+    // AutoMQ inject start
+    if (listOffsetInflightPartitions.get() > KafkaApis.listOffsetInflightPartitionLimit) {
+      val topics = buildListOffsetErrorTopics(offsetRequest, KafkaApis.listOffsetOverloadError)
+      requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => new ListOffsetsResponse(new ListOffsetsResponseData()
+        .setThrottleTimeMs(requestThrottleMs)
+        .setTopics(topics.asJava)))
+      return
+    }
+    listOffsetInflightPartitions.addAndGet(partitionCount)
+    // AutoMQ inject end
+
+    // AutoMQ inject start
+    val topicsFuture = if (version == 0) {
+      CompletableFuture.supplyAsync(() => handleListOffsetRequestV0(request), listOffsetRequestExecutor)
+    } else {
       handleListOffsetRequestV1AndAbove(request)
+    }
 
-    requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => new ListOffsetsResponse(new ListOffsetsResponseData()
-      .setThrottleTimeMs(requestThrottleMs)
-      .setTopics(topics.asJava)))
+    topicsFuture.whenComplete { (topics, throwable) =>
+      listOffsetInflightPartitions.addAndGet(-partitionCount)
+      if (throwable != null) {
+        handleError(request, throwable)
+      } else {
+        requestHelper.sendResponseMaybeThrottle(request, requestThrottleMs => new ListOffsetsResponse(new ListOffsetsResponseData()
+          .setThrottleTimeMs(requestThrottleMs)
+          .setTopics(topics.asJava)))
+      }
+    }
+    // AutoMQ inject end
   }
 
   private def handleListOffsetRequestV0(request : RequestChannel.Request) : List[ListOffsetsTopicResponse] = {
@@ -1172,7 +1220,7 @@ class KafkaApis(val requestChannel: RequestChannel,
     (responseTopics ++ unauthorizedResponseStatus).toList
   }
 
-  private def handleListOffsetRequestV1AndAbove(request : RequestChannel.Request): List[ListOffsetsTopicResponse] = {
+  private def handleListOffsetRequestV1AndAbove(request : RequestChannel.Request): CompletableFuture[List[ListOffsetsTopicResponse]] = {
     val correlationId = request.header.correlationId
     val clientId = request.header.clientId
     val offsetRequest = request.body[ListOffsetsRequest]
@@ -1196,9 +1244,9 @@ class KafkaApis(val requestChannel: RequestChannel,
           buildErrorResponse(Errors.TOPIC_AUTHORIZATION_FAILED, partition)).asJava)
     )
 
-    val responseTopics = authorizedRequestInfo.map { topic =>
-      val responsePartitions = topic.partitions.asScala.map { partition =>
-        val topicPartition = new TopicPartition(topic.name, partition.partitionIndex)
+    def fetchOffsetForPartition(topicName: String, partition: ListOffsetsPartition): ListOffsetsPartitionResponse = {
+      {
+        val topicPartition = new TopicPartition(topicName, partition.partitionIndex)
         if (offsetRequest.duplicatePartitions.contains(topicPartition)) {
           debug(s"OffsetRequest with correlation id $correlationId from client $clientId on partition $topicPartition " +
               s"failed because the partition is duplicated in the request.")
@@ -1259,10 +1307,35 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
         }
       }
-      new ListOffsetsTopicResponse().setName(topic.name).setPartitions(responsePartitions.asJava)
     }
-    (responseTopics ++ unauthorizedResponseStatus).toList
+
+    val responseTopicFutures = authorizedRequestInfo.map { topic =>
+      val responsePartitionFutures = topic.partitions.asScala.map { partition =>
+        val executor = KafkaApis.listOffsetExecutor(partition.timestamp, listOffsetFastExecutor, listOffsetSlowExecutor)
+        CompletableFuture.supplyAsync(() => fetchOffsetForPartition(topic.name, partition), executor)
+      }.toSeq
+      CompletableFuture.allOf(responsePartitionFutures.map(_.asInstanceOf[CompletableFuture[_]]).toArray: _*)
+        .thenApply(_ => new ListOffsetsTopicResponse()
+          .setName(topic.name)
+          .setPartitions(responsePartitionFutures.map(_.join()).asJava))
+    }
+    CompletableFuture.allOf(responseTopicFutures.map(_.asInstanceOf[CompletableFuture[_]]).toArray: _*)
+      .thenApply(_ => (responseTopicFutures.map(_.join()) ++ unauthorizedResponseStatus).toList)
   }
+
+  // AutoMQ inject start
+  private def buildListOffsetErrorTopics(offsetRequest: ListOffsetsRequest, error: Errors): List[ListOffsetsTopicResponse] = {
+    offsetRequest.topics.asScala.map { topic =>
+      new ListOffsetsTopicResponse()
+        .setName(topic.name)
+        .setPartitions(topic.partitions.asScala.map(partition => new ListOffsetsPartitionResponse()
+          .setPartitionIndex(partition.partitionIndex)
+          .setErrorCode(error.code)
+          .setTimestamp(ListOffsetsResponse.UNKNOWN_TIMESTAMP)
+          .setOffset(ListOffsetsResponse.UNKNOWN_OFFSET)).asJava)
+    }.toList
+  }
+  // AutoMQ inject end
 
   private def metadataResponseTopic(error: Errors,
                                     topic: String,
@@ -1298,10 +1371,10 @@ class KafkaApis(val requestChannel: RequestChannel,
         autoTopicCreationManager.createTopics(nonExistingTopics, controllerMutationQuota, Some(request.context))
       } else {
         // AutoMQ inject start
-        for (tableTopic <- Set(Topic.TABLE_TOPIC_CONTROL_TOPIC_NAME, Topic.TABLE_TOPIC_DATA_TOPIC_NAME)) {
-          if (nonExistingTopics.contains(tableTopic)) {
+        for (autoCreateTopic <- Set(Topic.TABLE_TOPIC_CONTROL_TOPIC_NAME, Topic.TABLE_TOPIC_DATA_TOPIC_NAME, Topic.CLUSTER_EVENTS_TOPIC_NAME)) {
+          if (nonExistingTopics.contains(autoCreateTopic)) {
             val controllerMutationQuota = quotas.controllerMutation.newPermissiveQuotaFor(request)
-            autoTopicCreationManager.createTopics(Set(tableTopic), controllerMutationQuota, Some(request.context))
+            autoTopicCreationManager.createTopics(Set(autoCreateTopic), controllerMutationQuota, Some(request.context))
           }
         }
         // AutoMQ inject end
@@ -1433,6 +1506,10 @@ class KafkaApis(val requestChannel: RequestChannel,
 
     val completeTopicMetadata =  unknownTopicIdsTopicMetadata ++
       topicMetadata ++ unauthorizedForCreateTopicMetadata ++ unauthorizedForDescribeTopicMetadata
+
+    // AutoMQ inject start
+    kafkaGoMetadataResponseRewriter.rewrite(request.header.clientId, completeTopicMetadata.asJava)
+    // AutoMQ inject end
 
     val brokers = metadataCache.getAliveBrokerNodes(request.context.listenerName)
 
@@ -4143,6 +4220,37 @@ class KafkaApis(val requestChannel: RequestChannel,
 }
 
 object KafkaApis {
+  // AutoMQ inject start
+  private[server] val listOffsetThreadPoolSize: Int = Systems.CPU_CORES * 16
+  private[server] val listOffsetInflightPartitionLimit: Int = listOffsetThreadPoolSize * 4
+  private[server] val listOffsetOverloadError: Errors = Errors.REQUEST_TIMED_OUT
+
+  private[server] def isFastListOffsetTimestamp(timestamp: Long): Boolean = {
+    timestamp == ListOffsetsRequest.LATEST_TIMESTAMP ||
+      timestamp == ListOffsetsRequest.EARLIEST_TIMESTAMP ||
+      timestamp == ListOffsetsRequest.EARLIEST_LOCAL_TIMESTAMP
+  }
+
+  private[server] def listOffsetExecutor(timestamp: Long,
+                                         fastExecutor: ExecutorService,
+                                         slowExecutor: ExecutorService): ExecutorService = {
+    if (isFastListOffsetTimestamp(timestamp)) fastExecutor else slowExecutor
+  }
+
+  private[server] def newListOffsetExecutor(name: String): ThreadPoolExecutor = {
+    val executor = new ThreadPoolExecutor(
+      listOffsetThreadPoolSize,
+      listOffsetThreadPoolSize,
+      60L,
+      TimeUnit.SECONDS,
+      new LinkedBlockingQueue[Runnable](),
+      ThreadUtils.createFastThreadLocalThreadFactory(name, true)
+    )
+    executor.allowCoreThreadTimeOut(true)
+    executor
+  }
+  // AutoMQ inject end
+
   // Traffic from both in-sync and out of sync replicas are accounted for in replication quota to ensure total replication
   // traffic doesn't exceed quota.
   // TODO: remove resolvedResponseData method when sizeOf can take a data object.

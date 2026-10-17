@@ -26,8 +26,10 @@ import org.apache.commons.lang3.tuple.Pair;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -37,6 +39,7 @@ public class TableTopicConfigValidator {
     static final Pattern LIST_STRING_REGEX = Pattern.compile("\\[(.*)\\]");
     public static final String COMMA_NO_PARENS_REGEX = ",(?![^()]*+\\))";
     private static final Pattern COLUMN_NAME_REGEX = Pattern.compile("[a-zA-Z0-9_\\-\\.]+");
+    public static final String FROM_DEBEZIUM_KEY = "_from_debezium_key_";
 
     public static class PartitionValidator implements ConfigDef.Validator {
         public static final PartitionValidator INSTANCE = new PartitionValidator();
@@ -115,6 +118,10 @@ public class TableTopicConfigValidator {
             try {
                 String str = (String) value;
                 List<String> idColumns = stringToList(str, COMMA_NO_PARENS_REGEX);
+                if (idColumns.contains(FROM_DEBEZIUM_KEY) && idColumns.size() != 1) {
+                    throw new ConfigException(name, value,
+                        String.format("%s must be used alone", FROM_DEBEZIUM_KEY));
+                }
                 idColumns.forEach(idColumn -> {
                     if (!COLUMN_NAME_REGEX.matcher(idColumn).matches()) {
                         throw new ConfigException(name, value, String.format("Invalid column name %s", idColumn));
@@ -130,6 +137,50 @@ public class TableTopicConfigValidator {
         }
     }
 
+    /**
+     * Validates each entry in {@code automq.table.topic.iceberg.auto-create.properties}.
+     * Rules:
+     * <ul>
+     *   <li>Every entry must have the form {@code key=value} (exactly one {@code =}, key non-blank).</li>
+     *   <li>Duplicate keys are rejected.</li>
+     * </ul>
+     * The validator deliberately does <em>not</em> whitelist or blacklist individual Iceberg property
+     * names so that operators retain full flexibility. However, be aware that path-control properties
+     * (e.g. {@code write.data.path}, {@code write.metadata.path}) and implementation-selection
+     * properties (e.g. {@code write.parquet.compression-codec}) are passed verbatim to the catalog
+     * and take effect immediately on table creation; misconfigured values may make the table
+     * unreadable or cause catalog errors.
+     */
+    public static class IcebergAutoCreatePropertiesValidator implements ConfigDef.Validator {
+        public static final IcebergAutoCreatePropertiesValidator INSTANCE = new IcebergAutoCreatePropertiesValidator();
+
+        @Override
+        public void ensureValid(String name, Object value) {
+            if (value == null) {
+                return;
+            }
+            @SuppressWarnings("unchecked")
+            List<String> entries = (List<String>) value;
+            Set<String> seen = new HashSet<>();
+            for (String entry : entries) {
+                int eqIndex = entry.indexOf('=');
+                if (eqIndex <= 0) {
+                    throw new ConfigException(name, value,
+                        "Each entry must be in 'key=value' format with a non-blank key, but got: '" + entry + "'");
+                }
+                String key = entry.substring(0, eqIndex).trim();
+                if (key.isEmpty()) {
+                    throw new ConfigException(name, value,
+                        "Each entry must have a non-blank key, but got: '" + entry + "'");
+                }
+                if (!seen.add(key)) {
+                    throw new ConfigException(name, value,
+                        "Duplicate key '" + key + "' found in Iceberg auto-create properties");
+                }
+            }
+        }
+    }
+
     public static List<String> stringToList(String value, String regex) {
         if (value == null || value.isEmpty()) {
             return Collections.emptyList();
@@ -137,6 +188,9 @@ public class TableTopicConfigValidator {
         Matcher matcher = LIST_STRING_REGEX.matcher(value);
         if (matcher.matches()) {
             value = matcher.group(1);
+        }
+        if (value.isEmpty()) {
+            return Collections.emptyList();
         }
         return Arrays.stream(value.split(regex)).map(String::trim).collect(toList());
     }

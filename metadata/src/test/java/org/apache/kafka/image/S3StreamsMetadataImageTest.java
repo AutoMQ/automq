@@ -19,8 +19,14 @@ package org.apache.kafka.image;
 
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
 import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
 import org.apache.kafka.common.metadata.S3StreamRecord;
 import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
 import org.apache.kafka.image.S3StreamsMetadataImage.RangeGetter;
@@ -28,7 +34,9 @@ import org.apache.kafka.image.writer.ImageWriterOptions;
 import org.apache.kafka.image.writer.RecordListWriter;
 import org.apache.kafka.metadata.RecordTestUtils;
 import org.apache.kafka.metadata.stream.InRangeObjects;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.RangeMetadata;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
@@ -137,7 +145,8 @@ public class S3StreamsMetadataImageTest {
         RecordTestUtils.replayAll(delta0, List.of(record0));
         S3StreamsMetadataImage image1 = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image1, delta0.apply());
         testToImageAndBack(image1);
 
@@ -146,7 +155,9 @@ public class S3StreamsMetadataImageTest {
         S3StreamsMetadataDelta delta1 = new S3StreamsMetadataDelta(image1);
         RecordTestUtils.replayAll(delta1, List.of(record1));
         S3StreamsMetadataImage image2 = new S3StreamsMetadataImage(10, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         assertEquals(image2, delta1.apply());
     }
 
@@ -154,7 +165,8 @@ public class S3StreamsMetadataImageTest {
     public void testImage_compatible() {
         S3StreamsMetadataImage image = new S3StreamsMetadataImage(0, RegistryRef.NOOP, new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
-            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0),
+            new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
         S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(image);
         delta.replay(new S3StreamRecord().setStreamId(233L));
         delta.replay((S3StreamSetObjectRecord) new S3StreamSetObject(0, 1, List.of(new StreamOffsetRange(233L, 100, 200L)), 0).toRecord(AutoMQVersion.V0).message());
@@ -173,6 +185,269 @@ public class S3StreamsMetadataImageTest {
         image = delta.apply();
 
         Assertions.assertEquals(300L, image.streamEndOffsets().get(233L));
+    }
+
+    /**
+     * Given stream and range records, verify image replay and snapshot preserve the logical end.
+     */
+    @Test
+    public void testLogicalEndReplayAndSnapshot() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setRangeIndex(0).setStartOffset(100L));
+        delta.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(0)
+            .setStartOffset(100L).setEndOffset(150L).setNodeId(BROKER0));
+        S3StreamsMetadataImage image = delta.apply();
+        assertEquals(150L, image.streamEndOffsets().get(STREAM0));
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(delta, writer.records());
+        assertEquals(150L, delta.apply().streamEndOffsets().get(STREAM0));
+    }
+
+    /**
+     * Given a live Stream without a materialized archive record, verify lookup returns the
+     * Stream-start defaults while snapshots remain free of archive records.
+     */
+    @Test
+    public void testArchiveDefaultStateIsNotMaterialized() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 100L, 100L, 100L, 100L, 0L, 100L, 0L),
+            image.getStreamArchiveMetadata(STREAM0));
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof S3StreamArchiveRecord
+                || record.message() instanceof RemoveS3StreamArchiveRecord));
+    }
+
+    /**
+     * Given successive complete archive records, verify replay replaces every field and a
+     * snapshot round trip preserves the surviving state, including cleanup intent.
+     */
+    @Test
+    public void testArchiveReplayReplacementAndSnapshot() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        assertEquals(Set.of(STREAM0), delta.changedStreams());
+        S3StreamsMetadataImage firstImage = delta.apply();
+        assertFalse(firstImage.isEmpty());
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L),
+            firstImage.getStreamArchiveMetadata(STREAM0));
+
+        delta = new S3StreamsMetadataDelta(firstImage);
+        delta.replay(archiveRecord(STREAM0, 25L, 45L, 50L, 50L, 400L, 25L, 0L));
+        S3StreamsMetadataImage replacedImage = delta.apply();
+        assertEquals(new S3StreamArchiveMetadata(STREAM0, 25L, 45L, 50L, 50L, 400L, 25L, 0L),
+            replacedImage.getStreamArchiveMetadata(STREAM0));
+        assertEquals(500L, firstImage.getStreamArchiveMetadata(STREAM0).archiveSize());
+
+        RecordListWriter writer = new RecordListWriter();
+        replacedImage.write(writer, new ImageWriterOptions.Builder().build());
+        List<S3StreamArchiveRecord> archiveRecords = writer.records().stream()
+            .map(ApiMessageAndVersion::message)
+            .filter(S3StreamArchiveRecord.class::isInstance)
+            .map(S3StreamArchiveRecord.class::cast)
+            .collect(Collectors.toList());
+        assertEquals(1, archiveRecords.size());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof RemoveS3StreamArchiveRecord));
+
+        S3StreamsMetadataDelta snapshotDelta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(snapshotDelta, writer.records());
+        assertEquals(replacedImage.getStreamArchiveMetadata(STREAM0),
+            snapshotDelta.apply().getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given a removal record, verify replay deletes materialized archive state and snapshots
+     * emit neither the removed full record nor a removal record.
+     */
+    @Test
+    public void testArchiveRemoval() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new RemoveS3StreamArchiveRecord().setStreamId(STREAM0));
+        assertEquals(Set.of(STREAM0), delta.changedStreams());
+        image = delta.apply();
+        assertNull(image.getStreamArchiveMetadata(STREAM0));
+        assertTrue(image.isEmpty());
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        assertFalse(writer.records().stream().anyMatch(record ->
+            record.message() instanceof S3StreamArchiveRecord
+                || record.message() instanceof RemoveS3StreamArchiveRecord));
+    }
+
+    /**
+     * Given an older image with Archive state, verify completing a snapshot removes state that
+     * is absent from the snapshot's surviving full records.
+     */
+    @Test
+    public void testArchiveSnapshotCompletionRemovesAbsentState() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(archiveRecord(STREAM0, 10L, 20L, 30L, 40L, 500L, 25L, 100L));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.finishSnapshot();
+        assertNull(delta.apply().getStreamArchiveMetadata(STREAM0));
+    }
+
+    /**
+     * Given a prepared Archive boundary after owner recovery, verify the Image enumerates its ordered source range.
+     */
+    @Test
+    public void testPreparedArchiveRangeCanBeRecoveredWithoutObjectIdState() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new S3StreamRecord().setStreamId(STREAM0).setStartOffset(0L));
+        delta.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(0L).setEndOffset(50L));
+        delta.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(11L)
+            .setStartOffset(50L).setEndOffset(100L));
+        delta.replay(archiveRecord(STREAM0, 0L, 0L, 0L, 100L, 0L, 0L, 0L));
+
+        S3StreamsMetadataImage recoveredImage = delta.apply();
+        S3StreamArchiveMetadata archive = recoveredImage.getStreamArchiveMetadata(STREAM0);
+        assertEquals(List.of(10L, 11L), recoveredImage.getStreamObjects(STREAM0,
+                archive.archiveEndOffset(), archive.archivePreparedEndOffset(), 100).stream()
+            .map(S3StreamObject::objectId)
+            .collect(Collectors.toList()));
+    }
+
+    private static S3StreamArchiveRecord archiveRecord(
+        long streamId,
+        long archiveStartOffset,
+        long archiveMetadataEndOffset,
+        long archiveEndOffset,
+        long archivePreparedEndOffset,
+        long archiveSize,
+        long archiveCleanupEndOffset,
+        long archiveCleanupSize
+    ) {
+        return new S3StreamArchiveRecord()
+            .setStreamId(streamId)
+            .setArchiveStartOffset(archiveStartOffset)
+            .setArchiveMetadataEndOffset(archiveMetadataEndOffset)
+            .setArchiveEndOffset(archiveEndOffset)
+            .setArchivePreparedEndOffset(archivePreparedEndOffset)
+            .setArchiveSize(archiveSize)
+            .setArchiveCleanupEndOffset(archiveCleanupEndOffset)
+            .setArchiveCleanupSize(archiveCleanupSize);
+    }
+
+    /**
+     * Given node WAL responsibility deltas, verify replay upserts and tombstones entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetReplay() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 10L, 20L));
+        S3StreamsMetadataImage image = delta.apply();
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            image.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+
+        S3StreamsMetadataImage previousImage = image;
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 15L, 20L));
+        image = delta.apply();
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 15L, 20L),
+            image.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 10L, 20L),
+            previousImage.getNodeWALUncommittedOffset(BROKER0, STREAM0));
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(uncommittedRecord(BROKER0, STREAM0, 20L, 20L));
+        assertTrue(delta.apply().nodeWALUncommittedOffsets(BROKER0).isEmpty());
+    }
+
+    /**
+     * Given raw responsibility entries, verify snapshot preserves them and splits records at
+     * 10,000 entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetSnapshotRoundTripAndChunking() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        List<NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset> entries = new ArrayList<>();
+        for (long streamId = 0; streamId < 10_002; streamId++) {
+            long endOffset = streamId == STREAM1 ? 50L : 200L;
+            entries.add(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(streamId).setStartOffset(0L).setEndOffset(endOffset));
+        }
+        entries.add(new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+            .setStreamId(20_000L).setStartOffset(0L).setEndOffset(200L));
+        delta.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(entries));
+        S3StreamsMetadataImage image = delta.apply();
+
+        RecordListWriter writer = new RecordListWriter();
+        image.write(writer, new ImageWriterOptions.Builder().build());
+        List<NodeWALUncommittedOffsetsRecord> records = writer.records().stream()
+            .map(ApiMessageAndVersion::message)
+            .filter(NodeWALUncommittedOffsetsRecord.class::isInstance)
+            .map(NodeWALUncommittedOffsetsRecord.class::cast)
+            .collect(Collectors.toList());
+        assertEquals(List.of(10_000, 3), records.stream().map(record -> record.entries().size())
+            .collect(Collectors.toList()));
+        NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset raw = records.stream()
+            .flatMap(record -> record.entries().stream())
+            .filter(entry -> entry.streamId() == STREAM0)
+            .findFirst().orElseThrow();
+        assertEquals(0L, raw.startOffset());
+        assertTrue(records.stream().flatMap(record -> record.entries().stream())
+            .anyMatch(entry -> entry.streamId() == STREAM1));
+        assertTrue(records.stream().flatMap(record -> record.entries().stream())
+            .anyMatch(entry -> entry.streamId() == 20_000L));
+
+        S3StreamsMetadataDelta snapshotDelta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        RecordTestUtils.replayAll(snapshotDelta, writer.records());
+        Map<Long, NodeWALUncommittedOffset> snapshotOffsets = snapshotDelta.apply()
+            .nodeWALUncommittedOffsets(BROKER0);
+        assertEquals(10_003, snapshotOffsets.size());
+        assertEquals(new NodeWALUncommittedOffset(STREAM0, 0L, 200L), snapshotOffsets.get(STREAM0));
+        assertEquals(new NodeWALUncommittedOffset(STREAM1, 0L, 50L), snapshotOffsets.get(STREAM1));
+    }
+
+    /**
+     * Given an older image with multiple entries, verify completing a snapshot removes entries
+     * absent from all of its chunks while retaining replayed entries.
+     */
+    @Test
+    public void testNodeWALUncommittedOffsetSnapshotCompletionRemovesAbsentEntries() {
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(new NodeWALUncommittedOffsetsRecord().setNodeId(BROKER0).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM0).setStartOffset(0L).setEndOffset(10L),
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(STREAM1).setStartOffset(0L).setEndOffset(10L))));
+        S3StreamsMetadataImage image = delta.apply();
+
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new NodeWALMetadataRecord().setNodeId(BROKER0));
+        delta.replay(uncommittedRecord(BROKER0, STREAM1, 5L, 10L));
+        delta.finishSnapshot();
+        Map<Long, NodeWALUncommittedOffset> offsets = delta.apply()
+            .nodeWALUncommittedOffsets(BROKER0);
+        assertEquals(Map.of(STREAM1, new NodeWALUncommittedOffset(STREAM1, 5L, 10L)), offsets);
+    }
+
+    private static NodeWALUncommittedOffsetsRecord uncommittedRecord(
+        int nodeId, long streamId, long startOffset, long endOffset
+    ) {
+        return new NodeWALUncommittedOffsetsRecord().setNodeId(nodeId).setEntries(List.of(
+            new NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset()
+                .setStreamId(streamId).setStartOffset(startOffset).setEndOffset(endOffset)));
     }
 
     private void testToImageAndBack(S3StreamsMetadataImage image) {
@@ -277,6 +552,7 @@ public class S3StreamsMetadataImageTest {
             ref,
             streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(ref.registry(), 0));
 
@@ -443,6 +719,7 @@ public class S3StreamsMetadataImageTest {
         ref = ref.next();
         S3StreamsMetadataImage streamsImage = new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
 
         InRangeObjects objects = streamsImage.getObjects(STREAM0, 22L, 55, 4, defaultRangeGetter).get();
@@ -475,7 +752,8 @@ public class S3StreamsMetadataImageTest {
         nodeMetadataMap.put(BROKER0, broker0WALMetadataImage);
         ref = ref.next();
         return new S3StreamsMetadataImage(STREAM0, ref, streamMetadataMap,
-            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
+            nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 
     private S3StreamsMetadataImage generateStreamImage(long streamId, Range<Long> streamObjectRange,
@@ -524,6 +802,7 @@ public class S3StreamsMetadataImageTest {
         ref = ref.next();
         return new S3StreamsMetadataImage(streamId, ref, streamMetadataMap,
             nodeMetadataMap, new TimelineHashMap<>(ref.registry(), 0), new TimelineHashMap<>(ref.registry(), 0),
+            new TimelineHashMap<>(ref.registry(), 0),
             new TimelineHashMap<>(RegistryRef.NOOP.registry(), 0));
     }
 
@@ -618,6 +897,63 @@ public class S3StreamsMetadataImageTest {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    /**
+     * Given repeated topic recreation, deleting the last stream removes the partition mapping
+     * while historical snapshots retain their original stream sets until released.
+     */
+    @Test
+    public void testPartitionStreamMappingCleanup() {
+        S3StreamsMetadataImage image = S3StreamsMetadataImage.EMPTY;
+        for (long streamId = 0; streamId < 20; streamId++) {
+            Uuid topicId = new Uuid(0, streamId + 1);
+            TopicIdPartition tp = new TopicIdPartition(topicId, 10);
+            S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(image);
+            delta.replay(partitionStreamRecord(streamId, topicId));
+            S3StreamsMetadataImage createdImage = delta.apply();
+            if (image != S3StreamsMetadataImage.EMPTY) {
+                image.release();
+            }
+            delta = new S3StreamsMetadataDelta(createdImage);
+            delta.replay(new RemoveS3StreamRecord().setStreamId(streamId));
+            image = delta.apply();
+            assertTrue(image.getTopicPartitionStreams(topicId, 10).isEmpty());
+            assertNull(image.getStreamTopicPartition(streamId));
+            assertFalse(image.partition2streams().containsKey(tp));
+            assertEquals(Set.of(streamId), createdImage.partition2streams()
+                .get(tp, createdImage.registryRef().epoch()));
+            createdImage.release();
+            assertEquals(0, image.partition2streams().size());
+            assertEquals(0, image.stream2partition().size());
+        }
+    }
+
+    /**
+     * Given deletion and replacement in one delta, the partition mapping keeps the new stream.
+     */
+    @Test
+    public void testPartitionStreamReplacementInSameDelta() {
+        Uuid topicId = new Uuid(0, 1);
+        S3StreamsMetadataDelta delta = new S3StreamsMetadataDelta(S3StreamsMetadataImage.EMPTY);
+        delta.replay(partitionStreamRecord(STREAM0, topicId));
+        S3StreamsMetadataImage image = delta.apply();
+        delta = new S3StreamsMetadataDelta(image);
+        delta.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        delta.replay(partitionStreamRecord(STREAM1, topicId));
+        S3StreamsMetadataImage replacement = delta.apply();
+        image.release();
+        assertEquals(Set.of(STREAM1), replacement.getTopicPartitionStreams(topicId, 10));
+        assertEquals(1, replacement.partition2streams().size());
+        assertNull(replacement.getStreamTopicPartition(STREAM0));
+        assertEquals(new TopicIdPartition(topicId, 10), replacement.getStreamTopicPartition(STREAM1));
+    }
+
+    private static S3StreamRecord partitionStreamRecord(long streamId, Uuid topicId) {
+        S3StreamRecord.TagCollection tags = new S3StreamRecord.TagCollection();
+        tags.add(new S3StreamRecord.Tag().setKey(StreamTags.Topic.KEY).setValue(StreamTags.Topic.encode(topicId)));
+        tags.add(new S3StreamRecord.Tag().setKey(StreamTags.Partition.KEY).setValue(StreamTags.Partition.encode(10)));
+        return new S3StreamRecord().setStreamId(streamId).setTags(tags);
     }
 
     @Test

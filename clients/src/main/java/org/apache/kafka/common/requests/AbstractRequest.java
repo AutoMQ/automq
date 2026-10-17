@@ -25,6 +25,7 @@ import org.apache.kafka.common.protocol.ObjectSerializationCache;
 import org.apache.kafka.common.protocol.SendBuilder;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqGetPartitionSnapshotRequest;
+import org.apache.kafka.common.requests.s3.AutomqPreparePartitionHandoffRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
 import org.apache.kafka.common.requests.s3.AutomqUpdateGroupRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
@@ -34,7 +35,9 @@ import org.apache.kafka.common.requests.s3.CommitStreamSetObjectRequest;
 import org.apache.kafka.common.requests.s3.CreateStreamsRequest;
 import org.apache.kafka.common.requests.s3.DeleteKVsRequest;
 import org.apache.kafka.common.requests.s3.DeleteStreamsRequest;
+import org.apache.kafka.common.requests.s3.DescribeLicenseRequest;
 import org.apache.kafka.common.requests.s3.DescribeStreamsRequest;
+import org.apache.kafka.common.requests.s3.ExportClusterManifestRequest;
 import org.apache.kafka.common.requests.s3.GetKVsRequest;
 import org.apache.kafka.common.requests.s3.GetNextNodeIdRequest;
 import org.apache.kafka.common.requests.s3.GetOpeningStreamsRequest;
@@ -42,6 +45,8 @@ import org.apache.kafka.common.requests.s3.OpenStreamsRequest;
 import org.apache.kafka.common.requests.s3.PrepareS3ObjectRequest;
 import org.apache.kafka.common.requests.s3.PutKVsRequest;
 import org.apache.kafka.common.requests.s3.TrimStreamsRequest;
+import org.apache.kafka.common.requests.s3.UpdateLicenseRequest;
+import org.apache.kafka.common.requests.s3.UpdateStreamArchiveRequest;
 
 import java.nio.ByteBuffer;
 import java.util.Map;
@@ -363,6 +368,8 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return CommitStreamSetObjectRequest.parse(buffer, apiVersion);
             case COMMIT_STREAM_OBJECT:
                 return CommitStreamObjectRequest.parse(buffer, apiVersion);
+            case UPDATE_STREAM_ARCHIVE:
+                return UpdateStreamArchiveRequest.parse(buffer, apiVersion);
             case GET_OPENING_STREAMS:
                 return GetOpeningStreamsRequest.parse(buffer, apiVersion);
             case GET_KVS:
@@ -379,12 +386,20 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
                 return AutomqZoneRouterRequest.parse(buffer, apiVersion);
             case AUTOMQ_GET_PARTITION_SNAPSHOT:
                 return AutomqGetPartitionSnapshotRequest.parse(buffer, apiVersion);
+            case AUTOMQ_PREPARE_PARTITION_HANDOFF:
+                return AutomqPreparePartitionHandoffRequest.parse(buffer, apiVersion);
             case GET_NEXT_NODE_ID:
                 return GetNextNodeIdRequest.parse(buffer, apiVersion);
             case DESCRIBE_STREAMS:
                 return DescribeStreamsRequest.parse(buffer, apiVersion);
             case AUTOMQ_UPDATE_GROUP:
                 return AutomqUpdateGroupRequest.parse(buffer, apiVersion);
+            case UPDATE_LICENSE:
+                return UpdateLicenseRequest.parse(buffer, apiVersion);
+            case DESCRIBE_LICENSE:
+                return DescribeLicenseRequest.parse(buffer, apiVersion);
+            case EXPORT_CLUSTER_MANIFEST:
+                return ExportClusterManifestRequest.parse(buffer, apiVersion);
             // AutoMQ for Kafka inject end
 
             case SHARE_GROUP_HEARTBEAT:
@@ -412,8 +427,7 @@ public abstract class AbstractRequest implements AbstractRequestResponse {
             case READ_SHARE_GROUP_STATE_SUMMARY:
                 return ReadShareGroupStateSummaryRequest.parse(buffer, apiVersion);
             default:
-                throw new AssertionError(String.format("ApiKey %s is not currently handled in `parseRequest`, the " +
-                        "code should be updated to do so.", apiKey));
+                return RequestResponseExtensions.parseRequest(apiKey, apiVersion, buffer);
         }
     }
 }

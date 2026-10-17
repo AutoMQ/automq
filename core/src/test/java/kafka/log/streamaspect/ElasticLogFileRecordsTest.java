@@ -103,6 +103,27 @@ class ElasticLogFileRecordsTest {
     }
 
     /**
+     * Given two adjacent S3Stream batches, when truncating at their shared exclusive boundary, then the first batch is
+     * retained and the second batch is discarded.
+     */
+    @Test
+    void testTruncateAtS3StreamBatchBoundaryRetainsPreviousBatch() throws IOException {
+        MemoryRecords first = MemoryRecords.withRecords(0L, NoCompression.NONE,
+            new SimpleRecord(10L, "first".getBytes()));
+        MemoryRecords second = MemoryRecords.withRecords(1L, NoCompression.NONE,
+            new SimpleRecord(20L, "second".getBytes()));
+        elasticLogFileRecords.append(first, 1L);
+        elasticLogFileRecords.append(second, 2L);
+
+        int discardedBytes = elasticLogFileRecords.truncateTo(1L);
+
+        assertEquals(second.sizeInBytes(), discardedBytes);
+        assertEquals(first.sizeInBytes(), elasticLogFileRecords.sizeInBytes());
+        assertEquals(1L, elasticLogFileRecords.nextOffset());
+        verify(streamSlice).fetch(any(FetchContext.class), eq(1L), eq(2L), eq(ElasticLogFileRecords.FETCH_BATCH_SIZE));
+    }
+
+    /**
      * Test reading data that spans across multiple record batches.
      */
     @Test
@@ -219,7 +240,7 @@ class ElasticLogFileRecordsTest {
 
     // Helper for preparing records to avoid code duplication
     private Map<Long, SimpleRecord> prepareRecords(long startOffset, int count) {
-        final int fetchBatchSize = ElasticLogFileRecords.StreamSegmentInputStream.FETCH_BATCH_SIZE;
+        final int fetchBatchSize = ElasticLogFileRecords.FETCH_BATCH_SIZE;
         Map<Long, SimpleRecord> records = new HashMap<>();
 
         // Calculate approximate size per record to ensure total size > FETCH_BATCH_SIZE

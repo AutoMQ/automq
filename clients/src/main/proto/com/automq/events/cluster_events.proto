@@ -1,0 +1,70 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements.  See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License.  You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package com.automq.events;
+
+option java_package = "com.automq.events";
+option java_multiple_files = true;
+option java_outer_classname = "ClusterEventsProto";
+
+// Emitted once per AutoBalancer rebalance action — summary of what moved and why.
+message RebalanceSummaryEvent {
+  string rebalance_id = 1;
+  string trigger_reason = 2;
+  int32 partition_count = 3;
+  map<int32, double> broker_load_before = 4;
+  map<int32, double> broker_load_after = 5;
+}
+
+// Emitted once per partition moved during a rebalance. Correlates with
+// RebalanceSummaryEvent via rebalance_id.
+message RebalancePartitionEvent {
+  string rebalance_id = 1;
+  string topic_partition = 2;
+  int32 from_broker = 3;
+  int32 to_broker = 4;
+  string reason = 5;
+}
+
+// Emitted when a broker failover completes.
+message FailoverEvent {
+  int32 failed_node_id = 1;
+  int64 detected_timestamp = 2;
+  int64 completed_timestamp = 3;
+  string detail = 4;
+}
+
+// Emitted when a broker detects a sustained rate of request errors
+// (e.g. auth failures, authorization errors) for a given API/resource.
+message RequestErrorEvent {
+  int32 api_key = 1;
+  int32 error_code = 2;
+  optional string resource = 3;
+  repeated string client_ips = 4;
+  repeated string client_ids = 5;
+  double rps = 6;
+  optional string reason = 7;
+}
+
+// Emitted when a consumer group is committing offsets at an excessive rate.
+message OffsetCommitFrequencyEvent {
+  repeated string client_ips = 1;
+  repeated string client_ids = 2;
+  string group_id = 3;
+  string topic = 4;
+  double rps = 5;
+}

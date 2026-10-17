@@ -21,7 +21,7 @@
     "broker"
   ],
   "name": "PutKVsRequest",
-  "validVersions": "0",
+  "validVersions": "0-1",
   "flexibleVersions": "0+",
   "fields": [
     {
@@ -47,6 +47,14 @@
           "type": "bool",
           "versions": "0+",
           "about": "overwrite put kv"
+        },
+        {
+          "name": "Namespace",
+          "type": "string",
+          "versions": "1+",
+          "nullableVersions": "1+",
+          "default": "null",
+          "about": "The namespace for the key-value entry"
         }
       ]
     }

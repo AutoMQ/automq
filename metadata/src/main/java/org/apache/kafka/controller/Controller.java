@@ -78,8 +78,12 @@ import org.apache.kafka.common.message.TrimStreamsRequestData;
 import org.apache.kafka.common.message.TrimStreamsResponseData;
 import org.apache.kafka.common.message.UpdateFeaturesRequestData;
 import org.apache.kafka.common.message.UpdateFeaturesResponseData;
+import org.apache.kafka.common.message.UpdateStreamArchiveRequestData;
+import org.apache.kafka.common.message.UpdateStreamArchiveResponseData;
+import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.quota.ClientQuotaAlteration;
 import org.apache.kafka.common.quota.ClientQuotaEntity;
+import org.apache.kafka.common.requests.AbstractResponse;
 import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.requests.s3.AutomqGetNodesRequest;
 import org.apache.kafka.common.requests.s3.AutomqRegisterNodeRequest;
@@ -91,6 +95,7 @@ import org.apache.kafka.metadata.authorizer.AclMutator;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -475,7 +480,7 @@ public interface Controller extends AclMutator, AutoCloseable {
      */
     void close() throws InterruptedException;
 
-    // AutoMQ for Kafka inject start
+    // AutoMQ inject start
 
     /**
      * Attempt to get the next available node id.
@@ -535,6 +540,14 @@ public interface Controller extends AclMutator, AutoCloseable {
     CompletableFuture<TrimStreamsResponseData> trimStreams(
         ControllerRequestContext context,
         TrimStreamsRequestData request
+    );
+
+    /**
+     * Apply ordered, independently transactional typed Stream Archive operations.
+     */
+    CompletableFuture<UpdateStreamArchiveResponseData> updateStreamArchive(
+        ControllerRequestContext context,
+        UpdateStreamArchiveRequestData request
     );
 
     /**
@@ -609,6 +622,12 @@ public interface Controller extends AclMutator, AutoCloseable {
         DeleteKVsRequestData request
     );
 
+    CompletableFuture<AbstractResponse> handleExtensionRequest(
+        ControllerRequestContext context,
+        ApiKeys apiKey,
+        Object requestData
+    );
+
     /**
      * Register node metadata
      */
@@ -636,5 +655,13 @@ public interface Controller extends AclMutator, AutoCloseable {
     default long lastStableOffset() {
         throw new UnsupportedOperationException();
     }
-    // AutoMQ for Kafka inject end
+
+    default Optional<ControllerResult<BrokerHeartbeatReply>> maybeHandleBlockedBroker(
+            BrokerHeartbeatRequestData request, long registerBrokerRecordOffset) {
+        return Optional.empty();
+    }
+
+    default void onBrokerFenced(int brokerId) {
+    }
+    // AutoMQ inject end
 }

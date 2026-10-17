@@ -55,6 +55,11 @@ public class DefaultWalFactory implements WalFactory {
         //noinspection SwitchStatementWithTooFewBranches
         switch (uri.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3":
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                    .withClusterId(AutoMQApplication.getClusterId())
+                    .withNodeId(nodeId)
+                    .withEpoch(options.nodeEpoch())
+                    .withOpenMode(options.openMode());
                 BucketURI bucketURI = to(uri);
                 ObjectStorage walObjectStorage = ObjectStorageFactory.instance()
                     .builder(bucketURI)
@@ -63,14 +68,10 @@ public class DefaultWalFactory implements WalFactory {
                     .outboundLimiter(networkOutboundLimiter)
                     .build();
 
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
-                    .withClusterId(AutoMQApplication.getClusterId())
-                    .withNodeId(nodeId)
-                    .withEpoch(options.nodeEpoch())
-                    .withOpenMode(options.openMode());
                 ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
                 configBuilder.withReservationService(reservationService);
-                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build());
+                // This factory creates a dedicated ObjectStorage, so the WAL owns its lifecycle.
+                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), true);
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());
         }
