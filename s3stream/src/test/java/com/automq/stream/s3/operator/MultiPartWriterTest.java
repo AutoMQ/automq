@@ -27,7 +27,10 @@ import com.automq.stream.s3.objects.ObjectAttributes;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.MockedConstruction;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -38,7 +41,9 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
@@ -62,16 +67,21 @@ import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -332,6 +342,144 @@ class MultiPartWriterTest {
             .map(part -> (long) part.readableBytes())
             .collect(Collectors.toList()));
         verify(readStorage, never()).uploadPartCopy(any(), any(), any(), anyLong(), anyLong(), any(), anyInt());
+    }
+
+    /**
+     * Overflow flushes a sufficient pending part or fills a short one; the write waits for every contributing part.
+     * Only the logical pending size is large; all input buffers contain at most twenty bytes.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void testWriteSplitsAtCapacityAndTracksContributingFutures(boolean shortPendingPart) {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.createMultipartUpload(any(), anyString())).thenReturn(CompletableFuture.completedFuture("upload"));
+        List<List<Integer>> writtenBytes = new ArrayList<>();
+        List<CompletableFuture<Void>> completions = new ArrayList<>();
+        try (MockedConstruction<MultiPartWriter.ObjectPart> parts = mockConstruction(MultiPartWriter.ObjectPart.class, (part, context) -> {
+            AtomicLong size = new AtomicLong();
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            completions.add(cf);
+            when(part.size()).thenAnswer(invocation -> size.get());
+            when(part.getFuture()).thenReturn(cf);
+            doAnswer(invocation -> {
+                ByteBuf data = invocation.getArgument(0);
+                int bytes = data.readableBytes();
+                List<Integer> content = new ArrayList<>();
+                while (data.isReadable()) {
+                    content.add((int) data.readByte());
+                }
+                writtenBytes.add(content);
+                data.release();
+                if (context.getCount() == 1 && size.get() == 0) {
+                    size.set(Integer.MAX_VALUE - 10L);
+                } else {
+                    size.addAndGet(bytes);
+                }
+                return null;
+            }).when(part).write(any());
+        })) {
+            long minSize = shortPendingPart ? Integer.MAX_VALUE - 5L : Writer.MIN_PART_SIZE;
+            writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT, storage, "split", minSize, Integer.MAX_VALUE);
+            writer.write(Unpooled.buffer(1).writeByte(-1));
+            ByteBuf data = Unpooled.buffer(20);
+            for (int i = 0; i < 20; i++) {
+                data.writeByte(i);
+            }
+            CompletableFuture<Void> cf = writer.write(data);
+            assertEquals(2, parts.constructed().size());
+            assertEquals(List.of(-1), writtenBytes.get(0));
+            if (shortPendingPart) {
+                assertEquals(List.of(0, 1, 2, 3, 4), writtenBytes.get(1));
+                assertEquals(List.of(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19), writtenBytes.get(2));
+                assertEquals(minSize, parts.constructed().get(0).size());
+            } else {
+                assertEquals(2, writtenBytes.size());
+                assertEquals(java.util.stream.IntStream.range(0, 20).boxed().toList(), writtenBytes.get(1));
+                assertEquals(Integer.MAX_VALUE - 10L, parts.constructed().get(0).size());
+            }
+            verify(parts.constructed().get(0)).upload();
+            assertEquals(0, data.refCnt());
+            completions.get(1).complete(null);
+            if (shortPendingPart) {
+                assertFalse(cf.isDone());
+                completions.get(0).completeExceptionally(new IllegalStateException("first part failed"));
+                assertThrows(CompletionException.class, cf::join);
+            } else {
+                cf.join();
+                completions.get(0).complete(null);
+            }
+        }
+    }
+
+    /**
+     * Cross-bucket range reads stop at the remaining buffer capacity before continuing in a new part.
+     */
+    @Test
+    void testCrossBucketCopySplitsAtRemainingCapacity() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.createMultipartUpload(any(), anyString())).thenReturn(CompletableFuture.completedFuture("upload"));
+        List<List<Long>> ranges = new ArrayList<>();
+        try (MockedConstruction<MultiPartWriter.ObjectPart> parts = mockConstruction(MultiPartWriter.ObjectPart.class, (part, context) -> {
+            AtomicLong size = new AtomicLong();
+            when(part.size()).thenAnswer(invocation -> size.get());
+            when(part.getFuture()).thenReturn(CompletableFuture.completedFuture(null));
+            doAnswer(invocation -> {
+                ((ByteBuf) invocation.getArgument(0)).release();
+                size.set(Integer.MAX_VALUE - 2L);
+                return null;
+            }).when(part).write(any());
+            doAnswer(invocation -> {
+                long start = invocation.getArgument(1);
+                long end = invocation.getArgument(2);
+                ranges.add(List.of(start, end));
+                size.addAndGet(end - start);
+                return null;
+            }).when(part).readAndWrite(any(), anyLong(), anyLong());
+        })) {
+            writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 1), storage, "copy", Integer.MAX_VALUE);
+            writer.write(Unpooled.buffer(1).writeByte(0));
+            S3ObjectMetadata source = new S3ObjectMetadata(1, ObjectAttributes.builder().bucket((short) 2).build().attributes());
+            writer.copyWrite(source, 100, 105);
+            assertEquals(List.of(List.of(100L, 102L), List.of(102L, 105L)), ranges);
+            assertEquals(2, parts.constructed().size());
+            verify(parts.constructed().get(0)).upload();
+            assertEquals((long) Integer.MAX_VALUE, parts.constructed().get(0).size());
+            assertEquals(3L, parts.constructed().get(1).size());
+        }
+    }
+
+    /**
+     * A pending part already above its minimum flushes before a large copy without requesting a negative range.
+     */
+    @Test
+    void testCopyFlushesSufficientPendingPartWithoutRangeRead() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.createMultipartUpload(any(), anyString())).thenReturn(CompletableFuture.completedFuture("upload"));
+        when(storage.uploadPart(any(), anyString(), anyString(), anyInt(), any())).thenAnswer(invocation -> {
+            ((ByteBuf) invocation.getArgument(4)).release();
+            return CompletableFuture.completedFuture(new ObjectStorage.ObjectStorageCompletedPart(invocation.getArgument(3), "etag", null));
+        });
+        when(storage.uploadPartCopy(any(), anyString(), anyString(), anyLong(), anyLong(), anyString(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(new ObjectStorage.ObjectStorageCompletedPart(2, "etag", null)));
+        writer = new MultiPartWriter(ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 1), storage, "copy", 10, 20);
+        ByteBuf data = Unpooled.buffer(15).writeZero(15);
+        writer.write(data);
+        S3ObjectMetadata source = new S3ObjectMetadata(1, ObjectAttributes.builder().bucket((short) 1).build().attributes());
+        writer.copyWrite(source, 0, 30);
+        verify(storage, never()).rangeRead(any(), anyString(), anyLong(), anyLong());
+        verify(storage).uploadPartCopy(any(), eq(source.key()), eq("copy"), eq(0L), eq(30L), eq("upload"), eq(2));
+        assertEquals(0, data.refCnt());
+    }
+
+    /**
+     * An impossible buffered minimum fails before opening a multipart upload.
+     */
+    @Test
+    void testRejectsMinimumBeyondBufferCapacity() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        assertThrows(IllegalArgumentException.class, () -> new MultiPartWriter(
+            ObjectStorage.WriteOptions.DEFAULT, storage, "invalid", (long) Integer.MAX_VALUE + 1));
+        verifyNoInteractions(storage);
     }
 
     private static String md5Base64(ByteBuf data) {

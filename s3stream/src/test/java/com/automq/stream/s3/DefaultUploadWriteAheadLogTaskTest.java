@@ -70,6 +70,19 @@ public class DefaultUploadWriteAheadLogTaskTest {
         objectStorage = new MemoryObjectStorage(DATA_BUCKET_ID);
     }
 
+    /**
+     * Summing payloads preserves values beyond both the signed and unsigned int range.
+     */
+    @Test
+    public void testStreamSizeUsesLongArithmetic() {
+        StreamRecordBatch large = mock(StreamRecordBatch.class);
+        StreamRecordBatch small = mock(StreamRecordBatch.class);
+        when(large.size()).thenReturn((int) Constants.MAX_UPLOAD_STREAM_SIZE);
+        when(small.size()).thenReturn(1);
+        assertEquals(4 * Constants.MAX_UPLOAD_STREAM_SIZE + 1,
+            DefaultUploadWriteAheadLogTask.streamSize(List.of(large, large, large, large, small)));
+    }
+
     @Test
     public void testUpload() throws Exception {
         AtomicLong objectIdAlloc = new AtomicLong(10);

@@ -73,11 +73,16 @@ public class DataBlockWriter {
     }
 
     public void write(StreamDataBlock dataBlock) {
+        long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
+        if (waitingUploadSize + dataBlock.getBlockSize() > Integer.MAX_VALUE) {
+            uploadWaitingList();
+            waitingUploadSize = 0;
+        }
         CompletableFuture<Void> cf = new CompletableFuture<>();
         cf.whenComplete((nil, ex) -> CompactionMetrics.COMPACTION_WRITE_SIZE.add(dataBlock.getBlockSize()));
         waitingUploadBlockCfs.put(dataBlock, cf);
         waitingUploadBlocks.add(dataBlock);
-        long waitingUploadSize = waitingUploadBlocks.stream().mapToLong(StreamDataBlock::getBlockSize).sum();
+        waitingUploadSize += dataBlock.getBlockSize();
         if (waitingUploadSize >= partSizeThreshold) {
             uploadWaitingList();
         }
@@ -121,10 +126,8 @@ public class DataBlockWriter {
         List<StreamDataBlock> blocks = new LinkedList<>(waitingUploadBlocks);
         waitingUploadBlocks.clear();
         indexBlock = new IndexBlock();
-        buf.addComponent(true, indexBlock.buffer());
         Footer footer = new Footer();
-        buf.addComponent(true, footer.buffer());
-        writer.write(buf.duplicate());
+        Writer.writeComponents(writer, buf, indexBlock.buffer(), footer.buffer());
         size = indexBlock.position() + indexBlock.size() + footer.size();
         return writer.close().thenAccept(nil -> {
             for (StreamDataBlock block : blocks) {
