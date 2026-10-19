@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.TimerUtil;
@@ -200,11 +201,13 @@ public class LogCache {
                 continue;
             }
             nextStartOffset = records.get(records.size() - 1).getLastOffset();
-            int recordsSize = 0;
+            // The soft byte limit includes the complete final record, so returned bytes can exceed Integer.MAX_VALUE.
+            long recordsSize = 0;
             for (StreamRecordBatch record : records) {
                 recordsSize += record.size();
             }
-            nextMaxBytes -= Math.min(nextMaxBytes, recordsSize);
+            nextMaxBytes -= (int) Math.min(nextMaxBytes, recordsSize);
+            // The block has already applied the soft budget, including the complete final record.
             rst.addAll(records);
             if (nextStartOffset >= endOffset || nextMaxBytes == 0) {
                 fulfill = true;
@@ -460,9 +463,12 @@ public class LogCache {
                 if (leftStreamCache == null) {
                     left.map.put(streamId, new StreamCache(rightStreamCache));
                 } else {
-                    leftStreamCache.records.addAll(rightStreamCache.records);
-                    leftStreamCache.endOffset(rightStreamCache.endOffset());
-                    leftStreamCache.offsetIndexMap.clear();
+                    synchronized (leftStreamCache) {
+                        leftStreamCache.records.addAll(rightStreamCache.records);
+                        leftStreamCache.payloadBytes += rightStreamCache.payloadBytes;
+                        leftStreamCache.endOffset(rightStreamCache.endOffset());
+                        leftStreamCache.offsetIndexMap.clear();
+                    }
                 }
             });
         }
@@ -513,14 +519,18 @@ public class LogCache {
          *
          * @param recordBatch record to add in stream offset order
          * @param recordSize payload size, or an upper bound on the decoded payload size
-         * @return true if added, false if the block is full or the stream offset delta would overflow
+         * @return true if added, false if the block is full or the stream's payload size or offset delta would overflow
+         * @throws IllegalArgumentException if the supplied size is negative or a single record exceeds the upload limit
          */
         public boolean put(StreamRecordBatch recordBatch, int recordSize) {
+            if (recordSize < 0 || recordSize > Constants.MAX_UPLOAD_STREAM_SIZE) {
+                throw new IllegalArgumentException("Record payload size exceeds the upload limit: " + recordSize);
+            }
             if (isFull()) {
                 return false;
             }
             StreamCache cache = map.computeIfAbsent(recordBatch.getStreamId(), id -> new StreamCache());
-            if (!cache.add(recordBatch)) {
+            if (!cache.add(recordBatch, recordSize)) {
                 overflow = true;
                 return false;
             }
@@ -642,6 +652,7 @@ public class LogCache {
 
     static class StreamCache {
         List<StreamRecordBatch> records;
+        long payloadBytes;
         long startOffset = NOOP_OFFSET;
         long endOffset = NOOP_OFFSET;
         Map<Long, IndexAndCount> offsetIndexMap = new HashMap<>();
@@ -652,24 +663,27 @@ public class LogCache {
 
         StreamCache(StreamCache other) {
             this.records = new ArrayList<>(other.records);
+            this.payloadBytes = other.payloadBytes;
             this.startOffset = other.startOffset();
             this.endOffset = other.endOffset();
         }
 
         /**
-         * @return true if the record was successfully added, false if it would cause offset overflow
+         * @return true if the record was successfully added, false if it would exceed the stream payload limit or cause offset overflow
          */
-        synchronized boolean add(StreamRecordBatch recordBatch) {
+        synchronized boolean add(StreamRecordBatch recordBatch, int recordSize) {
             if (recordBatch.getBaseOffset() != endOffset && endOffset != NOOP_OFFSET) {
                 RuntimeException ex = new IllegalArgumentException(String.format("streamId=%s record batch base offset mismatch, expect %s, actual %s",
                     recordBatch.getStreamId(), endOffset, recordBatch.getBaseOffset()));
                 LOGGER.error("[FATAL]", ex);
             }
             long effectiveStartOffset = startOffset == NOOP_OFFSET ? recordBatch.getBaseOffset() : startOffset;
-            if (recordBatch.getLastOffset() - effectiveStartOffset > Integer.MAX_VALUE) {
+            if (recordBatch.getLastOffset() - effectiveStartOffset > Integer.MAX_VALUE
+                || payloadBytes + recordSize > Constants.MAX_UPLOAD_STREAM_SIZE) {
                 return false;
             }
             records.add(recordBatch);
+            payloadBytes += recordSize;
             if (startOffset == NOOP_OFFSET) {
                 startOffset = recordBatch.getBaseOffset();
             }
