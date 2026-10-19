@@ -31,7 +31,6 @@ import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_FOOTER;
 import static com.automq.stream.s3.ByteBufAlloc.WRITE_INDEX_BLOCK;
@@ -68,11 +67,7 @@ public class CompositeObjectWriter implements ObjectWriter {
         long indexesBlockStartPosition = objectsBlock.size();
         IndexesBlock indexesBlock = new IndexesBlock(components);
         Footer footer = new Footer(indexesBlockStartPosition, indexesBlock.size());
-        CompositeByteBuf objBuf = ByteBufAlloc.compositeByteBuffer();
-        objBuf.addComponent(true, objectsBlock.buffer());
-        objBuf.addComponent(true, indexesBlock.buffer());
-        objBuf.addComponent(true, footer.buffer());
-        writer.write(objBuf);
+        Writer.writeComponents(writer, objectsBlock.buffer(), indexesBlock.buffer(), footer.buffer());
         return writer.close();
     }
 
@@ -81,7 +76,7 @@ public class CompositeObjectWriter implements ObjectWriter {
         if (startOffset == Constants.NOOP_OFFSET) {
             return Collections.emptyList();
         }
-        return List.of(new ObjectStreamRange(expectStreamId, Constants.NOOP_EPOCH, startOffset, expectOffset, -1));
+        return List.of(new ObjectStreamRange(expectStreamId, Constants.NOOP_EPOCH, startOffset, expectOffset));
     }
 
     /**

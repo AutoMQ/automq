@@ -92,7 +92,9 @@ public class WALRecovery {
             RecordOffset blockLastOffset = null;
             try {
                 if (pending != null) {
-                    cacheBlock.put(pending.record(), recoveryRecordSize(pending.record()));
+                    if (!cacheBlock.put(pending.record(), recoveryRecordSize(pending.record()))) {
+                        throw new IllegalStateException("Deferred WAL record cannot fit in an empty recovery block");
+                    }
                     openingStreamEndOffsets.put(pending.record().getStreamId(), pending.record().getLastOffset());
                     blockLastOffset = pending.recordOffset();
                     pending = null;
@@ -162,11 +164,6 @@ public class WALRecovery {
         }
 
         int recordSize = recoveryRecordSize(streamRecordBatch);
-        // Upload tasks and stream ranges use int byte counts. Split before their sums can overflow.
-        // A single record may exceed the configured cache limit, but its payload size is still an int.
-        if (cacheBlock.size() != 0 && recordSize > Integer.MAX_VALUE - cacheBlock.size()) {
-            return false;
-        }
         if (!cacheBlock.put(streamRecordBatch, recordSize)) {
             return false;
         }

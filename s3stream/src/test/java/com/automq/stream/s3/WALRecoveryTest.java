@@ -264,10 +264,10 @@ public class WALRecoveryTest {
     }
 
     /**
-     * Recovery splits before decoded bytes can overflow upload accounting even with an unbounded cache limit.
+     * Recovery splits at the per-stream payload limit even with an unbounded cache limit.
      */
     @ParameterizedTest
-    @ValueSource(ints = {1_100_000_000, Integer.MAX_VALUE - 512})
+    @ValueSource(ints = {600_000_000, 1 << 30})
     public void testRecoverLinkRecordsPreventsSizeOverflow(int decodedSize) {
         List<RecoverResult> records = List.of(
             new TestRecoverResult(newLinkRecord(42, 0), DefaultRecordOffset.of(0, 100, 0)),
@@ -302,7 +302,7 @@ public class WALRecoveryTest {
         ByteBuf pendingBuffer = pending.encoded();
         List<RecoverResult> records = List.of(
             new TestRecoverResult(newLinkRecord(42, 0)), new TestRecoverResult(pending));
-        LinkRecordDecoder decoder = largeRecordDecoder(1_100_000_000);
+        LinkRecordDecoder decoder = largeRecordDecoder(600_000_000);
         RuntimeException failure = new RuntimeException("upload failed");
         Map<Long, Long> streamEndOffsets = new HashMap<>(Map.of(42L, 0L));
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
@@ -332,6 +332,54 @@ public class WALRecoveryTest {
             WALRecovery.recover(records.iterator(), new HashMap<>(Map.of(42L, 1L)), 6000, LOGGER,
                 block -> assertTrue(block.records().isEmpty()));
             verify(decoder, never()).decodedSize(any(ByteBuf.class));
+            verify(decoder, never()).decode(any(), any());
+        }
+    }
+
+    /**
+     * Recovery caps its soft block budget at INT_MAX and accounts for the last accepted record without int overflow.
+     */
+    @Test
+    public void testRecoverCapsBlockBudgetWithLongAccounting() {
+        int decodedSize = (int) Constants.MAX_UPLOAD_STREAM_SIZE;
+        List<RecoverResult> records = List.of(
+            new TestRecoverResult(newLinkRecord(42, 0), DefaultRecordOffset.of(0, 100, 0)),
+            new TestRecoverResult(newLinkRecord(43, 0), DefaultRecordOffset.of(0, 200, 0)),
+            new TestRecoverResult(newLinkRecord(44, 0), DefaultRecordOffset.of(0, 300, 0)));
+        Map<Long, Long> endOffsets = new HashMap<>(Map.of(42L, 0L, 43L, 0L, 44L, 0L));
+        List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
+        LinkRecordDecoder decoder = largeRecordDecoder(decodedSize);
+        try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
+            storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
+            WALRecovery.recover(records.iterator(), endOffsets, Long.MAX_VALUE, LOGGER, blocks::add);
+            assertEquals(2, blocks.size());
+            assertEquals(2L * (decodedSize + 1024L), blocks.get(0).size());
+            assertEquals(decodedSize + 1024L, blocks.get(1).size());
+            assertEquals(DefaultRecordOffset.of(0, 200, 0), blocks.get(0).lastRecordOffset());
+            assertEquals(DefaultRecordOffset.of(0, 300, 0), blocks.get(1).lastRecordOffset());
+            assertEquals(Map.of(42L, 1L, 43L, 1L, 44L, 1L), endOffsets);
+        } finally {
+            blocks.forEach(block -> WALRecovery.releaseAllRecords(block.records().values()));
+        }
+    }
+
+    /**
+     * A link whose decoded payload cannot fit in any upload batch fails before decoding and releases its source.
+     */
+    @Test
+    public void testRecoverRejectsOversizedLinkBeforeDecoding() {
+        StreamRecordBatch record = newLinkRecord(42, 0);
+        ByteBuf buffer = record.encoded();
+        LinkRecordDecoder decoder = largeRecordDecoder((int) Constants.MAX_UPLOAD_STREAM_SIZE + 1);
+        Map<Long, Long> endOffsets = new HashMap<>(Map.of(42L, 0L));
+        List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
+        try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
+            storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
+            assertThrows(IllegalArgumentException.class, () -> WALRecovery.recover(
+                List.<RecoverResult>of(new TestRecoverResult(record)).iterator(), endOffsets, Long.MAX_VALUE, LOGGER, blocks::add));
+            assertEquals(0, buffer.refCnt());
+            assertEquals(0L, endOffsets.get(42L));
+            assertTrue(blocks.isEmpty());
             verify(decoder, never()).decode(any(), any());
         }
     }
