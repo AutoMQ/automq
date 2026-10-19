@@ -40,7 +40,9 @@ import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.streams.StreamManager;
+import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.WriteAheadLog;
+import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
@@ -55,15 +57,19 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -116,6 +122,69 @@ public class S3StorageTest {
         blockCache = mock(S3BlockCache.class);
         storage = new S3Storage(config, wal,
             streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
+    }
+
+    /**
+     * A batch that exceeds the upload limit is rejected before writing WAL data or reserving a cache reference.
+     */
+    @Test
+    public void testRejectOversizedAppendBeforeWAL() throws Exception {
+        StreamRecordBatch record = spy(newRecord(42, 0));
+        Mockito.doReturn((int) Constants.MAX_UPLOAD_STREAM_SIZE + 1).when(record).size();
+        ByteBuf buffer = record.encoded();
+        ExecutionException failure = assertThrows(ExecutionException.class,
+            () -> storage.append(record).get(5, TimeUnit.SECONDS));
+        assertInstanceOf(IllegalArgumentException.class, failure.getCause());
+        verify(wal, never()).append(any(), any());
+        assertEquals(0, buffer.refCnt());
+    }
+
+    /**
+     * Consecutive appends split at one GiB per stream and trim only through the records committed in each block.
+     */
+    @Test
+    public void testAppendSplitsStreamPayloadAndPreservesWALOffsets() throws Exception {
+        List<List<Long>> uploadedOffsets = new CopyOnWriteArrayList<>();
+        Config largeCacheConfig = new Config().walCacheSize(12L << 30).walUploadThreshold(3L << 30).blockCacheSize(0);
+        S3Storage largeCacheStorage = new S3Storage(largeCacheConfig, wal, streamManager, objectManager,
+            blockCache, objectStorage, storageFailureHandler) {
+            @Override
+            protected UploadWriteAheadLogTask newUploadWriteAheadLogTask(
+                Map<Long, List<StreamRecordBatch>> records, ObjectManager manager, double rate) {
+                uploadedOffsets.add(records.get(42L).stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList()));
+                UploadWriteAheadLogTask task = mock(UploadWriteAheadLogTask.class);
+                Mockito.when(task.prepare()).thenReturn(CompletableFuture.completedFuture(1L));
+                Mockito.when(task.upload()).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectRequest()));
+                Mockito.when(task.commit()).thenReturn(CompletableFuture.completedFuture(null));
+                return task;
+            }
+        };
+        List<ByteBuf> buffers = new ArrayList<>();
+        int walRecordBytes = 0;
+        try {
+            for (int i = 0; i < 3; i++) {
+                StreamRecordBatch record = spy(newRecord(42, i));
+                buffers.add(record.encoded());
+                walRecordBytes = record.encoded().readableBytes() + RecordHeader.RECORD_HEADER_SIZE;
+                Mockito.doReturn((int) (Constants.MAX_UPLOAD_STREAM_SIZE / 2)).when(record).size();
+                largeCacheStorage.append(record).get(5, TimeUnit.SECONDS);
+            }
+            largeCacheStorage.uploadDeltaWAL().get(5, TimeUnit.SECONDS);
+            assertEquals(List.of(List.of(0L, 1L), List.of(2L)), uploadedOffsets);
+            ArgumentCaptor<RecordOffset> trimmed = ArgumentCaptor.forClass(RecordOffset.class);
+            verify(wal, timeout(5000).times(2)).trim(trimmed.capture());
+            assertEquals(List.of(DefaultRecordOffset.of(0, walRecordBytes, 0),
+                DefaultRecordOffset.of(0, 2L * walRecordBytes, 0)), trimmed.getAllValues());
+            verify(storageFailureHandler, never()).handle(any());
+        } finally {
+            largeCacheStorage.shutdown();
+            buffers.forEach(buffer -> {
+                if (buffer.refCnt() > 0) {
+                    buffer.release();
+                }
+            });
+            wal.reset().get();
+        }
     }
 
     /**

@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.LogCache.LogCacheBlock;
@@ -35,10 +36,136 @@ import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class LogCacheTest {
+
+    /**
+     * Each stream may reach the upload limit independently; the next record stays owned by the caller for retry.
+     */
+    @Test
+    public void testStreamPayloadLimitAndRetry() {
+        int halfLimit = (int) (Constants.MAX_UPLOAD_STREAM_SIZE / 2);
+        LogCacheBlock block = new LogCacheBlock(Long.MAX_VALUE);
+        StreamRecordBatch first = sizedRecord(42, 0, halfLimit);
+        StreamRecordBatch second = sizedRecord(42, 1, halfLimit);
+        StreamRecordBatch deferred = sizedRecord(42, 2, 1);
+        assertTrue(block.put(first));
+        assertTrue(block.put(second));
+        assertTrue(block.put(sizedRecord(43, 0, (int) Constants.MAX_UPLOAD_STREAM_SIZE)));
+        assertTrue(block.size() > Integer.MAX_VALUE);
+        assertFalse(block.put(deferred));
+        assertEquals(List.of(first, second), block.records().get(42L));
+        assertEquals(2L, block.map.get(42L).endOffset());
+        assertEquals(Constants.MAX_UPLOAD_STREAM_SIZE, block.map.get(42L).payloadBytes);
+        verify(deferred, never()).release();
+
+        LogCacheBlock next = new LogCacheBlock(Long.MAX_VALUE);
+        assertTrue(next.put(deferred));
+        assertEquals(List.of(deferred), next.records().get(42L));
+    }
+
+    /**
+     * A conservative decoded size controls splitting even when the encoded link itself is tiny.
+     */
+    @Test
+    public void testExplicitPayloadSizeControlsStreamLimit() {
+        LogCacheBlock block = new LogCacheBlock(Long.MAX_VALUE);
+        StreamRecordBatch first = sizedRecord(42, 0, 1);
+        StreamRecordBatch next = sizedRecord(42, 1, 1);
+        assertTrue(block.put(first, (int) Constants.MAX_UPLOAD_STREAM_SIZE));
+        assertFalse(block.put(next, 1));
+        assertEquals(Constants.MAX_UPLOAD_STREAM_SIZE + 1024, block.size());
+        assertEquals(List.of(first), block.records().get(42L));
+    }
+
+    /**
+     * An indivisible record above the hard limit is rejected without mutating or poisoning an empty block.
+     */
+    @Test
+    public void testOversizedRecordDoesNotMutateBlock() {
+        LogCacheBlock block = new LogCacheBlock(Long.MAX_VALUE);
+        StreamRecordBatch oversized = sizedRecord(42, 0, (int) Constants.MAX_UPLOAD_STREAM_SIZE + 1);
+        assertThrows(IllegalArgumentException.class, () -> block.put(oversized));
+        assertTrue(block.records().isEmpty());
+        assertEquals(0L, block.size());
+        assertFalse(block.isFull());
+        verify(oversized, never()).release();
+        assertTrue(block.put(sizedRecord(42, 0, 1)));
+    }
+
+    /**
+     * Copying and merging cached streams preserves the conservative payload accounting used for later insertions.
+     */
+    @Test
+    public void testMergePreservesPayloadAccounting() {
+        int halfLimit = (int) (Constants.MAX_UPLOAD_STREAM_SIZE / 2);
+        LogCacheBlock first = new LogCacheBlock(Long.MAX_VALUE);
+        LogCacheBlock second = new LogCacheBlock(Long.MAX_VALUE);
+        LogCacheBlock merged = new LogCacheBlock(Long.MAX_VALUE);
+        first.put(sizedRecord(42, 0, 1), halfLimit);
+        second.put(sizedRecord(42, 1, 1), halfLimit);
+        LogCache.mergeBlock(merged, first);
+        LogCache.mergeBlock(merged, second);
+        assertEquals(Constants.MAX_UPLOAD_STREAM_SIZE, merged.map.get(42L).payloadBytes);
+        assertEquals(halfLimit, first.map.get(42L).payloadBytes);
+        assertFalse(merged.put(sizedRecord(42, 2, 1)));
+    }
+
+    /**
+     * A merged block exceeding int bytes must exhaust the soft read budget without reading the next block.
+     * Record sizes are mocked and cache capacities are thresholds only; no GiB-sized payloads are allocated.
+     */
+    @Test
+    public void testReadBudgetStopsAfterMergedBlockExceedsIntSize() {
+        LogCache cache = new LogCache(8L << 30, 4L << 30);
+        StreamRecordBatch first = sizedRecord(42, 0, (int) Constants.MAX_UPLOAD_STREAM_SIZE);
+        StreamRecordBatch second = sizedRecord(42, 1, (int) Constants.MAX_UPLOAD_STREAM_SIZE);
+        StreamRecordBatch next = sizedRecord(42, 2, 1);
+        assertTrue(cache.put(first));
+        LogCacheBlock archived = cache.archiveCurrentBlock();
+        LogCacheBlock other = new LogCacheBlock(Long.MAX_VALUE);
+        assertTrue(other.put(second));
+        LogCache.mergeBlock(archived, other);
+        assertTrue(cache.put(next));
+
+        assertEquals(List.of(first, second), cache.get0(42L, 0, 3, Integer.MAX_VALUE));
+        assertEquals(List.of(first), cache.get0(42L, 0, 3, (int) Constants.MAX_UPLOAD_STREAM_SIZE - 1));
+    }
+
+    /**
+     * A soft budget includes the complete final record even across blocks, then stops before the next record.
+     */
+    @Test
+    public void testReadBudgetAllowsFinalRecordToExceedHint() {
+        LogCache cache = new LogCache(1024 * 1024, 1024 * 1024);
+        StreamRecordBatch first = sizedRecord(42, 0, 80);
+        StreamRecordBatch second = sizedRecord(42, 1, 80);
+        StreamRecordBatch next = sizedRecord(42, 2, 1);
+        assertTrue(cache.put(first));
+        cache.archiveCurrentBlock();
+        assertTrue(cache.put(second));
+        assertTrue(cache.put(next));
+
+        assertEquals(List.of(first, second), cache.get0(42L, 0, 3, 100));
+        assertEquals(List.of(first), cache.get0(42L, 0, 3, 80));
+        assertEquals(List.of(first), cache.get0(42L, 0, 3, 1));
+    }
+
+    private static StreamRecordBatch sizedRecord(long streamId, long offset, int size) {
+        StreamRecordBatch record = mock(StreamRecordBatch.class);
+        when(record.getStreamId()).thenReturn(streamId);
+        when(record.getBaseOffset()).thenReturn(offset);
+        when(record.getLastOffset()).thenReturn(offset + 1);
+        when(record.size()).thenReturn(size);
+        return record;
+    }
 
     @Test
     public void testPutGet() {
