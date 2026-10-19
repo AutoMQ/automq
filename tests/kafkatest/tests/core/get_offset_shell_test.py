@@ -87,8 +87,9 @@ class GetOffsetShellTest(Test):
                    err_msg="Timeout awaiting messages to be produced and acked")
 
     def start_consumer(self, topic):
+        # AutoMQ inject: Increase the timeout to avoid flaky failures during initial group join.
         self.consumer = ConsoleConsumer(self.test_context, num_nodes=self.num_brokers, kafka=self.kafka, topic=topic,
-                                        consumer_timeout_ms=1000)
+                                        consumer_timeout_ms=10000)
         self.consumer.start()
 
     def check_message_count_sum_equals(self, message_count, **kwargs):

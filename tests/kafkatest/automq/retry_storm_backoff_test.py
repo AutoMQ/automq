@@ -24,10 +24,11 @@ class RetryStormBackoffTest(Test):
 
     def create_kafka(self):
         """
-        Create a small AutoMQ Kafka cluster with retry storm backoff using its default disabled state.
+        Create a small AutoMQ Kafka cluster with retry storm backoff explicitly disabled.
         """
         log_size = 256 * 1024 * 1024
         server_prop_overrides = [
+            ["automq.retry.storm.backoff.enabled", "false"],
             ["s3.wal.cache.size", str(log_size)],
             ["s3.wal.capacity", str(log_size)],
             ["s3.wal.upload.threshold", str(log_size // 4)],
@@ -110,12 +111,12 @@ class RetryStormBackoffTest(Test):
     @cluster(num_nodes=3)
     def test_metadata_protective_backoff_dynamic_config(self):
         """
-        Verify default-disabled, dynamic-enable, and dynamic-disable behavior for Metadata protective backoff.
+        Verify initially-disabled, dynamic-enable, and dynamic-disable behavior for Metadata protective backoff.
         """
         self.create_kafka()
         self.kafka.start()
 
-        disabled_elapsed = self.run_probe("retry-storm-default-disabled-topic", iterations=8)
+        disabled_elapsed = self.run_probe("retry-storm-initially-disabled-topic", iterations=8)
         self.assert_no_protective_delay(disabled_elapsed)
 
         self.alter_retry_storm_config(enabled=True, max_delay_ms=500)
