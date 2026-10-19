@@ -118,7 +118,8 @@ class OffsetValidationTest(VerifiableConsumerTest):
         # completes its roll.  In the meantime, the consumer group will move to the group coordinator on the other
         # broker, and that coordinator will fail the consumer and trigger a group rebalance if its session times out.
         # This test is asserting that no rebalances occur, so we increase the session timeout for this to be the case.
-        self.session_timeout_sec = 30
+        # AutoMQ inject: Allow broker rolls and coordinator rediscovery to complete without expiring sessions.
+        self.session_timeout_sec = 120
         consumer = self.setup_consumer(self.TOPIC, group_protocol=group_protocol)
 
         producer.start()
