@@ -91,7 +91,7 @@ public interface ObjectWriter {
         private final List<DataBlock> waitingUploadBlocks;
         private final List<DataBlock> completedBlocks;
         private final Writer writer;
-        private int waitingUploadBlocksSize;
+        private long waitingUploadBlocksSize;
         private IndexBlock indexBlock;
         private long size;
 
@@ -158,15 +158,24 @@ public interface ObjectWriter {
 
         private List<List<StreamRecordBatch>> groupByBlock(List<StreamRecordBatch> records) {
             List<List<StreamRecordBatch>> blocks = new LinkedList<>();
-            List<StreamRecordBatch> blockRecords = new ArrayList<>(records.size());
+            List<StreamRecordBatch> blockRecords = new ArrayList<>();
+            long payloadSize = 0;
+            long encodedSize = DataBlock.BLOCK_HEADER_SIZE;
             for (StreamRecordBatch record : records) {
-                size += record.size();
-                blockRecords.add(record);
-                if (size >= blockSizeThreshold) {
-                    blocks.add(blockRecords);
-                    blockRecords = new ArrayList<>(records.size());
-                    size = 0;
+                int recordSize = record.encoded().readableBytes();
+                if ((long) DataBlock.BLOCK_HEADER_SIZE + recordSize > Integer.MAX_VALUE) {
+                    throw new IllegalArgumentException("Encoded record cannot fit in a data block: " + recordSize);
                 }
+                // Finish the current block after reaching the soft threshold or before exceeding encoded capacity.
+                if (!blockRecords.isEmpty() && (payloadSize >= blockSizeThreshold || encodedSize + recordSize > Integer.MAX_VALUE)) {
+                    blocks.add(blockRecords);
+                    blockRecords = new ArrayList<>();
+                    payloadSize = 0;
+                    encodedSize = DataBlock.BLOCK_HEADER_SIZE;
+                }
+                blockRecords.add(record);
+                payloadSize += record.size();
+                encodedSize += recordSize;
             }
             if (!blockRecords.isEmpty()) {
                 blocks.add(blockRecords);
@@ -178,8 +187,13 @@ public interface ObjectWriter {
             for (; ; ) {
                 List<DataBlock> uploadBlocks = new ArrayList<>(waitingUploadBlocks.size());
                 boolean partFull = false;
-                int size = 0;
+                long size = 0;
                 for (DataBlock block : waitingUploadBlocks) {
+                    // A soft part threshold may be crossed, but a single CompositeByteBuf must fit in int capacity.
+                    if (size + block.size() > Integer.MAX_VALUE) {
+                        partFull = true;
+                        break;
+                    }
                     uploadBlocks.add(block);
                     size += block.size();
                     if (size >= partSizeThreshold) {
@@ -210,10 +224,8 @@ public interface ObjectWriter {
             }
             waitingUploadBlocks.clear();
             indexBlock = new IndexBlock();
-            buf.addComponent(true, indexBlock.buffer());
             Footer footer = new Footer(indexBlock.position(), indexBlock.size());
-            buf.addComponent(true, footer.buffer());
-            writer.write(buf.duplicate());
+            Writer.writeComponents(writer, buf, indexBlock.buffer(), footer.buffer());
             size = indexBlock.position() + indexBlock.size() + footer.size();
             return writer.close();
         }
@@ -299,7 +311,7 @@ public interface ObjectWriter {
             records.forEach(r -> encodedBuf.addComponent(true, r.encoded().retain()));
             this.size = encodedBuf.readableBytes();
             encodedBuf.setInt(BLOCK_HEADER_SIZE - 4, size - BLOCK_HEADER_SIZE);
-            this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset(), size);
+            this.streamRange = new ObjectStreamRange(streamId, records.get(0).getEpoch(), records.get(0).getBaseOffset(), records.get(records.size() - 1).getLastOffset());
         }
 
         public int size() {

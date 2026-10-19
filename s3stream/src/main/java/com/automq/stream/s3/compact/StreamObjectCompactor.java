@@ -392,12 +392,9 @@ public class StreamObjectCompactor {
                 indexes.addComponent(true, subIndexes);
             }
 
-            CompositeByteBuf indexBlockAndFooter = ByteBufAlloc.compositeByteBuffer();
-            indexBlockAndFooter.addComponent(true, indexes);
-            indexBlockAndFooter.addComponent(true, new ObjectWriter.Footer(nextBlockPosition, indexBlockAndFooter.readableBytes()).buffer());
-
-            objectSize += indexBlockAndFooter.readableBytes();
-            writer.write(indexBlockAndFooter.duplicate());
+            ByteBuf footer = new ObjectWriter.Footer(nextBlockPosition, indexes.readableBytes()).buffer();
+            objectSize += (long) indexes.readableBytes() + footer.readableBytes();
+            Writer.writeComponents(writer, indexes, footer);
             writer.close().get();
             List<CompactOperations> operations = compactedObjectIds.stream().map(id -> CompactOperations.DELETE).collect(Collectors.toList());
             return Optional.of(new CompactStreamObjectRequest(objectId, objectSize, streamId, streamEpoch,
