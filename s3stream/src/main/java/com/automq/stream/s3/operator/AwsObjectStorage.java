@@ -67,8 +67,8 @@ import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
-import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
+import software.amazon.awssdk.http.nio.netty.SdkEventLoopGroup;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
@@ -548,15 +548,20 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (!OpenSsl.isAvailable()) {
             logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
         }
-        SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
+        builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
             .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
             .connectionTimeout(configuration.connectionTimeout())
-            .build();
-        builder.httpClient(httpClient);
+            .eventLoopGroupBuilder(SdkEventLoopGroup.builder()
+                .numberOfThreads(Math.min(2, Runtime.getRuntime().availableProcessors()))
+                .channelFactory(newConnectionFailover())));
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(false));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
+    }
+
+    S3ConnectionFailover newConnectionFailover() {
+        return new S3ConnectionFailover();
     }
 
     protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {
