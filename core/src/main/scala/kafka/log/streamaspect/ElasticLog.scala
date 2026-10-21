@@ -131,7 +131,6 @@ class ElasticLog(val metaStream: MetaStream,
         streamManager.setListener((_, event) => {
             if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
                 logSegmentManager.asyncPersistLogMeta()
-                logSegmentManager.notifySegmentUpdate();
             }
         })
     }
@@ -753,7 +752,7 @@ class ElasticLog(val metaStream: MetaStream,
 
         def detach(segment: LogSegment): Unit = {
             segments.remove(segment.baseOffset)
-            logSegmentManager.remove(segment.baseOffset, segment.asInstanceOf[ElasticLogSegment], false)
+            logSegmentManager.remove(segment.baseOffset, segment.asInstanceOf[ElasticLogSegment])
             removed += segment
         }
 
