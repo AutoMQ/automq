@@ -279,6 +279,30 @@ class ElasticLogTest {
         }
     }
 
+    /** Given out-of-order durable handlers, the drain snapshot must wait for both completions. */
+    @Test
+    def testDurableCallbackSnapshotIncludesEarlierPendingAppend(): Unit = {
+        val earlier = new CompletableFuture[Void]()
+        val later = new CompletableFuture[Void]()
+        log.trackDurableCallback(earlier)
+        log.trackDurableCallback(later)
+        val snapshot = log.lastDurableCallbackFuture
+        later.complete(null)
+        assertFalse(snapshot.isDone)
+        earlier.complete(null)
+        snapshot.join()
+    }
+
+    /** Given failed persistence followed by success, drain must retain the earlier failure. */
+    @Test
+    def testDurableCallbackFailureCannotBeHiddenByLaterAppend(): Unit = {
+        val failed = new CompletableFuture[Void]()
+        log.trackDurableCallback(failed)
+        failed.completeExceptionally(new IOException("injected persistence failure"))
+        log.trackDurableCallback(CompletableFuture.completedFuture(null))
+        assertThrows(classOf[CompletionException], () => log.lastDurableCallbackFuture.join())
+    }
+
     @Test
     def testLogCloseSuccess(): Unit = {
         val keyValues = Seq(KeyValue("abc", "ABC"), KeyValue("de", "DE"))

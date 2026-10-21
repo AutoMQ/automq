@@ -29,7 +29,7 @@ import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource}
+import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource, RecordValidationStats}
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
@@ -47,11 +47,13 @@ import java.util
 import java.util.Optional
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
+import java.util.concurrent.locks.Lock
 import java.util.function.{BiFunction, Consumer}
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.OptionConverters
 import scala.compat.java8.OptionConverters.RichOptionalGeneric
+import scala.util.control.NonFatal
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, EnumerationHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
@@ -216,6 +218,33 @@ class ElasticReplicaManager(
     logDirFailureHandler.start()
   }
 
+  private val produceRegistrations = new ThreadLocal[ArrayBuffer[Partition]]()
+
+  /** Keep each actually appended partition hosted until its delayed Produce is registered. */
+  override def appendRecords(timeout: Long,
+    requiredAcks: Short,
+    internalTopicsAllowed: Boolean,
+    origin: AppendOrigin,
+    entriesPerPartition: scala.collection.Map[TopicPartition, MemoryRecords],
+    responseCallback: scala.collection.Map[TopicPartition, org.apache.kafka.common.requests.ProduceResponse.PartitionResponse] => Unit,
+    delayedProduceLock: Option[Lock],
+    recordValidationStatsCallback: scala.collection.Map[TopicPartition, RecordValidationStats] => Unit,
+    requestLocal: RequestLocal,
+    actionQueue: ActionQueue,
+    verificationGuards: scala.collection.Map[TopicPartition, VerificationGuard]): Unit = {
+    val previous = produceRegistrations.get()
+    val registrations = if (Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported))
+      new ArrayBuffer[Partition]() else null
+    produceRegistrations.set(registrations)
+    try {
+      super.appendRecords(timeout, requiredAcks, internalTopicsAllowed, origin, entriesPerPartition,
+        responseCallback, delayedProduceLock, recordValidationStatsCallback, requestLocal, actionQueue, verificationGuards)
+    } finally {
+      if (previous == null) produceRegistrations.remove() else produceRegistrations.set(previous)
+      if (registrations != null) registrations.foreach(_.finishProduceRegistration())
+    }
+  }
+
   /**
    * Stop the given partitions.
    *
@@ -240,6 +269,15 @@ class ElasticReplicaManager(
       if (stopPartition.deleteLocalLog) {
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
+            // AutoMQ inject start
+            if (ElasticLogManager.enabled() && Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported)) {
+              try {
+                hostedPartition.partition.drainProduceBeforeClose()
+              } catch {
+                case NonFatal(ex) => warn(s"Unable to drain accepted Produce requests for $topicPartition; retaining normal close path", ex)
+              }
+            }
+            // AutoMQ inject end
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               notifyPartitionClose(hostedPartition.partition)
               brokerTopicStats.removeMetrics(topicPartition)
@@ -380,6 +418,8 @@ class ElasticReplicaManager(
       } else {
         try {
           val partition = getPartitionOrException(topicPartition)
+          val registrations = produceRegistrations.get()
+          if (registrations != null && partition.beginProduceRegistration()) registrations += partition
           val info = partition.appendRecordsToLeader(records, origin, requiredAcks, requestLocal,
             verificationGuards.getOrElse(topicPartition, VerificationGuard.SENTINEL))
           val numAppendedMessages = info.numMessages
