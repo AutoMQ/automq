@@ -2393,7 +2393,8 @@ project(':s3stream') {
     implementation 'com.yammer.metrics:metrics-core:2.2.0'
     implementation 'commons-codec:commons-codec:1.17.0'
     implementation 'org.hdrhistogram:HdrHistogram:2.2.2'
-    implementation 'software.amazon.awssdk.crt:aws-crt:0.30.8'
+    implementation 'software.amazon.awssdk.crt:aws-crt:0.48.5'
+    implementation "software.amazon.awssdk:aws-crt-client:${versions.awsSdk}"
     implementation 'com.ibm.async:asyncutil:0.1.0'
 
     testImplementation 'org.slf4j:slf4j-simple:1.7.36'
