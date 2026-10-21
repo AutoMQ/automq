@@ -290,11 +290,6 @@ public class ConfigurationControlManager {
         }
         try {
             validator.validate(configResource, allConfigs);
-            // AutoMQ inject start
-            validator.validateAlteredConfigs(configResource,
-                Collections.unmodifiableMap(alteredConfigsForAlterConfigPolicyCheck),
-                existingConfigs == null ? Collections.emptyMap() : Collections.unmodifiableMap(existingConfigs));
-            // AutoMQ inject end
             if (!newlyCreatedResource) {
                 existenceChecker.accept(configResource);
             }

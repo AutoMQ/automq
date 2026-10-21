@@ -58,7 +58,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 public class DefaultZeroZoneConfigDynamicConfigTest {
     private static final String ZONE_CIDR_BLOCKS_CONFIG_KEY = "automq.zone.cidr.blocks";
     /**
-     * Holds a block that only the previous IPv4-only parser accepted, an IPv4 block and an IPv6 block.
+     * Holds a non-standard IPv4 block that previous releases accepted and read as 0.10.0.0/24, a standard IPv4 block
+     * and an IPv6 block.
      */
     private static final String MIXED_BLOCKS = "az-a@10.0.0/24,10.0.1.0/24<>az-b@2001:db8:1:a01::/64";
 
@@ -74,8 +75,8 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
     }
 
     /**
-     * Given per-broker configs holding a legacy block next to IPv4 and IPv6 blocks, when they are replayed, then the
-     * whole batch is applied instead of being dropped.
+     * Given per-broker configs holding a non-standard IPv4 block next to IPv4 and IPv6 blocks, when they are
+     * replayed, then the whole batch is applied and the non-standard block keeps its legacy meaning.
      */
     @Test
     public void testPerBrokerConfigsAreReplayed() throws Exception {
@@ -88,8 +89,8 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
     }
 
     /**
-     * Given cluster default configs holding a legacy block next to IPv4 and IPv6 blocks, when they are replayed,
-     * then the whole batch is applied instead of being dropped.
+     * Given cluster default configs holding a non-standard IPv4 block next to IPv4 and IPv6 blocks, when they are
+     * replayed, then the whole batch is applied and the non-standard block keeps its legacy meaning.
      */
     @Test
     public void testClusterDefaultConfigsAreReplayed() throws Exception {
@@ -102,8 +103,8 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
     }
 
     /**
-     * Given an already applied legacy block, when an unrelated excluded zone is updated, then validation of the
-     * unchanged block does not reject the update.
+     * Given an already applied non-standard IPv4 block, when an unrelated excluded zone is updated, then validation
+     * of the unchanged block does not reject the update.
      */
     @Test
     public void testUnrelatedUpdateIsNotBlockedByLegacyBlocks() throws Exception {
@@ -122,8 +123,9 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
     }
 
     /**
-     * Given a legacy cluster default value shadowed by a valid per-broker override, when the override is deleted,
-     * then the fallback to the cluster default still passes validation and applies its usable blocks.
+     * Given a cluster default value holding a non-standard IPv4 block shadowed by a per-broker override, when the
+     * override is deleted, then the fallback to the cluster default passes validation and applies every block with
+     * its legacy meaning.
      */
     @Test
     public void testFallbackToLegacyClusterDefaultIsStillApplied() throws Exception {
@@ -138,8 +140,9 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
         kafkaConfig.dynamicConfig().updateBrokerConfig(kafkaConfig.brokerId(), perBroker, false);
         assertEquals("az-1", zeroZoneConfig.rack(client("192.0.2.5")));
         assertNull(zeroZoneConfig.rack(client("10.0.1.5")));
+        assertNull(zeroZoneConfig.rack(client("0.10.0.5")));
 
-        // Deleting the override brings the legacy cluster default back as the effective value.
+        // Deleting the override brings the cluster default back as the effective value.
         Properties deletion = new Properties();
         assertDoesNotThrow(() -> kafkaConfig.dynamicConfig().validate(deletion, true));
         kafkaConfig.dynamicConfig().updateBrokerConfig(kafkaConfig.brokerId(), deletion, false);
@@ -147,6 +150,7 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
         KafkaConfig currentConfig = kafkaConfig.dynamicConfig().currentKafkaConfig();
         assertEquals(MIXED_BLOCKS, currentConfig.originals().get(ZONE_CIDR_BLOCKS_CONFIG_KEY));
         assertEquals("az-a", zeroZoneConfig.rack(client("10.0.1.5")));
+        assertEquals("az-a", zeroZoneConfig.rack(client("0.10.0.5")));
         assertEquals("az-b", zeroZoneConfig.rack(client("2001:db8:1:a01::5")));
         assertNull(zeroZoneConfig.rack(client("10.0.0.5")));
         assertNull(zeroZoneConfig.rack(client("192.0.2.5")));
@@ -180,6 +184,8 @@ public class DefaultZeroZoneConfigDynamicConfigTest {
 
         assertEquals(Set.of("az-c"), zeroZoneConfig.excludeZones());
         assertEquals("az-a", zeroZoneConfig.rack(client("10.0.1.5")));
+        // The non-standard block 10.0.0/24 keeps the meaning previous releases gave it, 0.10.0.0/24.
+        assertEquals("az-a", zeroZoneConfig.rack(client("0.10.0.5")));
         assertEquals("az-b", zeroZoneConfig.rack(client("2001:db8:1:a01::5")));
         assertNull(zeroZoneConfig.rack(client("10.0.0.5")));
     }

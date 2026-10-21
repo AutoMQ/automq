@@ -27,6 +27,7 @@ import org.apache.kafka.common.config.AbstractConfig;
 import org.apache.kafka.common.config.ConfigDef;
 import org.apache.kafka.common.config.ConfigException;
 
+import com.automq.stream.utils.LogSuppressor;
 import com.google.common.net.InetAddresses;
 
 import org.slf4j.Logger;
@@ -36,7 +37,6 @@ import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +46,7 @@ import java.util.function.Consumer;
 
 public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultZeroZoneConfig.class);
+    private static final LogSuppressor FIND_FAILURE_LOGGER = new LogSuppressor(LOGGER, 60000);
     private static final String ZONE_CIDR_BLOCKS_CONFIG_KEY = "automq.zone.cidr.blocks";
     private static final String ZONE_CIDR_BLOCKS_CONFIG_DOC = "The mapping of zone to IPv4 or IPv6 CIDR blocks. "
         + "Format: zone1@cidr1,cidr2<>zone2@cidr3,cidr4. IPv6 blocks must only be configured once every broker runs "
@@ -134,9 +135,8 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
         // Kafka supplies the full effective configuration, including defaults after deletion.
         AbstractConfig config = new AbstractConfig(CONFIG_DEF, map, false);
         String zoneCidrBlocksConfig = config.getString(ZONE_CIDR_BLOCKS_CONFIG_KEY);
-        // Every apply, including the replay of already persisted configs, runs validation first and the
-        // whole batch is dropped when it fails. Validation and apply therefore share the same parsing,
-        // which only rejects what previous releases rejected as well.
+        // Validation and apply share the same parser, which accepts every value previous releases accepted, so the
+        // replay of an already persisted value never fails.
         CIDRMatcher matcher = new CIDRMatcher(zoneCidrBlocksConfig == null ? "" : zoneCidrBlocksConfig);
         Set<String> zones = Set.copyOf(config.getList(EXCLUDE_ZONES_CONFIG_KEY));
         if (validate) {
@@ -157,234 +157,256 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
     }
 
     /**
-     * Validates the broker configs an AlterConfigs or IncrementalAlterConfigs request alters. Such a request is the
-     * only moment at which a value can still be refused, so the compatibility fallbacks of {@link CIDRMatcher} are
-     * not accepted here, unlike on the replay path where the value is already persisted.
-     *
-     * @param alteredConfigs  each explicitly altered key mapped to its new value, {@code null} for a deletion
-     * @param existingConfigs the configs persisted for the resource before the request
-     * @throws ConfigException if the request sets a zone CIDR blocks value that is not fully supported
-     */
-    public static void validateAlteredConfigs(Map<String, String> alteredConfigs, Map<String, String> existingConfigs) {
-        if (!alteredConfigs.containsKey(ZONE_CIDR_BLOCKS_CONFIG_KEY)) {
-            return;
-        }
-        String value = alteredConfigs.get(ZONE_CIDR_BLOCKS_CONFIG_KEY);
-        // A deletion is always allowed, and so is a value that does not change: the legacy AlterConfigs API re-sends
-        // every key, and for broker resources a record is generated even for an unchanged value (KAFKA-14136).
-        if (value == null || value.equals(existingConfigs.get(ZONE_CIDR_BLOCKS_CONFIG_KEY))) {
-            return;
-        }
-        validateStrict(value);
-    }
-
-    /**
-     * Validates a zone CIDR blocks value that is being set.
-     *
-     * @throws ConfigException if the value is malformed, or if any of its blocks or zone segments only parses
-     *                         through a compatibility fallback, in which case every such part is reported
-     */
-    static void validateStrict(String value) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        List<String> rejections = new CIDRMatcher(value).rejections();
-        if (!rejections.isEmpty()) {
-            throw new ConfigException(ZONE_CIDR_BLOCKS_CONFIG_KEY, value, String.join("; ", rejections)
-                + "; earlier releases tolerated such forms in persisted values, but they cannot be set");
-        }
-    }
-
-    /**
      * Matches a client address against the configured zone CIDR blocks.
      *
-     * <p>IPv4 and IPv6 blocks are both supported and are matched on the raw address bytes, so an IPv4 address
-     * never matches an IPv6 block and vice versa. When several blocks match, the longest prefix wins.
+     * <p>IPv4 and IPv6 blocks are both supported, and an address only ever matches blocks of its own family. Blocks
+     * are ranked by their declared prefix length, the longest first, and blocks declaring the same prefix length are
+     * tried in the order they are configured. IPv4 blocks are parsed and matched exactly as in previous releases,
+     * including the non-standard forms those releases accepted.
      */
     public static class CIDRMatcher {
-        private final Map<Integer, List<CIDRBlock>> maskLength2blocks = new HashMap<>();
-        private final List<Integer> reverseMaskLengthList = new ArrayList<>();
-        private final List<Problem> problems = new ArrayList<>();
+        private final CIDRBlock[] blocks;
+        private final List<String> warnings = new ArrayList<>();
 
         /**
-         * Parses an {@code automq.zone.cidr.blocks} value. A zone segment that does not split into exactly one
-         * zone and one block list is skipped, as in previous releases, and reported as a {@link Problem}.
+         * Parses an {@code automq.zone.cidr.blocks} value. A zone segment that does not split into exactly one zone
+         * and one block list is skipped, as in previous releases, and reported in {@link #warnings()}, and so is an
+         * IPv4 block that previous releases accepted although it is not a standard IPv4 CIDR block.
          *
-         * @throws ConfigException if a block is malformed in a way that previous releases rejected as well.
-         *                         Blocks that previous releases accepted but that do not mean what they look
-         *                         like are handled for compatibility and reported as a {@link Problem}.
+         * @throws ConfigException if a block is an IPv4 block that previous releases rejected as well, or an invalid
+         *                         IPv6 block
          */
         public CIDRMatcher(String config) {
+            List<CIDRBlock> parsed = new ArrayList<>();
             for (String cidrBlocksOfZone : config.split("<>")) {
                 String[] parts = cidrBlocksOfZone.split("@");
                 if (parts.length != 2) {
                     if (!cidrBlocksOfZone.isBlank()) {
-                        problems.add(Problem.ignoredZoneSegment(cidrBlocksOfZone));
+                        warnings.add("Ignoring zone segment " + cidrBlocksOfZone + " (expected the form "
+                            + "<zone>@<block>,<block>): previous releases skipped it as well, so the rest of the value "
+                            + "still applies, but none of its blocks ever matches a client");
                     }
                     continue;
                 }
                 String zone = parts[0];
                 String[] cidrList = parts[1].split(",");
                 for (String cidr : cidrList) {
-                    CIDRBlock block = parseCidr(cidr, zone);
-                    if (block == null) {
-                        continue;
-                    }
-                    maskLength2blocks
-                        .computeIfAbsent(block.prefixLength, k -> new ArrayList<>())
-                        .add(block);
+                    parsed.add(parseCidr(cidr, zone));
                 }
             }
-            reverseMaskLengthList.addAll(maskLength2blocks.keySet());
-            reverseMaskLengthList.sort(Comparator.reverseOrder());
+            // The sort is stable, so blocks declaring the same prefix length keep their configured order.
+            parsed.sort(Comparator.comparingInt((CIDRBlock block) -> block.prefixLength).reversed());
+            blocks = parsed.toArray(new CIDRBlock[0]);
         }
 
         /**
          * Returns {@code true} when no block was configured, so no client can ever match.
          */
         public boolean isEmpty() {
-            return maskLength2blocks.isEmpty();
+            return blocks.length == 0;
         }
 
         /**
-         * Returns the messages describing the parts that needed a compatibility fallback. They are meant to be
-         * logged when a value is applied, not when it is validated.
+         * Returns the messages describing the parts of the value that are only kept for compatibility. They are meant
+         * to be logged when a value is applied, not when it is validated.
          */
         public List<String> warnings() {
-            return problems.stream().map(problem -> problem.warning).toList();
+            return Collections.unmodifiableList(warnings);
         }
 
         /**
-         * Returns the messages describing the parts that needed a compatibility fallback, as fragments of the
-         * reason a request that tries to set the value is refused.
-         */
-        List<String> rejections() {
-            return problems.stream().map(problem -> problem.rejection).toList();
-        }
-
-        /**
-         * Finds the most specific block containing the given address literal.
+         * Finds the most specific block containing the given address literal. A string without {@code :} is read as
+         * an IPv4 address the way previous releases read it, any other string as an IPv6 literal.
          *
-         * @return the matching block, or {@code null} if nothing matches or the string is not an address literal.
-         *         Host names are never resolved.
+         * @return the matching block, or {@code null} if nothing matches, the string is not an address literal, or
+         *         the lookup fails unexpectedly. Host names are never resolved.
          */
         public CIDRBlock find(String ip) {
-            byte[] address = ip == null ? null : parseAddress(ip);
-            return address == null ? null : findByAddress(address);
+            if (ip == null) {
+                return null;
+            }
+            try {
+                if (ip.indexOf(':') < 0) {
+                    long ipLong;
+                    try {
+                        ipLong = ipToLong(ip);
+                    } catch (NumberFormatException e) {
+                        return null;
+                    }
+                    for (CIDRBlock block : blocks) {
+                        if (block.contains(ipLong)) {
+                            return block;
+                        }
+                    }
+                    return null;
+                }
+                byte[] address;
+                try {
+                    // Literal parsing only, unlike InetAddress.getByName it never resolves host names.
+                    address = InetAddresses.forString(stripScope(ip)).getAddress();
+                } catch (IllegalArgumentException e) {
+                    return null;
+                }
+                return findByAddress(address);
+            } catch (RuntimeException e) {
+                FIND_FAILURE_LOGGER.error("Failed to resolve the zone of client address {}, the client gets no zone", ip, e);
+                return null;
+            }
         }
 
         /**
-         * Finds the most specific block containing the given address, or {@code null} if nothing matches.
+         * Finds the most specific block containing the given address.
          *
-         * @param address the client address, which must not be {@code null}
+         * @return the matching block, or {@code null} if nothing matches, the address is {@code null}, or the lookup
+         *         fails unexpectedly, in which case the failure is logged instead of being thrown to the request
          */
         public CIDRBlock find(InetAddress address) {
-            return findByAddress(address.getAddress());
+            if (address == null) {
+                return null;
+            }
+            try {
+                return findByAddress(address.getAddress());
+            } catch (RuntimeException e) {
+                FIND_FAILURE_LOGGER.error("Failed to resolve the zone of client address {}, the client gets no zone", address, e);
+                return null;
+            }
         }
 
         private CIDRBlock findByAddress(byte[] address) {
-            for (int prefix : reverseMaskLengthList) {
-                for (CIDRBlock block : maskLength2blocks.get(prefix)) {
-                    if (block.contains(address)) {
+            if (address.length == 4) {
+                // Converted once, so each IPv4 block is checked with the legacy numeric match.
+                long ip = CIDRBlock.ipv4ToLong(address);
+                for (CIDRBlock block : blocks) {
+                    if (block.contains(ip)) {
                         return block;
                     }
+                }
+                return null;
+            }
+            for (CIDRBlock block : blocks) {
+                if (block.contains(address)) {
+                    return block;
                 }
             }
             return null;
         }
 
-        /**
-         * Parses one configured block.
-         *
-         * @return the block, or {@code null} when previous releases built one that cannot match a client.
-         * @throws ConfigException if previous releases rejected the block as well.
-         */
         private CIDRBlock parseCidr(String cidr, String zone) {
-            String[] parts = cidr.split("/");
-            boolean legacy = legacyAccepted(parts);
-            // Previous releases read the address and the first prefix length and ignored any further component.
-            // They only ever parsed IPv4 addresses, so the block they built is reproducible here.
-            boolean extraComponents = legacy && parts.length > 2;
-            try {
-                if (parts.length != 2 && !extraComponents) {
-                    throw new IllegalArgumentException("expected an <address>/<prefix length> block");
-                }
-                CIDRBlock block = newBlock(cidr, zone, parts[0], parts[1]);
-                if (extraComponents) {
-                    problems.add(Problem.extraPrefixComponents(zone, cidr, parts[0] + "/" + parts[1]));
-                }
-                if (hasZeroPaddedOctet(parts[0])) {
-                    problems.add(Problem.zeroPaddedOctets(zone, cidr));
-                }
-                return block;
-            } catch (IllegalArgumentException e) {
-                if (!legacy) {
+            int slash = cidr.indexOf('/');
+            String ip = slash < 0 ? cidr : cidr.substring(0, slash);
+            if (ip.indexOf(':') >= 0) {
+                // Previous releases rejected every address holding a ':', so IPv6 blocks need no compatibility.
+                try {
+                    return parseIPv6Cidr(cidr, zone);
+                } catch (IllegalArgumentException e) {
                     throw new ConfigException(ZONE_CIDR_BLOCKS_CONFIG_KEY, cidr, e.getMessage());
                 }
-                problems.add(Problem.ignoredBlock(zone, cidr, e.getMessage()));
-                return null;
             }
+            CIDRBlock block;
+            try {
+                block = parseIPv4Cidr(cidr, zone);
+            } catch (RuntimeException e) {
+                throw new ConfigException(ZONE_CIDR_BLOCKS_CONFIG_KEY, cidr,
+                    "expected an IPv4 or IPv6 <address>/<prefix length> block");
+            }
+            if (!isStandardIPv4Cidr(cidr)) {
+                warnings.add("Zone CIDR block " + zone + "@" + cidr + " is not a standard IPv4 CIDR block; it is kept"
+                    + " for compatibility and matches as " + block.effectiveIPv4Cidr() + ", ranked by its declared"
+                    + " prefix length " + block.prefixLength);
+            }
+            return block;
         }
 
         /**
-         * Builds a block from the address and prefix length of a configured block.
-         *
-         * @throws IllegalArgumentException if they are not an IPv4 or IPv6 CIDR block
+         * Parses an IPv4 block exactly as previous releases did. Values they accepted may already be persisted in
+         * the metadata log, so this must neither reject nor reinterpret any of them, non-standard forms included.
          */
-        private static CIDRBlock newBlock(String cidr, String zone, String ip, String prefix) {
-            byte[] address = parseAddress(ip);
-            if (address == null) {
+        private static CIDRBlock parseIPv4Cidr(String cidr, String zone) {
+            String[] parts = cidr.split("/");
+            String ip = parts[0];
+            int maskLength = Integer.parseInt(parts[1]);
+            long ipLong = ipToLong(ip);
+            long mask = (0xFFFFFFFFL << (32 - maskLength)) & 0xFFFFFFFFL;
+            long networkAddress = ipLong & mask;
+            return new CIDRBlock(cidr, networkAddress, mask, maskLength, zone);
+        }
+
+        private static long ipToLong(String ipAddress) {
+            String[] octets = ipAddress.split("\\.");
+            long result = 0;
+            for (String octet : octets) {
+                result = (result << 8) | Integer.parseUnsignedInt(octet);
+            }
+            return result;
+        }
+
+        /**
+         * Tells whether an IPv4 block is written in the standard form, four plain decimal octets up to 255 and a plain
+         * decimal prefix length up to 32, without sign or leading zero.
+         */
+        private static boolean isStandardIPv4Cidr(String cidr) {
+            String[] parts = cidr.split("/", -1);
+            if (parts.length != 2 || !isPlainDecimal(parts[1], 32)) {
+                return false;
+            }
+            String[] octets = parts[0].split("\\.", -1);
+            if (octets.length != 4) {
+                return false;
+            }
+            for (String octet : octets) {
+                if (!isPlainDecimal(octet, 255)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static boolean isPlainDecimal(String value, int max) {
+            if (value.isEmpty() || value.length() > 3 || (value.length() > 1 && value.charAt(0) == '0')) {
+                return false;
+            }
+            int number = 0;
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                if (c < '0' || c > '9') {
+                    return false;
+                }
+                number = number * 10 + (c - '0');
+            }
+            return number <= max;
+        }
+
+        /**
+         * Parses an IPv6 block.
+         *
+         * @throws IllegalArgumentException if the block is not an IPv6 {@code <address>/<prefix length>} block
+         */
+        private static CIDRBlock parseIPv6Cidr(String cidr, String zone) {
+            String[] parts = cidr.split("/", -1);
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("expected an <address>/<prefix length> block");
+            }
+            byte[] address;
+            try {
+                // Literal parsing only, unlike InetAddress.getByName it never resolves host names.
+                address = InetAddresses.forString(stripScope(parts[0])).getAddress();
+            } catch (IllegalArgumentException e) {
                 throw new IllegalArgumentException("the address is not an IPv4 or IPv6 literal");
             }
-            if (address.length == 4 && ip.indexOf(':') >= 0) {
+            if (address.length == 4) {
                 throw new IllegalArgumentException("an IPv4-mapped literal would read its prefix length as an IPv4 "
                     + "one, configure the block in the plain IPv4 form such as 10.0.0.0/24");
             }
-            int maxPrefixLength = address.length * 8;
             int prefixLength;
             try {
-                prefixLength = Integer.parseInt(prefix);
+                prefixLength = Integer.parseInt(parts[1]);
             } catch (NumberFormatException e) {
                 throw new IllegalArgumentException("the prefix length is not a number");
             }
-            if (prefixLength < 0 || prefixLength > maxPrefixLength) {
-                throw new IllegalArgumentException("the prefix length must be between 0 and " + maxPrefixLength);
+            if (prefixLength < 0 || prefixLength > 128) {
+                throw new IllegalArgumentException("the prefix length must be between 0 and 128");
             }
             return new CIDRBlock(cidr, address, prefixLength, zone);
-        }
-
-        /**
-         * Tells whether the IPv4-only parser of previous releases would have parsed the block without failing.
-         * Such a block may already be persisted in the metadata log, so rejecting it would break the replay of
-         * the whole dynamic config batch it belongs to.
-         */
-        private static boolean legacyAccepted(String[] parts) {
-            if (parts.length < 2) {
-                // The previous parser read the prefix length without checking that it is present.
-                return false;
-            }
-            try {
-                Integer.parseInt(parts[1]);
-                for (String octet : parts[0].split("\\.")) {
-                    Integer.parseUnsignedInt(octet);
-                }
-                return true;
-            } catch (NumberFormatException e) {
-                return false;
-            }
-        }
-
-        private static byte[] parseAddress(String ip) {
-            byte[] address = parseDottedQuad(ip);
-            if (address != null) {
-                return address;
-            }
-            try {
-                // Literal parsing only, unlike InetAddress.getByName it never resolves host names.
-                return InetAddresses.forString(stripScope(ip)).getAddress();
-            } catch (IllegalArgumentException e) {
-                return null;
-            }
         }
 
         /**
@@ -393,158 +415,84 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
          */
         private static String stripScope(String ip) {
             int scope = ip.indexOf('%');
-            if (scope < 0 || ip.indexOf(':') < 0) {
-                return ip;
-            }
-            return ip.substring(0, scope);
-        }
-
-        /**
-         * Parses a dotted quad, also accepting the zero-padded octets that previous releases read as decimal
-         * but that {@link InetAddresses#forString} rejects as ambiguous.
-         */
-        private static byte[] parseDottedQuad(String ip) {
-            String[] octets = ip.split("\\.");
-            if (octets.length != 4) {
-                return null;
-            }
-            byte[] address = new byte[4];
-            for (int i = 0; i < 4; i++) {
-                String octet = octets[i];
-                if (octet.isEmpty()) {
-                    return null;
-                }
-                int value = 0;
-                for (int j = 0; j < octet.length(); j++) {
-                    char c = octet.charAt(j);
-                    if (c < '0' || c > '9') {
-                        return null;
-                    }
-                    value = value * 10 + (c - '0');
-                    if (value > 255) {
-                        return null;
-                    }
-                }
-                address[i] = (byte) value;
-            }
-            return address;
-        }
-
-        /**
-         * Tells whether a dotted quad holds a zero-padded octet, which {@link #parseDottedQuad} reads as decimal
-         * but which other parsers read as octal or reject as ambiguous.
-         */
-        private static boolean hasZeroPaddedOctet(String ip) {
-            String[] octets = ip.split("\\.");
-            if (octets.length != 4) {
-                return false;
-            }
-            for (String octet : octets) {
-                if (octet.length() > 1 && octet.charAt(0) == '0') {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        /**
-         * A block or zone segment that only parsed because previous releases accepted it, holding the message to
-         * log when the value is applied and the fragment to report when a request tries to set the value.
-         */
-        private static final class Problem {
-            private final String warning;
-            private final String rejection;
-
-            private Problem(String warning, String rejection) {
-                this.warning = warning;
-                this.rejection = rejection;
-            }
-
-            /**
-             * A block previous releases built but that can never match a client, so it is dropped.
-             */
-            static Problem ignoredBlock(String zone, String cidr, String reason) {
-                return new Problem("Ignoring zone CIDR block " + zone + "@" + cidr + " (" + reason
-                    + "): previous releases accepted it, so the rest of the value still applies, but this block"
-                    + " never matches a client", unsupportedBlock(zone, cidr, reason));
-            }
-
-            /**
-             * A block holding components past the prefix length, which previous releases ignored.
-             */
-            static Problem extraPrefixComponents(String zone, String cidr, String used) {
-                String reason = "extra '/' components, only " + used + " is used";
-                return new Problem("Zone CIDR block " + zone + "@" + cidr + " has " + reason,
-                    unsupportedBlock(zone, cidr, reason));
-            }
-
-            /**
-             * A block holding octets that only the compatibility parser reads the way they look.
-             */
-            static Problem zeroPaddedOctets(String zone, String cidr) {
-                return new Problem("Zone CIDR block " + zone + "@" + cidr + " has zero-padded octets, which are"
-                    + " read as decimal", unsupportedBlock(zone, cidr,
-                    "zero-padded octets, which other parsers read as octal"));
-            }
-
-            /**
-             * A segment that does not split into exactly one zone and one block list.
-             */
-            static Problem ignoredZoneSegment(String segment) {
-                String reason = "expected the form <zone>@<block>,<block>";
-                return new Problem("Ignoring zone segment " + segment + " (" + reason + "): previous releases"
-                    + " skipped it as well, so the rest of the value still applies, but none of its blocks ever"
-                    + " matches a client", "Zone segment " + segment + " is not supported (" + reason + ")");
-            }
-
-            private static String unsupportedBlock(String zone, String cidr, String reason) {
-                return "Block " + zone + "@" + cidr + " is not a supported CIDR block (" + reason + ")";
-            }
+            return scope < 0 ? ip : ip.substring(0, scope);
         }
     }
 
     /**
-     * An immutable CIDR block of a zone, held as the raw bytes of its network address and prefix mask so that
-     * matching needs no allocation and stays family aware: only an address of the same family can match.
+     * An immutable IPv4 or IPv6 CIDR block of a zone. The network address and mask are precomputed so that matching
+     * needs no allocation, and an address only ever matches a block of its own family.
      */
     public static class CIDRBlock {
         private final String cidr;
-        private final byte[] networkAddress;
-        private final byte[] mask;
+        private final long networkAddress;
+        private final long mask;
+        // The network address and mask of an IPv6 block, null for an IPv4 block.
+        private final byte[] ipv6NetworkAddress;
+        private final byte[] ipv6Mask;
         final int prefixLength;
         private final String zone;
 
+        public CIDRBlock(String cidr, long networkAddress, long mask, int prefixLength, String zone) {
+            this.cidr = cidr;
+            this.networkAddress = networkAddress;
+            this.mask = mask;
+            this.ipv6NetworkAddress = null;
+            this.ipv6Mask = null;
+            this.prefixLength = prefixLength;
+            this.zone = zone;
+        }
+
         /**
+         * Creates an IPv6 block.
+         *
          * @param cidr the block as it was configured, kept for reporting
-         * @param address the raw address bytes of the block, 4 bytes for IPv4 and 16 bytes for IPv6
+         * @param address the 16 raw bytes of an address of the block
          * @param prefixLength the number of leading bits an address must share with {@code address}
          * @param zone the availability zone the block belongs to
-         * @throws IllegalArgumentException if the prefix length does not fit the address family
+         * @throws IllegalArgumentException if the address is not 16 bytes long or the prefix length is not between
+         *                                  0 and 128
          */
         public CIDRBlock(String cidr, byte[] address, int prefixLength, String zone) {
-            if (prefixLength < 0 || prefixLength > address.length * 8) {
-                throw new IllegalArgumentException("prefix length " + prefixLength + " does not fit a "
-                    + address.length * 8 + " bit address");
+            if (address.length != 16) {
+                throw new IllegalArgumentException("an IPv6 block needs a 16 byte address, got " + address.length);
+            }
+            if (prefixLength < 0 || prefixLength > 128) {
+                throw new IllegalArgumentException("prefix length " + prefixLength + " does not fit a 128 bit address");
             }
             this.cidr = cidr;
-            this.mask = prefixMask(address.length, prefixLength);
-            this.networkAddress = new byte[address.length];
+            this.networkAddress = 0;
+            this.mask = 0;
+            this.ipv6Mask = prefixMask(address.length, prefixLength);
+            this.ipv6NetworkAddress = new byte[address.length];
             for (int i = 0; i < address.length; i++) {
-                this.networkAddress[i] = (byte) (address[i] & mask[i]);
+                this.ipv6NetworkAddress[i] = (byte) (address[i] & ipv6Mask[i]);
             }
             this.prefixLength = prefixLength;
             this.zone = zone;
         }
 
         /**
-         * Tells whether the raw bytes of an address fall into this block. Addresses of another family never match.
+         * Tells whether an IPv4 address, read as a number the way previous releases did, falls into this block.
+         * An IPv6 block never matches.
+         */
+        public boolean contains(long ip) {
+            return ipv6NetworkAddress == null && (ip & mask) == networkAddress;
+        }
+
+        /**
+         * Tells whether the raw bytes of an address fall into this block. A 4 byte address only matches an IPv4
+         * block and a 16 byte address only matches an IPv6 block, any other length matches nothing.
          */
         public boolean contains(byte[] address) {
-            if (address.length != networkAddress.length) {
+            if (address.length == 4) {
+                return contains(ipv4ToLong(address));
+            }
+            if (address.length != 16 || ipv6NetworkAddress == null) {
                 return false;
             }
             for (int i = 0; i < address.length; i++) {
-                if ((byte) (address[i] & mask[i]) != networkAddress[i]) {
+                if ((byte) (address[i] & ipv6Mask[i]) != ipv6NetworkAddress[i]) {
                     return false;
                 }
             }
@@ -557,6 +505,25 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
 
         public String zone() {
             return zone;
+        }
+
+        /**
+         * Describes the IPv4 addresses an IPv4 block actually matches, as a standard CIDR block.
+         */
+        String effectiveIPv4Cidr() {
+            return ((networkAddress >>> 24) & 0xFF) + "." + ((networkAddress >>> 16) & 0xFF) + "."
+                + ((networkAddress >>> 8) & 0xFF) + "." + (networkAddress & 0xFF) + "/" + Long.bitCount(mask);
+        }
+
+        /**
+         * Reads the 4 raw bytes of an IPv4 address as the unsigned 32 bit number previous releases matched on.
+         */
+        private static long ipv4ToLong(byte[] address) {
+            long ip = 0;
+            for (byte octet : address) {
+                ip = (ip << 8) | (octet & 0xFFL);
+            }
+            return ip;
         }
 
         private static byte[] prefixMask(int length, int prefixLength) {
