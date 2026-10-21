@@ -58,17 +58,17 @@ import static org.mockito.Mockito.when;
 public class AwsObjectStorageTest {
 
     /**
-     * CRT keeps PUTs single-request while AutoMQ retains ownership of multipart uploads and precomputed checksums.
+     * The default CRT client keeps PUTs single-request while AutoMQ retains multipart uploads and precomputed checksums.
      */
     @Tag("S3Unit")
     @Test
-    void testCrtDisablesAutomaticMultipart() {
+    void testDefaultCrtDisablesAutomaticMultipart() {
         AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket", ChecksumAlgorithm.CRC32);
         var builder = mock(software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
         when(builder.build()).thenReturn(mock(S3AsyncClient.class));
         try (var factory = org.mockito.Mockito.mockStatic(S3AsyncClient.class)) {
             factory.when(S3AsyncClient::crtBuilder).thenReturn(builder);
-            BucketURI uri = BucketURI.parse("0@s3://bucket?region=us-east-1&sdkImpl=crt");
+            BucketURI uri = BucketURI.parse("0@s3://bucket?region=us-east-1");
             try (S3AsyncClient ignored = storage.newS3Client(uri, List.of(), AwsObjectStorage.Configuration.fromBucketURI(uri))) {
                 org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
             }
@@ -107,6 +107,7 @@ public class AwsObjectStorageTest {
     void testNettySharedRetryOptions() {
         AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
         try {
+            storage.bucketURI.addExtension("sdkImpl", "netty");
             storage.bucketURI.addExtension("numRetries", "0");
             storage.bucketURI.addExtension("connectionTimeoutMs", "1500");
             storage.bucketURI.addExtension("maxConcurrency", "12");
@@ -169,13 +170,13 @@ public class AwsObjectStorageTest {
     void testConfigurationSnapshot() {
         AwsObjectStorage.Configuration.Builder builder = AwsObjectStorage.Configuration.builder();
         AwsObjectStorage.Configuration defaults = builder.build();
-        AwsObjectStorage.Configuration custom = builder.sdkImplementation("crt")
+        AwsObjectStorage.Configuration custom = builder.sdkImplementation("netty")
             .crtMinimumThroughputBps(1024).crtMinimumThroughputTimeout(java.time.Duration.ofSeconds(3))
             .crtTargetThroughputGbps(2.5).build();
-        Assertions.assertEquals("netty", defaults.sdkImplementation());
+        Assertions.assertEquals("crt", defaults.sdkImplementation());
         Assertions.assertEquals(32L * 1024 * 1024, defaults.crtMinimumThroughputBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(2), defaults.crtMinimumThroughputTimeout());
-        Assertions.assertEquals("crt", custom.sdkImplementation());
+        Assertions.assertEquals("netty", custom.sdkImplementation());
         Assertions.assertEquals(10.0, defaults.crtTargetThroughputGbps());
         Assertions.assertEquals(2.5, custom.crtTargetThroughputGbps());
         Assertions.assertEquals(1024, custom.crtMinimumThroughputBps());

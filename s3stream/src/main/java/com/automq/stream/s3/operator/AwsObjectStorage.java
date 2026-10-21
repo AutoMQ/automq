@@ -815,7 +815,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
          */
         public static Configuration fromBucketURI(BucketURI uri) {
-            String implementation = uri.extensionString("sdkImpl", "netty");
+            String implementation = uri.extensionString("sdkImpl", "crt");
             if (!"netty".equals(implementation) && !"crt".equals(implementation)) {
                 throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
             }
@@ -839,7 +839,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         /**
-         * Creates a builder with Netty, CRT health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
+         * Creates a builder with CRT, health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
          */
         public static Builder builder() {
             return new Builder();
@@ -849,7 +849,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Builds immutable configurations; subsequent builder changes do not affect previously built snapshots.
          */
         public static final class Builder {
-            private String sdkImplementation = "netty";
+            private String sdkImplementation = "crt";
             private long crtMinimumThroughputBps = 32L * 1024 * 1024;
             private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
             private double crtTargetThroughputGbps = 10.0;
