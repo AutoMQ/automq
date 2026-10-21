@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -31,7 +32,6 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -73,7 +73,7 @@ public class ElasticLogSegmentManagerTest {
     @Test
     public void testQueuedDeletesNotifyEachAcknowledgedSnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
-        CompletableFuture<AppendResult> firstAppend = new CompletableFuture<>();
+        CompletableFuture<AppendResult> firstAppend = new DirectExecutorFuture<>();
         CompletableFuture<AppendResult> secondAppend = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(firstAppend, secondAppend);
         ElasticLogStreamManager streamManager = mock(ElasticLogStreamManager.class);
@@ -92,11 +92,11 @@ public class ElasticLogSegmentManagerTest {
         manager.logSegmentEventListener().onEvent(10L, second, ElasticLogSegmentEvent.SEGMENT_DELETE);
         verifyNoInteractions(listener);
         firstAppend.complete(mock(AppendResult.class));
-        verify(metaStream, timeout(5000).times(2)).append(any(MetaKeyValue.class));
+        verify(metaStream, times(2)).append(any(MetaKeyValue.class));
         secondAppend.complete(mock(AppendResult.class));
 
         ArgumentCaptor<ElasticLogMeta> snapshots = ArgumentCaptor.forClass(ElasticLogMeta.class);
-        verify(listener, timeout(5000).times(2)).onChange(snapshots.capture());
+        verify(listener, times(2)).onChange(snapshots.capture());
         assertEquals(Set.of(10L, 20L), new HashSet<>(baseOffsets(snapshots.getAllValues().get(0))));
         assertEquals(List.of(20L), baseOffsets(snapshots.getAllValues().get(1)));
         assertSame(snapshots.getAllValues().get(1), manager.logMeta());
@@ -157,6 +157,19 @@ public class ElasticLogSegmentManagerTest {
         manager.remove(0L, segment);
 
         verifyNoInteractions(listener);
+    }
+
+    /** Keeps queue-drain callbacks deterministic instead of relying on the shared common pool. */
+    private static class DirectExecutorFuture<T> extends CompletableFuture<T> {
+        @Override
+        public Executor defaultExecutor() {
+            return Runnable::run;
+        }
+
+        @Override
+        public <U> CompletableFuture<U> newIncompleteFuture() {
+            return new DirectExecutorFuture<>();
+        }
     }
 
     private static ElasticLogSegment segmentWithBaseOffset(long baseOffset) {
