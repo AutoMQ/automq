@@ -530,7 +530,7 @@ public class PartitionSnapshotsManager {
     }
 
     static LogEventListener newLogEventListener(PartitionWithVersion version, Runnable notifySnapshotChanged) {
-        return (segment, event) -> {
+        return meta -> {
             version.version.incrementSegmentsVersion();
             notifySnapshotChanged.run();
         };
