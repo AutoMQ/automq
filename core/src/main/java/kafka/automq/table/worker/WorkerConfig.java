@@ -61,6 +61,13 @@ public class WorkerConfig {
         return config.tableTopicLocation;
     }
 
+    /**
+     * Returns whether output records include Kafka header, key, and metadata columns.
+     */
+    public boolean metadataColumnsEnabled() {
+        return config.tableTopicMetadataColumnsEnabled;
+    }
+
     public TableTopicSchemaType schemaType() {
         return config.tableTopicSchemaType;
     }

@@ -271,6 +271,9 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_LOCATION_CONFIG = "automq.table.topic.location";
     public static final String TABLE_TOPIC_LOCATION_DOC = "The location of the Iceberg table created for the table topic. " +
         "If blank, the catalog determines the location. This applies only when the table is created.";
+    public static final String TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG = "automq.table.topic.kafka.metadata.columns.enable";
+    public static final String TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DOC = "Controls whether Table Topic records include the _kafka_header, _kafka_key, and _kafka_metadata columns.";
+    public static final boolean TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DEFAULT = true;
 
     public static final String TABLE_TOPIC_SCHEMA_TYPE_CONFIG = "automq.table.topic.schema.type";
     public static final String TABLE_TOPIC_SCHEMA_TYPE_DOC = "[DEPRECATED] The table topic schema type configuration. " +

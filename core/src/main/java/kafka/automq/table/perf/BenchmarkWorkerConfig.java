@@ -41,6 +41,11 @@ class BenchmarkWorkerConfig extends WorkerConfig {
     }
 
     @Override
+    public boolean metadataColumnsEnabled() {
+        return true;
+    }
+
+    @Override
     public TableTopicSchemaType schemaType() {
         return TableTopicSchemaType.NONE;
     }
