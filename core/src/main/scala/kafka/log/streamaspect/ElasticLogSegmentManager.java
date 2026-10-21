@@ -21,8 +21,6 @@ package kafka.log.streamaspect;
 
 import kafka.cluster.LogEventListener;
 
-import org.apache.kafka.storage.internals.log.LogSegment;
-
 import com.automq.stream.api.Stream;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -66,6 +64,7 @@ public class ElasticLogSegmentManager {
         this.logIdent = logIdent;
     }
 
+    /** Adds a segment to the in-memory manager without publishing unpersisted metadata. */
     public void put(long baseOffset, ElasticLogSegment segment) {
         segmentLock.lock();
         try {
@@ -74,7 +73,6 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
     }
 
     public void putInflightCleaned(long baseOffset, ElasticLogSegment segment) {
@@ -93,32 +91,24 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenAccept(rst ->
-            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE)
-        );
+        return asyncPersistLogMeta().thenApply(rst -> null);
     }
 
+    /** Removes a segment from the in-memory manager without publishing unpersisted metadata. */
     public ElasticLogSegment remove(long baseOffset) {
         segmentLock.lock();
         try {
-            ElasticLogSegment segment = segments.remove(baseOffset);
-            if (segment != null) {
-                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
-            }
-            return segment;
+            return segments.remove(baseOffset);
         } finally {
             segmentLock.unlock();
         }
     }
 
+    /** Removes the expected segment instance without publishing unpersisted metadata. */
     public boolean remove(long baseOffset, ElasticLogSegment segment) {
         segmentLock.lock();
         try {
-            boolean removed = segments.remove(baseOffset, segment);
-            if (removed) {
-                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
-            }
-            return removed;
+            return segments.remove(baseOffset, segment);
         } finally {
             segmentLock.unlock();
         }
@@ -132,6 +122,7 @@ public class ElasticLogSegmentManager {
         }
     }
 
+    /** Persists metadata and notifies listeners after the acknowledged snapshot is cached. */
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
         ElasticLogMeta meta;
         Map<String, Long> trimOffsets;
@@ -145,7 +136,6 @@ public class ElasticLogSegmentManager {
                 .collect(Collectors.toList());
 
             meta = logMeta(streams, segmentList);
-            this.logMeta = meta;
             // We calculate trimOffsets in the lock to ensure that no more new stream with data is created during the calculation.
             trimOffsets = calTrimOffset(
                 streams,
@@ -158,6 +148,8 @@ public class ElasticLogSegmentManager {
 
         MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
         return metaStream.append(kv).thenApply(nil -> {
+            this.logMeta = meta;
+            notifyLogEventListeners(meta);
             LOGGER.info("{} save log meta {}", logIdent, meta);
             trimStream(trimOffsets);
             return meta;
@@ -239,14 +231,10 @@ public class ElasticLogSegmentManager {
         logEventListeners.add(listener);
     }
 
-    public void notifySegmentUpdate() {
-        notifyLogEventListeners(null, LogEventListener.Event.SEGMENT_UPDATE);
-    }
-
-    private void notifyLogEventListeners(LogSegment segment, LogEventListener.Event event) {
+    private void notifyLogEventListeners(ElasticLogMeta meta) {
         for (LogEventListener listener : logEventListeners) {
             try {
-                listener.onChanged(segment, event);
+                listener.onChange(meta);
             } catch (Throwable e) {
                 LOGGER.error("got notify listener error", e);
             }
