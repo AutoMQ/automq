@@ -63,13 +63,16 @@ import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
 import software.amazon.awssdk.checksums.SdkChecksum;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.http.HttpStatusCode;
-import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
+import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.LegacyMd5Plugin;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder;
@@ -545,15 +548,23 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (StringUtils.isNotBlank(endpoint)) {
             builder.endpointOverride(URI.create(endpoint));
         }
-        if (!OpenSsl.isAvailable()) {
-            logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
+        if ("crt-http".equals(configuration.sdkImplementation())) {
+            AwsCrtAsyncHttpClient.Builder httpBuilder = AwsCrtAsyncHttpClient.builder();
+            configuration.configureCrtHttpBuilder(httpBuilder, maxConcurrency);
+            builder.httpClientBuilder(httpBuilder);
+        } else {
+            if (!OpenSsl.isAvailable()) {
+                logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
+            }
+            builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
+                .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
+                .connectionTimeout(configuration.connectionTimeout()));
         }
-        SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
-            .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
-            .connectionTimeout(configuration.connectionTimeout())
-            .build();
-        builder.httpClient(httpClient);
-        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(false));
+        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
+        // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
+        builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
+            .addPlugin(LegacyMd5Plugin.create());
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
@@ -815,8 +826,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
          */
         public static Configuration fromBucketURI(BucketURI uri) {
-            String implementation = uri.extensionString("sdkImpl", "crt");
-            if (!"netty".equals(implementation) && !"crt".equals(implementation)) {
+            String implementation = uri.extensionString("sdkImpl", "crt-http");
+            if (!"netty".equals(implementation) && !"crt".equals(implementation) && !"crt-http".equals(implementation)) {
                 throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
             }
             Builder builder = builder().sdkImplementation(implementation)
@@ -825,21 +836,23 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 .numRetries(Integer.parseInt(uri.extensionString(BucketURI.NUM_RETRIES_KEY, "2")))
                 .apiCallTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"))))
                 .apiCallAttemptTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"))));
-            if ("crt".equals(implementation)) {
+            if ("crt".equals(implementation) || "crt-http".equals(implementation)) {
                 int healthTimeout = Integer.parseInt(uri.extensionString("crtMinimumThroughputTimeoutSeconds", "2"));
                 if (healthTimeout < 2) {
                     throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
                 }
+                builder.crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout));
+            }
+            if ("crt".equals(implementation)) {
                 builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
-                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
-                    .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout))
                     .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
             }
             return builder.build();
         }
 
         /**
-         * Creates a builder with CRT, health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
+         * Creates a builder using Java S3 with CRT HTTP. Transfer targets and native memory options apply only to sdkImpl=crt.
          */
         public static Builder builder() {
             return new Builder();
@@ -849,7 +862,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Builds immutable configurations; subsequent builder changes do not affect previously built snapshots.
          */
         public static final class Builder {
-            private String sdkImplementation = "crt";
+            private String sdkImplementation = "crt-http";
             private long crtMinimumThroughputBps = 32L * 1024 * 1024;
             private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
             private double crtTargetThroughputGbps = 10.0;
@@ -864,7 +877,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             }
 
             /**
-             * Selects the S3 SDK implementation, either netty or crt.
+             * Selects Java S3 with CRT HTTP (crt-http), Java S3 with Netty (netty), or native CRT S3 (crt).
              */
             public Builder sdkImplementation(String implementation) {
                 this.sdkImplementation = implementation;
@@ -953,6 +966,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             if (crtMaxNativeMemoryBytes != -1) {
                 builder.maxNativeMemoryLimitInBytes(crtMaxNativeMemoryBytes);
             }
+        }
+
+        /** Configures transport-owned connections; native S3 transfer scheduling and memory settings do not apply. */
+        void configureCrtHttpBuilder(AwsCrtAsyncHttpClient.Builder builder, int inheritedMaxConcurrency) {
+            builder.maxConcurrency(maxConcurrency == -1 ? inheritedMaxConcurrency : maxConcurrency)
+                .connectionTimeout(connectionTimeout)
+                // Share connection health settings with native CRT S3; this is not a whole-response deadline.
+                .connectionHealthConfiguration(health -> health.minimumThroughputInBps(crtMinimumThroughputBps)
+                    .minimumThroughputTimeout(crtMinimumThroughputTimeout));
         }
     }
 
