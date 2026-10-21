@@ -122,7 +122,6 @@ class ElasticLog(val metaStream: MetaStream,
     streamManager.setListener((_, event) => {
         if (event == ElasticStreamMetaEvent.STREAM_DO_CREATE) {
             logSegmentManager.asyncPersistLogMeta()
-            logSegmentManager.notifySegmentUpdate();
         }
     })
 
