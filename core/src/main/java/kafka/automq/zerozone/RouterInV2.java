@@ -207,6 +207,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         }
 
         ZeroZoneThreadLocalContext.writeContext().channelOffset = channelOffset;
+        ZeroZoneThreadLocalContext.writeContext().recoveryScheduling = flag.recoveryScheduling();
         Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
         short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();

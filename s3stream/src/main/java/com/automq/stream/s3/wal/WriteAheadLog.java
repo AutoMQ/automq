@@ -58,6 +58,25 @@ public interface WriteAheadLog {
      */
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
+    /**
+     * Append a latency-sensitive record, bypassing optional batching where supported.
+     * Ownership, durability and failure semantics are identical to {@link #append};
+     * implementations without a separate scheduling path use the ordinary append.
+     *
+     * @return the normal durable append result, not an acknowledgement of scheduling
+     */
+    default CompletableFuture<AppendResult> appendUrgent(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(context, streamRecordBatch);
+    }
+
+    /**
+     * Coalesces queued recovery writes using a shorter batch interval where supported.
+     * Record ownership, fencing and durable completion remain identical to ordinary append.
+     */
+    default CompletableFuture<AppendResult> appendRecovery(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(context, streamRecordBatch);
+    }
+
     CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
 
     CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset);

@@ -109,7 +109,17 @@ public class ObjectRouterChannel implements RouterChannel {
         return startCf.thenCompose(nil -> append0(targetNodeId, orderHint, data));
     }
 
+    /** Bypasses optional router-WAL batching for a one-shot recovery frame, never its durable gate. */
+    @Override
+    public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data, boolean urgent) {
+        return startCf.thenCompose(nil -> append0(targetNodeId, orderHint, data, urgent));
+    }
+
     CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data) {
+        return append0(targetNodeId, orderHint, data, false);
+    }
+
+    private CompletableFuture<AppendResult> append0(int targetNodeId, short orderHint, ByteBuf data, boolean urgent) {
         // The record will be released after appending is done. Use the ALLOC to decrease the memory fragmentation.
         StreamRecordBatch record = StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data, ALLOC);
         for (; ; ) {
@@ -120,7 +130,9 @@ public class ObjectRouterChannel implements RouterChannel {
                     return CompletableFuture.failedFuture(new IllegalStateException("ObjectRouterChannel is closed"));
                 }
                 record.retain();
-                return wal.append(TraceContext.DEFAULT, record).thenApply(walRst -> {
+                CompletableFuture<com.automq.stream.s3.wal.AppendResult> durable = urgent
+                    ? wal.appendRecovery(TraceContext.DEFAULT, record) : wal.append(TraceContext.DEFAULT, record);
+                return durable.thenApply(walRst -> {
                     readLock.lock();
                     try {
                         if (closed) {

@@ -28,6 +28,8 @@ import io.opentelemetry.context.Context;
 public class AppendContext extends TraceContext {
     public static final AppendContext DEFAULT = new AppendContext();
     private ByteBuf linkRecord;
+    private boolean urgent;
+    private boolean recoveryScheduling;
 
     public AppendContext() {
         super(false, null, null);
@@ -47,5 +49,28 @@ public class AppendContext extends TraceContext {
 
     public ByteBuf linkRecord() {
         return this.linkRecord;
+    }
+
+    /**
+     * Request prompt WAL upload for this append without changing its durability barrier.
+     * Set this only on a dedicated context, never on the shared {@link #DEFAULT}.
+     */
+    public void urgent(boolean urgent) {
+        this.urgent = urgent;
+    }
+
+    /** @return whether this append requests prompt WAL upload instead of optional batching */
+    public boolean urgent() {
+        return urgent;
+    }
+
+    /** Requests bounded recovery batching on a dedicated context; durable completion is unchanged. */
+    public void recoveryScheduling(boolean recoveryScheduling) {
+        this.recoveryScheduling = recoveryScheduling;
+    }
+
+    /** Returns whether this append should coalesce using the existing short recovery batch interval. */
+    public boolean recoveryScheduling() {
+        return recoveryScheduling;
     }
 }

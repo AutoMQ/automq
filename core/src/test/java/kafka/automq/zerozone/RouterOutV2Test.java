@@ -53,6 +53,7 @@ import io.netty.buffer.Unpooled;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies how RouterOut V2 selects and aggregates local write paths.
@@ -259,6 +260,50 @@ public class RouterOutV2Test {
         assertEquals(Errors.INVALID_PRODUCER_ID_MAPPING, result.get().get(TOPIC_PARTITION).error);
     }
 
+    /** Given a recovery frame, all siblings are urgent but the ACK still waits for both WAL stages. */
+    @Test
+    public void testRecoveryPriorityWaitsForDurableSiblings() {
+        CompletableFuture<RouterChannel.AppendResult> routerDurable = new CompletableFuture<>();
+        AtomicInteger urgentCount = new AtomicInteger();
+        StubRouterChannel channel = new StubRouterChannel() {
+            @Override
+            public CompletableFuture<AppendResult> append(int node, short hint, ByteBuf block, boolean urgent) {
+                assertTrue(urgent);
+                List<ZoneRouterProduceRequest> decoded = ZoneRouterPackReader.decodeDataBlock(block);
+                try {
+                    assertTrue(new ZoneRouterProduceRequest.Flag(decoded.get(0).flag()).recoveryScheduling());
+                    urgentCount.incrementAndGet();
+                    return routerDurable;
+                } finally {
+                    decoded.forEach(ZoneRouterProduceRequest::close);
+                    block.release();
+                }
+            }
+        };
+        CompletableFuture<AutomqZoneRouterResponseData.Response> first = new CompletableFuture<>();
+        CompletableFuture<AutomqZoneRouterResponseData.Response> second = new CompletableFuture<>();
+        AtomicInteger dataAppendCount = new AtomicInteger();
+        AtomicInteger ackCount = new AtomicInteger();
+        RouterOutV2 out = new RouterOutV2(CURRENT_NODE, channel, (topic, partition, client) -> CURRENT_NODE,
+            (offset, request) -> {
+                assertTrue(new ZoneRouterProduceRequest.Flag(request.flag()).recoveryScheduling());
+                dataAppendCount.incrementAndGet();
+                int partition = request.data().topicData().iterator().next().partitionData().get(0).index();
+                return partition == 0 ? first : second;
+            }, LocalWriteMode.ROUTER_CHANNEL, new FailedAsyncSender(), new MockTime());
+        out.handleProduceAppendProxy(produceArgs(Map.of(TOPIC_PARTITION, records(), REMOTE_TOPIC_PARTITION, records()),
+            result -> ackCount.incrementAndGet(), (short) -1), true);
+        assertEquals(2, urgentCount.get());
+        assertEquals(0, dataAppendCount.get());
+        assertEquals(0, ackCount.get());
+        routerDurable.complete(new RouterChannel.AppendResult(1L, channel.offset));
+        assertEquals(2, dataAppendCount.get());
+        first.complete(successResponse(TOPIC_PARTITION));
+        assertEquals(0, ackCount.get());
+        second.complete(successResponse(REMOTE_TOPIC_PARTITION));
+        assertEquals(1, ackCount.get());
+    }
+
     private static ProduceRequestArgs produceArgs(
         java.util.function.Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> callback,
         short acks
@@ -319,7 +364,7 @@ public class RouterOutV2Test {
         }
     }
 
-    private static final class StubRouterChannel implements RouterChannel {
+    private static class StubRouterChannel implements RouterChannel {
         private final AtomicInteger appendCount = new AtomicInteger();
         private final ByteBuf offset = Unpooled.wrappedBuffer(new byte[] {1});
         private AppendResult lastAppendResult;

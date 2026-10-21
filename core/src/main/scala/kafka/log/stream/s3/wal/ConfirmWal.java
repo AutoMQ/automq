@@ -135,6 +135,16 @@ public class ConfirmWal implements WriteAheadLog {
     }
 
     @Override
+    public CompletableFuture<AppendResult> appendUrgent(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return wal.appendUrgent(context, streamRecordBatch);
+    }
+
+    @Override
+    public CompletableFuture<AppendResult> appendRecovery(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return wal.appendRecovery(context, streamRecordBatch);
+    }
+
+    @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return wal.get(recordOffset);
     }

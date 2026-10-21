@@ -8,7 +8,7 @@ import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
-import kafka.automq.zerozone.ZeroZoneThreadLocalContext
+import kafka.automq.zerozone.{LeaderRecoveryBatching, ZeroZoneThreadLocalContext}
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, OpenHint, PartitionStatusTracker, ReadHint}
@@ -218,6 +218,22 @@ class ElasticReplicaManager(
     logDirFailureHandler.start()
   }
 
+  @volatile private var produceDrainRecovery = false
+
+  /** Reports controlled shutdown so routed siblings can avoid optional batching while admission drains. */
+  def isProduceDraining: Boolean = produceDrainRecovery
+
+  /** Reports a known closed local Produce replica; subsequent append checks remain authoritative. */
+  def isLocalProduceClosed(topicPartition: TopicPartition): Boolean =
+    getPartitionOrError(topicPartition).toOption.exists(_.isProduceClosed)
+
+  /** Shorten accepted object-WAL batches before controlled shutdown starts waiting for partition drain. */
+  override def beginControlledShutdown(): Unit = {
+    produceDrainRecovery = true
+    startDrainBatching()
+    super.beginControlledShutdown()
+  }
+
   private val produceRegistrations = new ThreadLocal[ArrayBuffer[Partition]]()
 
   /** Keep each actually appended partition hosted until its delayed Produce is registered. */
@@ -242,6 +258,12 @@ class ElasticReplicaManager(
     } finally {
       if (previous == null) produceRegistrations.remove() else produceRegistrations.set(previous)
       if (registrations != null) registrations.foreach(_.finishProduceRegistration())
+    }
+  }
+
+  private def startDrainBatching(): Unit = {
+    if (LeaderRecoveryBatching.startBeforeDrain(metadataCache.autoMQVersion(), localBrokerId)) {
+      info("Broker/partition drain: cap object WAL batching at 50ms within the shared recovery budget")
     }
   }
 
@@ -271,6 +293,7 @@ class ElasticReplicaManager(
           case hostedPartition: HostedPartition.Online =>
             // AutoMQ inject start
             if (ElasticLogManager.enabled() && Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported)) {
+              startDrainBatching()
               try {
                 hostedPartition.partition.drainProduceBeforeClose()
               } catch {
@@ -287,6 +310,7 @@ class ElasticReplicaManager(
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
+                startDrainBatching()
                 val start = System.currentTimeMillis()
                 hostedPartition.partition.close()
                 info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")

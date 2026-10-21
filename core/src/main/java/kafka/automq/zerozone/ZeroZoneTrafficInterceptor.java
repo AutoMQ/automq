@@ -27,6 +27,7 @@ import kafka.automq.utils.AsyncSender;
 import kafka.network.RequestChannel;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
+import kafka.server.metadata.KRaftMetadataCache;
 import kafka.server.streamaspect.ElasticKafkaApis;
 import kafka.server.streamaspect.ElasticReplicaManager;
 
@@ -52,6 +53,7 @@ import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +71,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
     private final ElasticKafkaApis kafkaApis;
+    private final ElasticReplicaManager replicaManager;
     private final ZeroZoneConfig zeroZoneConfig;
     private final List<BucketURI> config;
     private final BucketURI bucketURI;
@@ -87,6 +90,10 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     private final SnapshotReadPartitionsManager snapshotReadPartitionsManager;
     private volatile AutoMQVersion version;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final RecoveryBatchingWindow recoveryBatchingWindow;
+    private final RecoveryProduceScheduling recoveryProduceScheduling = new RecoveryProduceScheduling();
+    private final KRaftMetadataCache publishedMetadata;
+    private volatile MetadataImage appliedImage;
 
     public ZeroZoneTrafficInterceptor(
         RouterChannelProvider routerChannelProvider,
@@ -97,6 +104,9 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         KafkaConfig kafkaConfig) {
         this.routerChannelProvider = routerChannelProvider;
         this.kafkaApis = kafkaApis;
+        this.replicaManager = (ElasticReplicaManager) kafkaApis.replicaManager();
+        this.publishedMetadata = metadataCache instanceof KRaftMetadataCache ? (KRaftMetadataCache) metadataCache : null;
+        this.appliedImage = publishedMetadata == null ? MetadataImage.EMPTY : publishedMetadata.currentImage();
 
         if (kafkaConfig.rack().isEmpty()) {
             throw new IllegalArgumentException("The node rack should be set when enable cross available zone router");
@@ -105,6 +115,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         String interBrokerListenerName = kafkaConfig.interBrokerListenerName().value();
         int nodeId = kafkaConfig.nodeId();
+        this.recoveryBatchingWindow = RecoveryBatchingWindow.forNode(nodeId);
         Node currentNode = kafkaConfig.effectiveAdvertisedBrokerListeners()
             .find(endpoint -> Objects.equals(interBrokerListenerName, endpoint.listenerName().value()))
             .map(endpoint -> new Node(nodeId, endpoint.host(), endpoint.port()))
@@ -132,7 +143,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
         // Zero Zone V2
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time);
-        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode,
+        this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), this::getProduceRouteOutNode,
             routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time);
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
@@ -154,6 +165,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
+            recoveryProduceScheduling.clear();
             committedEpochManager.close();
             snapshotReadPartitionsManager.close();
             asyncSender.close();
@@ -172,7 +184,15 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         ClientIdMetadata clientId = args.clientId();
         fillRackIfMissing(clientId);
         if (version.isZeroZoneV2Supported()) {
-            routerOutV2.handleProduceAppendProxy(args);
+            if (publishedMetadata != null) {
+                recoveryProduceScheduling.observePendingHandoffs(appliedImage, publishedMetadata.currentImage(),
+                    args.entriesPerPartition().keySet());
+            }
+            boolean recovery = args.requiredAcks() != 0
+                && (replicaManager.isProduceDraining()
+                    || args.entriesPerPartition().keySet().stream().anyMatch(replicaManager::isLocalProduceClosed)
+                    || recoveryProduceScheduling.consume(args.entriesPerPartition().keySet()));
+            routerOutV2.handleProduceAppendProxy(args, recovery);
         } else {
             if (clientId.rack() != null) {
                 routerOut.handleProduceAppendProxy(args);
@@ -233,14 +253,23 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         if (closed.get()) {
             return;
         }
+        if (newImage.features().autoMQVersion().isZeroZoneV2Supported()) {
+            recoveryProduceScheduling.onMetadataUpdate(delta);
+        }
         try {
             mapping.onChange(delta, newImage);
             snapshotReadPartitionsManager.onChange(delta, newImage);
             version = newImage.features().autoMQVersion();
             this.snapshotReadPartitionsManager.setVersion(version);
             routerChannelProvider.onChange(delta, newImage);
+            if (version.isZeroZoneV2Supported() && LeaderRecoveryBatching.hasLeaderHandoff(delta)
+                && recoveryBatchingWindow.startRecovery()) {
+                LOGGER.info("Leader handoff: cap object WAL batching at 50ms within the shared recovery budget");
+            }
         } catch (Throwable e) {
             LOGGER.error("Failed to handle metadata update", e);
+        } finally {
+            appliedImage = newImage;
         }
     }
 
@@ -251,6 +280,17 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
 
     private AutoMQVersion version() {
         return version;
+    }
+
+    private Node getProduceRouteOutNode(String topic, int partition, ClientIdMetadata clientId) {
+        Node node = mapping.getRouteOutNode(topic, partition, clientId);
+        if (node.id() == kafkaApis.config().nodeId()
+            && replicaManager.isLocalProduceClosed(new TopicPartition(topic, partition))) {
+            // A closed replica cannot admit this write. Avoid persisting a router
+            // payload that the unchanged receiver validation would reject.
+            return Node.noNode();
+        }
+        return node;
     }
 
     @Override

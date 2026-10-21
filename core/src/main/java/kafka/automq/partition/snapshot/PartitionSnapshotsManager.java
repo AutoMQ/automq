@@ -82,11 +82,13 @@ public class PartitionSnapshotsManager {
     private final ScheduledExecutorService longPollExecutor = Threads.newSingleThreadScheduledExecutor(
         ThreadUtils.createThreadFactory("automq-partition-snapshot-long-poll", true), LOGGER, true);
     private final AtomicBoolean partitionNotificationPending = new AtomicBoolean(false);
+    private final SnapshotReadCommitter snapshotReadCommitter;
 
     public PartitionSnapshotsManager(Time time, AutoMQConfig config, ConfirmWAL confirmWAL,
         Supplier<AutoMQVersion> versionGetter) {
         this.time = time;
         this.confirmWAL = confirmWAL;
+        this.snapshotReadCommitter = new SnapshotReadCommitter(time, longPollExecutor, confirmWAL);
         if (config.zoneRouterChannels().isPresent()) {
             Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::cleanExpiredSessions, 1, 1, TimeUnit.MINUTES);
             Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(() -> {
@@ -312,11 +314,13 @@ public class PartitionSnapshotsManager {
                 CompletableFuture<Void> commitCf = newSession ?
                     // The proxy node's first snapshot-read request needs to commit immediately to ensure the data could be read.
                     confirmWAL.commit(0, false)
-                    // The proxy node's snapshot-read cache isn't enough to hold the 'uncommitted' data,
-                    // so the proxy node request a commit to ensure the data could be read from block cache.
-                    : confirmWAL.commit(1000, false);
-                inflightCommitCfSet.add(commitCf);
-                commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
+                    // Cache eviction already blocks remote readers. Use a broker-wide bounded urgent commit,
+                    // not an ordinary upload paced by the time the evicted records took to accumulate.
+                    : snapshotReadCommitter.request();
+                // Coalesced requests share a future. Retain only one completion callback per session/batch.
+                if (inflightCommitCfSet.add(commitCf)) {
+                    commitCf.whenComplete((rst, ex) -> inflightCommitCfSet.remove(commitCf));
+                }
             }
             return CompletableFuture.completedFuture(new AutomqGetPartitionSnapshotResponse(resp));
         }

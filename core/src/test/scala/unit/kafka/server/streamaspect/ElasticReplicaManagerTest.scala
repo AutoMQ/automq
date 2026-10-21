@@ -1,5 +1,6 @@
 package unit.kafka.server.streamaspect
 
+import com.automq.stream.s3.wal.impl.`object`.RecoveryBatchingWindow
 import kafka.automq.AutoMQConfig
 import kafka.automq.zerozone.AcceptedProduceDrain
 import kafka.cluster.{BrokerEndPoint, Partition}
@@ -38,7 +39,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, anyString}
-import org.mockito.Mockito.{doReturn, doThrow, mock, spy, verify, when}
+import org.mockito.Mockito.{doReturn, doThrow, mock, mockStatic, spy, verify, when}
 
 import java.io.File
 import java.nio.file.Files
@@ -145,6 +146,27 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
         recordValidationStatsCallback = _ => throw new IllegalStateException("injected validation callback failure")))
       verify(partition).finishProduceRegistration()
     } finally rm.shutdown(checkpointHW = false)
+  }
+
+  /** The real shutdown entry point must signal the bounded WAL policy before any controller/drain wait. */
+  @Test
+  def testControlledShutdownStartsDrainBatching(): Unit = {
+    val rm = setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager]
+    val window = mock(classOf[RecoveryBatchingWindow])
+    when(rm.metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V3)
+    when(window.startRecovery()).thenReturn(true)
+    val policies = mockStatic(classOf[RecoveryBatchingWindow])
+    try {
+      policies.when(() => RecoveryBatchingWindow.forNode(config.brokerId)).thenReturn(window)
+      assertFalse(rm.isProduceDraining)
+      rm.beginControlledShutdown()
+      assertTrue(rm.isProduceDraining)
+      verify(window).startRecovery()
+    } finally {
+      policies.close()
+      rm.shutdown(checkpointHW = false)
+    }
   }
 
   /** Given a long poll on a snapshot replica, removing it must wake the fetch without advancing its timer. */

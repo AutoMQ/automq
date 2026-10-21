@@ -52,6 +52,7 @@ import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
 import com.automq.stream.s3.wal.WriteAheadLog;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 import com.automq.stream.utils.FutureTicker;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -173,6 +174,9 @@ public class S3Storage implements Storage {
      * @see #forceUpload
      */
     private final FutureTicker forceUploadTicker = new FutureTicker(100, TimeUnit.MILLISECONDS, backgroundExecutor);
+    // Keep close-time uploads grouped, but do not add the normal 100ms wait to
+    // the existing bounded recovery window. Upload and commit gates are unchanged.
+    private final FutureTicker recoveryForceUploadTicker = new FutureTicker(10, TimeUnit.MILLISECONDS, backgroundExecutor);
     private final BlockingQueue<WalWriteRequest> backoffRecords = new LinkedBlockingQueue<>();
     private final ScheduledFuture<?> drainBackoffTask;
     protected final StreamManager streamManager;
@@ -191,6 +195,7 @@ public class S3Storage implements Storage {
 
     private long lastLogTimestamp = 0L;
     private volatile double maxDataWriteRate = 0.0;
+    private final AtomicBoolean firstRateLimitedDeltaWALUpload = new AtomicBoolean(true);
 
     private final AtomicLong pendingUploadBytes = new AtomicLong(0L);
     private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
@@ -413,6 +418,18 @@ public class S3Storage implements Storage {
         });
     }
 
+    private CompletableFuture<AppendResult> appendToDeltaWAL(AppendContext context, StreamRecordBatch record)
+        throws OverCapacityException {
+        TraceContext trace = new TraceContext(context);
+        if (context.urgent()) {
+            return deltaWAL.appendUrgent(trace, record);
+        }
+        if (context.recoveryScheduling()) {
+            return deltaWAL.appendRecovery(trace, record);
+        }
+        return deltaWAL.append(trace, record);
+    }
+
     /**
      * Append record to WAL.
      *
@@ -448,11 +465,11 @@ public class S3Storage implements Storage {
                 if (context.linkRecord() == null) {
                     StreamRecordBatch streamRecord = request.record;
                     streamRecord.retain();
-                    appendCf = deltaWAL.append(new TraceContext(context), streamRecord);
+                    appendCf = appendToDeltaWAL(context, streamRecord);
                 } else {
                     StreamRecordBatch record = request.record;
                     StreamRecordBatch linkStreamRecord = toLinkRecord(record, context.linkRecord().retainedSlice());
-                    appendCf = deltaWAL.append(new TraceContext(context), linkStreamRecord);
+                    appendCf = appendToDeltaWAL(context, linkStreamRecord);
                 }
 
             } catch (OverCapacityException e) {
@@ -705,7 +722,10 @@ public class S3Storage implements Storage {
             pendingStreamUploads.put(streamId, cf);
         }
         // Wait for a while to group force upload tasks.
-        forceUploadTicker.tick().whenComplete((nil, ex) -> {
+        FutureTicker ticker = RecoveryBatchingWindow.forNode(config.nodeId())
+            .batchIntervalNanos(TimeUnit.MILLISECONDS.toNanos(100)) < TimeUnit.MILLISECONDS.toNanos(100)
+            ? recoveryForceUploadTicker : forceUploadTicker;
+        ticker.tick().whenComplete((nil, ex) -> {
             FORCE_UPLOAD_WAL_AWAIT_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS));
             uploadDeltaWAL(streamId, true);
             // Wait for all tasks contains streamId complete.
@@ -853,7 +873,11 @@ public class S3Storage implements Storage {
             // calculate upload rate
             long elapsed = System.currentTimeMillis() - context.cache.createdTimestamp();
             double rate;
-            if (context.force || elapsed <= 100L) {
+            // A restarted broker starts with no learned write rate. Rate-limiting its first upload to the rate at
+            // which that block accumulated makes the broker wait roughly the accumulation time again before the
+            // records become durable in object storage. Burst this one bounded block to avoid extending recovery;
+            // subsequent uploads retain the adaptive rate limit.
+            if (context.force || elapsed <= 100L || firstRateLimitedDeltaWALUpload.compareAndSet(true, false)) {
                 rate = Long.MAX_VALUE;
             } else {
                 rate = context.cache.size() * 1000.0 / Math.min(20000L, elapsed);

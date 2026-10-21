@@ -31,6 +31,7 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
@@ -105,6 +106,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     private final AtomicLong mockOffset = new AtomicLong();
     private final long maxBatchBytes;
     private final long batchIntervalMillis;
+    private final RecoveryBatchingWindow recoveryBatchingWindow;
+    private final Runnable recoveryBatchListener = this::shortenRecoveryBatch;
 
     private long channelEpoch = 0L;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -124,6 +127,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         BiFunction<BucketURI, Boolean, ObjectWALService> factory) {
         this.nodeId = nodeId;
         this.readOnly = readOnly;
+        this.recoveryBatchingWindow = RecoveryBatchingWindow.forNode(nodeId);
         validateBuckets(buckets, readOnly);
         ObjectWALConfig batching = ObjectWALConfig.builder().withURI(buckets.get(0).toIdURI()).build();
         maxBatchBytes = batching.maxBytesInBatch();
@@ -151,6 +155,9 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         } catch (Throwable error) {
             allChannels.forEach(Channel::close);
             throw error;
+        }
+        if (!readOnly) {
+            recoveryBatchingWindow.addListener(recoveryBatchListener);
         }
     }
 
@@ -182,6 +189,12 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data) {
+        return append(targetNodeId, orderHint, data, false);
+    }
+
+    /** Shortens the shared router batch for recovery while retaining ordered durable completion. */
+    @Override
+    public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data, boolean recovery) {
         Request request;
         AppendTask task;
         writeLock.lock();
@@ -203,6 +216,10 @@ public class MultiBucketsRouterChannel implements RouterChannel {
                 lingerBatch = new LingerBatch();
             }
             lingerBatch.add(request);
+            if (recovery && lingerBatch != null) {
+                lingerBatch.shortenForRecovery(RecoveryBatchingWindow.recoveryBatchIntervalNanos(
+                    TimeUnit.MILLISECONDS.toNanos(batchIntervalMillis)));
+            }
         } finally {
             writeLock.unlock();
         }
@@ -225,6 +242,18 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         try {
             if (lingerBatch != null) {
                 lingerBatch.flush();
+            }
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    private void shortenRecoveryBatch() {
+        writeLock.lock();
+        try {
+            if (!closed && lingerBatch != null) {
+                lingerBatch.shortenForRecovery(recoveryBatchingWindow.batchIntervalNanos(
+                    TimeUnit.MILLISECONDS.toNanos(batchIntervalMillis)));
             }
         } finally {
             writeLock.unlock();
@@ -362,6 +391,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             writeLock.lock();
             try {
                 closed = true;
+                recoveryBatchingWindow.removeListener(recoveryBatchListener);
                 cache.invalidateAll();
                 cache.cleanUp();
                 flushBatch();
@@ -407,10 +437,24 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
     private class LingerBatch {
         final List<Request> requests = new ArrayList<>();
-        final ScheduledFuture<?> timer;
+        final long startNanos = System.nanoTime();
+        ScheduledFuture<?> timer;
+        long deadlineNanos;
         long size;
 
         LingerBatch() {
+            schedule(recoveryBatchingWindow.batchIntervalNanos(TimeUnit.MILLISECONDS.toNanos(batchIntervalMillis)));
+        }
+
+        void shortenForRecovery(long intervalNanos) {
+            if (startNanos + intervalNanos - deadlineNanos < 0) {
+                timer.cancel(false);
+                schedule(intervalNanos);
+            }
+        }
+
+        private void schedule(long intervalNanos) {
+            deadlineNanos = startNanos + intervalNanos;
             timer = SCHEDULER.schedule(() -> {
                 writeLock.lock();
                 try {
@@ -420,7 +464,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
                 } finally {
                     writeLock.unlock();
                 }
-            }, batchIntervalMillis, TimeUnit.MILLISECONDS);
+            }, Math.max(0, deadlineNanos - System.nanoTime()), TimeUnit.NANOSECONDS);
         }
 
         void add(Request request) {
