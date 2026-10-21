@@ -22,7 +22,6 @@ package kafka.log.streamaspect;
 import kafka.cluster.LogEventListener;
 
 import org.apache.kafka.server.common.automq.AutoMQVersion;
-import org.apache.kafka.storage.internals.log.LogSegment;
 
 import com.automq.stream.api.Stream;
 import com.automq.stream.utils.AsyncLogger;
@@ -86,27 +85,14 @@ public class ElasticLogSegmentManager {
         this.autoMQVersionSupplier = autoMQVersionSupplier;
     }
 
+    /** Adds a segment to the in-memory manager without publishing unpersisted metadata. */
     public void put(long baseOffset, ElasticLogSegment segment) {
-        put(baseOffset, segment, true);
-    }
-
-    /**
-     * Adds a segment to the in-memory manager and optionally emits the segment-create event.
-     *
-     * @param baseOffset segment base offset
-     * @param segment segment to add
-     * @param notify whether to notify segment listeners after the map update
-     */
-    public void put(long baseOffset, ElasticLogSegment segment, boolean notify) {
         segmentLock.lock();
         try {
             segments.put(baseOffset, segment);
             inflightCleanedSegments.remove(baseOffset, segment);
         } finally {
             segmentLock.unlock();
-        }
-        if (notify) {
-            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE);
         }
     }
 
@@ -126,55 +112,24 @@ public class ElasticLogSegmentManager {
         } finally {
             segmentLock.unlock();
         }
-        return asyncPersistLogMeta().thenAccept(rst ->
-            notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_CREATE)
-        );
+        return asyncPersistLogMeta().thenApply(rst -> null);
     }
 
+    /** Removes a segment from the in-memory manager without publishing unpersisted metadata. */
     public ElasticLogSegment remove(long baseOffset) {
-        return remove(baseOffset, true);
-    }
-
-    /**
-     * Removes a segment from the in-memory manager and optionally emits the segment-delete event.
-     *
-     * @param baseOffset segment base offset
-     * @param notify whether to notify segment listeners after the map update
-     * @return the removed segment, or {@code null} when no segment has this base offset
-     */
-    public ElasticLogSegment remove(long baseOffset, boolean notify) {
         segmentLock.lock();
         try {
-            ElasticLogSegment segment = segments.remove(baseOffset);
-            if (notify && segment != null) {
-                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
-            }
-            return segment;
+            return segments.remove(baseOffset);
         } finally {
             segmentLock.unlock();
         }
     }
 
+    /** Removes the expected segment instance without publishing unpersisted metadata. */
     public boolean remove(long baseOffset, ElasticLogSegment segment) {
-        return remove(baseOffset, segment, true);
-    }
-
-    /**
-     * Removes a specific segment from the in-memory manager and optionally emits the segment-delete event.
-     *
-     * @param baseOffset segment base offset
-     * @param segment expected segment instance
-     * @param notify whether to notify segment listeners after the map update
-     * @return whether the expected segment was removed
-     */
-    public boolean remove(long baseOffset, ElasticLogSegment segment, boolean notify) {
         segmentLock.lock();
         try {
-            boolean removed = segments.remove(baseOffset, segment);
-            if (notify && removed) {
-                notifyLogEventListeners(segment, LogEventListener.Event.SEGMENT_DELETE);
-            }
-            return removed;
+            return segments.remove(baseOffset, segment);
         } finally {
             segmentLock.unlock();
         }
@@ -194,6 +149,9 @@ public class ElasticLogSegmentManager {
 
     /**
      * Persists the current log metadata asynchronously.
+     *
+     * Listeners are notified after a successful append updates the cached metadata.
+     * Failed appends do not publish metadata, and listener failures do not fail persistence.
      *
      * @param trimStreams whether to trigger stream trims after the metadata append succeeds
      * @return the persisted log metadata
@@ -226,6 +184,7 @@ public class ElasticLogSegmentManager {
             ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
         return metaStream.append(kv).thenApply(nil -> {
             this.logMeta = meta;
+            notifyLogEventListeners(meta);
             LOGGER.info("{} save log meta {}", logIdent, meta);
             if (trimStreams) {
                 trimStream(trimOffsets);
@@ -309,14 +268,10 @@ public class ElasticLogSegmentManager {
         logEventListeners.add(listener);
     }
 
-    public void notifySegmentUpdate() {
-        notifyLogEventListeners(null, LogEventListener.Event.SEGMENT_UPDATE);
-    }
-
-    private void notifyLogEventListeners(LogSegment segment, LogEventListener.Event event) {
+    private void notifyLogEventListeners(ElasticLogMeta meta) {
         for (LogEventListener listener : logEventListeners) {
             try {
-                listener.onChanged(segment, event);
+                listener.onChange(meta);
             } catch (Throwable e) {
                 LOGGER.error("got notify listener error", e);
             }
