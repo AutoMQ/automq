@@ -218,10 +218,7 @@ public class LogConfig extends AbstractConfig {
             TopicConfig.REMOTE_LOG_STORAGE_ENABLE_CONFIG,
             TopicConfig.REMOTE_LOG_DISABLE_POLICY_CONFIG,
             QuotaConfigs.LEADER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
-            QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG,
-            // AutoMQ inject start
-            TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG
-            // AutoMQ inject end
+            QuotaConfigs.FOLLOWER_REPLICATION_THROTTLED_REPLICAS_CONFIG
     ));
 
     @SuppressWarnings("deprecation")
