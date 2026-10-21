@@ -19,16 +19,11 @@
 
 package kafka.cluster;
 
-import org.apache.kafka.storage.internals.log.LogSegment;
+import kafka.log.streamaspect.ElasticLogMeta;
 
+/** Receives log metadata after it has been persisted and published by the segment manager. */
 public interface LogEventListener {
 
-    void onChanged(LogSegment segment, Event event);
-
-    enum Event {
-        SEGMENT_CREATE,
-        SEGMENT_DELETE,
-        SEGMENT_UPDATE
-    }
-
+    /** Called with the acknowledged metadata after the manager updates its cached snapshot. */
+    void onChange(ElasticLogMeta meta);
 }
