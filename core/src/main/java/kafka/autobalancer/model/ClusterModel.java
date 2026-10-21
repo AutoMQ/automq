@@ -156,6 +156,11 @@ public class ClusterModel {
                     TopicPartitionReplicaUpdater replicaUpdater = tpEntry.getValue();
                     TopicPartitionReplicaUpdater.TopicPartitionReplica replica =
                             (TopicPartitionReplicaUpdater.TopicPartitionReplica) replicaUpdater.get(now - maxToleratedMetricsDelay);
+                    // Warm-up affects only this optional-balancing snapshot. getClusterLoad() retains
+                    // raw freshness semantics, so recovery placement does not lose its usable load model.
+                    if (!replica.isRecoveryLoadReady()) {
+                        replica.setMetricsOutOfDate(true);
+                    }
                     if (replica.isMetricsOutOfDate()) {
                         broker.setMetricsOutOfDate(true);
                     }
@@ -359,6 +364,14 @@ public class ClusterModel {
     }
 
     public void reassignPartition(Uuid topicId, int partitionId, int brokerId) {
+        reassignPartition(topicId, partitionId, brokerId, false);
+    }
+
+    /**
+     * Updates the modeled leader under the cluster lock. Explicit handoffs also warm up a replica
+     * recreated after a leaderless interval; initial metadata and unchanged leaders do not.
+     */
+    protected void reassignPartition(Uuid topicId, int partitionId, int brokerId, boolean explicitLeaderChange) {
         clusterLock.lock();
         try {
             String topicName = idToTopicNameMap.get(topicId);
@@ -384,7 +397,11 @@ public class ClusterModel {
             if (oldBrokerId != -1 && brokerReplicaMap.containsKey(oldBrokerId)) {
                 brokerReplicaMap.get(oldBrokerId).remove(tp);
             }
-            brokerReplicaMap.get(brokerId).put(tp, createReplicaUpdater(tp));
+            TopicPartitionReplicaUpdater replicaUpdater = createReplicaUpdater(tp);
+            if (oldBrokerId != -1 || explicitLeaderChange) {
+                replicaUpdater.markLeaderChange(System.currentTimeMillis());
+            }
+            brokerReplicaMap.get(brokerId).put(tp, replicaUpdater);
             partitionReplicaMap.put(partitionId, brokerId);
         } finally {
             clusterLock.unlock();
