@@ -21,6 +21,8 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -67,6 +69,8 @@ import java.util.stream.Collectors;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
 
 import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
@@ -75,6 +79,15 @@ import static com.automq.stream.s3.wal.impl.object.ObjectUtils.ceilAlignOffset;
 
 public class DefaultWriter implements Writer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWriter.class);
+    private static final AttributeKey<String> WAL_TYPE = AttributeKey.stringKey("wal_type");
+    private static final AttributeKey<Long> BUCKET_ID = AttributeKey.longKey("bucket_id");
+    private static final AttributeKey<Long> NODE_ID = AttributeKey.longKey("node_id");
+    private static final Metrics.LongGaugeBundle UNFLUSHED_BYTES = Metrics.instance()
+        .longGauge("kafka_stream_object_wal_unflushed_bytes",
+            "Object WAL bytes awaiting append completion, including record headers", "bytes");
+    private static final Metrics.LongGaugeBundle MAX_UNFLUSHED_BYTES = Metrics.instance()
+        .longGauge("kafka_stream_object_wal_max_unflushed_bytes",
+            "Configured object WAL unflushed byte limit", "bytes");
 
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
@@ -94,6 +107,8 @@ public class DefaultWriter implements Writer {
 
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
+    private Metrics.LongGaugeBundle.LongGauge unflushedBytesGauge;
+    private Metrics.LongGaugeBundle.LongGauge maxUnflushedBytesGauge;
 
     protected volatile boolean fenced;
     private volatile State state = State.NOT_STARTED;
@@ -173,6 +188,16 @@ public class DefaultWriter implements Writer {
 
         startMonitor();
 
+        Attributes metricAttributes = Attributes.builder()
+            .put(WAL_TYPE, config.type().isEmpty() ? "default" : config.type())
+            .put(BUCKET_ID, (long) config.bucketId())
+            .put(NODE_ID, (long) config.nodeId())
+            .build();
+        unflushedBytesGauge = UNFLUSHED_BYTES.register(MetricsLevel.INFO, metricAttributes);
+        unflushedBytesGauge.record(bufferedDataBytes::get);
+        maxUnflushedBytesGauge = MAX_UNFLUSHED_BYTES.register(MetricsLevel.INFO, metricAttributes);
+        maxUnflushedBytesGauge.record(config.maxUnflushedBytes());
+
         state = State.STARTED;
     }
 
@@ -196,6 +221,10 @@ public class DefaultWriter implements Writer {
         }
         FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
         state = State.CLOSED;
+        if (unflushedBytesGauge != null) {
+            unflushedBytesGauge.close();
+            maxUnflushedBytesGauge.close();
+        }
 
         LOGGER.info("S3WAL Writer is closed.");
     }
