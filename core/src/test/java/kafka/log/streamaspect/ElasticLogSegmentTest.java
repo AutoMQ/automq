@@ -61,6 +61,8 @@ import java.util.Properties;
 import static org.apache.kafka.test.TestUtils.checkEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,6 +83,32 @@ public class ElasticLogSegmentTest {
     @AfterEach
     public void clear() throws IOException {
         Utils.delete(logDir);
+    }
+
+    /** Metadata snapshots remain unchanged after subsequent appends and sealing. */
+    @Test
+    public void testMetadataSnapshotSurvivesAppendAndSeal() throws IOException {
+        ElasticLogSegment segment = createOrLoadSegment(40);
+        segment.append(40, records(40, "first"));
+        ElasticStreamSegmentMeta before = segment.meta();
+        ElasticLogMeta published = ElasticLogSegmentManager.logMeta(Map.of(), List.of(before));
+        ElasticLogMeta restored = ElasticLogMeta.decode(ElasticLogMeta.encode(published));
+        assertEquals(published, restored);
+        assertEquals(published.hashCode(), restored.hashCode());
+        int originalSize = before.logSize();
+        assertEquals(Offsets.NOOP_OFFSET, before.log().end());
+
+        segment.append(41, records(41, "second"));
+        segment.onBecomeInactiveSegment();
+        ElasticStreamSegmentMeta after = segment.meta();
+
+        assertNotSame(before, after);
+        assertEquals(originalSize, before.logSize());
+        assertEquals(Offsets.NOOP_OFFSET, before.log().end());
+        assertTrue(after.log().end() >= 0);
+        assertTrue(after.logSize() > originalSize);
+        assertNotEquals(before, after);
+        assertEquals(restored, published);
     }
 
     @Test

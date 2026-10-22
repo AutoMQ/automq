@@ -22,6 +22,7 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -41,9 +42,9 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 public class ElasticLogSegmentManagerTest {
 
-    /** Given a pending delete, listeners only observe the updated cache after metadata acknowledgement. */
+    /** Segment deletion publishes updated metadata before acknowledgement. */
     @Test
-    public void testDeleteNotifiesOnlyAfterPersistence() {
+    public void testDeletePublishesBeforeAcknowledgement() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -62,16 +63,16 @@ public class ElasticLogSegmentManagerTest {
 
         manager.logSegmentEventListener().onEvent(0L, oldSegment, ElasticLogSegmentEvent.SEGMENT_DELETE);
 
-        assertTrue(notifications.isEmpty());
-        assertSame(oldMeta, manager.logMeta());
+        assertEquals(1, notifications.size());
+        assertNotSame(oldMeta, manager.logMeta());
+        assertEquals(List.of(10L), baseOffsets(notifications.get(0)));
         appendFuture.complete(mock(AppendResult.class));
         assertEquals(1, notifications.size());
-        assertEquals(List.of(10L), baseOffsets(notifications.get(0)));
     }
 
     /** Queued deletes must publish the final segment list even when no later append occurs. */
     @Test
-    public void testQueuedDeletesNotifyEachAcknowledgedSnapshot() {
+    public void testQueuedDeletesPublishEachMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> firstAppend = new DirectExecutorFuture<>();
         CompletableFuture<AppendResult> secondAppend = new CompletableFuture<>();
@@ -90,7 +91,7 @@ public class ElasticLogSegmentManagerTest {
 
         manager.logSegmentEventListener().onEvent(0L, first, ElasticLogSegmentEvent.SEGMENT_DELETE);
         manager.logSegmentEventListener().onEvent(10L, second, ElasticLogSegmentEvent.SEGMENT_DELETE);
-        verifyNoInteractions(listener);
+        verify(listener).onChange(manager.logMeta());
         firstAppend.complete(mock(AppendResult.class));
         verify(metaStream, times(2)).append(any(MetaKeyValue.class));
         secondAppend.complete(mock(AppendResult.class));
@@ -102,9 +103,9 @@ public class ElasticLogSegmentManagerTest {
         assertSame(snapshots.getAllValues().get(1), manager.logMeta());
     }
 
-    /** A failed append must not notify listeners or replace the acknowledged snapshot. */
+    /** Persistence failure leaves the published memory snapshot intact. */
     @Test
-    public void testFailedPersistenceDoesNotNotify() {
+    public void testFailedPersistenceDoesNotRollBackMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -119,8 +120,8 @@ public class ElasticLogSegmentManagerTest {
         appendFuture.completeExceptionally(new IllegalStateException("injected failure"));
 
         assertTrue(persistence.isCompletedExceptionally());
-        assertSame(oldMeta, manager.logMeta());
-        verifyNoInteractions(listener);
+        assertNotSame(oldMeta, manager.logMeta());
+        verify(listener).onChange(manager.logMeta());
     }
 
     /** Listener failures must not fail acknowledged persistence or suppress other listeners. */

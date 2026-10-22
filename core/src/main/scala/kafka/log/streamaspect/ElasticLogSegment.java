@@ -461,14 +461,14 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         return meta.lastModifiedTimestamp();
     }
 
+    /** Returns a snapshot of the segment's current metadata. */
     public ElasticStreamSegmentMeta meta() {
         meta.log(log.streamSegment().sliceRange());
         meta.logSize(log.sizeInBytes());
         meta.time(timeIndex.stream.sliceRange());
         meta.txn(txnIndex.stream.sliceRange());
         meta.timeIndexLastEntry(timeIndex.lastEntry());
-        meta.streamSuffix(meta.streamSuffix());
-        return meta;
+        return meta.copy();
     }
 
     @Override
