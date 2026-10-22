@@ -166,8 +166,7 @@ public class DeleteObjectsAccumulator {
                 handleDeleteRequestQueue();
             }).exceptionally(ex -> {
                 Throwable cause = ex.getCause();
-                if (cause instanceof DeleteObjectsException) {
-                    DeleteObjectsException deleteObjectsException = (DeleteObjectsException) cause;
+                if (cause instanceof DeleteObjectsException deleteObjectsException) {
                     deleteOperationSummary.recordDeleteOperation(objectKeys.size(), timerUtil.elapsedAs(TimeUnit.NANOSECONDS), false, deleteObjectsException.getFailedKeys());
                     handleDeleteObjectsException(requests, deleteObjectsException);
                 } else {

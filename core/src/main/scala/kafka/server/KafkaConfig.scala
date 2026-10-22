@@ -21,7 +21,7 @@ import com.automq.stream.s3.ByteBufAllocPolicy
 import io.netty.util.internal.PlatformDependent
 import kafka.autobalancer.config.{AutoBalancerControllerConfig, AutoBalancerMetricsReporterConfig}
 import kafka.automq.AutoMQConfig
-import kafka.automq.zerozone.DefaultClientRackProvider
+import kafka.automq.zerozone.DefaultZeroZoneConfig
 
 import java.util
 import java.util.concurrent.TimeUnit
@@ -100,7 +100,7 @@ object KafkaConfig {
   AutoMQConfig.define(configDef)
   AutoBalancerControllerConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   AutoBalancerMetricsReporterConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
-  DefaultClientRackProvider.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
+  DefaultZeroZoneConfig.CONFIG_DEF.configKeys().values().forEach(key => configDef.define(key))
   // AutoMQ inject end
 
 
@@ -799,6 +799,7 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3BackPressureEnabled = getBoolean(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG)
   val s3BackPressureCooldownMs = getLong(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG)
   val tableTopicNamespace = getString(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG)
+  val tableTopicLocation = getString(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG)
   val tableTopicSchemaRegistryUrl = getString(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG)
   val retryStormBackoffEnabled = getBoolean(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG)
   val retryStormBackoffMaxDelayMs = getLong(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG)
@@ -1246,6 +1247,9 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
     // AutoMQ inject start
     if (tableTopicNamespace != null) {
       logProps.put(TopicConfig.TABLE_TOPIC_NAMESPACE_CONFIG, tableTopicNamespace)
+    }
+    if (tableTopicLocation != null) {
+      logProps.put(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, tableTopicLocation)
     }
     if (tableTopicSchemaRegistryUrl != null) {
       logProps.put(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, tableTopicSchemaRegistryUrl)

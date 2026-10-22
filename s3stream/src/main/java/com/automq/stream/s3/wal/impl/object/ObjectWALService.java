@@ -74,7 +74,7 @@ public class ObjectWALService implements WriteAheadLog {
         } else {
             this.writer = new NoopWriter();
         }
-        this.reader = new DefaultReader(objectStorage, config.clusterId(), config.nodeId(), config.type(), time);
+        this.reader = new DefaultReader(objectStorage, config, time);
     }
 
     @Override
@@ -110,6 +110,11 @@ public class ObjectWALService implements WriteAheadLog {
     public CompletableFuture<AppendResult> append(TraceContext context,
         StreamRecordBatch streamRecordBatch) throws OverCapacityException {
         return writer.append(streamRecordBatch);
+    }
+
+    /** Uploads buffered records, completing after they become durable. */
+    public CompletableFuture<Void> flush() {
+        return writer.flush();
     }
 
     @Override

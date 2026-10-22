@@ -145,8 +145,7 @@ public class CompactionUtils {
                 streamDataBlocks.get(0).getStreamId(),
                 -1L,
                 streamDataBlocks.get(0).getStartOffset(),
-                streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset(),
-                streamDataBlocks.stream().mapToInt(StreamDataBlock::getBlockSize).sum()));
+                streamDataBlocks.get(streamDataBlocks.size() - 1).getEndOffset()));
         }
 
         return objectStreamRanges;

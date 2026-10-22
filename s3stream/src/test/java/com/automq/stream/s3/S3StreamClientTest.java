@@ -23,6 +23,8 @@ import com.automq.stream.Version;
 import com.automq.stream.api.OpenStreamOptions;
 import com.automq.stream.api.Stream;
 import com.automq.stream.s3.compact.StreamObjectArchiveTask;
+import com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType;
+import com.automq.stream.s3.exceptions.CompactedObjectsNotFoundException;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamState;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -34,12 +36,18 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.CLEANUP_V1;
 import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.MAJOR_V1;
@@ -47,13 +55,17 @@ import static com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType.
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -67,19 +79,36 @@ public class S3StreamClientTest {
     private StreamManager streamManager;
     private Storage storage;
     private ScheduledExecutorService scheduler;
+    private ThreadPoolExecutor compactionExecutor;
+    private ObjectManager objectManager;
+    private Config config;
+    private LinkedBlockingQueue<Runnable> compactionTasks;
 
     @BeforeEach
-    void setup() {
+    void setup() throws Exception {
         streamManager = mock(StreamManager.class);
         storage = mock(Storage.class);
         when(storage.awaitUpload(anyLong())).thenReturn(CompletableFuture.completedFuture(null));
-        client = spy(new S3StreamClient(streamManager, storage, mock(ObjectManager.class), mock(ObjectStorage.class), new Config()));
+        objectManager = mock(ObjectManager.class);
+        when(objectManager.getObjectsCount()).thenReturn(CompletableFuture.completedFuture(0));
+        config = new Config().version(() -> Version.V1);
+        compactionExecutor = mock(ThreadPoolExecutor.class);
+        compactionTasks = new LinkedBlockingQueue<>();
+        when(compactionExecutor.getQueue()).thenReturn(compactionTasks);
+        doAnswer(args -> {
+            compactionTasks.add(args.getArgument(0));
+            return null;
+        }).when(compactionExecutor).execute(any(Runnable.class));
+        when(compactionExecutor.awaitTermination(anyLong(), any())).thenReturn(true);
+        client = spy(new S3StreamClient(streamManager, storage, objectManager, mock(ObjectStorage.class),
+            config, null, null, compactionExecutor));
         scheduler = Executors.newSingleThreadScheduledExecutor();
     }
 
     @AfterEach
     void cleanup() {
         scheduler.shutdown();
+        client.shutdown();
     }
 
     @Test
@@ -157,15 +186,285 @@ public class S3StreamClientTest {
     }
 
     /**
-     * Given object-count pressure, when selecting V1 compactions, then pressure appends MAJOR_V1 after the regular task
-     * without duplicating an already scheduled MAJOR_V1.
+     * Given a scheduled MAJOR under pressure, its attempt also satisfies the pending pressure request.
      */
     @Test
-    public void testObjectCountPressureAppendsMajorV1AfterScheduledCompaction() {
-        assertEquals(List.of(MINOR_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, true, true));
-        assertEquals(List.of(CLEANUP_V1, MAJOR_V1), S3StreamClient.v1CompactionTypes(false, false, true));
-        assertEquals(List.of(MAJOR_V1), S3StreamClient.v1CompactionTypes(true, true, true));
-        assertEquals(List.of(MINOR_V1), S3StreamClient.v1CompactionTypes(false, true, false));
+    public void testScheduledMajorSatisfiesObjectCountPressure() {
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        S3StreamClient.CompactionHint pressure = new S3StreamClient.CompactionHint(Integer.MAX_VALUE);
+        doNothing().when(stream).compact(MAJOR_V1, pressure);
+        doNothing().when(stream).compact(CLEANUP_V1, pressure);
+
+        stream.compact(pressure, System.currentTimeMillis() + TimeUnit.HOURS.toMillis(2));
+        compactionTasks.remove().run();
+        verify(stream).compact(MAJOR_V1, pressure);
+
+        stream.compact(pressure, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2));
+        compactionTasks.remove().run();
+        verify(stream).compact(CLEANUP_V1, pressure);
+        verify(stream, times(1)).compact(MAJOR_V1, pressure);
+    }
+
+    /**
+     * Given a queued or running task, repeated scans must not submit another task for the same stream.
+     */
+    @Test
+    public void testCompactionDeduplicatesQueuedAndRunningTasks() {
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        long now = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2);
+        S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(0);
+        doAnswer(args -> {
+            stream.compact(hint, now);
+            assertTrue(compactionTasks.isEmpty());
+            return null;
+        }).when(stream).compact(CLEANUP_V1, hint);
+        stream.compact(hint, now);
+        Runnable task = compactionTasks.peek();
+        stream.compact(hint, now);
+        assertSame(task, compactionTasks.peek());
+        assertEquals(1, compactionTasks.size());
+        compactionTasks.remove().run();
+        stream.compact(hint, now);
+        assertEquals(1, compactionTasks.size());
+    }
+
+    /**
+     * Given pressure, MINOR runs alone and a later scan runs pending MAJOR even after pressure falls.
+     */
+    @Test
+    public void testPendingMajorRunsOnLaterScan() {
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        long now = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(11);
+        S3StreamClient.CompactionHint pressure = new S3StreamClient.CompactionHint(Integer.MAX_VALUE);
+        S3StreamClient.CompactionHint normal = new S3StreamClient.CompactionHint(0);
+        doNothing().when(stream).compact(MINOR_V1, pressure);
+        doNothing().when(stream).compact(MAJOR_V1, normal);
+        stream.compact(pressure, now);
+        compactionTasks.remove().run();
+        assertTrue(compactionTasks.isEmpty());
+        verify(stream, never()).compact(MAJOR_V1, pressure);
+
+        stream.compact(normal, now);
+        compactionTasks.remove().run();
+        verify(stream).compact(MAJOR_V1, normal);
+
+        doNothing().when(stream).compact(CLEANUP_V1, normal);
+        stream.compact(normal, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2));
+        compactionTasks.remove().run();
+        verify(stream).compact(CLEANUP_V1, normal);
+    }
+
+    /**
+     * Given a real compactor failure, release the task without immediate retry and honor the normal interval.
+     */
+    @Test
+    public void testCompactorFailureWaitsForNormalSchedule() {
+        S3Stream stream = mock(S3Stream.class);
+        when(stream.streamId()).thenReturn(1L);
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.failedFuture(new CompactedObjectsNotFoundException()))
+            .thenReturn(CompletableFuture.completedFuture(List.of()));
+        S3StreamClient.StreamWrapper.Compaction wrapper = spy(client.new StreamWrapper(stream).compaction);
+        S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(0);
+        long now = System.currentTimeMillis();
+        wrapper.compact(hint, now + TimeUnit.HOURS.toMillis(2));
+        compactionTasks.remove().run();
+        assertTrue(compactionTasks.isEmpty());
+
+        wrapper.compact(hint, now + TimeUnit.MINUTES.toMillis(2));
+        compactionTasks.remove().run();
+        verify(wrapper).compact(CLEANUP_V1, hint);
+        verify(wrapper).compact(MAJOR_V1, hint);
+
+        wrapper.compact(hint, now + TimeUnit.HOURS.toMillis(2));
+        compactionTasks.remove().run();
+        verify(wrapper, times(2)).compact(MAJOR_V1, hint);
+        verify(objectManager, times(3)).getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt());
+    }
+
+    /**
+     * Given a stream closed while queued, its task must finish without touching object storage.
+     */
+    @Test
+    public void testClosedStreamSkipsQueuedCompaction() {
+        S3Stream underlying = mock(S3Stream.class);
+        S3StreamClient.StreamWrapper.Compaction stream = spy(client.new StreamWrapper(underlying).compaction);
+        stream.compact(new S3StreamClient.CompactionHint(0), System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2));
+        when(underlying.isClosed()).thenReturn(true);
+        compactionTasks.remove().run();
+        verify(stream, never()).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+    }
+
+    /**
+     * Given submission rejection or an unexpected worker exception, a later scan can retry the stream.
+     */
+    @Test
+    public void testSubmissionAndWorkerFailuresReleaseState() {
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        long now = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2);
+        S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(0);
+        AtomicBoolean reject = new AtomicBoolean(true);
+        doAnswer(args -> {
+            if (reject.getAndSet(false)) {
+                throw new java.util.concurrent.RejectedExecutionException();
+            }
+            compactionTasks.add(args.getArgument(0));
+            return null;
+        }).when(compactionExecutor).execute(any(Runnable.class));
+        stream.compact(hint, now);
+        doAnswer(args -> {
+            throw new IllegalStateException("worker failure");
+        }).when(stream).compact(CLEANUP_V1, hint);
+        stream.compact(hint, now);
+        compactionTasks.remove().run();
+        doNothing().when(stream).compact(CLEANUP_V1, hint);
+        stream.compact(hint, now);
+        compactionTasks.remove().run();
+    }
+
+    /**
+     * Given queued compactions, shutdown discards them before waiting for running work without interrupting workers.
+     */
+    @Test
+    public void testShutdownDiscardsQueuedCompactions() throws Exception {
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        stream.compact(new S3StreamClient.CompactionHint(0), System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2));
+        when(compactionExecutor.awaitTermination(10, TimeUnit.SECONDS)).thenAnswer(args -> {
+            verify(compactionExecutor, atLeastOnce()).shutdown();
+            assertTrue(compactionTasks.isEmpty());
+            return false;
+        });
+        client.shutdown();
+        verify(compactionExecutor, never()).shutdownNow();
+        verify(stream, never()).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+    }
+
+    /**
+     * Given a running and a queued compaction, shutdown discards queued work and lets running work finish normally.
+     */
+    @Test
+    public void testShutdownWaitsForRunningCompaction() throws Exception {
+        CountDownLatch queueCleared = new CountDownLatch(1);
+        LinkedBlockingQueue<Runnable> queue = spy(new LinkedBlockingQueue<>());
+        doAnswer(args -> {
+            args.callRealMethod();
+            queueCleared.countDown();
+            return null;
+        }).when(queue).clear();
+        ThreadPoolExecutor workers = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, queue);
+        S3StreamClient concurrentClient = new S3StreamClient(streamManager, mock(Storage.class), objectManager,
+            mock(ObjectStorage.class), config, null, null, workers);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean interrupted = new AtomicBoolean();
+        S3StreamClient.StreamWrapper.Compaction running = spy(concurrentClient.new StreamWrapper(mock(S3Stream.class)).compaction);
+        S3StreamClient.StreamWrapper.Compaction queued = spy(concurrentClient.new StreamWrapper(mock(S3Stream.class)).compaction);
+        doAnswer(args -> {
+            started.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                interrupted.set(true);
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }).when(running).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+        try {
+            long now = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2);
+            S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(0);
+            running.compact(hint, now);
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            queued.compact(hint, now);
+            CompletableFuture<Void> shutdown = CompletableFuture.runAsync(concurrentClient::shutdown);
+            assertTrue(queueCleared.await(5, TimeUnit.SECONDS));
+            assertTrue(workers.getQueue().isEmpty());
+            assertFalse(shutdown.isDone());
+            release.countDown();
+            shutdown.get(5, TimeUnit.SECONDS);
+            assertFalse(interrupted.get());
+            verify(queued, never()).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+        } finally {
+            release.countDown();
+            concurrentClient.shutdown();
+        }
+    }
+
+    /**
+     * Given two streams, blocking one compaction must not prevent another from executing concurrently.
+     */
+    @Test
+    public void testDifferentStreamsCompactConcurrently() throws Exception {
+        ThreadPoolExecutor workers = (ThreadPoolExecutor) Executors.newFixedThreadPool(2);
+        S3StreamClient concurrentClient = new S3StreamClient(streamManager, mock(Storage.class), objectManager,
+            mock(ObjectStorage.class), config, null, null, workers);
+        CountDownLatch started = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            for (long id = 1; id <= 2; id++) {
+                S3Stream underlying = mock(S3Stream.class);
+                when(underlying.streamId()).thenReturn(id);
+                S3StreamClient.StreamWrapper.Compaction stream = spy(concurrentClient.new StreamWrapper(underlying).compaction);
+                doAnswer(args -> {
+                    started.countDown();
+                    assertTrue(release.await(5, TimeUnit.SECONDS));
+                    return null;
+                }).when(stream).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+                stream.compact(new S3StreamClient.CompactionHint(0), System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2));
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            release.countDown();
+            workers.shutdown();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+        } finally {
+            release.countDown();
+            concurrentClient.shutdown();
+        }
+    }
+
+    /**
+     * Given cleanup with no eligible objects, pressure still schedules MAJOR only on a later scan.
+     */
+    @Test
+    public void testNoOpCleanupDefersPendingMajor() {
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(List.of()));
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(Integer.MAX_VALUE);
+        long now = System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(2);
+        stream.compact(hint, now);
+        compactionTasks.remove().run();
+        assertTrue(compactionTasks.isEmpty());
+        verify(stream).compact(CLEANUP_V1, hint);
+        verify(stream, never()).compact(MAJOR_V1, hint);
+        stream.compact(hint, now);
+        compactionTasks.remove().run();
+        verify(stream).compact(MAJOR_V1, hint);
+    }
+
+    /**
+     * Given a legacy stream, asynchronous execution preserves its major/minor/cleanup selection.
+     */
+    @Test
+    public void testLegacyCompactionSelection() {
+        config.version(() -> Version.V0);
+        S3StreamClient.StreamWrapper.Compaction stream = compactionStream(1);
+        S3StreamClient.CompactionHint hint = new S3StreamClient.CompactionHint(Integer.MAX_VALUE);
+        List<CompactionType> types = new ArrayList<>();
+        doAnswer(args -> {
+            types.add(args.getArgument(0));
+            return null;
+        }).when(stream).compact(any(CompactionType.class), any(S3StreamClient.CompactionHint.class));
+        for (long minutes : List.of(2L, 6L, 61L)) {
+            stream.compact(hint, System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(minutes));
+            compactionTasks.remove().run();
+        }
+        assertEquals(List.of(CompactionType.CLEANUP, CompactionType.MINOR, CompactionType.MAJOR), types);
+    }
+
+    private S3StreamClient.StreamWrapper.Compaction compactionStream(long id) {
+        S3Stream stream = mock(S3Stream.class);
+        when(stream.streamId()).thenReturn(id);
+        return spy(client.new StreamWrapper(stream).compaction);
     }
 
     /**

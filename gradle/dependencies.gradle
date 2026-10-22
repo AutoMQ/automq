@@ -189,7 +189,7 @@ versions += [
   opentelemetrySDK: "1.50.0",
   opentelemetrySDKAlpha: "1.50.0-alpha",
   opentelemetryInstrument: "2.16.0-alpha",
-  awsSdk:"2.29.26",
+  awsSdk:"2.57.1",
   bucket4j:"8.10.1",
   jna:"5.2.0",
   guava:"32.0.1-jre",

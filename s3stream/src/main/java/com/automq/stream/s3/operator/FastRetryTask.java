@@ -17,12 +17,19 @@
  * limitations under the License.
  */
 
-package kafka.automq.zerozone;
+package com.automq.stream.s3.operator;
 
-import kafka.automq.interceptor.ClientIdMetadata;
+import java.util.concurrent.CompletableFuture;
 
-public interface ClientRackProvider {
+/** A speculative request and the resources it owns before and during execution. */
+interface FastRetryTask {
+    void markEnqueued();
 
-    String rack(ClientIdMetadata clientId);
+    boolean isDone();
 
+    // Completes after result handling and resource cleanup, even when the request fails.
+    CompletableFuture<Void> execute();
+
+    // Releases resources when the task is discarded without being executed.
+    void discard();
 }

@@ -20,7 +20,6 @@
 package kafka.automq.partition.snapshot;
 
 import kafka.automq.AutoMQConfig;
-import kafka.cluster.LogEventListener;
 import kafka.cluster.Partition;
 import kafka.cluster.PartitionListener;
 import kafka.log.streamaspect.ElasticLogMeta;
@@ -101,9 +100,12 @@ public class PartitionSnapshotsManager {
 
     public void onPartitionOpen(Partition partition) {
         PartitionWithVersion partitionWithVersion = new PartitionWithVersion(partition, PartitionSnapshotVersion.create());
-        snapshotVersions.add(partitionWithVersion);
         partition.maybeAddListener(newPartitionListener(partitionWithVersion, this::notifySnapshotChanged));
-        partition.addLogEventListener(newLogEventListener(partitionWithVersion, this::notifySnapshotChanged));
+        partition.addLogEventListener(meta -> {
+            partitionWithVersion.version.logMeta(meta);
+            notifySnapshotChanged();
+        });
+        snapshotVersions.add(partitionWithVersion);
         notifySnapshotChanged();
     }
 
@@ -387,8 +389,8 @@ public class PartitionSnapshotsManager {
                     List<PartitionSnapshot> partitionSnapshots = topic2partitions.computeIfAbsent(p.partition.topicId().get(), topic -> new ArrayList<>());
                     PartitionSnapshotVersion newVersion = p.version.copy();
                     PartitionSnapshot partitionSnapshot = snapshot(funcVersion, p.partition, oldVersion, newVersion, completeCfList);
+                    p.version.initializeLogMeta(synced.get(p.partition).logMeta());
                     partitionSnapshots.add(partitionSnapshot);
-                    synced.put(p.partition, newVersion);
                 }
             });
             TopicCollection topics = new TopicCollection();
@@ -408,6 +410,19 @@ public class PartitionSnapshotsManager {
             });
         }
 
+        /**
+         * Builds a partition snapshot delta, collects its append futures, and records the version sent to the client.
+         * Snapshot capture is serialized with log updates, but change notifications may lag the captured metadata.
+         * Use the captured metadata and the pre-capture record version so later record notifications remain visible.
+         *
+         * For example:
+         * <pre>
+         * sample version: (records=7, meta=A)
+         * roll to B, collect snapshot B
+         * another append after collection: records=8
+         * save synced: (records=7, meta=B), leaving records=8 for the next snapshot
+         * </pre>
+         */
         private PartitionSnapshot snapshot(short funcVersion, Partition partition,
             PartitionSnapshotVersion oldVersion,
             PartitionSnapshotVersion newVersion, List<CompletableFuture<Void>> completeCfList) {
@@ -420,10 +435,10 @@ public class PartitionSnapshotsManager {
                 return snapshot;
             }
             return partition.withReadLock(() -> {
-                boolean includeSegments = oldVersion == null || oldVersion.segmentsVersion() < newVersion.segmentsVersion();
+                kafka.cluster.PartitionSnapshot src = partition.snapshot();
+                boolean includeSegments = oldVersion == null || !Objects.equals(oldVersion.logMeta(), src.logMeta());
                 PartitionSnapshot snapshot = new PartitionSnapshot();
                 snapshot.setPartitionIndex(partition.partitionId());
-                kafka.cluster.PartitionSnapshot src = partition.snapshot();
                 completeCfList.add(src.completeCf());
                 snapshot.setLeaderEpoch(src.leaderEpoch());
                 SnapshotOperation operation = oldVersion == null ? SnapshotOperation.ADD : SnapshotOperation.PATCH;
@@ -441,6 +456,7 @@ public class PartitionSnapshotsManager {
                 if (funcVersion > ZERO_ZONE_V0_REQUEST_VERSION) {
                     snapshot.setLastTimestampOffset(timestampOffset(src.lastTimestampOffset()));
                 }
+                synced.put(partition, new PartitionSnapshotVersion(newVersion.recordsVersion(), src.logMeta()));
                 return snapshot;
             });
         }
@@ -526,13 +542,6 @@ public class PartitionSnapshotsManager {
                 version.version.incrementRecordsVersion();
                 notifySnapshotChanged.run();
             }
-        };
-    }
-
-    static LogEventListener newLogEventListener(PartitionWithVersion version, Runnable notifySnapshotChanged) {
-        return (segment, event) -> {
-            version.version.incrementSegmentsVersion();
-            notifySnapshotChanged.run();
         };
     }
 

@@ -20,6 +20,8 @@ package com.automq.stream.s3;
 
 public class Constants {
     public static final String DEFAULT_NAMESPACE = "_kafka_";
+    /** Maximum payload bytes for one stream in a WAL upload batch, independent of the cache's soft size threshold. */
+    public static final long MAX_UPLOAD_STREAM_SIZE = 1L << 30;
     public static final int CAPACITY_NOT_SET = -1;
     public static final int NOOP_NODE_ID = -1;
     public static final long NOOP_EPOCH = -1L;

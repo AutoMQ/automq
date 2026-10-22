@@ -74,6 +74,17 @@ public class StatsCollector {
 
     public static Result printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
         PerfConfig config) {
+        // AutoMQ inject start
+        try (StatsdStatsReporter reporter = StatsdStatsReporter.fromEnvironment()) {
+            return printAndCollectStats(stats, condition, intervalNanos, config, reporter);
+        }
+        // AutoMQ inject end
+    }
+
+    // AutoMQ inject start
+    static Result printAndCollectStats(Stats stats, StopCondition condition, long intervalNanos,
+        PerfConfig config, StatsdStatsReporter reporter) {
+    // AutoMQ inject end
         final long start = System.nanoTime();
         CpuMonitor cpu = new CpuMonitor();
         Result result = new Result(config);
@@ -93,6 +104,18 @@ public class StatsCollector {
             PeriodResult periodResult = new PeriodResult(cpu, periodStats, elapsed, config.groupsPerTopic);
             result.update(periodResult, elapsedTotal);
             periodResult.logIt(elapsedTotal);
+            // AutoMQ inject start
+            reporter.emit(periodResult.produceThroughputBps, periodResult.consumeThroughputBps,
+                periodResult.produceRate, periodResult.consumeRate, periodResult.errorRate);
+            if (periodStats.endToEndLatencyMicros.getTotalCount() > 0) {
+                reporter.emitEndToEndLatency(periodResult.endToEndLatencyMeanMicros / MICROS_PER_MILLI,
+                    periodResult.endToEndLatencyMinMicros / MICROS_PER_MILLI,
+                    periodResult.endToEndLatency50thMicros / MICROS_PER_MILLI,
+                    periodResult.endToEndLatency99thMicros / MICROS_PER_MILLI,
+                    periodResult.endToEndLatency999thMicros / MICROS_PER_MILLI,
+                    periodResult.endToEndLatencyMaxMicros / MICROS_PER_MILLI);
+            }
+            // AutoMQ inject end
 
             if (condition.shouldStop(start, periodStats.nowNanos)) {
                 CumulativeStats cumulativeStats = stats.toCumulativeStats();

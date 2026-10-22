@@ -231,6 +231,54 @@ public class S3StreamTest {
     }
 
     /**
+     * Given a V6 stream whose pending append fails while close is draining it, verify close falls back to the legacy
+     * path and does not publish the unconfirmed append tail to the Controller.
+     */
+    @Test
+    public void testV6CloseFallsBackWhenPendingAppendFails() {
+        CompletableFuture<Void> append = new CompletableFuture<>();
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(1);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(append);
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(CompletableFuture.completedFuture(null));
+        when(streamManager.closeStream(233L, 1L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.append(recordBatch);
+        CompletableFuture<Void> close = stream.close();
+
+        append.completeExceptionally(new RuntimeException("append failed"));
+
+        assertTrue(close.isDone());
+        verify(streamManager).closeStream(233L, 1L);
+        verify(streamManager, never()).closeStream(233L, 1L, 234L);
+    }
+
+    /**
+     * Given a V6 append that failed before close snapshots pending work, verify the sticky fenced state still prevents
+     * publishing the unconfirmed append tail through fast close.
+     */
+    @Test
+    public void testV6CloseFallsBackAfterCompletedAppendFailure() {
+        RecordBatch recordBatch = mock(RecordBatch.class);
+        when(recordBatch.count()).thenReturn(1);
+        when(recordBatch.rawPayload()).thenReturn(ByteBuffer.allocate(1));
+        when(storage.append(any(), any())).thenReturn(CompletableFuture.failedFuture(
+            new RuntimeException("append failed")));
+        when(streamManager.isFastCloseSupported()).thenReturn(true);
+        when(storage.forceUpload(233L)).thenReturn(CompletableFuture.completedFuture(null));
+        when(streamManager.closeStream(233L, 1L)).thenReturn(CompletableFuture.completedFuture(null));
+
+        stream.append(recordBatch);
+        CompletableFuture<Void> close = stream.close();
+
+        assertTrue(close.isDone());
+        verify(streamManager).closeStream(233L, 1L);
+        verify(streamManager, never()).closeStream(233L, 1L, 234L);
+    }
+
+    /**
      * Given pending trim work on a V6 stream, when close starts, then force upload and Controller close start only
      * after the trim drains.
      */

@@ -19,16 +19,11 @@
 
 package kafka.cluster;
 
-import org.apache.kafka.storage.internals.log.LogSegment;
+import kafka.log.streamaspect.ElasticLogMeta;
 
+/** Receives notifications when in-memory log metadata changes. */
 public interface LogEventListener {
 
-    void onChanged(LogSegment segment, Event event);
-
-    enum Event {
-        SEGMENT_CREATE,
-        SEGMENT_DELETE,
-        SEGMENT_UPDATE
-    }
-
+    /** Called after the metadata cache is updated. */
+    void onChange(ElasticLogMeta meta);
 }

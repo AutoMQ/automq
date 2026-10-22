@@ -24,6 +24,8 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ElasticStreamSegmentMeta {
     /**
@@ -66,6 +68,23 @@ public class ElasticStreamSegmentMeta {
     private TimestampOffsetData timeIndexLastEntry = new TimestampOffsetData();
 
     public ElasticStreamSegmentMeta() {
+    }
+
+    /** Returns a detached snapshot copy of this metadata. */
+    public ElasticStreamSegmentMeta copy() {
+        ElasticStreamSegmentMeta copy = new ElasticStreamSegmentMeta();
+        copy.baseOffset(baseOffset);
+        copy.createTimestamp(createTimestamp);
+        copy.lastModifiedTimestamp(lastModifiedTimestamp);
+        copy.streamSuffix(streamSuffix);
+        copy.logSize(logSize);
+        copy.log(SliceRange.of(log.start(), log.end()));
+        copy.time(SliceRange.of(time.start(), time.end()));
+        copy.txn(SliceRange.of(txn.start(), txn.end()));
+        copy.firstBatchTimestamp(firstBatchTimestamp);
+        copy.timeIndexLastEntry(TimestampOffsetData.of(
+            timeIndexLastEntry.timestamp(), timeIndexLastEntry.offset()));
+        return copy;
     }
 
     public long baseOffset() {
@@ -153,6 +172,28 @@ public class ElasticStreamSegmentMeta {
     }
 
     @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        ElasticStreamSegmentMeta that = (ElasticStreamSegmentMeta) o;
+        if (baseOffset != that.baseOffset || createTimestamp != that.createTimestamp
+            || lastModifiedTimestamp != that.lastModifiedTimestamp || logSize != that.logSize
+            || firstBatchTimestamp != that.firstBatchTimestamp)
+            return false;
+        return Objects.equals(streamSuffix, that.streamSuffix) && Objects.equals(log, that.log)
+            && Objects.equals(time, that.time) && Objects.equals(txn, that.txn)
+            && Objects.equals(timeIndexLastEntry, that.timeIndexLastEntry);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(baseOffset, createTimestamp, lastModifiedTimestamp, streamSuffix, logSize,
+            log, time, txn, firstBatchTimestamp, timeIndexLastEntry);
+    }
+
+    @Override
     public String toString() {
         return "ElasticStreamSegmentMeta{" +
                 "baseOffset=" + baseOffset +
@@ -206,6 +247,21 @@ public class ElasticStreamSegmentMeta {
 
         public void offset(long offset) {
             this.offset = offset;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o)
+                return true;
+            if (o == null || getClass() != o.getClass())
+                return false;
+            TimestampOffsetData that = (TimestampOffsetData) o;
+            return timestamp == that.timestamp && offset == that.offset;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(timestamp, offset);
         }
 
         @Override

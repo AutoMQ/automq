@@ -40,6 +40,16 @@ import scala.jdk.CollectionConverters._
 class LogConfigTest {
 
   /**
+   * Kafka metadata columns remain enabled unless a topic explicitly disables them.
+   */
+  @Test
+  def testKafkaMetadataColumnsEnableDefault(): Unit = {
+    assertTrue(new LogConfig(Collections.emptyMap()).tableTopicMetadataColumnsEnabled)
+    assertFalse(new LogConfig(Collections.singletonMap(
+      TopicConfig.TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG, "false")).tableTopicMetadataColumnsEnabled)
+  }
+
+  /**
    * This test verifies that KafkaConfig object initialization does not depend on
    * LogConfig initialization. Bad things happen due to static initialization
    * order dependencies. For example, LogConfig.configDef ends up adding null
@@ -71,6 +81,7 @@ class LogConfigTest {
     kafkaProps.put(ServerLogConfigs.LOG_MESSAGE_FORMAT_VERSION_CONFIG, "0.11.0")
     kafkaProps.put(RemoteLogManagerConfig.LOG_LOCAL_RETENTION_MS_PROP, "2592000000") // 30 days
     kafkaProps.put(RemoteLogManagerConfig.LOG_LOCAL_RETENTION_BYTES_PROP, "4294967296") // 4 GB
+    kafkaProps.put(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG, "s3://bucket/table-topic")
 
     val logProps = KafkaConfig.fromProps(kafkaProps).extractLogConfigMap
     assertEquals(2 * millisInHour, logProps.get(TopicConfig.SEGMENT_MS_CONFIG))
@@ -80,6 +91,7 @@ class LogConfigTest {
     assertEquals(IBP_3_0_IV1.version, logProps.get(TopicConfig.MESSAGE_FORMAT_VERSION_CONFIG))
     assertEquals(30 * millisInDay, logProps.get(TopicConfig.LOCAL_LOG_RETENTION_MS_CONFIG))
     assertEquals(4 * bytesInGB, logProps.get(TopicConfig.LOCAL_LOG_RETENTION_BYTES_CONFIG))
+    assertEquals("s3://bucket/table-topic", logProps.get(TopicConfig.TABLE_TOPIC_LOCATION_CONFIG))
   }
 
   @nowarn("cat=deprecation")

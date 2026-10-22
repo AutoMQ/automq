@@ -87,5 +87,13 @@ public interface ElasticStreamSlice {
      */
     void seal();
 
+    /**
+     * Seal the slice at the supplied relative, exclusive end offset and forbid future append.
+     *
+     * @param endOffset the relative, exclusive logical end offset
+     * @throws IllegalArgumentException if the end offset is negative or exceeds the current logical end
+     */
+    void seal(long endOffset);
+
     Stream stream();
 }

@@ -254,8 +254,8 @@ public class ByteBufAlloc {
     }
 
     private static ByteBufAllocatorMetric getMetricByAllocator(AbstractByteBufAllocator allocator) {
-        if (allocator instanceof ByteBufAllocatorMetricProvider) {
-            return ((ByteBufAllocatorMetricProvider) allocator).metric();
+        if (allocator instanceof ByteBufAllocatorMetricProvider provider) {
+            return provider.metric();
         }
         return null;
     }

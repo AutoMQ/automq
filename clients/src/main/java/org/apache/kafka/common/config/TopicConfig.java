@@ -17,6 +17,10 @@
 
 package org.apache.kafka.common.config;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
 /**
  * <p>Keys that can be used to configure a topic. These keys are useful when creating or reconfiguring a
  * topic using the AdminClient.
@@ -264,6 +268,12 @@ public class TopicConfig {
     public static final String TABLE_TOPIC_COMMIT_INTERVAL_DOC = "The table topic commit interval(ms)";
     public static final String TABLE_TOPIC_NAMESPACE_CONFIG = "automq.table.topic.namespace";
     public static final String TABLE_TOPIC_NAMESPACE_DOC = "The table topic table namespace";
+    public static final String TABLE_TOPIC_LOCATION_CONFIG = "automq.table.topic.location";
+    public static final String TABLE_TOPIC_LOCATION_DOC = "The location of the Iceberg table created for the table topic. " +
+        "If blank, the catalog determines the location. This applies only when the table is created.";
+    public static final String TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_CONFIG = "automq.table.topic.kafka.metadata.columns.enable";
+    public static final String TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DOC = "Controls whether Table Topic records include the _kafka_header, _kafka_key, and _kafka_metadata columns.";
+    public static final boolean TABLE_TOPIC_KAFKA_METADATA_COLUMNS_ENABLE_DEFAULT = true;
 
     public static final String TABLE_TOPIC_SCHEMA_TYPE_CONFIG = "automq.table.topic.schema.type";
     public static final String TABLE_TOPIC_SCHEMA_TYPE_DOC = "[DEPRECATED] The table topic schema type configuration. " +
@@ -333,6 +343,19 @@ public class TopicConfig {
     public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_CONFIG = "automq.table.topic.expire.snapshot.retain.last";
     public static final String AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DOC = "Minimum snapshots to retain.";
     public static final int AUTOMQ_TABLE_TOPIC_EXPIRE_SNAPSHOT_RETAIN_LAST_DEFAULT = 1;
+
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_CONFIG = "automq.table.topic.iceberg.auto-create.properties";
+    public static final String AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DOC =
+        "A comma-separated list of 'key=value' pairs passed to Catalog#createTable when creating an Iceberg table. "
+        + "Each entry must contain exactly one '=' with a non-blank key; duplicate keys are rejected. "
+        + "The list replaces the built-in defaults, so omit a default property (e.g. write.object-storage.enabled "
+        + "for Databricks Unity Catalog) by leaving it out. Any Iceberg catalog property is allowed, including "
+        + "path and format properties; values are applied only at creation time and are not validated by AutoMQ. "
+        + "Operators should restrict who can alter this topic config in multi-tenant environments. "
+        + "Example: write.metadata.delete-after-commit.enabled=true,write.metadata.previous-versions-max=10";
+    public static final List<String> AUTOMQ_TABLE_TOPIC_ICEBERG_AUTO_CREATE_PROPERTIES_DEFAULT = Collections.unmodifiableList(
+        Arrays.asList("write.metadata.delete-after-commit.enabled=true", "write.object-storage.enabled=true")
+    );
 
     public static final String KAFKA_LINKS_ID_CONFIG = "automq.kafka.links.id";
     public static final String KAFKA_LINKS_ID_DOC = "The unique id of a kafka link";

@@ -168,4 +168,32 @@ class RecordAssemblerTest {
         GenericRecord metadataRecord = (GenericRecord) assembledRecord.get(RecordAssembler.KAFKA_METADATA_FIELD);
         assertNotNull(metadataRecord.getSchema().getField(RecordAssembler.METADATA_PARTITION_FIELD));
     }
+
+    /**
+     * Given Kafka metadata columns are disabled, the assembled schema only exposes base record fields.
+     */
+    @Test
+    void assembleShouldExcludeKafkaMetadataColumnsWhenDisabled() {
+        Schema baseSchema = SchemaBuilder.record("BaseRecordWithoutKafkaMetadata")
+            .namespace("kafka.automq.table.process.test")
+            .fields()
+            .name("id").type().longType().noDefault()
+            .endRecord();
+        GenericRecord baseRecord = new GenericData.Record(baseSchema);
+        baseRecord.put("id", 100L);
+        ConversionResult headerResult = new ConversionResult(List.of(), Schema.createArray(Schema.create(Schema.Type.BYTES)), "header");
+        ConversionResult keyResult = new ConversionResult("key", Schema.create(Schema.Type.STRING), "key");
+
+        GenericRecord assembledRecord = new RecordAssembler(false)
+            .reset(baseRecord)
+            .withHeader(headerResult)
+            .withKey(keyResult)
+            .withMetadata(1, 2L, 3L)
+            .assemble();
+
+        assertEquals(List.of("id"), assembledRecord.getSchema().getFields().stream().map(Schema.Field::name).toList());
+        assertNull(assembledRecord.get(RecordAssembler.KAFKA_HEADER_FIELD));
+        assertNull(assembledRecord.get(RecordAssembler.KAFKA_KEY_FIELD));
+        assertNull(assembledRecord.get(RecordAssembler.KAFKA_METADATA_FIELD));
+    }
 }

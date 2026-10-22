@@ -19,34 +19,27 @@
 
 package kafka.automq.partition.snapshot;
 
+import kafka.log.streamaspect.ElasticLogMeta;
+
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class PartitionSnapshotVersion {
-    // increment every time when there is a segment change
-    private int segmentsVersion;
     // increment every time when there is a new record
     private int recordsVersion;
+    private final AtomicReference<ElasticLogMeta> logMeta;
 
-    private PartitionSnapshotVersion(int segmentsVersion, int recordsVersion) {
-        this.segmentsVersion = segmentsVersion;
+    PartitionSnapshotVersion(int recordsVersion, ElasticLogMeta logMeta) {
         this.recordsVersion = recordsVersion;
+        this.logMeta = new AtomicReference<>(logMeta);
     }
 
     public static PartitionSnapshotVersion create() {
-        return new PartitionSnapshotVersion(0, 0);
-    }
-
-    public int segmentsVersion() {
-        return segmentsVersion;
+        return new PartitionSnapshotVersion(0, null);
     }
 
     public int recordsVersion() {
         return recordsVersion;
-    }
-
-    public PartitionSnapshotVersion incrementSegmentsVersion() {
-        segmentsVersion++;
-        return this;
     }
 
     public PartitionSnapshotVersion incrementRecordsVersion() {
@@ -54,21 +47,38 @@ public class PartitionSnapshotVersion {
         return this;
     }
 
+    /** Returns the metadata used for snapshot change detection. */
+    public ElasticLogMeta logMeta() {
+        return logMeta.get();
+    }
+
+    /** Records the latest metadata change notification. */
+    public void logMeta(ElasticLogMeta logMeta) {
+        this.logMeta.set(logMeta);
+    }
+
+    /** Initializes the metadata baseline if no notification has arrived. */
+    void initializeLogMeta(ElasticLogMeta logMeta) {
+        this.logMeta.compareAndSet(null, logMeta);
+    }
+
     @Override
     public boolean equals(Object o) {
+        if (this == o)
+            return true;
         if (o == null || getClass() != o.getClass())
             return false;
         PartitionSnapshotVersion version = (PartitionSnapshotVersion) o;
-        return segmentsVersion == version.segmentsVersion && recordsVersion == version.recordsVersion;
+        return recordsVersion == version.recordsVersion && Objects.equals(logMeta(), version.logMeta());
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(segmentsVersion, recordsVersion);
+        return Objects.hash(recordsVersion, logMeta());
     }
 
     public PartitionSnapshotVersion copy() {
-        return new PartitionSnapshotVersion(segmentsVersion, recordsVersion);
+        return new PartitionSnapshotVersion(recordsVersion, logMeta());
     }
 
 }

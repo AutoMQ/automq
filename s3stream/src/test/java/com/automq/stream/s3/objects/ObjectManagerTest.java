@@ -66,8 +66,8 @@ class ObjectManagerTest {
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
         // Commit stream set object with stream 0 offset [0, 3) and stream 1 offset [0, 5).
         ArrayList<ObjectStreamRange> streamRangeList = new ArrayList<>();
-        streamRangeList.add(new ObjectStreamRange(0, 0, 0, 3, 300));
-        streamRangeList.add(new ObjectStreamRange(1, 0, 0, 5, 500));
+        streamRangeList.add(new ObjectStreamRange(0, 0, 0, 3));
+        streamRangeList.add(new ObjectStreamRange(1, 0, 0, 5));
         request.setStreamRanges(streamRangeList);
         request.setOrderId(0);
 
@@ -175,8 +175,8 @@ class ObjectManagerTest {
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
         // Commit stream set object with stream 0 offset [0, 3) and stream 1 offset [0, 5).
         ArrayList<ObjectStreamRange> streamRangeList = new ArrayList<>();
-        streamRangeList.add(new ObjectStreamRange(0, 0, 0, 3, 300));
-        streamRangeList.add(new ObjectStreamRange(1, 0, 0, 5, 500));
+        streamRangeList.add(new ObjectStreamRange(0, 0, 0, 3));
+        streamRangeList.add(new ObjectStreamRange(1, 0, 0, 5));
         request.setStreamRanges(streamRangeList);
         request.setOrderId(0);
 

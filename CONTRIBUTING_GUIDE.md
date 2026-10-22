@@ -47,6 +47,14 @@ For most contributors, we recommend starting with DevKit (`devkit/README.md`) an
 
 ## Code Contributions
 
+### Contribution Expectations
+
+Please open an issue first and explain the problem and the expected benefit. Pull requests that have not been discussed, or that only contain formatting or drive-by refactors, may be declined.
+
+First-time contributors should briefly describe, in their own words, why they are making the change and how they understand the relevant code.
+
+If you used generative AI, name the tool and model in the pull request. You are expected to understand the changes and to test them; do not leave that review to maintainers.
+
 ### Finding or Reporting Issues
 
 -   **Find an existing issue:** Look through the [existing issues](https://github.com/AutoMQ/automq/issues). Issues open for contributions are often tagged with `good first issue`. To claim an issue, simply reply with '/assign', and the GitHub bot will assign it to you. Start with

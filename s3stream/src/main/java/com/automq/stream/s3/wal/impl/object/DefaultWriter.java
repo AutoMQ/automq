@@ -42,7 +42,6 @@ import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
 import com.automq.stream.utils.threads.EventLoop;
-import com.google.common.annotations.VisibleForTesting;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,7 +71,6 @@ import io.netty.buffer.Unpooled;
 import static com.automq.stream.s3.ByteBufAlloc.S3_WAL;
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.DATA_FILE_ALIGN_SIZE;
-import static com.automq.stream.s3.wal.impl.object.ObjectUtils.OBJECT_PATH_OFFSET_DELIMITER;
 import static com.automq.stream.s3.wal.impl.object.ObjectUtils.ceilAlignOffset;
 
 public class DefaultWriter implements Writer {
@@ -80,7 +78,6 @@ public class DefaultWriter implements Writer {
 
     private static final long DEFAULT_LOCK_WARNING_TIMEOUT = TimeUnit.MILLISECONDS.toNanos(5);
     private static final long DEFAULT_UPLOAD_WARNING_TIMEOUT = TimeUnit.SECONDS.toNanos(5);
-    private static final String OBJECT_PATH_FORMAT = "%s%d" + OBJECT_PATH_OFFSET_DELIMITER + "%d"; // {objectPrefix}/{startOffset}-{endOffset}
     // Owned by this class for the process lifetime so WAL writers reuse the same slabs.
     private static final RecyclingByteBufSeqAlloc BYTE_BUF_ALLOC = new RecyclingByteBufSeqAlloc(S3_WAL);
     private static final ExecutorService UPLOAD_EXECUTOR = Threads.newFixedThreadPool(Systems.CPU_CORES, "S3_WAL_UPLOAD", true, LOGGER);
@@ -94,7 +91,6 @@ public class DefaultWriter implements Writer {
     private List<WALObject> previousObjects = new ArrayList<>();
     private final ConcurrentNavigableMap<Long, WALObject> lastRecordOffset2object = new ConcurrentSkipListMap<>();
     private final String nodePrefix;
-    private final String objectPrefix;
 
     private final AtomicLong objectDataBytes = new AtomicLong();
     private final AtomicLong bufferedDataBytes = new AtomicLong();
@@ -106,6 +102,7 @@ public class DefaultWriter implements Writer {
     private Bulk lastInActiveBulk = null;
     private long lastBulkForceUploadNanos;
     private final long batchNanos;
+    private final boolean manualMode;
     private final long minBulkUploadIntervalNanos;
 
     private final Queue<Bulk> waitingUploadBulks = new ConcurrentLinkedQueue<>();
@@ -121,12 +118,12 @@ public class DefaultWriter implements Writer {
     private CompletableFuture<Void> lastTrimCf = CompletableFuture.completedFuture(null);
 
     public DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
+        this.manualMode = config.manualMode();
         this.time = time;
         this.objectStorage = objectStorage;
         this.reservationService = config.reservationService();
         this.config = config;
         this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
-        this.objectPrefix = nodePrefix + config.epoch() + "/wal/";
         this.batchNanos = TimeUnit.MILLISECONDS.toNanos(config.batchInterval());
         this.minBulkUploadIntervalNanos = Math.min(TimeUnit.MILLISECONDS.toNanos(10), batchNanos);
         this.lastBulkForceUploadNanos = time.nanoseconds();
@@ -271,7 +268,7 @@ public class DefaultWriter implements Writer {
             activeBulk.add(record);
             // In FAILOVER mode, the only append is the fake record from trim to persist trimOffset.
             // Upload immediately to avoid the batch delay (~250ms) when failover recover.
-            if (activeBulk.size > config.maxBytesInBatch() || config.openMode() == OpenMode.FAILOVER) {
+            if ((!manualMode && activeBulk.size > config.maxBytesInBatch()) || config.openMode() == OpenMode.FAILOVER) {
                 uploadActiveBulk();
             }
         } finally {
@@ -312,8 +309,8 @@ public class DefaultWriter implements Writer {
         tryUploadBulkInWaiting();
     }
 
-    @VisibleForTesting
-    CompletableFuture<Void> flush() {
+    @Override
+    public CompletableFuture<Void> flush() {
         uploadActiveBulk();
         lock.writeLock().lock();
         try {
@@ -385,7 +382,9 @@ public class DefaultWriter implements Writer {
 
             // Enable fast retry.
             ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true);
-            String path = String.format(OBJECT_PATH_FORMAT, objectPrefix, firstOffset, endOffset);
+            String path = config.version() == 1
+                ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset)
+                : ObjectUtils.genObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset);
             FutureUtil.propagate(objectStorage.write(writeOptions, path, objectBuffer), bulk.uploadCf);
             long finalLastRecordOffset = lastRecordOffset;
             bulk.uploadCf.whenCompleteAsync((rst, ex) -> {
@@ -500,6 +499,7 @@ public class DefaultWriter implements Writer {
             // So we use a fake record to trigger the wal object upload.
             persistTrimOffsetCf = append(StreamRecordBatch.of(-1L, -1L, 0, 0, Unpooled.EMPTY_BUFFER,
                 BYTE_BUF_ALLOC));
+            flushTrimOffsetIfNeeded();
             lastTrimCf = persistTrimOffsetCf.thenCompose(nil -> {
                 Long lastFlushedRecordOffset = lastRecordOffset2object.isEmpty() ? null : lastRecordOffset2object.lastKey();
                 if (lastFlushedRecordOffset != null) {
@@ -551,6 +551,12 @@ public class DefaultWriter implements Writer {
         }
     }
 
+    private void flushTrimOffsetIfNeeded() {
+        if (manualMode) {
+            flush();
+        }
+    }
+
     private void retryDelete(List<ObjectStorage.ObjectPath> objectPaths) {
         if (state == State.STARTED) {
             // Try to delete the objects again to avoid an object leak after a fast retry failure.
@@ -591,7 +597,9 @@ public class DefaultWriter implements Writer {
                 ),
                 batchNanos);
             lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
-            SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
+            if (!manualMode) {
+                SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
+            }
         }
 
         public void add(Record record) {
@@ -628,7 +636,11 @@ public class DefaultWriter implements Writer {
                     );
                 }
             }
-            completeCf.complete(null);
+            if (ex == null) {
+                completeCf.complete(null);
+            } else {
+                completeCf.completeExceptionally(ex);
+            }
         }
     }
 

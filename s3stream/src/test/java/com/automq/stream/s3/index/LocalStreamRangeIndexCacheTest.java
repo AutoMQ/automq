@@ -51,7 +51,7 @@ public class LocalStreamRangeIndexCacheTest {
 
         CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
         request.setObjectId(88);
-        request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, 50, 100, 100)));
+        request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, 50, 100)));
         cache.updateIndexFromRequest(request);
         cache.upload().join();
 
@@ -76,7 +76,7 @@ public class LocalStreamRangeIndexCacheTest {
         long startOffset = 50;
         for (int i = 0; i < 10; i++) {
             request.setObjectId(88 + i);
-            request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100)));
+            request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100)));
             cache.updateIndexFromRequest(request).join();
             startOffset += 100;
         }
@@ -100,7 +100,7 @@ public class LocalStreamRangeIndexCacheTest {
         long startOffset = 50;
         for (int i = 0; i < 10; i++) {
             request.setObjectId(88 + i);
-            request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100)));
+            request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100)));
             cache.updateIndexFromRequest(request).join();
             startOffset += 100;
         }
@@ -168,7 +168,7 @@ public class LocalStreamRangeIndexCacheTest {
             for (int j = 0; j < rangeIndexNum; j++) {
                 CommitStreamSetObjectRequest request = new CommitStreamSetObjectRequest();
                 request.setObjectId(objectId++);
-                request.setStreamRanges(List.of(new ObjectStreamRange(i, 0, startOffset, startOffset + 100, 100)));
+                request.setStreamRanges(List.of(new ObjectStreamRange(i, 0, startOffset, startOffset + 100)));
                 cache.updateIndexFromRequest(request).join();
                 startOffset += 100;
             }
@@ -188,8 +188,8 @@ public class LocalStreamRangeIndexCacheTest {
         for (int i = 0; i < 10; i++) {
             request.setObjectId(88 + i);
             request.setStreamRanges(List.of(
-                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100),
-                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100, 100)));
+                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100),
+                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100)));
             cache.updateIndexFromRequest(request).join();
             startOffset += 100;
         }
@@ -197,7 +197,7 @@ public class LocalStreamRangeIndexCacheTest {
         Assertions.assertEquals(10, cache.getStreamRangeIndexMap().get(STREAM_1).length());
         Assertions.assertEquals(20 * RangeIndex.OBJECT_SIZE, cache.totalSize());
         request.setObjectId(256);
-        request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, 50, 650, 1000)));
+        request.setStreamRanges(List.of(new ObjectStreamRange(STREAM_0, 0, 50, 650)));
         request.setCompactedObjectIds(List.of(88L, 89L, 90L, 91L, 92L, 93L));
         request.setStreamObjects(List.of(
             newStreamObject(257, 0, STREAM_1, 50, 150),
@@ -268,8 +268,8 @@ public class LocalStreamRangeIndexCacheTest {
         for (int i = 0; i < 10; i++) {
             request.setObjectId(88 + i);
             request.setStreamRanges(List.of(
-                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100, 100),
-                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100, 100)));
+                new ObjectStreamRange(STREAM_0, 0, startOffset, startOffset + 100),
+                new ObjectStreamRange(STREAM_1, 0, startOffset, startOffset + 100)));
             cache.updateIndexFromRequest(request).join();
             startOffset += 100;
         }
@@ -280,7 +280,7 @@ public class LocalStreamRangeIndexCacheTest {
         // mock STREAM_0 deleted
         request.setObjectId(256);
         request.setStreamRanges(List.of(
-            new ObjectStreamRange(STREAM_1, 0, 50, 1050, 1000)
+            new ObjectStreamRange(STREAM_1, 0, 50, 1050)
         ));
         request.setCompactedObjectIds(List.of(88L, 89L, 90L, 91L, 92L, 93L, 94L, 95L, 96L, 97L));
         request.setStreamObjects(Collections.emptyList());
