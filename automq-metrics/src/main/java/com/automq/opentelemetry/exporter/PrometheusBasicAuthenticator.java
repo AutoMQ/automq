@@ -36,7 +36,6 @@ import java.util.Base64;
  * without credentials so existing liveness/readiness probes are not disrupted.</p>
  */
 public class PrometheusBasicAuthenticator extends Authenticator {
-    static final String METRICS_PATH = "/metrics";
     static final String REALM = "AutoMQ Prometheus metrics";
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String WWW_AUTHENTICATE_HEADER = "WWW-Authenticate";
@@ -63,9 +62,10 @@ public class PrometheusBasicAuthenticator extends Authenticator {
 
     @Override
     public Result authenticate(HttpExchange exchange) {
-        if (!isMetricsPath(exchange.getRequestURI().getPath())) {
+        if (isPublicPath(exchange.getRequestURI().getPath())) {
             return new Success(PUBLIC_PRINCIPAL);
         }
+
 
         String authorization = exchange.getRequestHeaders().getFirst(AUTHORIZATION_HEADER);
         if (StringUtils.isBlank(authorization)) {
@@ -94,8 +94,8 @@ public class PrometheusBasicAuthenticator extends Authenticator {
         return new Success(new HttpPrincipal(username, REALM));
     }
 
-    private static boolean isMetricsPath(String path) {
-        return METRICS_PATH.equals(path) || path.startsWith(METRICS_PATH + "/");
+    private static boolean isPublicPath(String path) {
+        return "/".equals(path) || "/-/healthy".equals(path);
     }
 
     private static void addChallenge(HttpExchange exchange) {

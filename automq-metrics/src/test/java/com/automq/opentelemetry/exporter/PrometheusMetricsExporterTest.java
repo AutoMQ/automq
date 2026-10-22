@@ -120,6 +120,64 @@ public class PrometheusMetricsExporterTest {
     }
 
     @Test
+    public void testRejectsUnauthenticatedMetricsPrefixCollision() throws Exception {
+        int port = availablePort();
+        MetricReader reader = authenticatedMetricReader(port);
+
+        SdkMeterProvider meterProvider = SdkMeterProvider.builder()
+            .registerMetricReader(reader)
+            .build();
+
+        try {
+            LongCounter counter = meterProvider
+                .get("prometheus-auth-boundary-test")
+                .counterBuilder("automq_auth_boundary_counter")
+                .build();
+
+            counter.add(1);
+
+            String[] paths = {
+                "/metrics-extra",
+                "/metricsXYZ",
+                "/metrics%3F",
+                "/metrics%2e",
+                "/metrics/child",
+                "/unknown",
+                "/-/healthy-extra"
+            };
+
+            for (String path : paths) {
+                HttpResponse<String> response = sendRequest(
+                    port,
+                    path,
+                    null
+                );
+
+                Assertions.assertEquals(
+                    401,
+                    response.statusCode(),
+                    "Unauthenticated access allowed on " + path
+                );
+
+                Assertions.assertEquals(
+                    "Basic realm=\"AutoMQ Prometheus metrics\"",
+                    response.headers()
+                        .firstValue("WWW-Authenticate")
+                        .orElse(null),
+                    "Missing authentication challenge on " + path
+                );
+
+                Assertions.assertFalse(
+                    response.body().contains("automq_auth_boundary_counter"),
+                    "Metrics exposed on " + path
+                );
+            }
+        } finally {
+            meterProvider.close();
+        }
+    }
+
+    @Test
     public void testRejectsWrongUsername() throws Exception {
         int port = availablePort();
         MetricReader metricReader = authenticatedMetricReader(port);
