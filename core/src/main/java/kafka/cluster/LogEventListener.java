@@ -21,9 +21,9 @@ package kafka.cluster;
 
 import kafka.log.streamaspect.ElasticLogMeta;
 
-/** Receives log metadata after it has been persisted and published by the segment manager. */
+/** Receives notifications when in-memory log metadata changes. */
 public interface LogEventListener {
 
-    /** Called with the acknowledged metadata after the manager updates its cached snapshot. */
+    /** Called after the metadata cache is updated. */
     void onChange(ElasticLogMeta meta);
 }
