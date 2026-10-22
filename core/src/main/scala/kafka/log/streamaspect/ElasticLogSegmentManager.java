@@ -23,6 +23,7 @@ import kafka.cluster.LogEventListener;
 
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 
+import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Stream;
 import com.automq.stream.utils.AsyncLogger;
 import com.google.common.annotations.VisibleForTesting;
@@ -143,15 +144,14 @@ public class ElasticLogSegmentManager {
         }
     }
 
+    /** Publishes the current metadata before persisting it asynchronously. */
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
         return asyncPersistLogMeta(true);
     }
 
     /**
-     * Persists the current log metadata asynchronously.
-     *
-     * Listeners are notified after a successful append updates the cached metadata.
-     * Failed appends do not publish metadata, and listener failures do not fail persistence.
+     * Publishes the current metadata before persisting it asynchronously.
+     * Listener failures do not fail persistence.
      *
      * @param trimStreams whether to trigger stream trims after the metadata append succeeds
      * @return the persisted log metadata
@@ -159,6 +159,7 @@ public class ElasticLogSegmentManager {
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta(boolean trimStreams) {
         ElasticLogMeta meta;
         Map<String, Long> trimOffsets;
+        CompletableFuture<AppendResult> appendFuture;
 
         segmentLock.lock();
         try {
@@ -176,15 +177,16 @@ public class ElasticLogSegmentManager {
                 segmentList.iterator(),
                 inflightCleanedSegments.values().stream().map(ElasticLogSegment::meta).iterator()
             );
+            this.logMeta = meta;
+            notifyLogEventListeners(meta);
+            MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY,
+                ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
+            appendFuture = metaStream.append(kv);
         } finally {
             segmentLock.unlock();
         }
 
-        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY,
-            ElasticLogMetaCodec.encode(meta, autoMQVersionSupplier.get()));
-        return metaStream.append(kv).thenApply(nil -> {
-            this.logMeta = meta;
-            notifyLogEventListeners(meta);
+        return appendFuture.thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
             if (trimStreams) {
                 trimStream(trimOffsets);

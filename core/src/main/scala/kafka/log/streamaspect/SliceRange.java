@@ -21,6 +21,8 @@ package kafka.log.streamaspect;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.Objects;
+
 public class SliceRange {
     @JsonProperty("s")
     private long start = Offsets.NOOP_OFFSET;
@@ -51,6 +53,21 @@ public class SliceRange {
 
     public void end(long end) {
         this.end = end;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        SliceRange that = (SliceRange) o;
+        return start == that.start && end == that.end;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(start, end);
     }
 
     @Override

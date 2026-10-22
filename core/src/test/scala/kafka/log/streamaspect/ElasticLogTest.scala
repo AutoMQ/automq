@@ -1013,12 +1013,13 @@ class ElasticLogTest {
         log = createElasticLogWithActiveSegment(config = LogTestUtils.createLogConfig(), client = client)
         appendRecords(Seq(new SimpleRecord(100L, "retained".getBytes)), initialOffset = 0L)
         appendRecords(Seq(new SimpleRecord(200L, "discarded".getBytes)), initialOffset = 1L)
-        val acknowledgedBefore = log.logSegmentManager.logMeta()
+        val metadataBefore = log.logSegmentManager.logMeta()
         client.armNextAppend()
 
         val truncation = CompletableFuture.runAsync(() => log.truncateTo(1L))
         assertTrue(client.awaitBlockedAppend())
-        assertSame(acknowledgedBefore, log.logSegmentManager.logMeta())
+        assertNotSame(metadataBefore, log.logSegmentManager.logMeta())
+        assertEquals(Seq(0L, 1L), log.logSegmentManager.logMeta().getSegmentMetas.asScala.map(_.baseOffset).toSeq)
         assertEquals(0L, log.segments.activeSegment.baseOffset)
 
         client.completeBlockedAppend()
