@@ -34,6 +34,7 @@ import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * logical meta data for a Kafka topicPartition.
@@ -90,6 +91,21 @@ public class ElasticLogMeta {
 
     public void setStreamMap(Map<String, Long> streamMap) {
         this.streamMap = streamMap;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o)
+            return true;
+        if (o == null || getClass() != o.getClass())
+            return false;
+        ElasticLogMeta that = (ElasticLogMeta) o;
+        return Objects.equals(streamMap, that.streamMap) && Objects.equals(segmentMetas, that.segmentMetas);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(streamMap, segmentMetas);
     }
 
     @Override

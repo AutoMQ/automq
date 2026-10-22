@@ -21,6 +21,7 @@ package kafka.log.streamaspect;
 
 import kafka.cluster.LogEventListener;
 
+import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.Stream;
 import com.google.common.annotations.VisibleForTesting;
 
@@ -122,10 +123,11 @@ public class ElasticLogSegmentManager {
         }
     }
 
-    /** Persists metadata and notifies listeners after the acknowledged snapshot is cached. */
+    /** Publishes the current metadata before persisting it asynchronously. */
     public CompletableFuture<ElasticLogMeta> asyncPersistLogMeta() {
         ElasticLogMeta meta;
         Map<String, Long> trimOffsets;
+        CompletableFuture<AppendResult> appendFuture;
 
         segmentLock.lock();
         try {
@@ -142,14 +144,15 @@ public class ElasticLogSegmentManager {
                 segmentList.iterator(),
                 inflightCleanedSegments.values().stream().map(ElasticLogSegment::meta).iterator()
             );
+            this.logMeta = meta;
+            notifyLogEventListeners(meta);
+            MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
+            appendFuture = metaStream.append(kv);
         } finally {
             segmentLock.unlock();
         }
 
-        MetaKeyValue kv = MetaKeyValue.of(MetaStream.LOG_META_KEY, ElasticLogMeta.encode(meta));
-        return metaStream.append(kv).thenApply(nil -> {
-            this.logMeta = meta;
-            notifyLogEventListeners(meta);
+        return appendFuture.thenApply(nil -> {
             LOGGER.info("{} save log meta {}", logIdent, meta);
             trimStream(trimOffsets);
             return meta;
