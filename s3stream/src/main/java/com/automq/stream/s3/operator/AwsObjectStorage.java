@@ -47,6 +47,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -68,6 +69,7 @@ import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
 import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.crt.CRT;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
@@ -125,6 +127,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
+    private final boolean usesCrt;
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     private final ChecksumAlgorithm checksumAlgorithm;
 
@@ -151,6 +155,11 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
+        this.usesCrt = !"netty".equals(configuration.sdkImplementation());
+        if (usesCrt) {
+            // Keep CRT alive until this storage finishes flushing and closes during JVM shutdown.
+            CRT.acquireShutdownRef();
+        }
     }
 
     // used for test only
@@ -166,6 +175,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.readS3Client = s3Client;
         this.tagging = null;
         this.checksumAlgorithm = checksumAlgorithm;
+        this.usesCrt = false;
     }
 
     public static Builder builder() {
@@ -453,9 +463,18 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     void doClose() {
-        writeS3Client.close();
-        if (readS3Client != writeS3Client) {
-            readS3Client.close();
+        if (!closed.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            writeS3Client.close();
+            if (readS3Client != writeS3Client) {
+                readS3Client.close();
+            }
+        } finally {
+            if (usesCrt) {
+                CRT.releaseShutdownRef();
+            }
         }
     }
 
