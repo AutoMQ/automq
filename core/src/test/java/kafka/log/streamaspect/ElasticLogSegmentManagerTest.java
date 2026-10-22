@@ -42,6 +42,7 @@ import scala.Option;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -63,9 +64,9 @@ import static org.mockito.Mockito.when;
 @Tag("S3Unit")
 public class ElasticLogSegmentManagerTest {
 
-    /** Given a pending delete, listeners only observe the updated cache after metadata acknowledgement. */
+    /** Segment deletion publishes updated metadata before acknowledgement. */
     @Test
-    public void testDeleteNotifiesOnlyAfterPersistence() {
+    public void testDeletePublishesBeforeAcknowledgement() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -84,16 +85,16 @@ public class ElasticLogSegmentManagerTest {
 
         manager.logSegmentEventListener().onEvent(0L, oldSegment, ElasticLogSegmentEvent.SEGMENT_DELETE);
 
-        assertTrue(notifications.isEmpty());
-        assertSame(oldMeta, manager.logMeta());
+        assertEquals(1, notifications.size());
+        assertNotSame(oldMeta, manager.logMeta());
+        assertEquals(List.of(10L), baseOffsets(notifications.get(0)));
         appendFuture.complete(mock(AppendResult.class));
         assertEquals(1, notifications.size());
-        assertEquals(List.of(10L), baseOffsets(notifications.get(0)));
     }
 
     /** Queued deletes must publish the final segment list even when no later append occurs. */
     @Test
-    public void testQueuedDeletesNotifyEachAcknowledgedSnapshot() {
+    public void testQueuedDeletesPublishEachMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> firstAppend = new CompletableFuture<>();
         CompletableFuture<AppendResult> secondAppend = new CompletableFuture<>();
@@ -112,7 +113,7 @@ public class ElasticLogSegmentManagerTest {
 
         manager.logSegmentEventListener().onEvent(0L, first, ElasticLogSegmentEvent.SEGMENT_DELETE);
         manager.logSegmentEventListener().onEvent(10L, second, ElasticLogSegmentEvent.SEGMENT_DELETE);
-        verifyNoInteractions(listener);
+        verify(listener).onChange(manager.logMeta());
         firstAppend.complete(mock(AppendResult.class));
         verify(metaStream, timeout(5000).times(2)).append(any(MetaKeyValue.class));
         secondAppend.complete(mock(AppendResult.class));
@@ -124,9 +125,9 @@ public class ElasticLogSegmentManagerTest {
         assertSame(snapshots.getAllValues().get(1), manager.logMeta());
     }
 
-    /** A failed append must not notify listeners or replace the acknowledged snapshot. */
+    /** Persistence failure leaves the published memory snapshot intact. */
     @Test
-    public void testFailedPersistenceDoesNotNotify() {
+    public void testFailedPersistenceDoesNotRollBackMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -141,8 +142,8 @@ public class ElasticLogSegmentManagerTest {
         appendFuture.completeExceptionally(new IllegalStateException("injected failure"));
 
         assertTrue(persistence.isCompletedExceptionally());
-        assertSame(oldMeta, manager.logMeta());
-        verifyNoInteractions(listener);
+        assertNotSame(oldMeta, manager.logMeta());
+        verify(listener).onChange(manager.logMeta());
     }
 
     /** Listener failures must not fail acknowledged persistence or suppress other listeners. */
@@ -166,10 +167,10 @@ public class ElasticLogSegmentManagerTest {
     }
 
     /**
-     * Given a controlled metadata append, the authoritative snapshot changes only after acknowledgement.
+     * Given a controlled metadata append, the current memory snapshot is published before acknowledgement.
      */
     @Test
-    public void testPendingPersistenceDoesNotPublishPreparedSnapshot() {
+    public void testPendingPersistencePublishesMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -192,9 +193,11 @@ public class ElasticLogSegmentManagerTest {
         manager.put(10L, newSegment);
         CompletableFuture<ElasticLogMeta> persistence = manager.asyncPersistLogMeta(false);
 
-        assertSame(oldMeta, manager.logMeta());
-        assertEquals(List.of(0L, 5L), baseOffsets(manager.logMeta()));
-        assertEquals(100L, manager.logMeta().getSegmentMetas().get(0).log().end());
+        assertNotSame(oldMeta, manager.logMeta());
+        assertEquals(List.of(0L, 5L), baseOffsets(oldMeta));
+        assertEquals(100L, oldMeta.getSegmentMetas().get(0).log().end());
+        assertEquals(List.of(0L, 10L), baseOffsets(manager.logMeta()));
+        assertEquals(50L, manager.logMeta().getSegmentMetas().get(0).log().end());
         appendFuture.complete(mock(AppendResult.class));
         assertEquals(List.of(0L, 10L), baseOffsets(persistence.join()));
         assertEquals(50L, persistence.join().getSegmentMetas().get(0).log().end());
@@ -203,10 +206,10 @@ public class ElasticLogSegmentManagerTest {
     }
 
     /**
-     * Given an exceptional metadata append, the manager must keep the previously acknowledged snapshot authoritative.
+     * Given an exceptional metadata append, the published memory snapshot remains current.
      */
     @Test
-    public void testFailedPersistenceKeepsAcknowledgedSnapshot() {
+    public void testFailedPersistenceKeepsPublishedMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         CompletableFuture<AppendResult> appendFuture = new CompletableFuture<>();
         when(metaStream.append(any(MetaKeyValue.class))).thenReturn(appendFuture);
@@ -223,13 +226,13 @@ public class ElasticLogSegmentManagerTest {
         appendFuture.completeExceptionally(new IllegalStateException("injected failure"));
 
         assertTrue(persistence.isCompletedExceptionally());
-        assertSame(oldMeta, manager.logMeta());
-        assertEquals(List.of(0L), baseOffsets(manager.logMeta()));
+        assertNotSame(oldMeta, manager.logMeta());
+        assertEquals(List.of(10L), baseOffsets(manager.logMeta()));
     }
 
-    /** A synchronous metadata append failure must not publish the prepared snapshot. */
+    /** A synchronous metadata append failure leaves the published memory snapshot intact. */
     @Test
-    public void testMetadataAppendFailureKeepsAcknowledgedSnapshot() {
+    public void testMetadataAppendFailureKeepsPublishedMemorySnapshot() {
         MetaStream metaStream = mock(MetaStream.class);
         when(metaStream.append(any(MetaKeyValue.class))).thenThrow(new IllegalStateException("injected failure"));
         ElasticLogStreamManager streamManager = mock(ElasticLogStreamManager.class);
@@ -242,8 +245,8 @@ public class ElasticLogSegmentManagerTest {
         manager.put(10L, segmentWithBaseOffset(10L));
 
         assertThrows(IllegalStateException.class, () -> manager.asyncPersistLogMeta(false));
-        assertSame(oldMeta, manager.logMeta());
-        assertEquals(List.of(0L), baseOffsets(manager.logMeta()));
+        assertNotSame(oldMeta, manager.logMeta());
+        assertEquals(List.of(10L), baseOffsets(manager.logMeta()));
     }
 
     /** In-memory mutations must not publish intermediate metadata snapshots. */

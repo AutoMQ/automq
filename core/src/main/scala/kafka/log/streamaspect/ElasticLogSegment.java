@@ -488,6 +488,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         return meta.lastModifiedTimestamp();
     }
 
+    /** Returns a snapshot of the segment's current metadata. */
     public ElasticStreamSegmentMeta meta() {
         meta.log(log.streamSegment().sliceRange());
         meta.logSize(log.sizeInBytes());
@@ -496,8 +497,7 @@ public class ElasticLogSegment extends LogSegment implements Comparable<ElasticL
         // An inactive segment can be shortened without appending a terminal sparse-index entry. Persist its logical
         // maximum timestamp so reopening the segment does not make timestamp lookup skip it in favor of a later one.
         meta.timeIndexLastEntry(active ? timeIndex.lastEntry() : maxTimestampAndOffsetSoFar);
-        meta.streamSuffix(meta.streamSuffix());
-        return meta;
+        return meta.copy();
     }
 
     @Override
