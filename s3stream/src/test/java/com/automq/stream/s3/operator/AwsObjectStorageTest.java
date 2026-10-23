@@ -126,6 +126,16 @@ public class AwsObjectStorageTest {
         Assertions.assertEquals(1048576L, options.crtMinimumThroughputBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(3), options.crtMinimumThroughputTimeout());
         Assertions.assertEquals(1073741824L, options.crtMaxNativeMemoryBytes());
+        AwsObjectStorage.Configuration listOptions = options.forList();
+        Assertions.assertEquals(1L, listOptions.crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), listOptions.crtMinimumThroughputTimeout());
+        Assertions.assertEquals(options.sdkImplementation(), listOptions.sdkImplementation());
+        Assertions.assertEquals(options.crtTargetThroughputGbps(), listOptions.crtTargetThroughputGbps());
+        Assertions.assertEquals(options.crtMaxNativeMemoryBytes(), listOptions.crtMaxNativeMemoryBytes());
+        AwsObjectStorage.Configuration moreLenientOptions = AwsObjectStorage.Configuration.builder()
+            .crtMinimumThroughputBps(1).crtMinimumThroughputTimeout(java.time.Duration.ofSeconds(60)).build();
+        Assertions.assertEquals(1L, moreLenientOptions.forList().crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(60), moreLenientOptions.forList().crtMinimumThroughputTimeout());
         Assertions.assertEquals(AwsObjectStorage.Configuration.builder().build(),
             AwsObjectStorage.Configuration.fromBucketURI(BucketURI.parse("1@s3://two?region=us-east-1")));
     }
@@ -228,14 +238,12 @@ public class AwsObjectStorageTest {
     void testCrtBuilderConfiguration() {
         software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder builder = mock(
             software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
+        AtomicReference<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration> capturedHttp = new AtomicReference<>();
         org.mockito.Mockito.doAnswer(invocation -> {
             Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder> configure = invocation.getArgument(0);
             var http = software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.builder();
             configure.accept(http);
-            var result = http.build();
-            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.connectionTimeout());
-            Assertions.assertEquals(32L * 1024 * 1024, result.healthConfiguration().minimumThroughputInBps());
-            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.healthConfiguration().minimumThroughputTimeout());
+            capturedHttp.set(http.build());
             return builder;
         }).when(builder).httpConfiguration(org.mockito.ArgumentMatchers
             .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder>>any());
@@ -248,6 +256,9 @@ public class AwsObjectStorageTest {
         }).when(builder).retryConfiguration(org.mockito.ArgumentMatchers
             .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.Builder>>any());
         AwsObjectStorage.Configuration.builder().build().configureCrtBuilder(builder, 77);
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().connectionTimeout());
+        Assertions.assertEquals(32L * 1024 * 1024, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().healthConfiguration().minimumThroughputTimeout());
         org.mockito.Mockito.verify(builder).maxConcurrency(77);
         org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
         org.mockito.Mockito.verify(builder, org.mockito.Mockito.never()).maxNativeMemoryLimitInBytes(any());
@@ -256,6 +267,9 @@ public class AwsObjectStorageTest {
         org.mockito.Mockito.verify(builder).maxConcurrency(12);
         org.mockito.Mockito.verify(builder).maxNativeMemoryLimitInBytes(1024L * 1024 * 1024);
         org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2)).thresholdInBytes(Long.MAX_VALUE);
+        AwsObjectStorage.Configuration.builder().build().forList().configureCrtBuilder(builder, 77);
+        Assertions.assertEquals(1L, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), capturedHttp.get().healthConfiguration().minimumThroughputTimeout());
     }
 
     /**
@@ -287,8 +301,12 @@ public class AwsObjectStorageTest {
         custom.configureCrtHttpBuilder(builder, 77);
         Assertions.assertEquals(1048576L, capturedHealth.get().minimumThroughputInBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(3), capturedHealth.get().minimumThroughputTimeout());
-        verify(builder).maxConcurrency(12);
-        verify(builder).connectionTimeout(java.time.Duration.ofMillis(1500));
+        custom.forList().configureCrtHttpBuilder(builder, 77);
+        Assertions.assertEquals(1L, capturedHealth.get().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), capturedHealth.get().minimumThroughputTimeout());
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2)).maxConcurrency(12);
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2))
+            .connectionTimeout(java.time.Duration.ofMillis(1500));
         AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
         try {
             var overrides = storage.clientOverrideConfiguration(custom);
@@ -434,11 +452,13 @@ public class AwsObjectStorageTest {
      */
     @Test
     void testDoListCollectsMultiplePagesWithinBound() throws Exception {
-        S3AsyncClient s3 = mock(S3AsyncClient.class);
-        AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+        S3AsyncClient dataClient = mock(S3AsyncClient.class);
+        S3AsyncClient listClient = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(dataClient, listClient, "bucket",
+            ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
         List<ListObjectsV2Request> requests = new ArrayList<>();
 
-        when(s3.listObjectsV2(org.mockito.ArgumentMatchers
+        when(listClient.listObjectsV2(org.mockito.ArgumentMatchers
             .<Consumer<ListObjectsV2Request.Builder>>any())).thenAnswer(invocation -> {
                 ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder();
                 Consumer<ListObjectsV2Request.Builder> requestBuilder = invocation.getArgument(0);
@@ -472,6 +492,11 @@ public class AwsObjectStorageTest {
         Assertions.assertNull(requests.get(1).startAfter());
         Assertions.assertEquals("page-2", requests.get(1).continuationToken());
         Assertions.assertEquals(1, requests.get(1).maxKeys());
+        org.mockito.Mockito.verify(dataClient, org.mockito.Mockito.never()).listObjectsV2(
+            org.mockito.ArgumentMatchers.<Consumer<ListObjectsV2Request.Builder>>any());
+        storage.close();
+        verify(listClient).close();
+        verify(dataClient).close();
     }
 
     @Test

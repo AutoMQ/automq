@@ -118,6 +118,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
+    // LIST responses are small, so a transfer-sized throughput threshold is unsuitable for them.
+    private static final long LIST_MINIMUM_THROUGHPUT_BPS = 1;
+    private static final Duration LIST_MINIMUM_THROUGHPUT_TIMEOUT = Duration.ofSeconds(30);
 
     // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
     // The maximum number of keys that can be deleted in a single request is 1000.
@@ -127,6 +130,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final Tagging tagging;
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
+    private final Supplier<S3AsyncClient> listClientSupplier;
+    private S3AsyncClient listS3Client;
     private final boolean usesCrt;
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -157,6 +162,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
         this.usesCrt = !"netty".equals(configuration.sdkImplementation());
         if (usesCrt) {
+            // CRT connection health is configured per client, not per request. Create this client only if LIST is used.
+            this.listClientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration.forList());
+        } else {
+            this.listClientSupplier = () -> readS3Client;
+            this.listS3Client = readS3Client;
+        }
+        if (usesCrt) {
             // Keep CRT alive until this storage finishes flushing and closes during JVM shutdown.
             CRT.acquireShutdownRef();
         }
@@ -169,10 +181,18 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, String bucket, ChecksumAlgorithm checksumAlgorithm) {
+        this(s3Client, s3Client, bucket, checksumAlgorithm);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient listS3Client, String bucket,
+        ChecksumAlgorithm checksumAlgorithm) {
         super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
+        this.listS3Client = listS3Client;
+        this.listClientSupplier = () -> listS3Client;
         this.tagging = null;
         this.checksumAlgorithm = checksumAlgorithm;
         this.usesCrt = false;
@@ -462,7 +482,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     @Override
-    void doClose() {
+    synchronized void doClose() {
         if (!closed.compareAndSet(false, true)) {
             return;
         }
@@ -472,10 +492,26 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 readS3Client.close();
             }
         } finally {
-            if (usesCrt) {
-                CRT.releaseShutdownRef();
+            try {
+                if (listS3Client != null && listS3Client != readS3Client && listS3Client != writeS3Client) {
+                    listS3Client.close();
+                }
+            } finally {
+                if (usesCrt) {
+                    CRT.releaseShutdownRef();
+                }
             }
         }
+    }
+
+    private synchronized S3AsyncClient listClient() {
+        if (closed.get()) {
+            throw new IllegalStateException("Object storage is closed");
+        }
+        if (listS3Client == null) {
+            listS3Client = listClientSupplier.get();
+        }
+        return listS3Client;
     }
 
     @Override
@@ -483,15 +519,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (options.maxKeys() == 0) {
             return CompletableFuture.completedFuture(List.of());
         }
+        S3AsyncClient client = listClient();
         CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
         List<ObjectInfo> allObjects = new ArrayList<>();
-        listNextBatch(options, null, allObjects, resultFuture);
+        listNextBatch(client, options, null, allObjects, resultFuture);
         return resultFuture;
     }
 
-    private void listNextBatch(ListOptions options, String continuationToken, List<ObjectInfo> allObjects,
+    private void listNextBatch(S3AsyncClient client, ListOptions options, String continuationToken, List<ObjectInfo> allObjects,
         CompletableFuture<List<ObjectInfo>> resultFuture) {
-        readS3Client.listObjectsV2(builder -> {
+        client.listObjectsV2(builder -> {
             builder.bucket(bucket).prefix(options.prefix());
             if (continuationToken != null) {
                 builder.continuationToken(continuationToken);
@@ -509,7 +546,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             boolean limitReached = options.maxKeys() != ListOptions.UNLIMITED
                 && allObjects.size() >= options.maxKeys();
             if (resp.isTruncated() && !limitReached) {
-                listNextBatch(options, resp.nextContinuationToken(), allObjects, resultFuture);
+                listNextBatch(client, options, resp.nextContinuationToken(), allObjects, resultFuture);
             } else {
                 int resultSize = options.maxKeys() == ListOptions.UNLIMITED
                     ? allObjects.size() : Math.min(options.maxKeys(), allObjects.size());
@@ -841,6 +878,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                                 double crtTargetThroughputGbps, int maxConcurrency, long crtMaxNativeMemoryBytes,
                                 Duration connectionTimeout, int numRetries,
                                 Duration apiCallTimeout, Duration apiCallAttemptTimeout) {
+        Configuration forList() {
+            // Keep any explicitly configured health check that is already more lenient.
+            return new Configuration(sdkImplementation, Math.min(crtMinimumThroughputBps, LIST_MINIMUM_THROUGHPUT_BPS),
+                crtMinimumThroughputTimeout.compareTo(LIST_MINIMUM_THROUGHPUT_TIMEOUT) >= 0
+                    ? crtMinimumThroughputTimeout : LIST_MINIMUM_THROUGHPUT_TIMEOUT,
+                crtTargetThroughputGbps, maxConcurrency, crtMaxNativeMemoryBytes, connectionTimeout, numRetries,
+                apiCallTimeout, apiCallAttemptTimeout);
+        }
+
         /**
          * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
          */
