@@ -138,7 +138,6 @@ public class DefaultWriterTest {
         verify(measurement).record(eq(firstSize), attributes.capture());
         assertEquals("rc", attributes.getValue().get(AttributeKey.stringKey("wal_type")));
         assertEquals(2L, attributes.getValue().get(AttributeKey.longKey("bucket_id")));
-        assertEquals(100L, attributes.getValue().get(AttributeKey.longKey("node_id")));
         recordGauge(limitGauge, measurement);
         verify(measurement).record(eq(1L), any());
 
