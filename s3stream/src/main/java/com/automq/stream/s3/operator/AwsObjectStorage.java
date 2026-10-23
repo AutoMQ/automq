@@ -47,7 +47,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -131,9 +130,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient readS3Client;
     private final S3AsyncClient writeS3Client;
     private final Supplier<S3AsyncClient> listClientSupplier;
-    private S3AsyncClient listS3Client;
     private final boolean usesCrt;
-    private final AtomicBoolean closed = new AtomicBoolean();
+    // Guarded by the monitor used by listClient() and doClose().
+    private S3AsyncClient listS3Client;
+    private boolean closed;
 
     private final ChecksumAlgorithm checksumAlgorithm;
 
@@ -483,29 +483,27 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     synchronized void doClose() {
-        if (!closed.compareAndSet(false, true)) {
+        if (closed) {
             return;
         }
+        closed = true;
         try {
             writeS3Client.close();
             if (readS3Client != writeS3Client) {
                 readS3Client.close();
             }
+            if (listS3Client != null && listS3Client != readS3Client && listS3Client != writeS3Client) {
+                listS3Client.close();
+            }
         } finally {
-            try {
-                if (listS3Client != null && listS3Client != readS3Client && listS3Client != writeS3Client) {
-                    listS3Client.close();
-                }
-            } finally {
-                if (usesCrt) {
-                    CRT.releaseShutdownRef();
-                }
+            if (usesCrt) {
+                CRT.releaseShutdownRef();
             }
         }
     }
 
     private synchronized S3AsyncClient listClient() {
-        if (closed.get()) {
+        if (closed) {
             throw new IllegalStateException("Object storage is closed");
         }
         if (listS3Client == null) {
