@@ -2,6 +2,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.sun.net.httpserver.HttpServer;
 
 import org.apache.commons.lang3.tuple.Pair;
@@ -17,6 +18,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -32,9 +34,16 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CopyObjectResponse;
+import software.amazon.awssdk.services.s3.model.CopyPartResult;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
@@ -45,6 +54,10 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Error;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.model.S3Object;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -126,6 +139,16 @@ public class AwsObjectStorageTest {
         Assertions.assertEquals(1048576L, options.crtMinimumThroughputBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(3), options.crtMinimumThroughputTimeout());
         Assertions.assertEquals(1073741824L, options.crtMaxNativeMemoryBytes());
+        AwsObjectStorage.Configuration controlOptions = options.forControl();
+        Assertions.assertEquals(1L, controlOptions.crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), controlOptions.crtMinimumThroughputTimeout());
+        Assertions.assertEquals(options.sdkImplementation(), controlOptions.sdkImplementation());
+        Assertions.assertEquals(options.crtTargetThroughputGbps(), controlOptions.crtTargetThroughputGbps());
+        Assertions.assertEquals(options.crtMaxNativeMemoryBytes(), controlOptions.crtMaxNativeMemoryBytes());
+        AwsObjectStorage.Configuration moreLenientOptions = AwsObjectStorage.Configuration.builder()
+            .crtMinimumThroughputBps(1).crtMinimumThroughputTimeout(java.time.Duration.ofSeconds(60)).build();
+        Assertions.assertEquals(1L, moreLenientOptions.forControl().crtMinimumThroughputBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(60), moreLenientOptions.forControl().crtMinimumThroughputTimeout());
         Assertions.assertEquals(AwsObjectStorage.Configuration.builder().build(),
             AwsObjectStorage.Configuration.fromBucketURI(BucketURI.parse("1@s3://two?region=us-east-1")));
     }
@@ -228,14 +251,12 @@ public class AwsObjectStorageTest {
     void testCrtBuilderConfiguration() {
         software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder builder = mock(
             software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
+        AtomicReference<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration> capturedHttp = new AtomicReference<>();
         org.mockito.Mockito.doAnswer(invocation -> {
             Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder> configure = invocation.getArgument(0);
             var http = software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.builder();
             configure.accept(http);
-            var result = http.build();
-            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.connectionTimeout());
-            Assertions.assertEquals(32L * 1024 * 1024, result.healthConfiguration().minimumThroughputInBps());
-            Assertions.assertEquals(java.time.Duration.ofSeconds(2), result.healthConfiguration().minimumThroughputTimeout());
+            capturedHttp.set(http.build());
             return builder;
         }).when(builder).httpConfiguration(org.mockito.ArgumentMatchers
             .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtHttpConfiguration.Builder>>any());
@@ -248,6 +269,9 @@ public class AwsObjectStorageTest {
         }).when(builder).retryConfiguration(org.mockito.ArgumentMatchers
             .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.Builder>>any());
         AwsObjectStorage.Configuration.builder().build().configureCrtBuilder(builder, 77);
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().connectionTimeout());
+        Assertions.assertEquals(32L * 1024 * 1024, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().healthConfiguration().minimumThroughputTimeout());
         org.mockito.Mockito.verify(builder).maxConcurrency(77);
         org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
         org.mockito.Mockito.verify(builder, org.mockito.Mockito.never()).maxNativeMemoryLimitInBytes(any());
@@ -256,6 +280,9 @@ public class AwsObjectStorageTest {
         org.mockito.Mockito.verify(builder).maxConcurrency(12);
         org.mockito.Mockito.verify(builder).maxNativeMemoryLimitInBytes(1024L * 1024 * 1024);
         org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2)).thresholdInBytes(Long.MAX_VALUE);
+        AwsObjectStorage.Configuration.builder().build().forControl().configureCrtBuilder(builder, 77);
+        Assertions.assertEquals(1L, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), capturedHttp.get().healthConfiguration().minimumThroughputTimeout());
     }
 
     /**
@@ -287,8 +314,12 @@ public class AwsObjectStorageTest {
         custom.configureCrtHttpBuilder(builder, 77);
         Assertions.assertEquals(1048576L, capturedHealth.get().minimumThroughputInBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(3), capturedHealth.get().minimumThroughputTimeout());
-        verify(builder).maxConcurrency(12);
-        verify(builder).connectionTimeout(java.time.Duration.ofMillis(1500));
+        custom.forControl().configureCrtHttpBuilder(builder, 77);
+        Assertions.assertEquals(1L, capturedHealth.get().minimumThroughputInBps());
+        Assertions.assertEquals(java.time.Duration.ofSeconds(30), capturedHealth.get().minimumThroughputTimeout());
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2)).maxConcurrency(12);
+        org.mockito.Mockito.verify(builder, org.mockito.Mockito.times(2))
+            .connectionTimeout(java.time.Duration.ofMillis(1500));
         AwsObjectStorage storage = new AwsObjectStorage(mock(S3AsyncClient.class), "bucket");
         try {
             var overrides = storage.clientOverrideConfiguration(custom);
@@ -434,11 +465,13 @@ public class AwsObjectStorageTest {
      */
     @Test
     void testDoListCollectsMultiplePagesWithinBound() throws Exception {
-        S3AsyncClient s3 = mock(S3AsyncClient.class);
-        AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+        S3AsyncClient dataClient = mock(S3AsyncClient.class);
+        S3AsyncClient controlClient = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(dataClient, controlClient, "bucket",
+            ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
         List<ListObjectsV2Request> requests = new ArrayList<>();
 
-        when(s3.listObjectsV2(org.mockito.ArgumentMatchers
+        when(controlClient.listObjectsV2(org.mockito.ArgumentMatchers
             .<Consumer<ListObjectsV2Request.Builder>>any())).thenAnswer(invocation -> {
                 ListObjectsV2Request.Builder builder = ListObjectsV2Request.builder();
                 Consumer<ListObjectsV2Request.Builder> requestBuilder = invocation.getArgument(0);
@@ -472,6 +505,117 @@ public class AwsObjectStorageTest {
         Assertions.assertNull(requests.get(1).startAfter());
         Assertions.assertEquals("page-2", requests.get(1).continuationToken());
         Assertions.assertEquals(1, requests.get(1).maxKeys());
+        org.mockito.Mockito.verify(dataClient, org.mockito.Mockito.never()).listObjectsV2(
+            org.mockito.ArgumentMatchers.<Consumer<ListObjectsV2Request.Builder>>any());
+        storage.close();
+        verify(controlClient).close();
+        verify(dataClient).close();
+    }
+
+    /**
+     * Given CRT HTTP, low-throughput requests share one lazily created client while UploadPart uses the write client.
+     */
+    @Test
+    void testCrtControlClientRoutesLowThroughputOperations() throws Exception {
+        S3AsyncClient dataClient = mock(S3AsyncClient.class);
+        S3AsyncClient controlClient = mock(S3AsyncClient.class);
+        S3AsyncClientBuilder s3Builder = mock(S3AsyncClientBuilder.class, org.mockito.Mockito.RETURNS_SELF);
+        var httpBuilder = mock(software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient.Builder.class,
+            org.mockito.Mockito.RETURNS_SELF);
+        when(s3Builder.build()).thenReturn(dataClient, controlClient);
+        when(controlClient.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(CreateMultipartUploadResponse.builder().uploadId("upload").build()));
+        when(controlClient.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(CompleteMultipartUploadResponse.builder().build()));
+        when(controlClient.uploadPartCopy(any(UploadPartCopyRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(UploadPartCopyResponse.builder()
+                .copyPartResult(CopyPartResult.builder().eTag("copied").build()).build()));
+        when(controlClient.deleteObjects(any(DeleteObjectsRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(DeleteObjectsResponse.builder().build()));
+        when(controlClient.listObjectsV2(org.mockito.ArgumentMatchers
+            .<Consumer<ListObjectsV2Request.Builder>>any()))
+            .thenReturn(CompletableFuture.completedFuture(ListObjectsV2Response.builder().isTruncated(false).build()));
+        when(dataClient.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(CompletableFuture.completedFuture(UploadPartResponse.builder().eTag("part").build()));
+
+        try (var s3Factory = org.mockito.Mockito.mockStatic(S3AsyncClient.class);
+             var httpFactory = org.mockito.Mockito.mockStatic(software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient.class)) {
+            s3Factory.when(S3AsyncClient::builder).thenReturn(s3Builder);
+            httpFactory.when(software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient::builder).thenReturn(httpBuilder);
+            AwsObjectStorage storage = new AwsObjectStorage(BucketURI.parse("0@s3://bucket?region=us-east-1"),
+                Map.of(), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, false, false, "test");
+            try {
+                verify(s3Builder).build();
+                ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+                    .apiCallAttemptTimeout(TimeUnit.MINUTES.toMillis(2));
+                String uploadId = storage.doCreateMultipartUpload(options, "key").get();
+                Assertions.assertEquals("upload", uploadId);
+                storage.doUploadPartCopy(options, "source", "key", 0, 1, uploadId, 1).get();
+                storage.doCompleteMultipartUpload(options, "key", uploadId,
+                    List.of(new ObjectStorage.ObjectStorageCompletedPart(1, "etag", null))).get();
+                storage.doDeleteObjects(List.of("key")).get();
+                storage.doList(new ObjectStorage.ListOptions("prefix")).get();
+                ByteBuf part = Unpooled.wrappedBuffer(new byte[] {1});
+                try {
+                    storage.doUploadPart(options, "key", uploadId, 1, part).get();
+                } finally {
+                    part.release();
+                }
+                org.mockito.Mockito.verify(s3Builder, org.mockito.Mockito.times(2)).build();
+                verify(controlClient).createMultipartUpload(any(CreateMultipartUploadRequest.class));
+                verify(controlClient).uploadPartCopy(any(UploadPartCopyRequest.class));
+                verify(controlClient).completeMultipartUpload(any(CompleteMultipartUploadRequest.class));
+                verify(controlClient).deleteObjects(any(DeleteObjectsRequest.class));
+                verify(controlClient).listObjectsV2(org.mockito.ArgumentMatchers
+                    .<Consumer<ListObjectsV2Request.Builder>>any());
+                verify(dataClient).uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
+                org.mockito.Mockito.verify(controlClient, org.mockito.Mockito.never())
+                    .uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
+            } finally {
+                storage.close();
+            }
+            verify(dataClient).close();
+            verify(controlClient).close();
+        }
+    }
+
+    /**
+     * Given non-CRT routing with a distinct LIST client, low-throughput writes stay on the write client.
+     */
+    @Test
+    void testNettyControlWritesUseWriteClient() throws Exception {
+        S3AsyncClient writeClient = mock(S3AsyncClient.class);
+        S3AsyncClient listClient = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(writeClient, listClient, "bucket",
+            ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
+        when(writeClient.createMultipartUpload(any(CreateMultipartUploadRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(CreateMultipartUploadResponse.builder().uploadId("upload").build()));
+        when(writeClient.completeMultipartUpload(any(CompleteMultipartUploadRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(CompleteMultipartUploadResponse.builder().build()));
+        when(writeClient.uploadPartCopy(any(UploadPartCopyRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(UploadPartCopyResponse.builder()
+                .copyPartResult(CopyPartResult.builder().eTag("copied").build()).build()));
+        when(writeClient.deleteObjects(any(DeleteObjectsRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(DeleteObjectsResponse.builder().build()));
+        try {
+            ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+                .apiCallAttemptTimeout(TimeUnit.MINUTES.toMillis(2));
+            String uploadId = storage.doCreateMultipartUpload(options, "key").get();
+            storage.doUploadPartCopy(options, "source", "key", 0, 1, uploadId, 1).get();
+            storage.doCompleteMultipartUpload(options, "key", uploadId,
+                List.of(new ObjectStorage.ObjectStorageCompletedPart(1, "etag", null))).get();
+            storage.doDeleteObjects(List.of("key")).get();
+            org.mockito.Mockito.verify(listClient, org.mockito.Mockito.never())
+                .createMultipartUpload(any(CreateMultipartUploadRequest.class));
+            org.mockito.Mockito.verify(listClient, org.mockito.Mockito.never())
+                .completeMultipartUpload(any(CompleteMultipartUploadRequest.class));
+            org.mockito.Mockito.verify(listClient, org.mockito.Mockito.never())
+                .uploadPartCopy(any(UploadPartCopyRequest.class));
+            org.mockito.Mockito.verify(listClient, org.mockito.Mockito.never())
+                .deleteObjects(any(DeleteObjectsRequest.class));
+        } finally {
+            storage.close();
+        }
     }
 
     @Test
