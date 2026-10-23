@@ -19,20 +19,41 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.metrics.Metrics;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collection;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.TimeUnit;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+import io.opentelemetry.api.common.AttributeKey;
+import io.opentelemetry.api.common.Attributes;
+import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 @Tag("S3Unit")
 public class DefaultWriterTest {
@@ -81,6 +102,78 @@ public class DefaultWriterTest {
         writer.start();
 
         assertThrows(IllegalStateException.class, writer::objectList);
+    }
+
+    /**
+     * Given a pending object WAL append, gauges report the bytes used by the capacity check and its limit;
+     * after the append completes and the writer closes, the value returns to zero and the gauges are removed.
+     */
+    @Test
+    public void testUnflushedByteMetricsMatchCapacityCheck() throws Exception {
+        writer.close();
+        ObjectWALConfig config = ObjectWALConfig.builder()
+            .withNodeId(100)
+            .withBucketId((short) 2)
+            .withType("rc")
+            .withEpoch(1000)
+            .withManualMode(true)
+            .withMaxUnflushedBytes(1)
+            .build();
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, config);
+        writer.start();
+
+        Metrics.LongGaugeBundle.LongGauge unflushedGauge = gauge("unflushedBytesGauge");
+        Metrics.LongGaugeBundle.LongGauge limitGauge = gauge("maxUnflushedBytesGauge");
+        StreamRecordBatch first = StreamRecordBatch.of(1, 1, 0, 1, generateByteBuf(16),
+            DefaultByteBufSupplier.INSTANCE);
+        long firstSize = first.encoded().readableBytes() + RECORD_HEADER_SIZE;
+        CompletableFuture<?> append = writer.append(first);
+        OverCapacityException error = assertThrows(OverCapacityException.class, () -> writer.append(
+            StreamRecordBatch.of(1, 1, 1, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE)));
+        assertTrue(error.getMessage().contains(firstSize + " > 1"));
+
+        ObservableLongMeasurement measurement = mock(ObservableLongMeasurement.class);
+        recordGauge(unflushedGauge, measurement);
+        ArgumentCaptor<Attributes> attributes = ArgumentCaptor.forClass(Attributes.class);
+        verify(measurement).record(eq(firstSize), attributes.capture());
+        assertEquals("rc", attributes.getValue().get(AttributeKey.stringKey("wal_type")));
+        assertEquals(2L, attributes.getValue().get(AttributeKey.longKey("bucket_id")));
+        recordGauge(limitGauge, measurement);
+        verify(measurement).record(eq(1L), any());
+
+        writer.flush().get(5, TimeUnit.SECONDS);
+        append.get(5, TimeUnit.SECONDS);
+        recordGauge(unflushedGauge, measurement);
+        verify(measurement).record(eq(0L), any());
+
+        Collection<?> unflushedRegistrations = registrations("UNFLUSHED_BYTES");
+        Collection<?> limitRegistrations = registrations("MAX_UNFLUSHED_BYTES");
+        assertTrue(unflushedRegistrations.contains(unflushedGauge));
+        assertTrue(limitRegistrations.contains(limitGauge));
+        writer.close();
+        assertFalse(unflushedRegistrations.contains(unflushedGauge));
+        assertFalse(limitRegistrations.contains(limitGauge));
+    }
+
+    private Metrics.LongGaugeBundle.LongGauge gauge(String fieldName) throws ReflectiveOperationException {
+        Field field = DefaultWriter.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return (Metrics.LongGaugeBundle.LongGauge) field.get(writer);
+    }
+
+    private Collection<?> registrations(String fieldName) throws ReflectiveOperationException {
+        Field bundleField = DefaultWriter.class.getDeclaredField(fieldName);
+        bundleField.setAccessible(true);
+        Field gaugesField = Metrics.LongGaugeBundle.class.getDeclaredField("gauges");
+        gaugesField.setAccessible(true);
+        return (Collection<?>) gaugesField.get(bundleField.get(null));
+    }
+
+    private void recordGauge(Metrics.LongGaugeBundle.LongGauge gauge, ObservableLongMeasurement measurement)
+        throws ReflectiveOperationException {
+        Method record = gauge.getClass().getDeclaredMethod("record", ObservableLongMeasurement.class);
+        record.setAccessible(true);
+        record.invoke(gauge, measurement);
     }
 
     // TODO: fix the test
