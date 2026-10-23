@@ -59,6 +59,24 @@
 - [Hungry Studio: Building a Multi-Cloud Real-Time Streaming Analytics Architecture on AutoMQ](https://www.automq.com/solutions/gaming?utm_source=github_automq)
 
 
+## 📖 AutoMQ in Simple Terms
+
+**What is AutoMQ?** AutoMQ is a drop-in replacement for Apache Kafka that stores data in cloud object storage (S3, MinIO) instead of local disks. It keeps the same Kafka API — your existing clients, tools, and connectors work without changes.
+
+**How is it different from Apache Kafka?** Traditional Kafka stores all data on local broker disks, making brokers "stateful" — hard to scale, expensive in the cloud. AutoMQ separates compute from storage: brokers become stateless and lightweight, while data lives durably in cheap, scalable object storage.
+
+**When should you choose AutoMQ over Kafka?**
+- You run Kafka in the cloud and want to cut your bill (typical savings: 50–90%)
+- You need to scale up or down quickly without manual data migration
+- You want zero cross-AZ traffic costs on AWS or GCP
+- You want built-in auto-balancing without external tools
+
+**Typical use cases:**
+- Real-time event streaming and log pipelines
+- Message queuing for microservices
+- Clickstream and IoT data ingestion
+- Streaming ETL with Kafka Connect and Streams
+
 ### Prerequisites
 Before running AutoMQ locally, please ensure:
 - Docker version 20.x or later
@@ -93,6 +111,16 @@ There are more deployment options available:
 - [Try AutoMQ on AWS Marketplace (Two Weeks Free Trial)](https://docs.automq.com/automq-cloud/getting-started/install-byoc-environment/aws/install-env-from-marketplace?utm_source=github_automq)
 - [Try AutoMQ on Alibaba Cloud Marketplace (Two Weeks Free Trial)](https://market.aliyun.com/products/55530001/cmgj00065841.html)
 
+### 🧭 Recommended Path for First-Time Users
+
+If you're new to AutoMQ, here's the fastest way to get started:
+
+1. **Try it locally (10 minutes):** Run the single-node Docker setup above — no cloud account needed.
+2. **Understand the basics:** Read [AutoMQ in Simple Terms](#-automq-in-simple-terms) and [Why AutoMQ](#-why-automq).
+3. **Explore the architecture:** Check the [Architecture](#✨architecture) section to see how it works under the hood.
+4. **Go deeper:** Follow the [documentation](https://www.automq.com/docs/automq/what-is-automq/overview) for multi-node, Kubernetes, or cloud deployment.
+5. **Join the community:** Say hi on [Slack](https://go.automq.com/slack) — the team is friendly and responsive.
+
 ## 🗞️ Newest Feature - Table Topic
 Table Topic is a new feature in AutoMQ that combines stream and table functionalities to unify streaming and data analysis. Currently, it supports Apache Iceberg and integrates with catalog services such as AWS Glue, HMS, and the Rest catalog. Additionally, it natively supports S3 tables, a new AWS product announced at the 2024 re:Invent. [Learn more](https://www.automq.com/blog/automq-table-topic-seamless-integration-with-s3-tables-and-iceberg?utm_source=github_automq).
 
@@ -115,6 +143,19 @@ Here are some key highlights of AutoMQ that make it an ideal choice to replace y
     - Low Latency: AutoMQ defaults to running on S3 directly, resulting in hundreds of milliseconds of latency. The enterprise version offers single-digit millisecond latency. [Contact us](https://www.automq.com/contact?utm_source=github_automq) for more details.
 - **Built-in Metrics Export**: Natively export Prometheus and OpenTelemetry metrics, supporting both push and pull. Ditch inefficient JMX and monitor your cluster with modern tools. Refer to [full metrics list](https://www.automq.com/docs/automq/observability/metrics?utm_source=github_automq) provided by AutoMQ.
 - **100% Kafka Compatible**: Fully compatible with Apache Kafka, offering all features with greater cost-effectiveness and operational efficiency.
+
+### ⚡ Performance & Latency Expectations
+
+| Workload | Open Source (S3) | Enterprise Edition | Notes |
+|----------|-----------------|-------------------|-------|
+| Throughput per broker | Up to 1 GiB/s | Up to 3 GiB/s | Scales linearly with brokers |
+| Write Latency (p99) | 200–500 ms | < 10 ms | Enterprise uses local SSD WAL |
+| Read Latency — cached (p99) | < 10 ms | < 5 ms | Hot data served from local cache |
+| Read Latency — uncached (p99) | 200–500 ms | 50–100 ms | Cold data fetched from S3 |
+| Scaling Speed | Seconds | Seconds | Brokers are stateless |
+| Max Partitions | Unlimited | Unlimited | No local disk bottleneck |
+
+> **Note:** The open-source version routes reads and writes through S3 (or S3-compatible storage like MinIO), giving ~200–500ms latency — suitable for throughput-oriented workloads. For single-digit millisecond latency, the Enterprise Edition adds local SSD caching. [Contact us](https://www.automq.com/contact) for enterprise benchmarks.
 
 ## ✨Architecture
 AutoMQ is a fork of the open-source [Apache Kafka](https://github.com/apache/kafka). We've introduced a new storage engine based on object storage, transforming the classic shared-nothing architecture into a shared storage architecture.
