@@ -187,6 +187,9 @@ public class ReplicationControlManager {
         private FeatureControlManager featureControl = null;
         private boolean eligibleLeaderReplicasEnabled = false;
         private Controller quorumController = null;
+        // AutoMQ inject start
+        private boolean controlledShutdownCrossRackEnabled = false;
+        // AutoMQ inject end
 
         Builder setSnapshotRegistry(SnapshotRegistry snapshotRegistry) {
             this.snapshotRegistry = snapshotRegistry;
@@ -244,6 +247,11 @@ public class ReplicationControlManager {
         }
 
         // AutoMQ for Kafka inject start
+        Builder setControlledShutdownCrossRackEnabled(boolean enabled) {
+            this.controlledShutdownCrossRackEnabled = enabled;
+            return this;
+        }
+
         public Builder setQuorumController(Controller quorumController) {
             this.quorumController = quorumController;
             return this;
@@ -273,7 +281,8 @@ public class ReplicationControlManager {
                 createTopicPolicy,
                 featureControl,
                 // AutoMQ for Kafka inject start
-                quorumController
+                quorumController,
+                controlledShutdownCrossRackEnabled
                 // AutoMQ for Kafka inject end
             );
         }
@@ -468,6 +477,7 @@ public class ReplicationControlManager {
 
     // AutoMQ for Kafka inject start
     private static final int PARTITION_RE_ELECT_LEADER_TIMEOUT_SECS = 10;
+    private final boolean controlledShutdownCrossRackEnabled;
     /**
      * Partition reassignment elect timeout for each partition.
      */
@@ -490,7 +500,10 @@ public class ReplicationControlManager {
         ClusterControlManager clusterControl,
         Optional<CreateTopicPolicy> createTopicPolicy,
         FeatureControlManager featureControl,
-        Controller quorumController
+        // AutoMQ inject start
+        Controller quorumController,
+        boolean controlledShutdownCrossRackEnabled
+        // AutoMQ inject end
     ) {
         this.snapshotRegistry = snapshotRegistry;
         this.log = logContext.logger(ReplicationControlManager.class);
@@ -512,6 +525,9 @@ public class ReplicationControlManager {
         this.imbalancedPartitions = new TimelineHashSet<>(snapshotRegistry, 0);
         this.directoriesToPartitions = new TimelineHashMap<>(snapshotRegistry, 0);
         this.quorumController = quorumController;
+        // AutoMQ inject start
+        this.controlledShutdownCrossRackEnabled = controlledShutdownCrossRackEnabled;
+        // AutoMQ inject end
     }
 
     public void replay(TopicRecord record) {
@@ -1585,8 +1601,8 @@ public class ReplicationControlManager {
             batch.add(leaders.next());
         }
         List<ApiMessageAndVersion> records = new ArrayList<>(batch.size());
-        generateLeaderAndIsrUpdates("gentleControlledShutdown[" + brokerId + "]",
-            brokerId, NO_LEADER, NO_LEADER, records, batch.iterator());
+        generateLeaderAndIsrUpdates0("gentleControlledShutdown[" + brokerId + "]",
+            brokerId, NO_LEADER, NO_LEADER, records, batch.iterator(), controlledShutdownCrossRackEnabled);
         return ControllerResult.of(records, null);
     }
 
@@ -2142,16 +2158,20 @@ public class ReplicationControlManager {
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
                                      Iterator<TopicIdPartition> iterator) {
-        generateLeaderAndIsrUpdates0(context, brokerToRemove, brokerToAdd,
-            brokerWithUncleanShutdown, records, iterator);
+        // AutoMQ inject start
+        generateLeaderAndIsrUpdates0(context, brokerToRemove, brokerToAdd, brokerWithUncleanShutdown, records, iterator, false);
+        // AutoMQ inject end
     }
 
-    void generateLeaderAndIsrUpdates0(String context,
+    // AutoMQ inject start
+    private void generateLeaderAndIsrUpdates0(String context,
                                      int brokerToRemove,
                                      int brokerToAdd,
                                      int brokerWithUncleanShutdown,
                                      List<ApiMessageAndVersion> records,
-                                     Iterator<TopicIdPartition> iterator) {
+                                     Iterator<TopicIdPartition> iterator,
+                                     boolean allowCrossRack) {
+        // AutoMQ inject end
         int oldSize = records.size();
 
         // If the caller passed a valid broker ID for brokerToAdd, rather than passing
@@ -2221,7 +2241,8 @@ public class ReplicationControlManager {
                     builder.setTargetNode(brokerToAdd);
                 } else {
                     if (partitionLeaderSelector == null) {
-                        partitionLeaderSelector = new LoadAwarePartitionLeaderSelector(clusterControl.getActiveBrokers(), brokerRegistrationToRemove);
+                        partitionLeaderSelector = new LoadAwarePartitionLeaderSelector(
+                            clusterControl.getActiveBrokers(), brokerRegistrationToRemove, allowCrossRack);
                     }
                     partitionLeaderSelector
                         .select(new TopicPartition(topic.name(), topicIdPart.partitionId()))

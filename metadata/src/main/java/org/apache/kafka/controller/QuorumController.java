@@ -295,6 +295,7 @@ public final class QuorumController implements Controller {
 
         // AutoMQ inject start
         private StreamClient streamClient;
+        private boolean controlledShutdownCrossRackEnabled = false;
         private List<String> quorumVoters = Collections.emptyList();
         private Function<QuorumController, QuorumControllerExtension> extension = c -> QuorumControllerExtension.NOOP;
         // AutoMQ inject end
@@ -367,6 +368,20 @@ public final class QuorumController implements Controller {
             this.replicaPlacer = replicaPlacer;
             return this;
         }
+
+        // AutoMQ inject start
+        /**
+         * Sets whether controlled shutdown may use load-weighted destinations across racks.
+         * Disabled by default; other recovery paths retain their existing placement policy.
+         *
+         * @param enabled whether cross-rack shutdown placement is enabled
+         * @return this builder
+         */
+        public Builder setControlledShutdownCrossRackEnabled(boolean enabled) {
+            this.controlledShutdownCrossRackEnabled = enabled;
+            return this;
+        }
+        // AutoMQ inject end
 
         public Builder setLeaderImbalanceCheckIntervalNs(OptionalLong value) {
             this.leaderImbalanceCheckIntervalNs = value;
@@ -529,6 +544,7 @@ public final class QuorumController implements Controller {
                     delegationTokenExpiryCheckIntervalMs,
                     eligibleLeaderReplicasEnabled,
                     streamClient,
+                    controlledShutdownCrossRackEnabled,
                     quorumVoters,
                     extension
                 );
@@ -2083,6 +2099,7 @@ public final class QuorumController implements Controller {
 
         // AutoMQ inject start
         StreamClient streamClient,
+        boolean controlledShutdownCrossRackEnabled,
         List<String> quorumVoters,
         Function<QuorumController, QuorumControllerExtension> extension
         // AutoMQ inject end
@@ -2172,6 +2189,7 @@ public final class QuorumController implements Controller {
             setFeatureControl(featureControl).
             // AutoMQ for Kafka inject start
             setQuorumController(this).
+            setControlledShutdownCrossRackEnabled(controlledShutdownCrossRackEnabled).
             // AutoMQ for Kafka inject end
             build();
         this.scramControlManager = new ScramControlManager.Builder().
