@@ -1,6 +1,7 @@
 package unit.kafka.server.streamaspect
 
 import com.google.common.util.concurrent.MoreExecutors
+import kafka.automq.interceptor.{ProduceRequestArgs, TrafficInterceptor}
 import kafka.network.RequestChannel
 import kafka.log.streamaspect.reassignment.PartitionHandoff
 import kafka.server._
@@ -10,27 +11,31 @@ import kafka.server.streamaspect.{ElasticKafkaApis, ElasticReplicaManager, Fetch
 import kafka.utils.TestUtils
 import org.apache.kafka.common.memory.MemoryPool
 import org.apache.kafka.common.message.ApiMessageType.ListenerType
-import org.apache.kafka.common.message.{AutomqGetPartitionSnapshotRequestData, AutomqPreparePartitionHandoffRequestData, AutomqUpdateGroupRequestData, AutomqZoneRouterRequestData, FetchRequestData, UpdateLicenseRequestData}
+import org.apache.kafka.common.message.{AutomqGetPartitionSnapshotRequestData, AutomqPreparePartitionHandoffRequestData, AutomqUpdateGroupRequestData, AutomqZoneRouterRequestData, FetchRequestData, ProduceRequestData, UpdateLicenseRequestData, UpdateMetadataRequestData}
 import org.apache.kafka.common.network.{ClientInformation, ListenerName}
 import org.apache.kafka.common.protocol.{ApiKeys, Errors, MessageUtil}
 import org.apache.kafka.common.requests.s3.{AutomqGetPartitionSnapshotRequest, AutomqGetPartitionSnapshotResponse, AutomqPreparePartitionHandoffRequest, AutomqPreparePartitionHandoffResponse, AutomqUpdateGroupRequest, AutomqUpdateGroupResponse, AutomqZoneRouterRequest, AutomqZoneRouterResponse, UpdateLicenseRequest}
-import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, FetchRequest, FetchResponse, RequestContext, RequestHeader}
+import org.apache.kafka.common.requests.{AbstractRequest, AbstractResponse, FetchRequest, FetchResponse, ProduceRequest, ProduceResponse, RequestContext, RequestHeader}
+import org.apache.kafka.common.record.{MemoryRecords, SimpleRecord}
+import org.apache.kafka.common.compress.Compression
 import org.apache.kafka.common.resource.Resource
-import org.apache.kafka.common.{TopicPartition, Uuid}
+import org.apache.kafka.common.{Node, TopicPartition, Uuid}
 import org.apache.kafka.common.security.auth.{KafkaPrincipal, SecurityProtocol}
 import org.apache.kafka.raft.QuorumConfig
 import org.apache.kafka.server.authorizer.Authorizer
 import org.apache.kafka.server.authorizer.{Action, AuthorizationResult}
 import org.apache.kafka.server.common.{FinalizedFeatures, KRaftVersion, MetadataVersion}
+import org.apache.kafka.server.common.automq.AutoMQVersion
 import org.apache.kafka.server.config.KRaftConfigs
 import org.junit.jupiter.api.Assertions.{assertEquals, assertNotNull, assertSame, assertTrue}
 import org.junit.jupiter.api.{Tag, Test, Timeout}
 import org.mockito.{ArgumentCaptor, ArgumentMatchers}
-import org.mockito.Mockito.{doReturn, mock, never, spy, verify, when}
+import org.mockito.Mockito.{doAnswer, doReturn, mock, never, spy, verify, when}
 
 import java.net.InetAddress
 import java.util
 import java.util.{Collections, Optional}
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.Map
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, SeqHasAsJava, SetHasAsScala}
 
@@ -41,6 +46,87 @@ class ElasticKafkaApisTest extends KafkaApisTest {
   private var extensionApiMatcherOverride: Option[ApiKeys => Boolean] = None
   private var brokerDispatcherFactoryOverride: Option[BrokerExtensionContext => BrokerExtensionHandleDispatcher] = None
   private var partitionHandoffStagerOverride: Option[util.Collection[PartitionHandoff] => Unit] = None
+
+  @Test
+  def shouldIncludePublishedHintWithoutChangingProduceFailure(): Unit = {
+    // Given a completed failed append with no leader, publication releases exactly one error reply with a hint.
+    exerciseLeaderHintRecovery(publish = true)
+  }
+
+  @Test
+  def shouldSendOriginalFailureWhenHintDeadlineExpires(): Unit = {
+    // Given a leader that never appears, expiry still sends exactly one unchanged failure reply.
+    exerciseLeaderHintRecovery(publish = false)
+  }
+
+  @Test
+  def shouldNotAdvertiseDrainingLocalLeader(): Unit = {
+    // Given stopped Produce admission and an old published owner, wait for a different published leader.
+    exerciseLeaderHintRecovery(publish = true, drainingLocal = true)
+  }
+
+  private def exerciseLeaderHintRecovery(publish: Boolean, drainingLocal: Boolean = false): Unit = {
+    metadataCache = spy(metadataCache)
+    doReturn(AutoMQVersion.V3).when(metadataCache).autoMQVersion()
+    val tp = new TopicPartition("hint-recovery", 0)
+    doReturn(true).when(metadataCache).contains(tp)
+    val published = new AtomicBoolean()
+    val recoveredLeader = if (drainingLocal) brokerId + 1 else 1
+    val leader = new UpdateMetadataRequestData.UpdateMetadataPartitionState()
+      .setLeader(recoveredLeader).setLeaderEpoch(2)
+    val oldOwner = new UpdateMetadataRequestData.UpdateMetadataPartitionState()
+      .setLeader(brokerId).setLeaderEpoch(0)
+    doReturn(None).when(metadataCache).getPartitionInfo(tp.topic, tp.partition)
+    when(metadataCache.getPartitionInfo(tp.topic, tp.partition)).thenAnswer(_ =>
+      if (published.get()) Some(leader) else if (drainingLocal) Some(oldOwner) else None)
+    if (drainingLocal) {
+      val partition = mock(classOf[kafka.cluster.Partition])
+      when(partition.leaderReplicaIdOpt).thenReturn(Some(brokerId))
+      when(partition.getLeaderEpoch).thenReturn(0)
+      when(partition.isProduceClosed).thenReturn(true)
+      when(replicaManager.getPartitionOrError(tp)).thenReturn(Right(partition))
+    } else {
+      when(replicaManager.getPartitionOrError(tp)).thenReturn(Left(Errors.NOT_LEADER_OR_FOLLOWER))
+    }
+    val interceptor = mock(classOf[TrafficInterceptor])
+    when(interceptor.getLeaderNode(ArgumentMatchers.anyInt(), ArgumentMatchers.any(), ArgumentMatchers.anyString()))
+      .thenAnswer(invocation => {
+        val id = invocation.getArgument[Integer](0).intValue()
+        if (drainingLocal && id == brokerId) Optional.of(new Node(brokerId, "old-broker", 9092))
+        else if (published.get() && id == recoveredLeader) Optional.of(new Node(recoveredLeader, "broker-new", 9092))
+        else Optional.empty[Node]()
+      })
+    doAnswer(invocation => {
+        invocation.getArgument[ProduceRequestArgs](0).responseCallback().accept(
+          Collections.singletonMap(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER)))
+        null
+      }).when(interceptor).handleProduceRequest(ArgumentMatchers.any(classOf[ProduceRequestArgs]))
+    val request = buildRequest(ProduceRequest.forCurrentMagic(new ProduceRequestData()
+      .setAcks(1.toShort).setTimeoutMs(5000)
+      .setTopicData(new ProduceRequestData.TopicProduceDataCollection(Collections.singletonList(
+        new ProduceRequestData.TopicProduceData().setName(tp.topic).setPartitionData(Collections.singletonList(
+          new ProduceRequestData.PartitionProduceData().setIndex(0)
+            .setRecords(MemoryRecords.withRecords(Compression.NONE, new SimpleRecord(Array[Byte](1))))))).iterator)))
+      .build(10.toShort))
+    kafkaApis = createKafkaApis()
+    kafkaApis.asInstanceOf[ElasticKafkaApis].setTrafficInterceptor(interceptor)
+    try {
+      kafkaApis.handleProduceRequest(request, RequestLocal.NoCaching)
+      verify(requestChannel, never()).sendResponse(ArgumentMatchers.eq(request), ArgumentMatchers.any(), ArgumentMatchers.any())
+      if (publish) published.set(true) else time.sleep(1000)
+      verify(requestChannel, org.mockito.Mockito.timeout(5000).times(1)).sendResponse(
+        ArgumentMatchers.eq(request), ArgumentMatchers.any(), ArgumentMatchers.any())
+      val response = captureResponse[ProduceResponse](request)
+      val result = response.data().responses().iterator().next().partitionResponses().get(0)
+      assertEquals(Errors.NOT_LEADER_OR_FOLLOWER.code(), result.errorCode())
+      assertEquals(if (publish) recoveredLeader else -1, result.currentLeader().leaderId())
+      assertEquals(if (publish) 2 else -1, result.currentLeader().leaderEpoch())
+      assertEquals(if (publish) 1 else 0, response.data().nodeEndpoints().size())
+    } finally {
+      // Release any still-scheduled poll even if an assertion fails.
+      time.sleep(1001)
+    }
+  }
 
   @Test
   def shouldDelegateExtensionApiToBrokerDispatcher(): Unit = {

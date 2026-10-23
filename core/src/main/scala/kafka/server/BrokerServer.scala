@@ -770,6 +770,12 @@ class BrokerServer(
       // 2. before metadataListener start close to ensure S3Stream can read the latest metadata.
       if (replicaManager != null) {
         CoreUtils.swallow(replicaManager.awaitAllPartitionShutdown(), this)
+        // AutoMQ inject start
+        dataPlaneRequestProcessor match {
+          case apis: ElasticKafkaApis => CoreUtils.swallow(apis.awaitProduceLeaderHintsDuringShutdown(), this)
+          case _ =>
+        }
+        // AutoMQ inject end
         CoreUtils.swallow(trafficInterceptor.close(), this)
         if (routerChannelProvider != null) {
           CoreUtils.swallow(routerChannelProvider.close(), this)
