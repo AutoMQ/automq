@@ -60,7 +60,7 @@ com.automq.opentelemetry/
 ├── exporter/
 │   ├── MetricsExporter.java       # Exporter interface
 │   ├── MetricsExporterURI.java    # URI parser
-│   ���── OTLPMetricsExporter.java   # OTLP exporter implementation
+│      ── OTLPMetricsExporter.java   # OTLP exporter implementation
 │   ├── PrometheusMetricsExporter.java # Prometheus exporter implementation
 │   └── s3/                        # S3 metrics exporter implementation
 │       ├── CompressionUtils.java  # Utility for data compression
@@ -168,7 +168,7 @@ Configuration is provided through the `MetricsExportConfig` interface and constr
 
 ### Exporter Configuration
 
-All configuration is done through the `MetricsExportConfig` interface and constructor parameters. Export intervals, compression settings, and other options are controlled through:
+For direct telemetry API usage, configuration is provided through MetricsExportConfig and constructor parameters. Kafka brokers additionally support the authentication properties documented below:
 
 1. **Exporter URI**: Determines the export destination and protocol
 2. **MetricsExportConfig**: Provides cluster information, intervals, and base labels
@@ -184,6 +184,59 @@ AutoMQTelemetryManager manager = AutoMQTelemetryManager.initializeInstance(
     config
 );
 ```
+
+#### Prometheus Basic Authentication (Kafka Broker)
+
+Kafka brokers support optional HTTP Basic authentication for the built-in Prometheus endpoint. Authentication is **disabled by default** to preserve the behavior of existing deployments.
+
+Configure these properties in the Kafka broker configuration:
+
+```properties
+s3.telemetry.metrics.exporter.uri=prometheus://?host=127.0.0.1&port=9090
+s3.telemetry.metrics.prometheus.auth.type=basic
+s3.telemetry.metrics.prometheus.auth.username=prometheus
+s3.telemetry.metrics.prometheus.auth.password=<your-secret-password>
+```
+
+Replace `<your-secret-password>` with a securely provisioned secret. The password setting accepts a password **value**, not the name or path of a secret file. Do not embed credentials in `s3.telemetry.metrics.exporter.uri`, since exporter URIs may be logged.
+
+| Property | Behavior |
+|----------|----------|
+| `s3.telemetry.metrics.prometheus.auth.type` | `none` (default) or `basic` |
+| `s3.telemetry.metrics.prometheus.auth.username` | Required nonblank username for `basic`; must not contain `:` |
+| `s3.telemetry.metrics.prometheus.auth.password` | Required nonempty password for `basic`; handled as a Kafka `PASSWORD` config |
+
+When Basic authentication is enabled:
+
+- Requests for `/metrics` without credentials or with invalid credentials receive HTTP `401` and a `WWW-Authenticate` challenge.
+- Requests with valid credentials can scrape `/metrics`.
+- The exact `/` and `/-/healthy` paths remain public for compatibility with existing health checks.
+- Other request paths also require authentication; do not assume they are public health endpoints.
+- Credentials are fixed at startup. Update the broker configuration and restart the broker to rotate credentials.
+
+Prometheus scraping configuration for a collector in the **same network namespace** as the broker:
+
+```yaml
+scrape_configs:
+  - job_name: automq
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+    metrics_path: /metrics
+    basic_auth:
+      username: prometheus
+      password_file: /etc/prometheus/secrets/automq-password
+```
+
+The `password_file` shown above belongs to **Prometheus**; it is not an AutoMQ broker property. Provision the same credential securely for both components. Ensure the Prometheus process can read the file and that the file is protected from other users.
+
+**Transport security and deployment:**
+
+- Basic authentication does **not** encrypt passwords in transit. For scrapes across an untrusted network, use HTTPS through a reverse proxy, Kubernetes sidecar/ingress, or equivalent TLS termination, and restrict access with network controls.
+- **VM/IaaS:** A loopback-bound endpoint works with a local collector or a secure local reverse proxy. Protect the broker configuration and Prometheus password file with restrictive filesystem permissions.
+- **Kubernetes:** A collector in a different pod cannot reach the broker's `127.0.0.1` listener. For cross-pod scraping, expose a deliberately chosen interface through an authenticated, TLS-protected endpoint or proxy. Use Kubernetes Secrets to supply credentials and render them into the broker configuration securely.
+- Avoid exposing a plain HTTP listener bound to `0.0.0.0` on an untrusted network. If TLS is terminated by a proxy, limit direct access to the broker listener so clients cannot bypass the proxy.
+
+This configuration is wired through the Kafka broker telemetry startup path. Separately initialized telemetry components, including Kafka Connect components using the direct `AutoMQTelemetryManager.initializeInstance(...)` API, are not automatically protected by these broker settings.
 
 #### OTLP Exporter  
 ```java
