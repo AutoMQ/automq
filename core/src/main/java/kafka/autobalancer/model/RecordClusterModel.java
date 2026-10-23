@@ -75,15 +75,15 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
 
     @Override
     public void onPartitionCreate(PartitionRecord record) {
-        changePartition(record.topicId(), record.partitionId(), record.leader());
+        changePartition(record.topicId(), record.partitionId(), record.leader(), false);
     }
 
     @Override
     public void onPartitionChange(PartitionChangeRecord record) {
-        changePartition(record.topicId(), record.partitionId(), record.leader());
+        changePartition(record.topicId(), record.partitionId(), record.leader(), true);
     }
 
-    private void changePartition(Uuid topicId, int partitionId, int leader) {
+    private void changePartition(Uuid topicId, int partitionId, int leader, boolean explicitLeaderChange) {
         if (leader == LeaderConstants.NO_LEADER) {
             deletePartition(topicId, partitionId);
             return;
@@ -92,6 +92,6 @@ public class RecordClusterModel extends ClusterModel implements BrokerStatusList
         } else if (leader < 0) {
             throw new IllegalStateException("Unexpected leader value: " + leader);
         }
-        reassignPartition(topicId, partitionId, leader);
+        reassignPartition(topicId, partitionId, leader, explicitLeaderChange);
     }
 }
