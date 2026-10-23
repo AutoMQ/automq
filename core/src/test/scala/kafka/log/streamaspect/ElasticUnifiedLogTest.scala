@@ -40,8 +40,7 @@ import org.junit.jupiter.params.provider.ValueSource
 
 import java.io.File
 import java.util.Optional
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CountDownLatch, ExecutionException, Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
@@ -49,6 +48,62 @@ import scala.jdk.CollectionConverters.IterableHasAsScala
 @Tag("S3Unit")
 class ElasticUnifiedLogTest extends UnifiedLogTest {
     var client: Client = _
+
+    /** Given a queued acknowledgement, draining must not hold the log lock needed by its callback. */
+    @Test
+    def testDrainWaitsForQueuedCallbackWithoutLogLock(): Unit = {
+        val log = createLog(logDir, LogTestUtils.createLogConfig()).asInstanceOf[ElasticUnifiedLog]
+        val local = log.getLocalLog()
+        val callbackEntered = new CountDownLatch(1)
+        val releaseCallback = new CountDownLatch(1)
+        val drainStarted = new CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            local.appendAckThread.submit(new Runnable {
+                override def run(): Unit = {
+                    callbackEntered.countDown()
+                    assertTrue(releaseCallback.await(5, TimeUnit.SECONDS))
+                    log.updateHighWatermark(0)
+                }
+            })
+            assertTrue(callbackEntered.await(5, TimeUnit.SECONDS))
+            val drained = executor.submit(new Runnable {
+                override def run(): Unit = {
+                    drainStarted.countDown()
+                    log.drainAcceptedAppends()
+                }
+            })
+            assertTrue(drainStarted.await(5, TimeUnit.SECONDS))
+            assertFalse(drained.isDone)
+            releaseCallback.countDown()
+            drained.get(5, TimeUnit.SECONDS)
+        } finally {
+            releaseCallback.countDown()
+            executor.shutdownNow()
+        }
+    }
+
+    /** Given a failed persistence callback, drain must fail rather than claim a durable append. */
+    @Test
+    def testDrainPropagatesDurableCallbackFailure(): Unit = {
+        val log = createLog(logDir, LogTestUtils.createLogConfig()).asInstanceOf[ElasticUnifiedLog]
+        val failed = new CompletableFuture[Void]()
+        failed.completeExceptionally(new IllegalStateException("injected WAL failure"))
+        log.getLocalLog().trackDurableCallback(failed)
+        assertThrows(classOf[ExecutionException], () => log.drainAcceptedAppends())
+    }
+
+    /** Given an end offset beyond confirmed storage, drain must reject it without advancing the watermark. */
+    @Test
+    def testDrainRejectsUnconfirmedEndOffset(): Unit = {
+        val log = createLog(logDir, LogTestUtils.createLogConfig()).asInstanceOf[ElasticUnifiedLog]
+        val local = log.getLocalLog()
+        local.updateLogEndOffset(1L)
+        try {
+            assertThrows(classOf[IllegalStateException], () => log.drainAcceptedAppends())
+            assertEquals(0L, log.highWatermark)
+        } finally local.updateLogEndOffset(0L)
+    }
 
     @BeforeEach
     override def setUp(): Unit = {

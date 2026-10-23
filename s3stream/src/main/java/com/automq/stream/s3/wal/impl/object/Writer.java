@@ -39,6 +39,21 @@ public interface Writer {
     /** Uploads buffered records and completes when they are durable. */
     CompletableFuture<Void> flush();
 
+    /**
+     * Request prompt upload while retaining ordinary append ownership, durability
+     * and failure semantics. Writers without this scheduling hint fall back to append.
+     *
+     * @return the append result after the normal durability barrier
+     */
+    default CompletableFuture<AppendResult> appendUrgent(StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(streamRecordBatch);
+    }
+
+    /** Coalesces recovery records under a short deadline while retaining ordinary durable append semantics. */
+    default CompletableFuture<AppendResult> appendRecovery(StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(streamRecordBatch);
+    }
+
     RecordOffset confirmOffset();
 
     CompletableFuture<Void> reset() throws WALFencedException;

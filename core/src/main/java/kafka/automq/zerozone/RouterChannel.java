@@ -27,6 +27,11 @@ public interface RouterChannel {
 
     CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data);
 
+    /** Requests scheduling urgency without changing durable completion or buffer ownership. */
+    default CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data, boolean urgent) {
+        return append(targetNodeId, orderHint, data);
+    }
+
     CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
 
     void nextEpoch(long epoch);

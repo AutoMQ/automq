@@ -27,6 +27,9 @@ import org.apache.kafka.common.Endpoint;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.metadata.BrokerRegistration;
+import org.apache.kafka.server.common.automq.AutoMQVersion;
+
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -43,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
@@ -50,6 +54,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Timeout(60)
@@ -58,6 +65,42 @@ public class ProxyNodeMappingTest {
     static final String LISTENER_NAME = "BROKER";
     MetadataCache metadataCache;
     ProxyNodeMapping proxyNodeMapping;
+
+    /** Given a real proxy topology change, start bounded batching before notifying routing listeners. */
+    @Test
+    public void testRecoveryOnlyOnChangedProxyTopology() {
+        RecoveryBatchingWindow window = mock(RecoveryBatchingWindow.class);
+        AtomicBoolean accelerated = new AtomicBoolean();
+        when(metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V3);
+        when(window.startRecovery()).thenAnswer(ignored -> {
+            accelerated.set(true);
+            return true;
+        });
+        Map<String, List<BrokerRegistration>> racks = Map.of(
+            "az1", new ArrayList<>(List.of(brokerRegistration(1, "az1", "127.0.0.1", 9092),
+                brokerRegistration(2, "az1", "127.0.0.2", 9092))),
+            "az2", new ArrayList<>(List.of(brokerRegistration(3, "az2", "127.0.0.3", 9092))));
+        proxyNodeMapping.main2proxyByRack = Map.of();
+        try (var windows = mockStatic(RecoveryBatchingWindow.class)) {
+            windows.when(() -> RecoveryBatchingWindow.forNode(1)).thenReturn(window);
+            proxyNodeMapping.updateMapping(racks);
+            proxyNodeMapping.updateMapping(racks);
+            verify(window, never()).startRecovery();
+            AtomicBoolean expectRecovery = new AtomicBoolean();
+            AtomicBoolean notified = new AtomicBoolean();
+            proxyNodeMapping.registerListener(ignored -> {
+                if (expectRecovery.get()) {
+                    assertTrue(accelerated.get(), "Recovery scheduling must precede routing notification");
+                    notified.set(true);
+                }
+            });
+            expectRecovery.set(true);
+            proxyNodeMapping.updateMapping(Map.of(
+                "az1", new ArrayList<>(List.of(racks.get("az1").get(0))), "az2", racks.get("az2")));
+            verify(window).startRecovery();
+            assertTrue(notified.get());
+        }
+    }
 
     @BeforeEach
     public void setup() {

@@ -118,6 +118,18 @@ public class ObjectWALService implements WriteAheadLog {
     }
 
     @Override
+    public CompletableFuture<AppendResult> appendUrgent(TraceContext context,
+        StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return writer.appendUrgent(streamRecordBatch);
+    }
+
+    @Override
+    public CompletableFuture<AppendResult> appendRecovery(TraceContext context,
+        StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return writer.appendRecovery(streamRecordBatch);
+    }
+
+    @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return reader.get(recordOffset);
     }

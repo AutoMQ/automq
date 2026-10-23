@@ -104,6 +104,8 @@ public class DefaultWriter implements Writer {
     private final long batchNanos;
     private final boolean manualMode;
     private final long minBulkUploadIntervalNanos;
+    private final RecoveryBatchingWindow recoveryBatchingWindow;
+    private final Runnable recoveryBatchListener = this::shortenRecoveryBatch;
 
     private final Queue<Bulk> waitingUploadBulks = new ConcurrentLinkedQueue<>();
     private final Queue<Bulk> uploadingBulks = new ConcurrentLinkedQueue<>();
@@ -118,8 +120,13 @@ public class DefaultWriter implements Writer {
     private CompletableFuture<Void> lastTrimCf = CompletableFuture.completedFuture(null);
 
     public DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
+        this(time, objectStorage, config, RecoveryBatchingWindow.forNode(config.nodeId()));
+    }
+
+    DefaultWriter(Time time, ObjectStorage objectStorage, ObjectWALConfig config, RecoveryBatchingWindow recoveryBatchingWindow) {
         this.manualMode = config.manualMode();
         this.time = time;
+        this.recoveryBatchingWindow = recoveryBatchingWindow;
         this.objectStorage = objectStorage;
         this.reservationService = config.reservationService();
         this.config = config;
@@ -174,6 +181,7 @@ public class DefaultWriter implements Writer {
         startMonitor();
 
         state = State.STARTED;
+        recoveryBatchingWindow.addListener(recoveryBatchListener);
     }
 
     @Override
@@ -182,6 +190,7 @@ public class DefaultWriter implements Writer {
             return;
         }
         state = State.CLOSING;
+        recoveryBatchingWindow.removeListener(recoveryBatchListener);
         ScheduledFuture<?> monitorTask = this.monitorTask;
         if (monitorTask != null) {
             monitorTask.cancel(false);
@@ -223,8 +232,23 @@ public class DefaultWriter implements Writer {
     }
 
     public CompletableFuture<AppendResult> append(StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(streamRecordBatch, false, false);
+    }
+
+    @Override
+    public CompletableFuture<AppendResult> appendUrgent(StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(streamRecordBatch, true, false);
+    }
+
+    @Override
+    public CompletableFuture<AppendResult> appendRecovery(StreamRecordBatch streamRecordBatch) throws OverCapacityException {
+        return append(streamRecordBatch, false, true);
+    }
+
+    private CompletableFuture<AppendResult> append(StreamRecordBatch streamRecordBatch, boolean urgent,
+        boolean recovery) throws OverCapacityException {
         try {
-            return append0(streamRecordBatch);
+            return append0(streamRecordBatch, urgent, recovery);
         } catch (Throwable ex) {
             streamRecordBatch.release();
             if (ex instanceof OverCapacityException) {
@@ -242,6 +266,11 @@ public class DefaultWriter implements Writer {
 
     public CompletableFuture<AppendResult> append0(
         StreamRecordBatch streamRecordBatch) throws OverCapacityException, WALFencedException {
+        return append0(streamRecordBatch, false, false);
+    }
+
+    private CompletableFuture<AppendResult> append0(
+        StreamRecordBatch streamRecordBatch, boolean urgent, boolean recovery) throws OverCapacityException, WALFencedException {
         checkWriteStatus();
 
         if (bufferedDataBytes.get() > config.maxUnflushedBytes()) {
@@ -266,9 +295,12 @@ public class DefaultWriter implements Writer {
             }
             bufferedDataBytes.addAndGet(dataSize);
             activeBulk.add(record);
+            if (recovery) {
+                activeBulk.shortenForRecovery(RecoveryBatchingWindow.recoveryBatchIntervalNanos(batchNanos));
+            }
             // In FAILOVER mode, the only append is the fake record from trim to persist trimOffset.
             // Upload immediately to avoid the batch delay (~250ms) when failover recover.
-            if ((!manualMode && activeBulk.size > config.maxBytesInBatch()) || config.openMode() == OpenMode.FAILOVER) {
+            if (shouldUploadActiveBulk(urgent)) {
                 uploadActiveBulk();
             }
         } finally {
@@ -282,6 +314,11 @@ public class DefaultWriter implements Writer {
         });
     }
 
+    private boolean shouldUploadActiveBulk(boolean urgent) {
+        return (!manualMode && (urgent || activeBulk.size > config.maxBytesInBatch()))
+            || config.openMode() == OpenMode.FAILOVER;
+    }
+
     private void forceUploadBulk(Bulk forceBulk) {
         lock.writeLock().lock();
         try {
@@ -293,11 +330,25 @@ public class DefaultWriter implements Writer {
         }
     }
 
+    private void shortenRecoveryBatch() {
+        lock.writeLock().lock();
+        try {
+            if (state == State.STARTED && activeBulk != null) {
+                activeBulk.shortenForRecovery();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     private void uploadActiveBulk() {
         lock.writeLock().lock();
         try {
             if (activeBulk == null) {
                 return;
+            }
+            if (activeBulk.forceUploadTask != null) {
+                activeBulk.forceUploadTask.cancel(false);
             }
             waitingUploadBulks.add(activeBulk);
             nextOffset.set(ObjectUtils.ceilAlignOffset(nextOffset.get() + activeBulk.size));
@@ -583,22 +634,43 @@ public class DefaultWriter implements Writer {
         private final long baseOffset;
         private final List<Record> records = new ArrayList<>(1024);
         private final long startNanos;
+        private long forceUploadNanos;
+        private ScheduledFuture<?> forceUploadTask;
         final CompletableFuture<ObjectStorage.WriteResult> uploadCf = new CompletableFuture<>();
         final CompletableFuture<Void> completeCf = new CompletableFuture<>();
 
         public Bulk(long baseOffset) {
             this.startNanos = time.nanoseconds();
             this.baseOffset = baseOffset;
+            long effectiveBatchNanos = recoveryBatchingWindow.batchIntervalNanos(batchNanos);
             long forceUploadDelayNanos = Math.min(
                 Math.max(
                     // Try batch the requests in a short time window to save the PUT API.
                     minBulkUploadIntervalNanos,
-                    lastBulkForceUploadNanos + batchNanos - startNanos
+                    lastBulkForceUploadNanos + effectiveBatchNanos - startNanos
                 ),
-                batchNanos);
-            lastBulkForceUploadNanos = startNanos + forceUploadDelayNanos;
+                effectiveBatchNanos);
+            scheduleUpload(startNanos, forceUploadDelayNanos);
+        }
+
+        private void shortenForRecovery() {
+            shortenForRecovery(recoveryBatchingWindow.batchIntervalNanos(batchNanos));
+        }
+
+        private void shortenForRecovery(long intervalNanos) {
+            long deadlineNanos = startNanos + intervalNanos;
+            if (!manualMode && intervalNanos < batchNanos && deadlineNanos - forceUploadNanos < 0) {
+                forceUploadTask.cancel(false);
+                long now = time.nanoseconds();
+                scheduleUpload(now, Math.max(0, deadlineNanos - now));
+            }
+        }
+
+        private void scheduleUpload(long now, long delayNanos) {
+            forceUploadNanos = now + delayNanos;
+            lastBulkForceUploadNanos = forceUploadNanos;
             if (!manualMode) {
-                SCHEDULE.schedule(() -> forceUploadBulk(this), forceUploadDelayNanos, TimeUnit.NANOSECONDS);
+                forceUploadTask = SCHEDULE.schedule(() -> forceUploadBulk(this), delayNanos, TimeUnit.NANOSECONDS);
             }
         }
 
