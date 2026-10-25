@@ -60,6 +60,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/** Verifies requester logging isolation and recovery without changing retry scheduling or response handling. */
 @Tag("S3Unit")
 @Timeout(30)
 public class SubscriberRequesterTest {

@@ -42,6 +42,7 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -72,7 +73,7 @@ import io.netty.buffer.Unpooled;
     private final Function<Uuid, String> topicNameGetter;
     private final EventLoop eventLoop;
     private final Time time;
-    private final SnapshotSubscriptionFailureLogger failureLogger;
+    private final LogSuppressor failureLogger;
 
     public SubscriberRequester(SnapshotReadPartitionsManager.Subscriber subscriber, Node node, AutoMQVersion version,
         AsyncSender asyncSender,
@@ -84,7 +85,9 @@ import io.netty.buffer.Unpooled;
         this.topicNameGetter = topicNameGetter;
         this.eventLoop = eventLoop;
         this.time = time;
-        this.failureLogger = new SnapshotSubscriptionFailureLogger(node, time, LOGGER);
+        this.failureLogger = LogSuppressor.builder(LOGGER)
+            .timeSource(time::hiResClockMs)
+            .build();
     }
 
     public void start() {
@@ -144,11 +147,11 @@ import io.netty.buffer.Unpooled;
                 }
                 subscriber.unsafeRun();
                 if (successfulResponse) {
-                    failureLogger.onSuccess();
+                    failureLogger.recover("[SNAPSHOT_SUBSCRIBE_RECOVERED],node={}", node);
                 }
             }, eventLoop)
             .exceptionally(ex -> {
-                failureLogger.onFailure(ex);
+                failureLogger.error("[SNAPSHOT_SUBSCRIBE_ERROR],node={}", node, ex);
                 return null;
             }).whenComplete((nil, ex) -> {
                 long elapsed = time.milliseconds() - lastRequestTime;
