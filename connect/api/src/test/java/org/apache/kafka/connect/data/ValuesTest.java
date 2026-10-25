@@ -475,7 +475,7 @@ public class ValuesTest {
 
     private void assertParseStringArrayWithNoSchema(List<Object> expected, String str) {
         SchemaAndValue result = Values.parseString(str);
-        assertEquals(Type.MAP, result.schema().type());
+        assertEquals(Type.ARRAY, result.schema().type());
         assertNull(result.schema().valueSchema());
         List<?> list = (List<?>) result.value();
         assertEquals(expected, list);
