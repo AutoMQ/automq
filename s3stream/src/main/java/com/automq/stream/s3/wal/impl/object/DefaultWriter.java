@@ -81,6 +81,7 @@ public class DefaultWriter implements Writer {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultWriter.class);
     private static final AttributeKey<String> WAL_TYPE = AttributeKey.stringKey("wal_type");
     private static final AttributeKey<Long> BUCKET_ID = AttributeKey.longKey("bucket_id");
+    private static final AttributeKey<Long> WAL_NODE_ID = AttributeKey.longKey("wal_node_id");
     private static final Metrics.LongGaugeBundle UNFLUSHED_BYTES = Metrics.instance()
         .longGauge("kafka_stream_object_wal_unflushed_bytes",
             "Object WAL bytes awaiting append completion, including record headers", "bytes");
@@ -190,6 +191,7 @@ public class DefaultWriter implements Writer {
         Attributes metricAttributes = Attributes.builder()
             .put(WAL_TYPE, config.type().isEmpty() ? "default" : config.type())
             .put(BUCKET_ID, (long) config.bucketId())
+            .put(WAL_NODE_ID, (long) config.nodeId())
             .build();
         unflushedBytesGauge = UNFLUSHED_BYTES.register(MetricsLevel.INFO, metricAttributes);
         unflushedBytesGauge.record(bufferedDataBytes::get);
