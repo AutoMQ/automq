@@ -28,10 +28,13 @@ import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.mockito.MockedStatic;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -55,8 +58,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
@@ -66,6 +71,47 @@ import static org.mockito.Mockito.when;
 /** Protects batching, routing, completion order, trimming and buffer ownership across buckets. */
 @Tag("S3Unit")
 public class MultiBucketsRouterChannelTest {
+    /** A recovery append shortens the pending router batch but both responses still await WAL durability. */
+    @Test
+    public void testRecoveryAppendShortensBatchAndRetainsDurability() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?batchInterval=60000&maxBytesInBatch=1000");
+        CompletableFuture<RouterChannel.AppendResult> first = fixture.append((short) 1);
+        CompletableFuture<RouterChannel.AppendResult> second = fixture.router.append(43, (short) 2,
+            Unpooled.buffer().writeByte(2), true);
+        Wal wal = fixture.nextFlush();
+        assertEquals(2, wal.appends.size());
+        assertFalse(first.isDone());
+        assertFalse(second.isDone());
+        wal.succeed(0, 1);
+        wal.succeed(1, 2);
+        first.get(5, TimeUnit.SECONDS);
+        second.get(5, TimeUnit.SECONDS);
+        fixture.close();
+    }
+
+    /** A shared recovery window wakes a pending router batch and upload failure remains an append failure. */
+    @Test
+    public void testRecoveryWindowShortensPendingBatchAndRetainsFailure() throws Exception {
+        RecoveryBatchingWindow window = mock(RecoveryBatchingWindow.class);
+        when(window.batchIntervalNanos(anyLong())).thenAnswer(invocation -> invocation.getArgument(0));
+        try (MockedStatic<RecoveryBatchingWindow> windows = mockStatic(RecoveryBatchingWindow.class)) {
+            windows.when(() -> RecoveryBatchingWindow.forNode(42)).thenReturn(window);
+            Fixture fixture = new Fixture("0@s3://a?batchInterval=60000&maxBytesInBatch=1000");
+            ArgumentCaptor<Runnable> listener = ArgumentCaptor.forClass(Runnable.class);
+            verify(window).addListener(listener.capture());
+            CompletableFuture<RouterChannel.AppendResult> result = fixture.append((short) 1);
+            assertEquals(0, fixture.flushed.size());
+            when(window.batchIntervalNanos(anyLong())).thenReturn(TimeUnit.MILLISECONDS.toNanos(50));
+            listener.getValue().run();
+            Wal wal = fixture.nextFlush();
+            assertFalse(result.isDone());
+            wal.appends.get(0).completeExceptionally(new IllegalStateException("upload failed"));
+            assertTrue(result.isCompletedExceptionally());
+            fixture.close();
+            verify(window).removeListener(listener.getValue());
+        }
+    }
+
     /** Given two small appends, size flushing submits the whole batch to one bucket. */
     @Test
     public void testSizeBatchUsesOneBucketAndFirstBucketOptions() throws Exception {

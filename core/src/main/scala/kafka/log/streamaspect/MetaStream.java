@@ -215,8 +215,14 @@ public class MetaStream implements Stream {
      * @return a future of append result
      */
     private CompletableFuture<AppendResult> appendEncoded(String key, ByteBuffer value) {
+        return appendEncoded(key, value, true);
+    }
+
+    private CompletableFuture<AppendResult> appendEncoded(String key, ByteBuffer value, boolean urgent) {
         ByteBuffer encoded = MetaKeyValue.encode(MetaKeyValue.of(key, value));
-        CompletableFuture<AppendResult> appendFuture = innerStream.append(new DefaultRecordBatch(
+        AppendContext context = new AppendContext();
+        context.urgent(urgent);
+        CompletableFuture<AppendResult> appendFuture = innerStream.append(context, new DefaultRecordBatch(
             1, System.currentTimeMillis(), Collections.emptyMap(), encoded.duplicate()));
         return appendFuture.thenApply(result -> {
             runInLock(lock, () -> {
@@ -523,9 +529,12 @@ public class MetaStream implements Stream {
         if (overwrite.isEmpty()) {
             return CompletableFuture.completedFuture(null);
         }
-        CompletableFuture<Void> overwriteCf = CompletableFuture.allOf(overwrite.stream()
-            .map(entry -> appendEncoded(entry.getKey(), entry.getValue().value()))
-            .toArray(CompletableFuture[]::new));
+        List<CompletableFuture<AppendResult>> appends = new LinkedList<>();
+        for (int i = 0; i < overwrite.size(); i++) {
+            Map.Entry<String, MetadataValue> entry = overwrite.get(i);
+            appends.add(appendEncoded(entry.getKey(), entry.getValue().value(), i == overwrite.size() - 1));
+        }
+        CompletableFuture<Void> overwriteCf = CompletableFuture.allOf(appends.toArray(CompletableFuture[]::new));
         // await overwrite complete then trim to the minimum offset in metaCache
         return overwriteCf.thenCompose(nil -> {
             OptionalLong minOffset = metaCache.values().stream().mapToLong(v -> v.offset).min();

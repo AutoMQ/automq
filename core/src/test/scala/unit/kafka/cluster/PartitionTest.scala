@@ -20,6 +20,7 @@ import java.net.InetAddress
 import com.yammer.metrics.core.Metric
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.log._
+import kafka.log.streamaspect.ElasticUnifiedLog
 import kafka.server._
 import kafka.server.checkpoints.OffsetCheckpoints
 import kafka.utils._
@@ -36,7 +37,7 @@ import org.apache.kafka.common.{DirectoryId, IsolationLevel, TopicPartition, Uui
 import org.apache.kafka.server.config.ReplicationConfigs
 import org.apache.kafka.metadata.LeaderRecoveryState
 import org.junit.jupiter.api.Assertions._
-import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.{Tag, Test}
 import org.mockito.ArgumentMatchers
 import org.mockito.ArgumentMatchers.{any, anyBoolean, anyInt, anyLong, anyString}
 import org.mockito.Mockito._
@@ -44,7 +45,7 @@ import org.mockito.invocation.InvocationOnMock
 
 import java.nio.ByteBuffer
 import java.util.Optional
-import java.util.concurrent.{CountDownLatch, Semaphore}
+import java.util.concurrent.{CountDownLatch, Executors, Semaphore, TimeUnit}
 import kafka.server.metadata.{KRaftMetadataCache, ZkMetadataCache}
 import org.apache.kafka.clients.ClientResponse
 import org.apache.kafka.common.compress.Compression
@@ -152,6 +153,56 @@ object PartitionTest {
 
 class PartitionTest extends AbstractPartitionTest {
   import PartitionTest._
+
+  /** Given accepted work, drain stops new writes but leaves normal high-watermark/ISR eligibility intact. */
+  @Test
+  @Tag("S3Unit")
+  def testAcceptedProduceDrainKeepsAcknowledgementEligibility(): Unit = {
+    setupPartitionWithMocks(leaderEpoch = 0, isLeader = true)
+    val elastic = mock(classOf[ElasticUnifiedLog])
+    val props = createLogProperties(Map(TopicConfig.MIN_IN_SYNC_REPLICAS_CONFIG -> "2"))
+    when(elastic.config).thenReturn(new org.apache.kafka.storage.internals.log.LogConfig(props))
+    when(elastic.highWatermark).thenReturn(0L)
+    partition.log = Some(elastic)
+    partition.leaderReplicaIdOpt = Some(brokerId)
+    partition.assignmentState = SimpleAssignmentState(Seq(brokerId, remoteReplicaId))
+    partition.partitionState = CommittedPartitionState(Set(brokerId), LeaderRecoveryState.RECOVERED)
+    partition.drainProduceBeforeClose()
+    assertThrows(classOf[NotLeaderOrFollowerException], () => partition.checkClosed())
+    assertFalse(partition.beginProduceRegistration())
+    assertEquals((false, Errors.NONE), partition.checkEnoughReplicasReachOffset(1L))
+    when(elastic.highWatermark).thenReturn(1L)
+    assertEquals((true, Errors.NOT_ENOUGH_REPLICAS_AFTER_APPEND), partition.checkEnoughReplicasReachOffset(1L))
+    partition.partitionState = CommittedPartitionState(Set(brokerId, remoteReplicaId), LeaderRecoveryState.RECOVERED)
+    assertEquals((true, Errors.NONE), partition.checkEnoughReplicasReachOffset(1L))
+    verify(delayedOperations).checkAndCompleteAll()
+  }
+
+  /** Given late Produce registration, drain must wait without holding the ISR lock needed by other operations. */
+  @Test
+  @Tag("S3Unit")
+  def testAcceptedProduceDrainWaitsForRegistration(): Unit = {
+    val elastic = mock(classOf[ElasticUnifiedLog])
+    partition.log = Some(elastic)
+    partition.leaderReplicaIdOpt = Some(brokerId)
+    assertTrue(partition.beginProduceRegistration())
+    val executor = Executors.newSingleThreadExecutor()
+    try {
+      val drained = executor.submit(new Runnable {
+        override def run(): Unit = partition.drainProduceBeforeClose()
+      })
+      TestUtils.waitUntilTrue(() => {
+        try { partition.checkClosed(); false } catch { case _: NotLeaderOrFollowerException => true }
+      }, "Drain must stop admission before waiting for accepted registration")
+      assertFalse(drained.isDone)
+      assertFalse(partition.beginProduceRegistration(), "ISR read lock must remain available while draining")
+      verify(elastic, never()).drainAcceptedAppends()
+      partition.finishProduceRegistration()
+      drained.get(5, TimeUnit.SECONDS)
+      verify(elastic).drainAcceptedAppends()
+      verify(delayedOperations).checkAndCompleteAll()
+    } finally executor.shutdownNow()
+  }
 
   @Test
   def testLastFetchedOffsetValidation(): Unit = {

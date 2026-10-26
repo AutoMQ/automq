@@ -8,7 +8,7 @@ import io.opentelemetry.api.common.{AttributeKey, Attributes}
 import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
-import kafka.automq.zerozone.ZeroZoneThreadLocalContext
+import kafka.automq.zerozone.{LeaderRecoveryBatching, ZeroZoneThreadLocalContext}
 import kafka.cluster.Partition
 import kafka.log.remote.RemoteLogManager
 import kafka.log.streamaspect.{ElasticLogManager, OpenHint, PartitionStatusTracker, ReadHint}
@@ -29,7 +29,7 @@ import org.apache.kafka.common.errors.s3.StreamFencedException
 import org.apache.kafka.common.internals.Topic
 import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.protocol.Errors
-import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource}
+import org.apache.kafka.common.record.{MemoryRecords, PooledRecords, PooledResource, RecordValidationStats}
 import org.apache.kafka.common.replica.ClientMetadata
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.requests.FetchRequest.PartitionData
@@ -47,11 +47,13 @@ import java.util
 import java.util.Optional
 import java.util.concurrent._
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger, AtomicLong, AtomicReference}
+import java.util.concurrent.locks.Lock
 import java.util.function.{BiFunction, Consumer}
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.{Seq, mutable}
 import scala.compat.java8.OptionConverters
 import scala.compat.java8.OptionConverters.RichOptionalGeneric
+import scala.util.control.NonFatal
 import scala.jdk.CollectionConverters.{CollectionHasAsScala, EnumerationHasAsScala, MapHasAsScala, SetHasAsJava}
 
 object ElasticReplicaManager {
@@ -216,6 +218,55 @@ class ElasticReplicaManager(
     logDirFailureHandler.start()
   }
 
+  @volatile private var produceDrainRecovery = false
+
+  /** Reports controlled shutdown so routed siblings can avoid optional batching while admission drains. */
+  def isProduceDraining: Boolean = produceDrainRecovery
+
+  /** Reports a known closed local Produce replica; subsequent append checks remain authoritative. */
+  def isLocalProduceClosed(topicPartition: TopicPartition): Boolean =
+    getPartitionOrError(topicPartition).toOption.exists(_.isProduceClosed)
+
+  /** Shorten accepted object-WAL batches before controlled shutdown starts waiting for partition drain. */
+  override def beginControlledShutdown(): Unit = {
+    produceDrainRecovery = true
+    startDrainBatching()
+    super.beginControlledShutdown()
+  }
+
+  private val produceRegistrations = new ThreadLocal[ArrayBuffer[Partition]]()
+
+  /** Keep each actually appended partition hosted until its delayed Produce is registered. */
+  override def appendRecords(timeout: Long,
+    requiredAcks: Short,
+    internalTopicsAllowed: Boolean,
+    origin: AppendOrigin,
+    entriesPerPartition: scala.collection.Map[TopicPartition, MemoryRecords],
+    responseCallback: scala.collection.Map[TopicPartition, org.apache.kafka.common.requests.ProduceResponse.PartitionResponse] => Unit,
+    delayedProduceLock: Option[Lock],
+    recordValidationStatsCallback: scala.collection.Map[TopicPartition, RecordValidationStats] => Unit,
+    requestLocal: RequestLocal,
+    actionQueue: ActionQueue,
+    verificationGuards: scala.collection.Map[TopicPartition, VerificationGuard]): Unit = {
+    val previous = produceRegistrations.get()
+    val registrations = if (Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported))
+      new ArrayBuffer[Partition]() else null
+    produceRegistrations.set(registrations)
+    try {
+      super.appendRecords(timeout, requiredAcks, internalTopicsAllowed, origin, entriesPerPartition,
+        responseCallback, delayedProduceLock, recordValidationStatsCallback, requestLocal, actionQueue, verificationGuards)
+    } finally {
+      if (previous == null) produceRegistrations.remove() else produceRegistrations.set(previous)
+      if (registrations != null) registrations.foreach(_.finishProduceRegistration())
+    }
+  }
+
+  private def startDrainBatching(): Unit = {
+    if (LeaderRecoveryBatching.startBeforeDrain(metadataCache.autoMQVersion(), localBrokerId)) {
+      info("Broker/partition drain: cap object WAL batching at 50ms within the shared recovery budget")
+    }
+  }
+
   /**
    * Stop the given partitions.
    *
@@ -240,6 +291,16 @@ class ElasticReplicaManager(
       if (stopPartition.deleteLocalLog) {
         getPartition(topicPartition) match {
           case hostedPartition: HostedPartition.Online =>
+            // AutoMQ inject start
+            if (ElasticLogManager.enabled() && Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported)) {
+              startDrainBatching()
+              try {
+                hostedPartition.partition.drainProduceBeforeClose()
+              } catch {
+                case NonFatal(ex) => warn(s"Unable to drain accepted Produce requests for $topicPartition; retaining normal close path", ex)
+              }
+            }
+            // AutoMQ inject end
             if (allPartitions.remove(topicPartition, hostedPartition)) {
               notifyPartitionClose(hostedPartition.partition)
               brokerTopicStats.removeMetrics(topicPartition)
@@ -249,6 +310,7 @@ class ElasticReplicaManager(
                 // For elastic stream, partition leader alter is triggered by setting isr/replicas.
                 // When broker is not response for the partition, we need to close the partition
                 // instead of delete the partition.
+                startDrainBatching()
                 val start = System.currentTimeMillis()
                 hostedPartition.partition.close()
                 info(s"partition $topicPartition is closed, cost ${System.currentTimeMillis() - start} ms")
@@ -380,6 +442,8 @@ class ElasticReplicaManager(
       } else {
         try {
           val partition = getPartitionOrException(topicPartition)
+          val registrations = produceRegistrations.get()
+          if (registrations != null && partition.beginProduceRegistration()) registrations += partition
           val info = partition.appendRecordsToLeader(records, origin, requiredAcks, requestLocal,
             verificationGuards.getOrElse(topicPartition, VerificationGuard.SENTINEL))
           val numAppendedMessages = info.numMessages
@@ -1494,13 +1558,25 @@ class ElasticReplicaManager(
 
   def computeSnapshotReadPartition(topicPartition: TopicPartition,
     remappingFunction: BiFunction[TopicPartition, Partition, Partition]): Partition = {
-    snapshotReadPartitions.compute(topicPartition, (tp, partition) => {
+    // AutoMQ inject start
+    var changed = false
+    val result = snapshotReadPartitions.compute(topicPartition, (tp, partition) => {
       val newPartition = remappingFunction.apply(tp, partition)
+      changed = partition ne newPartition
       if (newPartition == null) {
         brokerTopicStats.removeMetrics(tp)
       }
       newPartition
     })
+    // Snapshot replicas are not stopped through stopPartitions, which normally
+    // wakes delayed requests. Publish their new state before checking purgatory:
+    // a removed or replaced replica must not strand fetches until maxWaitMs.
+    // Do this outside ConcurrentHashMap.compute to avoid lock-order inversion.
+    if (changed) {
+      completeDelayedFetchOrProduceRequests(topicPartition)
+    }
+    result
+    // AutoMQ inject end
   }
 
   def newSnapshotReadPartition(topicIdPartition: TopicIdPartition): Partition = {

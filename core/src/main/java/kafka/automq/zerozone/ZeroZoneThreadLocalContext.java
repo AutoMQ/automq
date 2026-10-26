@@ -40,6 +40,7 @@ public class ZeroZoneThreadLocalContext {
 
     public static class WriteContext {
         ChannelOffset channelOffset;
+        boolean recoveryScheduling;
 
         private WriteContext() {}
 
@@ -47,8 +48,14 @@ public class ZeroZoneThreadLocalContext {
             return channelOffset;
         }
 
+        /** Returns the request-local priority carried through deferred append dispatch. */
+        public boolean recoveryScheduling() {
+            return recoveryScheduling;
+        }
+
         public void reset() {
             channelOffset = null;
+            recoveryScheduling = false;
         }
 
         public WriteContext detach() {

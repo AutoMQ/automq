@@ -28,6 +28,7 @@ import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 import org.apache.kafka.metadata.BrokerRegistration;
 
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 import com.automq.stream.utils.Threads;
 
 import org.slf4j.Logger;
@@ -226,11 +227,42 @@ class ProxyNodeMapping {
         updateMapping(filteredRack2Brokers(latestRack2Brokers));
     }
 
-    private synchronized void updateMapping(Map<String, List<BrokerRegistration>> rack2brokers) {
+    synchronized void updateMapping(Map<String, List<BrokerRegistration>> rack2brokers) {
         inited = true;
-        this.main2proxyByRack = dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
+        Map<String, Map<Integer, BrokerRegistration>> previous = this.main2proxyByRack;
+        Map<String, Map<Integer, BrokerRegistration>> next =
+            dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
+        this.main2proxyByRack = next;
+        // A live proxy changes when a broker leaves or returns even if the
+        // physical partition leader does not. Shorten both WAL stages before
+        // retries drain; reuse the existing shared, bounded recovery budget.
+        if (!previous.isEmpty() && metadataCache.autoMQVersion().isZeroZoneV2Supported()
+            && !sameProxyTopology(previous, next)
+            && RecoveryBatchingWindow.forNode(currentNode.id()).startRecovery()) {
+            LOGGER.info("Proxy topology recovery: shorten object WAL batching within the shared recovery budget");
+        }
         logMapping(main2proxyByRack);
         notifyListeners(this.main2proxyByRack);
+    }
+
+    private static boolean sameProxyTopology(
+        Map<String, Map<Integer, BrokerRegistration>> previous,
+        Map<String, Map<Integer, BrokerRegistration>> next) {
+        if (!previous.keySet().equals(next.keySet())) {
+            return false;
+        }
+        for (Map.Entry<String, Map<Integer, BrokerRegistration>> rack : previous.entrySet()) {
+            Map<Integer, BrokerRegistration> nextRack = next.get(rack.getKey());
+            if (!rack.getValue().keySet().equals(nextRack.keySet())) {
+                return false;
+            }
+            for (Map.Entry<Integer, BrokerRegistration> proxy : rack.getValue().entrySet()) {
+                if (proxy.getValue().id() != nextRack.get(proxy.getKey()).id()) {
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     private Map<String, List<BrokerRegistration>> buildRack2Brokers(MetadataImage image) {

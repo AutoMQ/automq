@@ -65,6 +65,9 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -115,6 +118,34 @@ public class PartitionSnapshotsManagerTest {
         assertTrue(second.isDone());
         AutomqGetPartitionSnapshotResponse response = second.get(1, TimeUnit.SECONDS);
         assertEquals(first.data().sessionEpoch() + 1, response.data().sessionEpoch());
+    }
+
+    /** An existing proxy's cache-pressure signal must request an urgent commit, not the ordinary paced upload. */
+    @Test
+    public void testCachePressureUsesUrgentCommit() throws Exception {
+        AutomqGetPartitionSnapshotResponse first = manager.handle(request(0, 0, false)).get(1, TimeUnit.SECONDS);
+        manager.handle(request(first.data().sessionId(), first.data().sessionEpoch(), true)).get(1, TimeUnit.SECONDS);
+        verify(confirmWAL, timeout(1000).times(2)).commit(0, false);
+        verify(confirmWAL, never()).commit(1000, false);
+    }
+
+    /** Repeated pressure requests sharing a stalled commit must retain only one session completion callback. */
+    @Test
+    public void testCoalescedCommitDoesNotAccumulateCompletionCallbacks() throws Exception {
+        SnapshotReadCommitter committer = mock(SnapshotReadCommitter.class);
+        CompletableFuture<Void> commit = new CompletableFuture<>();
+        when(committer.request()).thenReturn(commit);
+        Field field = PartitionSnapshotsManager.class.getDeclaredField("snapshotReadCommitter");
+        field.setAccessible(true);
+        field.set(manager, committer);
+        AutomqGetPartitionSnapshotResponse response = manager.handle(request(0, 0, false)).get(1, TimeUnit.SECONDS);
+        for (int i = 0; i < 1000; i++) {
+            response = manager.handle(request(response.data().sessionId(), response.data().sessionEpoch(), true))
+                .get(1, TimeUnit.SECONDS);
+        }
+        assertEquals(1, commit.getNumberOfDependents());
+        commit.complete(null);
+        assertEquals(0, commit.getNumberOfDependents());
     }
 
     @Test

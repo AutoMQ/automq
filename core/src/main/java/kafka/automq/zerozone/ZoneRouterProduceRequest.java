@@ -88,6 +88,7 @@ public class ZoneRouterProduceRequest extends AbstractReferenceCounted implement
 
     public static class Flag {
         private static final short INTERNAL_TOPICS_ALLOWED = 1;
+        private static final short RECOVERY_SCHEDULING = 2;
 
         private short flag;
 
@@ -114,6 +115,17 @@ public class ZoneRouterProduceRequest extends AbstractReferenceCounted implement
 
         public boolean internalTopicsAllowed() {
             return (flag & INTERNAL_TOPICS_ALLOWED) != 0;
+        }
+
+        /** Marks only scheduling urgency; older decoders ignore this optional bit. */
+        public Flag recoveryScheduling(boolean recovery) {
+            flag = (short) (recovery ? flag | RECOVERY_SCHEDULING : flag & ~RECOVERY_SCHEDULING);
+            return this;
+        }
+
+        /** Returns whether both WAL stages of this recovery frame should bypass optional batching. */
+        public boolean recoveryScheduling() {
+            return (flag & RECOVERY_SCHEDULING) != 0;
         }
 
     }

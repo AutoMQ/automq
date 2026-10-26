@@ -85,8 +85,14 @@ public class RouterOutV2 {
     }
 
     public void handleProduceAppendProxy(ProduceRequestArgs args) {
+        handleProduceAppendProxy(args, false);
+    }
+
+    /** Gives recovery frames scheduling urgency across all routed siblings, with unchanged ACK semantics. */
+    public void handleProduceAppendProxy(ProduceRequestArgs args, boolean recovery) {
         long timeoutMillis = time.milliseconds() + args.timeout();
-        short flag = new ZoneRouterProduceRequest.Flag().internalTopicsAllowed(args.internalTopicsAllowed()).value();
+        short flag = new ZoneRouterProduceRequest.Flag().internalTopicsAllowed(args.internalTopicsAllowed())
+            .recoveryScheduling(recovery).value();
         Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
         List<CompletableFuture<Void>> cfList = new ArrayList<>(args.entriesPerPartition().size());
         long startNanos = time.nanoseconds();
@@ -108,12 +114,15 @@ public class RouterOutV2 {
                 requestCf = CompletableFuture.completedFuture(new ProxyRequest(tp, -1L, null,
                     zoneRouterProduceRequest, recordSize, timeoutMillis));
             } else {
-                requestCf = routerChannel.append(node.id(), orderHint,
-                    ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest))).thenApply(channelRst -> {
-                        ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
-                        return new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(),
-                            zoneRouterProduceRequest, recordSize, timeoutMillis);
-                    });
+                ByteBuf block = ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest));
+                CompletableFuture<RouterChannel.AppendResult> append = recovery
+                    ? routerChannel.append(node.id(), orderHint, block, true)
+                    : routerChannel.append(node.id(), orderHint, block);
+                requestCf = append.thenApply(channelRst -> {
+                    ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                    return new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(),
+                        zoneRouterProduceRequest, recordSize, timeoutMillis);
+                });
             }
             CompletableFuture<Void> proxyCf = requestCf.thenCompose(proxyRequest -> {
                 sendProxyRequest(node, proxyRequest);

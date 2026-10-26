@@ -27,6 +27,7 @@ import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.context.AppendContext;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.StorageFailureHandler;
 import com.automq.stream.s3.metadata.StreamMetadata;
@@ -46,6 +47,7 @@ import com.automq.stream.s3.wal.common.RecordHeader;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
+import com.automq.stream.s3.wal.impl.object.RecoveryBatchingWindow;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -84,6 +86,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
@@ -278,6 +281,64 @@ public class S3StorageTest {
 
     private static List<Long> offsets(ReadDataBlock dataBlock) {
         return dataBlock.getRecords().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList());
+    }
+
+    /** Given accelerated recovery grouping, force-upload completion still waits for the controller commit. */
+    @Test
+    public void testRecoveryForceUploadWaitsForCommit() throws Exception {
+        RecoveryBatchingWindow window = mock(RecoveryBatchingWindow.class);
+        Mockito.when(window.batchIntervalNanos(TimeUnit.MILLISECONDS.toNanos(100)))
+            .thenReturn(TimeUnit.MILLISECONDS.toNanos(50));
+        Mockito.when(objectManager.prepareObject(eq(1), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(16L));
+        CompletableFuture<CommitStreamSetObjectResponse> committed = new CompletableFuture<>();
+        Mockito.when(objectManager.commitStreamSetObject(any())).thenReturn(committed);
+        storage.append(newRecord(233L, 0L)).get(3, TimeUnit.SECONDS);
+        try (var windows = mockStatic(RecoveryBatchingWindow.class)) {
+            windows.when(() -> RecoveryBatchingWindow.forNode(config.nodeId())).thenReturn(window);
+            CompletableFuture<Void> uploaded = storage.forceUpload(233L);
+            verify(objectManager, timeout(3000)).commitStreamSetObject(any());
+            assertFalse(uploaded.isDone(), "Shorter grouping must not skip upload/commit completion");
+            committed.complete(new CommitStreamSetObjectResponse());
+            uploaded.get(3, TimeUnit.SECONDS);
+        } finally {
+            committed.complete(new CommitStreamSetObjectResponse());
+            storage.shutdown();
+        }
+    }
+
+    /** An urgent storage append forwards its hint without changing the ordinary append path. */
+    @Test
+    public void testUrgentAppendHintReachesWalWithoutChangingDefault() throws Exception {
+        AppendContext context = new AppendContext();
+        context.urgent(true);
+        storage.append(context, newRecord(233, 0)).get(3, TimeUnit.SECONDS);
+        verify(wal).appendUrgent(any(), any());
+        Mockito.clearInvocations(wal);
+        storage.append(newRecord(233, 1)).get(3, TimeUnit.SECONDS);
+        verify(wal, never()).appendUrgent(any(), any());
+        verify(wal).append(any(), any());
+        assertFalse(AppendContext.DEFAULT.urgent());
+    }
+
+    /** Recovery batching is per append; urgent metadata keeps precedence and default writes remain ordinary. */
+    @Test
+    public void testRecoveryAppendHintKeepsUrgentAndDefaultPaths() throws Exception {
+        AppendContext context = new AppendContext();
+        context.recoveryScheduling(true);
+        storage.append(context, newRecord(233, 0)).get(3, TimeUnit.SECONDS);
+        verify(wal).appendRecovery(any(), any());
+        verify(wal, never()).appendUrgent(any(), any());
+        Mockito.clearInvocations(wal);
+        storage.append(newRecord(233, 1)).get(3, TimeUnit.SECONDS);
+        verify(wal, never()).appendRecovery(any(), any());
+        verify(wal).append(any(), any());
+        Mockito.clearInvocations(wal);
+        context.urgent(true);
+        storage.append(context, newRecord(233, 2)).get(3, TimeUnit.SECONDS);
+        verify(wal).appendUrgent(any(), any());
+        verify(wal, never()).appendRecovery(any(), any());
+        assertFalse(AppendContext.DEFAULT.recoveryScheduling());
     }
 
     @Test
@@ -517,6 +578,54 @@ public class S3StorageTest {
         commitCfList.get(1).complete(new CommitStreamSetObjectResponse());
         cf1.get(1, TimeUnit.SECONDS);
         cf2.get(1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Given a newly started storage instance, when a forced upload precedes its first two rate-limited WAL blocks,
+     * then the first rate-limited upload still bursts while steady-state uploads remain protected.
+     */
+    @Test
+    public void testFirstRateLimitedDeltaWALUploadBurstsAfterStartup() throws Exception {
+        List<Double> rates = new CopyOnWriteArrayList<>();
+        UploadWriteAheadLogTask uploadTask = mock(UploadWriteAheadLogTask.class);
+        Mockito.when(uploadTask.prepare()).thenReturn(CompletableFuture.completedFuture(1L));
+        Mockito.when(uploadTask.upload()).thenReturn(CompletableFuture.completedFuture(
+            new CommitStreamSetObjectRequest()));
+        Mockito.when(uploadTask.commit()).thenReturn(CompletableFuture.completedFuture(null));
+        S3Storage newStorage = new S3Storage(config, wal, streamManager, objectManager,
+            blockCache, objectStorage, storageFailureHandler) {
+            @Override
+            protected UploadWriteAheadLogTask newUploadWriteAheadLogTask(
+                Map<Long, List<StreamRecordBatch>> streamRecordsMap,
+                ObjectManager objectManager,
+                double rate) {
+                rates.add(rate);
+                return uploadTask;
+            }
+        };
+
+        LogCache.LogCacheBlock forcedBlock = new LogCache.LogCacheBlock(1024);
+        forcedBlock.put(newRecord(233L, 10L));
+        S3Storage.DeltaWALUploadTaskContext forcedContext =
+            new S3Storage.DeltaWALUploadTaskContext(forcedBlock);
+        forcedContext.force = true;
+        newStorage.uploadDeltaWAL(forcedContext).get(1, TimeUnit.SECONDS);
+
+        LogCache.LogCacheBlock firstBlock = new LogCache.LogCacheBlock(1024);
+        firstBlock.put(newRecord(233L, 11L));
+        Thread.sleep(110L);
+        newStorage.uploadDeltaWAL(firstBlock).get(1, TimeUnit.SECONDS);
+
+        LogCache.LogCacheBlock secondBlock = new LogCache.LogCacheBlock(1024);
+        secondBlock.put(newRecord(233L, 12L));
+        Thread.sleep(110L);
+        newStorage.uploadDeltaWAL(secondBlock).get(1, TimeUnit.SECONDS);
+
+        assertEquals(3, rates.size());
+        assertEquals((double) Long.MAX_VALUE, rates.get(0));
+        assertEquals((double) Long.MAX_VALUE, rates.get(1));
+        assertTrue(rates.get(2) < Long.MAX_VALUE);
+        newStorage.shutdown();
     }
 
     /**
