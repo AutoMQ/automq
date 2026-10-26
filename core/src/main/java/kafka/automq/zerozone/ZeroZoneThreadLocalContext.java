@@ -19,6 +19,9 @@
 
 package kafka.automq.zerozone;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
+
 import io.netty.util.concurrent.FastThreadLocal;
 
 public class ZeroZoneThreadLocalContext {
@@ -33,24 +36,40 @@ public class ZeroZoneThreadLocalContext {
         return WRITE_CONTEXT.get();
     }
 
+    static void newWriteContext(ChannelOffset channelOffset, AtomicReference<CompletableFuture<?>> appendFuture) {
+        WRITE_CONTEXT.set(new WriteContext(channelOffset, appendFuture));
+    }
+
     public static void attach(WriteContext writeContext) {
         WRITE_CONTEXT.set(writeContext);
     }
 
 
     public static class WriteContext {
-        ChannelOffset channelOffset;
+        private final ChannelOffset channelOffset;
+        private final AtomicReference<CompletableFuture<?>> appendFuture;
 
-        private WriteContext() {}
+        private WriteContext() {
+            this(null, null);
+        }
+
+        private WriteContext(ChannelOffset channelOffset, AtomicReference<CompletableFuture<?>> appendFuture) {
+            this.channelOffset = channelOffset;
+            this.appendFuture = appendFuture;
+        }
+
+        /** Registers the exact storage append on this context, including after it has been detached. */
+        public void trackAppend(CompletableFuture<?> append) {
+            if (appendFuture != null) {
+                appendFuture.set(append);
+            }
+        }
 
         public ChannelOffset channelOffset() {
             return channelOffset;
         }
 
-        public void reset() {
-            channelOffset = null;
-        }
-
+        /** Consumes the current thread's context; the returned object remains usable by its owner. */
         public WriteContext detach() {
             WRITE_CONTEXT.set(new WriteContext());
             return this;
