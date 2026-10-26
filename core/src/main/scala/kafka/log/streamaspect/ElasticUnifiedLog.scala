@@ -44,7 +44,7 @@ import java.nio.ByteBuffer
 import java.nio.file.Path
 import java.util
 import java.util.concurrent.atomic.LongAdder
-import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CopyOnWriteArrayList, TimeUnit}
 import scala.jdk.CollectionConverters.CollectionHasAsScala
 import scala.util.{Failure, Success, Try}
 
@@ -203,6 +203,25 @@ class ElasticUnifiedLog(_logStartOffset: Long,
         if (localLog.recoveryPoint < offset) {
             localLog.updateRecoveryPoint(offset)
         }
+    }
+
+    /**
+     * Drain accepted appends after the partition has stopped admitting writes.
+     * Keep the log lock free while durable callbacks advance the high watermark;
+     * completion does not bypass normal Produce acknowledgement eligibility.
+     */
+    def drainAcceptedAppends(): Unit = {
+        // Every accepted append already owns an async flush. Wait without the
+        // outer log lock and without depending on callback completion order.
+        elasticLog.lastDurableCallbackFuture.get(5, TimeUnit.SECONDS)
+        if (elasticLog.confirmOffset.messageOffset < logEndOffset) {
+            throw new IllegalStateException(s"Accepted appends for $topicPartition have not all become durable")
+        }
+        // A queue barrier is stronger than the last submitted future: concurrent
+        // durable handlers can publish their future references out of order.
+        elasticLog.appendAckThread.submit(new Runnable {
+            override def run(): Unit = {}
+        }).get(5, TimeUnit.SECONDS)
     }
 
     override def close(): Unit = {

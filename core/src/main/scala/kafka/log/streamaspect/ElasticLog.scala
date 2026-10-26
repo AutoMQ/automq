@@ -122,6 +122,8 @@ class ElasticLog(val metaStream: MetaStream,
     private val appendAckQueue = new LinkedBlockingQueue[Long]()
     val appendAckThread = APPEND_CALLBACK_EXECUTOR(math.abs(logIdent.hashCode % APPEND_CALLBACK_EXECUTOR.length))
     @volatile private[log] var lastAppendAckFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
+    // Includes every pending append and acknowledgement callback for pre-unhost drain.
+    @volatile private[log] var lastDurableCallbackFuture: CompletableFuture[Void] = CompletableFuture.completedFuture(null)
     private val readAsyncThread = READ_ASYNC_EXECUTOR(math.abs(logIdent.hashCode % READ_ASYNC_EXECUTOR.length))
     var logStartOffset = _initStartOffset
 
@@ -283,6 +285,15 @@ class ElasticLog(val metaStream: MetaStream,
                 CompletableFuture.completedFuture(null)
             }
         })
+        trackDurableCallback(lastAppendAckFuture)
+    }
+
+    // Appends are serialized by the log lock. Preserve every pending callback,
+    // including failures, rather than assuming the latest completion runs last.
+    private[log] def trackDurableCallback(callback: CompletableFuture[Void]): Unit = {
+        val previous = lastDurableCallbackFuture
+        lastDurableCallbackFuture = if (previous.isDone && !previous.isCompletedExceptionally)
+            callback else CompletableFuture.allOf(previous, callback)
     }
 
     private def appendCallback(startNanos: Long): Unit = {

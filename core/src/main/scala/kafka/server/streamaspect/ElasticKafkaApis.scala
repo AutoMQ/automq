@@ -5,6 +5,7 @@ import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStr
 import com.automq.stream.utils.Threads
 import com.yammer.metrics.core.Histogram
 import kafka.automq.interceptor.{ClientIdMetadata, NoopTrafficInterceptor, ProduceRequestArgs, TrafficInterceptor}
+import kafka.automq.zerozone.LeaderHintRecovery
 import kafka.coordinator.transaction.TransactionCoordinator
 import kafka.log.streamaspect.{ElasticLogManager, ReadHint}
 import kafka.log.streamaspect.reassignment.{FastPartitionReassignmentManager, PartitionHandoff}
@@ -90,6 +91,7 @@ class ElasticKafkaApis(
   private val offsetForLeaderEpochExecutor: ExecutorService = Threads.newFixedFastThreadLocalThreadPool(1, "kafka-apis-offset-for-leader-epoch-handle-executor", true, LoggerFactory.getLogger(ElasticKafkaApis.getClass))
 
   private var trafficInterceptor: TrafficInterceptor = new NoopTrafficInterceptor(this, metadataCache)
+  private val leaderHintRecovery = new LeaderHintRecovery(Threads.COMMON_SCHEDULER, time)
   private var snapshotAwaitReadySupplier: Supplier[CompletableFuture[Void]] = () => CompletableFuture.completedFuture(null)
   @volatile private var enterpriseFacadeRef: AnyRef = null
   private val brokerExtensionContext: BrokerExtensionContext = new ElasticBrokerExtensionContext
@@ -105,6 +107,11 @@ class ElasticKafkaApis(
   protected def receivePartitionHandoffs(handoffs: util.Collection[PartitionHandoff]): Unit =
     FastPartitionReassignmentManager.instance().receive(handoffs)
   @volatile private var fetchListener: FetchListener = FetchListener.NOOP
+
+  /** Keep admitted failure replies and metadata alive briefly before shutdown closes their sockets. */
+  def awaitProduceLeaderHintsDuringShutdown(): Unit = {
+    leaderHintRecovery.pendingResponses().get(LeaderHintRecovery.MAX_WAIT_MILLIS, TimeUnit.MILLISECONDS)
+  }
 
   /**
    * Generate a map of topic -> [(partitionId, epochId)] based on provided topicsRequestData.
@@ -258,12 +265,37 @@ class ElasticKafkaApis(
     LeaderNode(node.map(_.id()).getOrElse(leaderId), leaderEpoch, node)
   }
 
+  // AutoMQ inject start
+  /**
+   * Do not advertise a draining local leader as a usable Produce retry target.
+   * The old partition remains hosted until accepted writes finish; use a
+   * published different owner during that interval, or wait for its publication.
+   * Active local replicas and Fetch keep their existing leader/epoch semantics.
+   */
+  protected def getCurrentLeaderForProduce(tp: TopicPartition, ln: ListenerName, clientIdMetadata: ClientIdMetadata): LeaderNode = {
+    if (Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported)) {
+      replicaManager.getPartitionOrError(tp) match {
+        case Right(partition) if partition.isProduceClosed =>
+          val (leaderId, leaderEpoch) = metadataCache.getPartitionInfo(tp.topic, tp.partition) match {
+            case Some(info) if info.leader() != brokerId => (info.leader(), info.leaderEpoch())
+            case _ => (-1, -1)
+          }
+          val node = OptionConverters.toScala(trafficInterceptor.getLeaderNode(leaderId, clientIdMetadata, ln.value()))
+          return LeaderNode(node.map(_.id()).getOrElse(leaderId), leaderEpoch, node)
+        case _ =>
+      }
+    }
+    getCurrentLeaderForProduceAndFetch(tp, ln, clientIdMetadata)
+  }
+  // AutoMQ inject end
+
   /**
    * Handle a produce request
    */
   override def handleProduceRequest(request: RequestChannel.Request,
     requestLocal: RequestLocal): Unit = {
     val timerTotal: TimerUtil = new TimerUtil()
+    val requestStartNanos = time.nanoseconds()
 
     val produceRequest = request.body[ProduceRequest]
 
@@ -311,7 +343,7 @@ class ElasticKafkaApis(
     // KafkaApis#handleProduceRequest should apply auto-generated protocol to avoid extra conversion.
     // https://issues.apache.org/jira/browse/KAFKA-10730
     @nowarn("cat=deprecation")
-    def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
+    def sendResponseNow(responseStatus: Map[TopicPartition, PartitionResponse], onSent: Option[Send => Unit] = None): Unit = {
       val timerCallback: TimerUtil = new TimerUtil()
       PRODUCE_CALLBACK_TIME_HIST.update(timerTotal.elapsedAs(TimeUnit.MICROSECONDS))
 
@@ -331,7 +363,7 @@ class ElasticKafkaApis(
           if (request.header.apiVersion >= 10) {
             status.error match {
               case Errors.NOT_LEADER_OR_FOLLOWER =>
-                val leaderNode = getCurrentLeaderForProduceAndFetch(topicPartition, request.context.listenerName, clientIdMetadata)
+                val leaderNode = getCurrentLeaderForProduce(topicPartition, request.context.listenerName, clientIdMetadata)
                 leaderNode.node.foreach { node =>
                   nodeEndpoints.put(node.id(), node)
                 }
@@ -393,7 +425,7 @@ class ElasticKafkaApis(
           requestHelper.sendNoOpResponseExemptThrottle(request)
         }
       } else {
-        requestChannel.sendResponse(request, new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs, nodeEndpoints.values.toList.asJava), None)
+        requestChannel.sendResponse(request, new ProduceResponse(mergedResponseStatus.asJava, maxThrottleTimeMs, nodeEndpoints.values.toList.asJava), onSent)
       }
 
       PRODUCE_ACK_TIME_HIST.update(timerCallback.elapsedAs(TimeUnit.MICROSECONDS))
@@ -408,6 +440,37 @@ class ElasticKafkaApis(
         PRODUCE_ACK_TIME_HIST.clear()
       }
     }
+
+    // AutoMQ inject start
+    def sendResponseCallback(responseStatus: Map[TopicPartition, PartitionResponse]): Unit = {
+      def hintReady(tp: TopicPartition): Boolean = {
+        val hint = getCurrentLeaderForProduce(tp, request.context.listenerName, clientIdMetadata)
+        hint.leaderId >= 0 && hint.leaderEpoch >= 0 && hint.node.isDefined
+      }
+      val supportsHints = produceRequest.acks != 0 && request.header.apiVersion >= 10 &&
+        Option(metadataCache.autoMQVersion()).exists(_.isZeroZoneV2Supported)
+      val pendingHints = if (supportsHints) responseStatus.iterator.collect {
+        case (tp, status) if status.error == Errors.NOT_LEADER_OR_FOLLOWER && !hintReady(tp) => tp
+      }.toVector else Vector.empty
+      if (pendingHints.isEmpty) {
+        sendResponseNow(responseStatus)
+      } else {
+        // Append/epoch tracking is already complete. Only the external failure
+        // reply is deferred; it never becomes a successful acknowledgement.
+        val snapshot = responseStatus.toMap
+        val remaining = TimeUnit.MILLISECONDS.toNanos(produceRequest.timeout.toLong) -
+          (time.nanoseconds() - requestStartNanos)
+        val responseSent = new CompletableFuture[Void]()
+        leaderHintRecovery.await(() => pendingHints.forall(hintReady), remaining, responseSent)
+          .thenRun(() => sendResponseNow(snapshot, Some(_ => { responseSent.complete(null); () })))
+          .exceptionally(ex => {
+            responseSent.complete(null)
+            handleError(request, ex)
+            null
+          })
+      }
+    }
+    // AutoMQ inject end
 
     def processingStatsCallback(processingStats: FetchResponseStats): Unit = {
       processingStats.forKeyValue { (tp, info) =>

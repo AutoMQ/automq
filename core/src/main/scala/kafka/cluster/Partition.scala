@@ -20,9 +20,10 @@ import com.automq.stream.utils.AsyncLogger
 import com.typesafe.scalalogging.Logger
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import java.util.Optional
-import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList}
+import java.util.concurrent.{CompletableFuture, CopyOnWriteArrayList, TimeUnit}
 import kafka.api.LeaderAndIsr
 import kafka.automq.runtime.DataPathMonitor
+import kafka.automq.zerozone.AcceptedProduceDrain
 import kafka.common.UnexpectedAppendOffsetException
 import kafka.controller.{KafkaController, StateChangeLogger}
 import kafka.log._
@@ -792,6 +793,44 @@ class Partition(val topicPartition: TopicPartition,
         .format(localBrokerId, topicPartition, localBrokerId))
     }
   }
+
+  // AutoMQ inject start
+  /** Returns whether Produce admission has stopped, even while the old leader is still hosted for draining. */
+  def isProduceClosed: Boolean = inReadLock(leaderIsrUpdateLock) {
+    closed
+  }
+
+  private val acceptedProduceDrain = new AcceptedProduceDrain()
+
+  /** Reserve this exact partition until the enclosing append has registered its delayed Produce. */
+  def beginProduceRegistration(): Boolean = inReadLock(leaderIsrUpdateLock) {
+    !closed && acceptedProduceDrain.begin()
+  }
+
+  /** Release registration even when append or request callbacks fail. */
+  def finishProduceRegistration(): Unit = acceptedProduceDrain.finish()
+
+  /**
+   * Stop new appends before unhosting, then let accepted durable writes complete
+   * through the existing high-watermark and ISR checks. The caller must still
+   * unhost and close the partition; this does not transfer stream ownership.
+   */
+  def drainProduceBeforeClose(): Unit = {
+    val drainLog = inWriteLock(leaderIsrUpdateLock) {
+      val current = if (isLeader) log.collect { case elastic: ElasticUnifiedLog => elastic } else None
+      if (current.isDefined) {
+        closed = true
+        acceptedProduceDrain.stop()
+      }
+      current
+    }
+    drainLog.foreach { elastic =>
+      acceptedProduceDrain.await(TimeUnit.SECONDS.toNanos(5))
+      elastic.drainAcceptedAppends()
+      tryCompleteDelayedRequests()
+    }
+  }
+  // AutoMQ inject end
 
   /**
    * Close this partition and trigger a re-election.
