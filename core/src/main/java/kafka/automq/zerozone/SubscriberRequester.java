@@ -41,6 +41,7 @@ import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.LogSuppressor;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
 
@@ -71,6 +72,7 @@ import io.netty.buffer.Unpooled;
     private final Function<Uuid, String> topicNameGetter;
     private final EventLoop eventLoop;
     private final Time time;
+    private final LogSuppressor failureLogger;
 
     public SubscriberRequester(SnapshotReadPartitionsManager.Subscriber subscriber, Node node, AutoMQVersion version,
         AsyncSender asyncSender,
@@ -82,6 +84,9 @@ import io.netty.buffer.Unpooled;
         this.topicNameGetter = topicNameGetter;
         this.eventLoop = eventLoop;
         this.time = time;
+        this.failureLogger = LogSuppressor.builder(LOGGER)
+            .timeSource(time::hiResClockMs)
+            .build();
     }
 
     public void start() {
@@ -133,15 +138,19 @@ import io.netty.buffer.Unpooled;
         AutomqGetPartitionSnapshotRequest.Builder builder = new AutomqGetPartitionSnapshotRequest.Builder(data);
         asyncSender.sendRequest(node, builder)
             .thenAcceptAsync(rst -> {
+                boolean successfulResponse = false;
                 try {
-                    handleResponse(rst, snapshotCf);
+                    successfulResponse = handleResponse(rst, snapshotCf);
                 } catch (Exception e) {
                     subscriber.reset("Exception when handle snapshot response: " + e.getMessage());
                 }
                 subscriber.unsafeRun();
+                if (successfulResponse) {
+                    failureLogger.recover("[SNAPSHOT_SUBSCRIBE_RECOVERED],node={}", node);
+                }
             }, eventLoop)
             .exceptionally(ex -> {
-                LOGGER.error("[SNAPSHOT_SUBSCRIBE_ERROR],node={}", node, ex);
+                failureLogger.error("[SNAPSHOT_SUBSCRIBE_ERROR],node={}", node, ex);
                 return null;
             }).whenComplete((nil, ex) -> {
                 long elapsed = time.milliseconds() - lastRequestTime;
@@ -153,13 +162,15 @@ import io.netty.buffer.Unpooled;
             });
     }
 
-    private void handleResponse(ClientResponse clientResponse, CompletableFuture<Void> snapshotCf) {
+    // Only a fully handled snapshot response ends the exceptional-failure logging episode.
+    // Normal disconnect/timeout/no-response and protocol-error logs remain outside the aggregation.
+    private boolean handleResponse(ClientResponse clientResponse, CompletableFuture<Void> snapshotCf) {
         if (closed) {
-            return;
+            return false;
         }
         if (tryReset0()) {
             // If it needs to reset, then drop the response.
-            return;
+            return false;
         }
         if (!clientResponse.hasResponse()) {
             if (clientResponse.wasDisconnected() || clientResponse.wasTimedOut()) {
@@ -167,7 +178,7 @@ import io.netty.buffer.Unpooled;
             } else {
                 LOGGER.error("[GET_SNAPSHOTS],[NO_RESPONSE],response={}", clientResponse);
             }
-            return;
+            return false;
         }
         if (LOGGER.isTraceEnabled()) {
             LOGGER.trace("[GET_SNAPSHOTS],[RESPONSE],response={}", clientResponse);
@@ -176,7 +187,7 @@ import io.netty.buffer.Unpooled;
         AutomqGetPartitionSnapshotResponseData resp = zoneRouterResponse.data();
         if (resp.errorCode() != Errors.NONE.code()) {
             LOGGER.error("[GET_SNAPSHOTS],[ERROR],response={}", resp);
-            return;
+            return false;
         }
         if (sessionId != 0 && resp.sessionId() != sessionId) {
             // switch to a new session
@@ -211,6 +222,7 @@ import io.netty.buffer.Unpooled;
         }
         batch.operations.add(SnapshotWithOperation.snapshotMark(snapshotCf));
         subscriber.onNewOperationBatch(batch);
+        return true;
     }
 
     private boolean tryReset0() {
