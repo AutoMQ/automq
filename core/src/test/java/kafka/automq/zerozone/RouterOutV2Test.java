@@ -76,7 +76,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             routerChannel,
             (topic, partition, clientId) -> CURRENT_NODE,
-            (offset, request) -> {
+            (epoch, offset, request) -> {
                 localAppendCount.incrementAndGet();
                 channelOffset.set(offset);
                 return CompletableFuture.completedFuture(successResponse());
@@ -108,7 +108,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             routerChannel,
             (topic, partition, clientId) -> CURRENT_NODE,
-            (offset, request) -> {
+            (epoch, offset, request) -> {
                 linkedAppendCount.incrementAndGet();
                 channelOffset.set(offset);
                 return CompletableFuture.completedFuture(successResponse());
@@ -142,7 +142,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             routerChannel,
             (topic, partition, clientId) -> partition == TOPIC_PARTITION.partition() ? CURRENT_NODE : remoteNode,
-            (channelOffset, request) -> {
+            (epoch, channelOffset, request) -> {
                 directChannelOffset.set(channelOffset);
                 return directResponse;
             },
@@ -188,7 +188,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             routerChannel,
             (topic, partition, clientId) -> CURRENT_NODE,
-            (channelOffset, request) -> {
+            (epoch, channelOffset, request) -> {
                 directAppendCount.incrementAndGet();
                 return new CompletableFuture<>();
             },
@@ -220,7 +220,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             routerChannel,
             (topic, partition, clientId) -> Node.noNode(),
-            (channelOffset, request) -> {
+            (epoch, channelOffset, request) -> {
                 localAppendCount.incrementAndGet();
                 return CompletableFuture.completedFuture(successResponse());
             },
@@ -246,7 +246,7 @@ public class RouterOutV2Test {
             CURRENT_NODE,
             new StubRouterChannel(),
             (topic, partition, clientId) -> CURRENT_NODE,
-            (channelOffset, request) -> CompletableFuture.failedFuture(
+            (epoch, channelOffset, request) -> CompletableFuture.failedFuture(
                 Errors.INVALID_PRODUCER_ID_MAPPING.exception()),
             LocalWriteMode.DIRECT,
             new FailedAsyncSender(),

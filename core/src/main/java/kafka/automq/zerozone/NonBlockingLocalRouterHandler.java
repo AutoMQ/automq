@@ -25,7 +25,9 @@ import java.util.concurrent.CompletableFuture;
 
 public interface NonBlockingLocalRouterHandler {
 
+    /** Appends locally using the RouterChannel epoch; a null offset denotes an unlinked DIRECT write. */
     CompletableFuture<AutomqZoneRouterResponseData.Response> append(
+        long epoch,
         ChannelOffset channelOffset,
         ZoneRouterProduceRequest zoneRouterProduceRequest
     );

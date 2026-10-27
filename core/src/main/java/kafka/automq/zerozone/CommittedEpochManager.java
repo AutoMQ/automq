@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.ScheduledFuture;
@@ -67,6 +68,26 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
         return epoch2inflight.computeIfAbsent(epoch, e -> new AtomicLong());
     }
 
+    /**
+     * Registers a request only while its epoch is not fenced. The check and registration are atomic
+     * with respect to epoch updates and commit advancement. An empty result rejects the request,
+     * including before the first epoch update. The caller must decrement the returned counter exactly once
+     * when its work completes.
+     */
+    public Optional<AtomicLong> tryAcquire(long epoch) {
+        readLock.lock();
+        try {
+            if (routerChannelEpoch == null || epoch <= routerChannelEpoch.getFenced()) {
+                return Optional.empty();
+            }
+            AtomicLong inflight = epochInflight(epoch);
+            inflight.incrementAndGet();
+            return Optional.of(inflight);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
     private void start() {
         this.tryBumpCommitedEpochFuture = Threads.COMMON_SCHEDULER.scheduleWithFixedDelay(this::tryBumpCommittedEpoch, 1, 1, TimeUnit.SECONDS);
     }
@@ -77,7 +98,7 @@ public class CommittedEpochManager implements RouterChannelProvider.EpochListene
         }
     }
 
-    private void tryBumpCommittedEpoch() {
+    void tryBumpCommittedEpoch() {
         writeLock.lock();
         try {
             tryBumpCommittedEpoch0();
