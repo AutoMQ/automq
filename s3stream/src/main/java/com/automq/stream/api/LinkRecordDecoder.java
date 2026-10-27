@@ -35,7 +35,10 @@ public interface LinkRecordDecoder {
     int decodedSize(ByteBuf linkRecordBuf);
 
     /**
-     * Decodes a link record with the supplied buffer allocator.
+     * Decodes a link record with the supplied buffer allocator. The caller owns {@code src} and must
+     * keep it alive until decoding finishes, then release it on both success and failure. The returned
+     * record is independently owned by the caller. Decoding failures are reported through the returned
+     * future rather than thrown synchronously.
      */
     CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc);
 
