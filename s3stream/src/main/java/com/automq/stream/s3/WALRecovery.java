@@ -24,17 +24,17 @@ import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.RecoverResult;
-import com.automq.stream.utils.CloseableIterator;
 
 import org.slf4j.Logger;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 
 import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
@@ -89,56 +89,56 @@ public class WALRecovery {
         BlockHandler blockHandler
     ) {
         long blockSize = Math.min(maxCacheSize, Integer.MAX_VALUE);
-        LogCache.LogCacheBlock block = null;
-        RecoverResult pending = null;
         try (DecodedIterator decoded = new DecodedIterator(it, openingStreamEndOffsets, blockSize, logger)) {
-            try {
-                while (decoded.hasNext()) {
-                    pending = decoded.next();
-                    if (block == null) {
-                        block = new LogCache.LogCacheBlock(blockSize);
-                    }
-                    if (!block.put(pending.record())) {
-                        LogCache.LogCacheBlock full = block;
-                        block = null;
-                        blockHandler.handle(full);
-                        block = new LogCache.LogCacheBlock(blockSize);
-                        if (!block.put(pending.record())) {
-                            throw new IllegalStateException("Deferred WAL record cannot fit in an empty recovery block");
-                        }
-                    }
-                    openingStreamEndOffsets.put(pending.record().getStreamId(), pending.record().getLastOffset());
-                    block.lastRecordOffset(pending.recordOffset());
-                    pending = null;
-                    if (block.isFull()) {
-                        LogCache.LogCacheBlock full = block;
-                        block = null;
-                        blockHandler.handle(full);
-                    }
+            for (;;) {
+                List<RecoverResult> records = decoded.nextBatch(blockSize);
+                if (records.isEmpty()) {
+                    break;
                 }
-                if (block != null) {
-                    block.lastRecordOffset(decoded.lastRecordOffset);
-                    LogCache.LogCacheBlock last = block;
+                recoverBatch(records, openingStreamEndOffsets, blockSize, decoded.lastRecordOffset, blockHandler);
+            }
+        }
+    }
+
+    private static void recoverBatch(List<RecoverResult> records, Map<Long, Long> endOffsets,
+        long blockSize, RecordOffset lastRecordOffset, BlockHandler blockHandler) {
+        LogCache.LogCacheBlock block = new LogCache.LogCacheBlock(blockSize);
+        int consumed = 0;
+        try {
+            for (RecoverResult recovered : records) {
+                if (!block.put(recovered.record())) {
+                    LogCache.LogCacheBlock full = block;
                     block = null;
-                    blockHandler.handle(last);
+                    blockHandler.handle(full);
+                    block = new LogCache.LogCacheBlock(blockSize);
+                    if (!block.put(recovered.record())) {
+                        throw new IllegalStateException("WAL record cannot fit in an empty recovery block");
+                    }
                 }
-            } finally {
-                if (block != null) {
-                    releaseAllRecords(block.records().values());
-                }
-                if (pending != null) {
-                    pending.record().release();
-                }
+                consumed++;
+                endOffsets.put(recovered.record().getStreamId(), recovered.record().getLastOffset());
+                block.lastRecordOffset(recovered.recordOffset());
+            }
+            block.lastRecordOffset(lastRecordOffset);
+            LogCache.LogCacheBlock last = block;
+            block = null;
+            blockHandler.handle(last);
+        } finally {
+            if (block != null) {
+                releaseAllRecords(block.records().values());
+            }
+            for (int i = consumed; i < records.size(); i++) {
+                records.get(i).record().release();
             }
         }
     }
 
     /**
      * Filters and decodes bounded batches concurrently, yielding only the successful WAL prefix.
-     * Owns prefetched records until next() transfers them to the caller; close() drains the rest.
+     * Owns prefetched records until nextBatch() transfers them to the caller; close() releases the rest.
      * Scan offsets are private so prefetch never advances the recovered stream ends.
      */
-    private static class DecodedIterator implements CloseableIterator<RecoverResult> {
+    private static class DecodedIterator implements AutoCloseable {
         // Bound per-record bookkeeping as well as payloads, matching the cache's 1 KiB allowance.
         private static final int RECORD_OVERHEAD = 1024;
         private final Iterator<RecoverResult> source;
@@ -146,7 +146,6 @@ public class WALRecovery {
         private final long maxBatchSize;
         private final Logger logger;
         private final Deque<RecoverResult> ready = new ArrayDeque<>();
-        private RecoverResult next;
         private RecordOffset lastRecordOffset;
         private boolean first = true;
         private boolean sourceFinished;
@@ -158,35 +157,32 @@ public class WALRecovery {
             this.logger = logger;
         }
 
-        @Override
-        public boolean hasNext() {
-            while (next == null) {
-                if (ready.isEmpty() && !sourceFinished) {
-                    loadBatch();
-                }
+        List<RecoverResult> nextBatch(long maxSize) {
+            List<RecoverResult> records = new ArrayList<>();
+            long size = 0;
+            for (;;) {
                 if (ready.isEmpty()) {
-                    return false;
+                    // The caller must upload this batch before we prefetch another one.
+                    if (!records.isEmpty() || sourceFinished) {
+                        return records;
+                    }
+                    loadBatch();
+                    continue;
                 }
-                RecoverResult result = ready.removeFirst();
-                if (result.record() == null) {
-                    // Filtered records still advance the consumed WAL position.
-                    lastRecordOffset = result.recordOffset();
-                } else {
-                    next = result;
+                RecoverResult result = ready.peekFirst();
+                if (result.record() != null) {
+                    long recordSize = result.record().size() + (long) RECORD_OVERHEAD;
+                    // Always allow one record so an oversized record cannot stall recovery.
+                    if (!records.isEmpty() && size + recordSize > maxSize) {
+                        return records;
+                    }
+                    records.add(result);
+                    size += recordSize;
                 }
+                ready.removeFirst();
+                // Filtered records also advance the consumed WAL position.
+                lastRecordOffset = result.recordOffset();
             }
-            return true;
-        }
-
-        @Override
-        public RecoverResult next() {
-            if (!hasNext()) {
-                throw new NoSuchElementException();
-            }
-            RecoverResult result = next;
-            next = null;
-            lastRecordOffset = result.recordOffset();
-            return result;
         }
 
         private void loadBatch() {
@@ -296,10 +292,6 @@ public class WALRecovery {
         @Override
         public void close() {
             sourceFinished = true;
-            if (next != null) {
-                next.record().release();
-                next = null;
-            }
             while (!ready.isEmpty()) {
                 StreamRecordBatch record = ready.removeFirst().record();
                 if (record != null) {

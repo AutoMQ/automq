@@ -136,7 +136,7 @@ public class WALRecoveryTest {
     @Test
     public void testSegmentedRecovery() {
         // Each record occupies 1025 bytes (1 byte payload + 1 KiB cache overhead).
-        // With maxCacheSize=2000, a block becomes full after 2 records (2050 bytes >= 2000).
+        // With maxCacheSize=2050, exactly 2 records fill one returned batch and block.
         List<RecoverResult> recoverResults = List.of(
             new TestRecoverResult(newRecord(42L, 10L)),
             new TestRecoverResult(newRecord(42L, 11L)),
@@ -147,7 +147,7 @@ public class WALRecoveryTest {
 
         Map<Long, Long> streamEndOffsets = new HashMap<>(Map.of(42L, 10L));
         List<LogCache.LogCacheBlock> results = new ArrayList<>();
-        WALRecovery.recover(recoverResults.iterator(), streamEndOffsets, 2_000L, LOGGER, results::add);
+        WALRecovery.recover(recoverResults.iterator(), streamEndOffsets, 2_050L, LOGGER, results::add);
         assertEquals(3, results.size());
 
         // block 0: [10, 11] — full
@@ -252,13 +252,13 @@ public class WALRecoveryTest {
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
             WALRecovery.recover(records.iterator(), streamEndOffsets, 6000, LOGGER, blocks::add);
-            assertEquals(3, blocks.size());
+            assertEquals(5, blocks.size());
             assertEquals(List.of(0L, 1L, 2L, 3L, 4L), blocks.stream()
                 .flatMap(block -> block.records().get(42L).stream()).map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList()));
-            assertEquals(2L * (4096 + 1024), blocks.get(0).size());
-            assertEquals(DefaultRecordOffset.of(0, 1, 0), blocks.get(0).lastRecordOffset());
-            assertEquals(DefaultRecordOffset.of(0, 3, 0), blocks.get(1).lastRecordOffset());
-            assertEquals(DefaultRecordOffset.of(0, 4, 0), blocks.get(2).lastRecordOffset());
+            for (int i = 0; i < blocks.size(); i++) {
+                assertEquals(4096L + 1024, blocks.get(i).size());
+                assertEquals(DefaultRecordOffset.of(0, i, 0), blocks.get(i).lastRecordOffset());
+            }
             assertEquals(5L, streamEndOffsets.get(42L));
         } finally {
             blocks.forEach(block -> WALRecovery.releaseAllRecords(block.records().values()));
@@ -358,7 +358,7 @@ public class WALRecoveryTest {
     }
 
     /**
-     * Recovery caps its soft block budget at INT_MAX and accounts for the last accepted record without int overflow.
+     * Recovery caps returned batches at INT_MAX without overflowing long size accounting.
      */
     @Test
     public void testRecoverCapsBlockBudgetWithLongAccounting() {
@@ -373,11 +373,11 @@ public class WALRecoveryTest {
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
             WALRecovery.recover(records.iterator(), endOffsets, Long.MAX_VALUE, LOGGER, blocks::add);
-            assertEquals(2, blocks.size());
-            assertEquals(2L * (decodedSize + 1024L), blocks.get(0).size());
-            assertEquals(decodedSize + 1024L, blocks.get(1).size());
-            assertEquals(DefaultRecordOffset.of(0, 200, 0), blocks.get(0).lastRecordOffset());
-            assertEquals(DefaultRecordOffset.of(0, 300, 0), blocks.get(1).lastRecordOffset());
+            assertEquals(3, blocks.size());
+            for (int i = 0; i < blocks.size(); i++) {
+                assertEquals(decodedSize + 1024L, blocks.get(i).size());
+                assertEquals(DefaultRecordOffset.of(0, (i + 1) * 100, 0), blocks.get(i).lastRecordOffset());
+            }
             assertEquals(Map.of(42L, 1L, 43L, 1L, 44L, 1L), endOffsets);
         } finally {
             blocks.forEach(block -> WALRecovery.releaseAllRecords(block.records().values()));
@@ -534,7 +534,7 @@ public class WALRecoveryTest {
         List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(iterator, ends, 2000, LOGGER, blocks::add);
+            WALRecovery.recover(iterator, ends, 2050, LOGGER, blocks::add);
             assertEquals(List.of(first, second), blocks.get(0).records().get(42L));
             assertEquals(1, blocks.size());
             assertEquals(Map.of(42L, 2L, 43L, 0L), ends);
@@ -641,6 +641,46 @@ public class WALRecoveryTest {
         }
         assertEquals(1, allocated.size());
         assertEquals(0, allocated.get(0).refCnt());
+    }
+
+    /** Upload even a partial batch before replenishing prefetch; permit a single record above the soft budget. */
+    @ParameterizedTest
+    @ValueSource(ints = {1, 2000})
+    public void testBatchUploadedBeforeNextPrefetch(int maxSize) {
+        List<ByteBuf> allocated = new ArrayList<>();
+        Iterator<RecoverResult> iterator = new Iterator<>() {
+            private int position;
+
+            @Override
+            public boolean hasNext() {
+                return position < 3;
+            }
+
+            @Override
+            public RecoverResult next() {
+                if (position == 2) {
+                    // The first batch had one retained and one filtered record, so its block was not full.
+                    allocated.forEach(buf -> assertEquals(0, buf.refCnt()));
+                }
+                StreamRecordBatch record = newRecord(position == 1 ? 43 : 42, position == 2 ? 1 : 0);
+                allocated.add(record.encoded());
+                return new TestRecoverResult(record, DefaultRecordOffset.of(0, ++position, 0));
+            }
+        };
+        List<Long> uploadedOffsets = new ArrayList<>();
+        Map<Long, Long> ends = new HashMap<>(Map.of(42L, 0L));
+        WALRecovery.recover(iterator, ends, maxSize, LOGGER, block -> {
+            try {
+                assertEquals(1025, block.size());
+                assertEquals(1, block.records().get(42L).size());
+                uploadedOffsets.add(block.records().get(42L).get(0).getBaseOffset());
+            } finally {
+                WALRecovery.releaseAllRecords(block.records().values());
+            }
+        });
+        assertEquals(List.of(0L, 1L), uploadedOffsets);
+        assertEquals(2L, ends.get(42L));
+        allocated.forEach(buf -> assertEquals(0, buf.refCnt()));
     }
 
     private static StreamRecordBatch newLinkRecord(long streamId, long offset) {
