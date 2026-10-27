@@ -384,24 +384,41 @@ public class WALRecoveryTest {
         }
     }
 
-    /**
-     * A link whose decoded payload cannot fit in any upload batch fails before decoding and releases its source.
-     */
-    @Test
-    public void testRecoverRejectsOversizedLinkBeforeDecoding() {
-        StreamRecordBatch record = newLinkRecord(42, 0);
+    /** An oversized link truncates recovery before decoding, preserving any prefix and leaving the suffix unread. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testRecoverTruncatesOversizedLinkBeforeDecoding(boolean withPrefix) {
+        List<RecoverResult> records = new ArrayList<>();
+        StreamRecordBatch prefix = withPrefix ? newRecord(42, 0) : null;
+        if (prefix != null) {
+            records.add(new TestRecoverResult(prefix, DefaultRecordOffset.of(0, 100, 0)));
+        }
+        StreamRecordBatch record = newLinkRecord(43, 0);
         ByteBuf buffer = record.encoded();
+        records.add(new TestRecoverResult(record, DefaultRecordOffset.of(0, 200, 0)));
+        StreamRecordBatch suffix = newRecord(42, withPrefix ? 1 : 0);
+        records.add(new TestRecoverResult(suffix, DefaultRecordOffset.of(0, 300, 0)));
+        Iterator<RecoverResult> iterator = records.iterator();
         LinkRecordDecoder decoder = largeRecordDecoder((int) Constants.MAX_UPLOAD_STREAM_SIZE + 1);
-        Map<Long, Long> endOffsets = new HashMap<>(Map.of(42L, 0L));
+        Map<Long, Long> endOffsets = new HashMap<>(Map.of(42L, 0L, 43L, 0L));
         List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            assertThrows(IllegalArgumentException.class, () -> WALRecovery.recover(
-                List.<RecoverResult>of(new TestRecoverResult(record)).iterator(), endOffsets, Long.MAX_VALUE, LOGGER, blocks::add));
+            WALRecovery.recover(iterator, endOffsets, Long.MAX_VALUE, LOGGER, blocks::add);
             assertEquals(0, buffer.refCnt());
-            assertEquals(0L, endOffsets.get(42L));
-            assertTrue(blocks.isEmpty());
+            assertEquals(Map.of(42L, withPrefix ? 1L : 0L, 43L, 0L), endOffsets);
+            assertSame(suffix, iterator.next().record());
+            if (withPrefix) {
+                assertEquals(1, blocks.size());
+                assertEquals(Map.of(42L, List.of(prefix)), blocks.get(0).records());
+                assertEquals(DefaultRecordOffset.of(0, 100, 0), blocks.get(0).lastRecordOffset());
+            } else {
+                assertTrue(blocks.isEmpty());
+            }
             verify(decoder, never()).decode(any(), any());
+        } finally {
+            suffix.release();
+            blocks.forEach(block -> WALRecovery.releaseAllRecords(block.records().values()));
         }
     }
 

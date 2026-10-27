@@ -218,14 +218,14 @@ public class WALRecovery {
                                 if (decodedSize < 0) {
                                     throw new IllegalArgumentException("Negative decoded link record size: " + decodedSize);
                                 }
+                                if (decodedSize > Constants.MAX_UPLOAD_STREAM_SIZE) {
+                                    throw new IllegalArgumentException("Record payload size exceeds the upload limit: " + decodedSize);
+                                }
                             } catch (RuntimeException ex) {
                                 batch.addLast(new DecodingRecord(recovered, CompletableFuture.failedFuture(ex)));
                                 added = true;
                                 sourceFinished = true;
                                 break;
-                            }
-                            if (decodedSize > Constants.MAX_UPLOAD_STREAM_SIZE) {
-                                throw new IllegalArgumentException("Record payload size exceeds the upload limit: " + decodedSize);
                             }
                             size += decodedSize - record.size();
                             future = S3Storage.getLinkRecordDecoder().decode(record, DECODE_LINK_RECORD_INSTANT_ALLOC);
