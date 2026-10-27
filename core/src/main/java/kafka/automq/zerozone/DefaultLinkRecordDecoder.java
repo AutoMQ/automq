@@ -72,7 +72,6 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
                     buf.release();
                 }
             }).whenComplete((rst, ex) -> {
-                src.release();
                 if (ex != null) {
                     LOGGER.error("Error while decoding link record, link={}", linkRecord, ex);
                 }
