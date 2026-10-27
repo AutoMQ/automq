@@ -68,7 +68,6 @@ import org.apache.kafka.controller.ControllerResult;
 import org.apache.kafka.controller.FeatureControlManager;
 import org.apache.kafka.controller.QuorumController;
 import org.apache.kafka.controller.ReplicationControlManager;
-import org.apache.kafka.image.DeltaList;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
 import org.apache.kafka.metadata.stream.NodeWALUncommittedOffsetsRecords;
 import org.apache.kafka.metadata.stream.RangeMetadata;
@@ -117,8 +116,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -180,7 +177,9 @@ public class StreamControlManager {
     private final TimelineHashSet<Integer> lockedNodes;
 
     private final TimelineHashMap<Long, Integer> stream2node;
-    private final TimelineHashMap<Integer/* nodeId */, /* streams */DeltaList<Long>> node2streams;
+    // Retain empty per-node sets, including across rollbacks, since the registry keeps
+    // registered timeline collections alive. Only set membership needs to be snapshotted.
+    private final Map<Integer/* nodeId */, TimelineHashSet<Long>/* streams */> node2streams;
     private final Metrics.LongGaugeBundle.LongGauge streamSetObjectNumMetric;
     private final Metrics.LongGaugeBundle.LongGauge streamObjectNumMetric;
 
@@ -215,7 +214,7 @@ public class StreamControlManager {
         this.nodesMetadata = new TimelineHashMap<>(snapshotRegistry, 0);
         this.lockedNodes = new TimelineHashSet<>(snapshotRegistry, 100);
         this.stream2node = new TimelineHashMap<>(snapshotRegistry, 100000);
-        this.node2streams = new TimelineHashMap<>(snapshotRegistry, 100);
+        this.node2streams = new HashMap<>();
 
         ScheduledExecutorService cleanupScheduler = Executors.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("stream-cleanup-scheduler", true));
@@ -1435,9 +1434,12 @@ public class StreamControlManager {
     }
 
     public List<StreamRuntimeMetadata> getOpeningStreams(int nodeId) {
-        List<Long> streamIdList = Optional.ofNullable(node2streams.get(nodeId)).map(l -> l.toList()).orElse(Collections.emptyList());
-        List<StreamRuntimeMetadata> streams = new ArrayList<>(streamIdList.size());
-        for (Long streamId : streamIdList) {
+        Set<Long> streamIds = node2streams.get(nodeId);
+        if (streamIds == null) {
+            streamIds = Collections.emptySet();
+        }
+        List<StreamRuntimeMetadata> streams = new ArrayList<>(streamIds.size());
+        for (Long streamId : streamIds) {
             StreamRuntimeMetadata streamRuntimeMetadata = streamsMetadata.get(streamId);
             if (streamRuntimeMetadata == null) {
                 continue;
@@ -1458,27 +1460,14 @@ public class StreamControlManager {
     }
 
     public boolean hasOpeningStreams(int nodeId) {
-        DeltaList<Long> streamIdList = node2streams.get(nodeId);
-        if (streamIdList == null) {
-            return !getActiveHistoricalStreams(nodeId).isEmpty();
-        }
-        AtomicBoolean hasOpeningStreams = new AtomicBoolean(false);
-        streamIdList.reverseForEachWithBreak(new Function<Long, Boolean>() {
-            @Override
-            public Boolean apply(Long streamId) {
-                StreamRuntimeMetadata streamRuntimeMetadata = streamsMetadata.get(streamId);
-                if (streamRuntimeMetadata == null) {
-                    return false;
-                }
-                if (streamRuntimeMetadata.currentState() == StreamState.OPENED) {
-                    hasOpeningStreams.set(true);
+        TimelineHashSet<Long> streamIds = node2streams.get(nodeId);
+        if (streamIds != null && !streamIds.isEmpty()) {
+            for (Long streamId : streamIds) {
+                StreamRuntimeMetadata streamMetadata = streamsMetadata.get(streamId);
+                if (streamMetadata != null && streamMetadata.currentState() == StreamState.OPENED) {
                     return true;
                 }
-                return false;
             }
-        });
-        if (hasOpeningStreams.get()) {
-            return true;
         }
         return !getActiveHistoricalStreams(nodeId).isEmpty();
     }
@@ -1691,11 +1680,10 @@ public class StreamControlManager {
             return;
         }
         streamMetadata.ranges().values().forEach(rangeMetadata -> {
-            node2streams.computeIfPresent(rangeMetadata.nodeId(), (k, v) -> {
-                v = v.copy();
-                v.remove(m -> streamId == m);
-                return v;
-            });
+            TimelineHashSet<Long> streamIds = node2streams.get(rangeMetadata.nodeId());
+            if (streamIds != null) {
+                streamIds.remove(streamId);
+            }
         });
         streamArchiveControlManager.onStreamDeleted(streamId);
     }
@@ -1719,25 +1707,13 @@ public class StreamControlManager {
         if (islastRange) {
             Integer lastNodeId = stream2node.get(streamId);
             if (lastNodeId == null || lastNodeId != record.nodeId()) {
-                node2streams.compute(record.nodeId(), (k, v) -> {
-                    if (v == null) {
-                        v = new DeltaList<>();
-                    } else {
-                        v = v.copy();
-                    }
-                    v.add(streamId);
-                    return v;
-                });
+                node2streams.computeIfAbsent(record.nodeId(), k -> new TimelineHashSet<>(snapshotRegistry, 0))
+                    .add(streamId);
                 if (lastNodeId != null) {
-                    node2streams.compute(lastNodeId, (k, v) -> {
-                        if (v == null) {
-                            return null;
-                        } else {
-                            v = v.copy();
-                        }
-                        v.remove(m -> m == streamId);
-                        return v;
-                    });
+                    TimelineHashSet<Long> streamIds = node2streams.get(lastNodeId);
+                    if (streamIds != null) {
+                        streamIds.remove(streamId);
+                    }
                 }
             }
             stream2node.put(streamId, rangeMetadata.nodeId());
