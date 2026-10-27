@@ -284,7 +284,8 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC));
+                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC)
+                            .whenComplete((rst, ex) -> walRecord.release()));
                     }
                 }
                 return CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0])).whenComplete((rst, ex) -> {
