@@ -63,8 +63,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(ZeroZoneTrafficInterceptor.class);
@@ -131,10 +129,10 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.routerIn = new RouterIn(objectStorage, kafkaApis, kafkaConfig.rack().get());
 
         // Zero Zone V2
-        this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time);
+        this.committedEpochManager = new CommittedEpochManager(nodeId);
+        this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time, committedEpochManager);
         this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode,
             routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time);
-        this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerChannelProvider.addEpochListener(committedEpochManager);
         DefaultReplayer replayer = new DefaultReplayer();
 
@@ -189,16 +187,7 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         if (request.version() == 0) {
             return routerIn.handleZoneRouterRequest(request.metadata());
         } else {
-            ReentrantReadWriteLock.ReadLock readLock = committedEpochManager.readLock();
-            readLock.lock();
-            AtomicLong inflight = committedEpochManager.epochInflight(request.routeEpoch());
-            inflight.incrementAndGet();
-            try {
-                return routerInV2.handleZoneRouterRequest(request)
-                    .whenComplete((resp, ex) -> inflight.decrementAndGet());
-            } finally {
-                readLock.unlock();
-            }
+            return routerInV2.handleZoneRouterRequest(request);
         }
     }
 

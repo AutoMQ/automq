@@ -179,7 +179,7 @@ public class RouterOutV2 {
         @Override
         public void send(ProxyRequest request) {
             ChannelOffset channelOffset = request.channelOffset == null ? null : ChannelOffset.of(request.channelOffset);
-            localRouterHandler.append(channelOffset, request.zoneRouterProduceRequest)
+            localRouterHandler.append(request.epoch, channelOffset, request.zoneRouterProduceRequest)
                 .whenComplete((resp, ex) -> {
                     if (ex != null) {
                         request.completeWithError(Errors.forException(ex));
