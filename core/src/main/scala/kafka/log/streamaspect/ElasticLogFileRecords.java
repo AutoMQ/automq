@@ -198,6 +198,7 @@ public class ElasticLogFileRecords implements AutoCloseable {
      * @throws IOException
      */
     public int append(MemoryRecords records, long lastOffset) throws IOException {
+        ZeroZoneThreadLocalContext.WriteContext writeContext = ZeroZoneThreadLocalContext.writeContext().detach();
         if (!status.writable()) {
             throw new IOException("Cannot append to a fenced log segment due to status " + status);
         }
@@ -209,7 +210,6 @@ public class ElasticLogFileRecords implements AutoCloseable {
         int count = (int) (lastOffset - nextOffset());
         com.automq.stream.DefaultRecordBatch batch = new com.automq.stream.DefaultRecordBatch(count, 0, Collections.emptyMap(), records.buffer());
         AppendContext context = new AppendContext();
-        ZeroZoneThreadLocalContext.WriteContext writeContext = ZeroZoneThreadLocalContext.writeContext();
         ByteBuf linkRecord = LinkRecord.encode(writeContext.channelOffset(), records);
         if (linkRecord != null) {
             context.linkRecord(linkRecord);
@@ -217,10 +217,9 @@ public class ElasticLogFileRecords implements AutoCloseable {
         CompletableFuture<?> cf;
         try {
             cf = streamSlice.append(context, batch);
+            writeContext.trackAppend(cf);
         } catch (Throwable ex) {
             throw new IOException("Failed to append to stream " + streamSlice.stream().streamId(), ex);
-        } finally {
-            writeContext.reset();
         }
 
         size.getAndAdd(appendSize);
