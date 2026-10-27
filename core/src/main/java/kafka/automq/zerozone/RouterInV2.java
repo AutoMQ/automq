@@ -30,6 +30,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.requests.ProduceResponse;
@@ -51,6 +52,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -84,14 +87,18 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         }
     };
     private final Time time;
+    private final CommittedEpochManager committedEpochManager;
 
-    public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time) {
+    /** Creates a receiver that tracks linked appends independently of Produce response timeouts. */
+    public RouterInV2(RouterChannelProvider channelProvider, ElasticKafkaApis kafkaApis, String rack, Time time,
+        CommittedEpochManager committedEpochManager) {
         this.channelProvider = channelProvider;
         this.kafkaApis = kafkaApis;
         this.rack = rack;
         this.localAppendHandler = kafkaApis::handleProduceAppendJavaCompatible;
         this.routerInProduceHandler = this.localAppendHandler;
         this.time = time;
+        this.committedEpochManager = committedEpochManager;
 
         this.orderQueues = new OrderQueue[Math.min(MAX_ORDER_QUEUE_COUNT,
             Systems.CPU_CORES * ORDER_QUEUE_STRIPES_PER_CPU)];
@@ -106,13 +113,13 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     }
 
     public CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request) {
-        long requestEpoch = request.routeEpoch();
-        if (requestEpoch <= channelProvider.epoch().getFenced()) {
-            String str = String.format("The router request epoch %s is less than fenced epoch %s.", requestEpoch, channelProvider.epoch().getFenced());
-            return CompletableFuture.failedFuture(new IllegalStateException(str));
-        }
         long startNanos = time.nanoseconds();
-        CompletableFuture<AutomqZoneRouterResponse> cf = handleZoneRouterRequest0(request);
+        CompletableFuture<AutomqZoneRouterResponse> cf;
+        try {
+            cf = handleZoneRouterRequest0(request);
+        } catch (Throwable ex) {
+            cf = CompletableFuture.failedFuture(ex);
+        }
         cf.whenComplete((rst, ex) ->
             ZeroZoneMetricsManager.IN_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos));
         return cf;
@@ -121,27 +128,41 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest0(AutomqZoneRouterRequestData request) {
         RouterRecordV2 routerRecord = RouterRecordV2.decode(Unpooled.wrappedBuffer(request.metadata()));
         RouterChannel routerChannel = channelProvider.readOnlyChannel(routerRecord.nodeId());
-        List<CompletableFuture<AutomqZoneRouterResponseData.Response>> subResponseList = new ArrayList<>(routerRecord.channelOffsets().size());
+        List<PartitionProduceRequest> requests = routerRecord.channelOffsets().stream()
+            .map(offset -> new PartitionProduceRequest(ChannelOffset.of(offset))).collect(Collectors.toList());
+        AtomicLong inflight = committedEpochManager.tryAcquire(request.routeEpoch()).orElse(null);
+        if (inflight == null) {
+            return CompletableFuture.failedFuture(Errors.LEADER_NOT_AVAILABLE.exception("Router epoch is fenced or not initialized"));
+        }
+        List<CompletableFuture<AutomqZoneRouterResponseData.Response>> subResponseList = new ArrayList<>(requests.size());
         AtomicInteger size = new AtomicInteger(0);
         long startNanos = time.nanoseconds();
-        for (ByteBuf channelOffset : routerRecord.channelOffsets()) {
-            PartitionProduceRequest partitionProduceRequest = new PartitionProduceRequest(ChannelOffset.of(channelOffset));
-            partitionProduceRequest.unpackLinkCf = routerChannel.get(channelOffset).whenComplete((rst, ex) -> {
-                if (ex == null) {
-                    int actualSize = rst.readableBytes();
-                    size.addAndGet(actualSize);
-                }
-            });
-            OrderQueue orderQueue = orderQueue(partitionProduceRequest.channelOffset.orderHint());
-            orderQueue.add(partitionProduceRequest);
-            // trigger unpack processing and record metrics
-            partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
-                orderQueue.drain(this::scheduleAppend);
-                ZeroZoneMetricsManager.IN_GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
-            });
+        for (PartitionProduceRequest partitionProduceRequest : requests) {
             subResponseList.add(partitionProduceRequest.responseCf);
+            try {
+                OrderQueue orderQueue = orderQueue(partitionProduceRequest.channelOffset.orderHint());
+                partitionProduceRequest.unpackLinkCf = routerChannel.get(partitionProduceRequest.channelOffset.byteBuf())
+                    .whenComplete((rst, ex) -> {
+                        if (ex == null) {
+                            size.addAndGet(rst.readableBytes());
+                        }
+                    });
+                orderQueue.add(partitionProduceRequest);
+                partitionProduceRequest.unpackLinkCf.whenComplete((rst, ex) -> {
+                    orderQueue.drain(this::scheduleAppend);
+                    ZeroZoneMetricsManager.IN_GET_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                });
+            } catch (Throwable ex) {
+                // Fail this partition if read setup throws synchronously.
+                partitionProduceRequest.responseCf.completeExceptionally(ex);
+            }
         }
-        return CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0])).thenApply(nil -> {
+        CompletableFuture<Void> responsesDone = CompletableFuture.allOf(subResponseList.toArray(new CompletableFuture[0]));
+        // Read append futures only after every response: transaction verification can defer their registration.
+        responsesDone.whenComplete((resp, ex) -> CompletableFuture.allOf(requests.stream()
+            .map(partition -> partition.appendFuture.get()).toArray(CompletableFuture[]::new))
+            .whenComplete((nil, appendEx) -> inflight.decrementAndGet()));
+        return responsesDone.thenApply(nil -> {
             AutomqZoneRouterResponseData response = new AutomqZoneRouterResponseData();
             response.setResponses(subResponseList.stream().map(CompletableFuture::join).collect(Collectors.toList()));
             ZeroZoneMetricsManager.recordRouterInBytes(routerRecord.nodeId(), size.get());
@@ -154,7 +175,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         req.unpackLinkCf.thenComposeAsync(buf -> {
             try {
                 ZoneRouterProduceRequest zoneRouterProduceRequest = ZoneRouterPackReader.decodeDataBlock(buf).get(0);
-                return append0(req.channelOffset, zoneRouterProduceRequest, false);
+                return append0(req.channelOffset, zoneRouterProduceRequest, false, req.appendFuture);
             } finally {
                 buf.release();
             }
@@ -176,15 +197,37 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
         return appendEventLoops[index(orderHint, appendEventLoops.length)];
     }
 
+    /** Accepts a local request before scheduling; only linked writes require an unfenced epoch. */
     @Override
     public CompletableFuture<AutomqZoneRouterResponseData.Response> append(
+        long epoch,
         ChannelOffset channelOffset,
         ZoneRouterProduceRequest zoneRouterProduceRequest
     ) {
+        AtomicLong inflight = channelOffset == null ? null : committedEpochManager.tryAcquire(epoch).orElse(null);
+        if (channelOffset != null && inflight == null) {
+            zoneRouterProduceRequest.close();
+            return CompletableFuture.failedFuture(Errors.LEADER_NOT_AVAILABLE.exception("Router epoch is fenced or not initialized"));
+        }
+        AtomicReference<CompletableFuture<?>> appendFuture = new AtomicReference<>(CompletableFuture.completedFuture(null));
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        short orderHint = channelOffset == null ? orderHint(zoneRouterProduceRequest) : channelOffset.orderHint();
-        appendEventLoop(orderHint).execute(() ->
-            FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true), cf));
+        if (inflight != null) {
+            cf.whenComplete((resp, ex) ->
+                appendFuture.get().whenComplete((nil, appendEx) -> inflight.decrementAndGet()));
+        }
+        try {
+            short orderHint = channelOffset == null ? orderHint(zoneRouterProduceRequest) : channelOffset.orderHint();
+            appendEventLoop(orderHint).execute(() -> {
+                try {
+                    FutureUtil.propagate(append0(channelOffset, zoneRouterProduceRequest, true, appendFuture), cf);
+                } catch (Throwable ex) {
+                    cf.completeExceptionally(ex);
+                }
+            });
+        } catch (Throwable ex) {
+            zoneRouterProduceRequest.close();
+            cf.completeExceptionally(ex);
+        }
         return cf;
     }
 
@@ -197,51 +240,54 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
     private CompletableFuture<AutomqZoneRouterResponseData.Response> append0(
         ChannelOffset channelOffset,
         ZoneRouterProduceRequest zoneRouterProduceRequest,
-        boolean local
+        boolean local,
+        AtomicReference<CompletableFuture<?>> appendFuture
     ) {
         long startNanos = time.nanoseconds();
-        ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
-        ProduceRequestData data = zoneRouterProduceRequest.data();
-        if (LOGGER.isTraceEnabled()) {
-            LOGGER.trace("[ROUTER_IN],[APPEND],data={}", data);
-        }
-
-        ZeroZoneThreadLocalContext.writeContext().channelOffset = channelOffset;
-        Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
-        short apiVersion = zoneRouterProduceRequest.apiVersion();
         CompletableFuture<AutomqZoneRouterResponseData.Response> cf = new CompletableFuture<>();
-        RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
-        // We should release the request after append completed.
-        cf.whenComplete((resp, ex) -> {
-            ZeroZoneMetricsManager.IN_APPEND_PARTITION_LATENCY.record(time.nanoseconds() - startNanos);
-            FutureUtil.suppress(zoneRouterProduceRequest::close, LOGGER);
-        });
-        handler.handleProduceAppend(
-            ProduceRequestArgs.builder()
-                .clientId(buildClientId(realEntriesPerPartition))
-                .timeout(data.timeoutMs())
-                // The CommittedEpochManager requires the data to be persisted prior to bumping the committed epoch.
-                .requiredAcks((short) -1)
-                .internalTopicsAllowed(flag.internalTopicsAllowed())
-                .transactionId(data.transactionalId())
-                .entriesPerPartition(realEntriesPerPartition)
-                .responseCallback(rst -> {
-                    if (LOGGER.isTraceEnabled()) {
-                        LOGGER.trace("[ROUTER_IN],[RESPONSE],response={}", rst);
-                    }
-                    @SuppressWarnings("deprecation")
-                    ProduceResponse produceResponse = new ProduceResponse(rst, 0, Collections.emptyList());
-                    AutomqZoneRouterResponseData.Response response = new AutomqZoneRouterResponseData.Response()
-                        .setData(ZoneRouterResponseCodec.encode(produceResponse.data()).array());
-                    cf.complete(response);
-                })
-                .recordValidationStatsCallback(rst -> {
-                })
-                .apiVersion(apiVersion)
-                .requestLocal(requestLocals.get())
-                .build()
-        );
-        kafkaApis.tryCompleteActions();
+        // The response can time out while storage still uses the request data.
+        cf.whenComplete((resp, ex) -> appendFuture.get()
+            .whenComplete((nil, appendEx) -> FutureUtil.suppress(zoneRouterProduceRequest::close, LOGGER)));
+        cf.whenComplete((resp, ex) -> ZeroZoneMetricsManager.IN_APPEND_PARTITION_LATENCY.record(time.nanoseconds() - startNanos));
+        ZeroZoneThreadLocalContext.newWriteContext(channelOffset, appendFuture);
+        try {
+            ZoneRouterProduceRequest.Flag flag = new ZoneRouterProduceRequest.Flag(zoneRouterProduceRequest.flag());
+            ProduceRequestData data = zoneRouterProduceRequest.data();
+            if (LOGGER.isTraceEnabled()) {
+                LOGGER.trace("[ROUTER_IN],[APPEND],data={}", data);
+            }
+            Map<TopicPartition, MemoryRecords> realEntriesPerPartition = ZeroZoneTrafficInterceptor.produceRequestToMap(data);
+            short apiVersion = zoneRouterProduceRequest.apiVersion();
+            RouterInProduceHandler handler = local ? localAppendHandler : routerInProduceHandler;
+            handler.handleProduceAppend(
+                ProduceRequestArgs.builder()
+                    .clientId(buildClientId(realEntriesPerPartition))
+                    .timeout(data.timeoutMs())
+                    // The CommittedEpochManager requires the data to be persisted prior to bumping the committed epoch.
+                    .requiredAcks((short) -1)
+                    .internalTopicsAllowed(flag.internalTopicsAllowed())
+                    .transactionId(data.transactionalId())
+                    .entriesPerPartition(realEntriesPerPartition)
+                    .responseCallback(rst -> {
+                        if (LOGGER.isTraceEnabled()) {
+                            LOGGER.trace("[ROUTER_IN],[RESPONSE],response={}", rst);
+                        }
+                        @SuppressWarnings("deprecation")
+                        ProduceResponse produceResponse = new ProduceResponse(rst, 0, Collections.emptyList());
+                        AutomqZoneRouterResponseData.Response response = new AutomqZoneRouterResponseData.Response()
+                            .setData(ZoneRouterResponseCodec.encode(produceResponse.data()).array());
+                        cf.complete(response);
+                    })
+                    .recordValidationStatsCallback(rst -> {
+                    })
+                    .apiVersion(apiVersion)
+                    .requestLocal(requestLocals.get())
+                    .build()
+            );
+            kafkaApis.tryCompleteActions();
+        } catch (Throwable ex) {
+            cf.completeExceptionally(ex);
+        }
         return cf;
     }
 
@@ -272,6 +318,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
 
     static class PartitionProduceRequest {
         final ChannelOffset channelOffset;
+        final AtomicReference<CompletableFuture<?>> appendFuture = new AtomicReference<>(CompletableFuture.completedFuture(null));
         CompletableFuture<ByteBuf> unpackLinkCf;
         final CompletableFuture<AutomqZoneRouterResponseData.Response> responseCf = new CompletableFuture<>();
 
