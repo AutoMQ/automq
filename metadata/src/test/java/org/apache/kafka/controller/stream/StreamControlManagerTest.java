@@ -69,6 +69,7 @@ import org.apache.kafka.metadata.stream.StreamTags;
 import org.apache.kafka.server.common.ApiMessageAndVersion;
 import org.apache.kafka.server.common.automq.AutoMQVersion;
 import org.apache.kafka.timeline.SnapshotRegistry;
+import org.apache.kafka.timeline.TimelineHashSet;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.ObjectReader;
@@ -94,6 +95,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -102,6 +104,7 @@ import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -112,6 +115,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.spy;
@@ -1370,6 +1374,98 @@ public class StreamControlManagerTest {
         assertEquals(List.of(STREAM0, STREAM1), streams);
         streams = manager.getOpeningStreams(BROKER1).stream().map(StreamRuntimeMetadata::streamId).sorted().collect(Collectors.toList());
         assertEquals(Collections.emptyList(), streams);
+    }
+
+    /**
+     * Given repeated ownership changes, opening-stream queries remain duplicate-free and
+     * reflect close, delete, and subsequent reuse of an empty node's stream set.
+     */
+    @Test
+    public void testNodeStreamsAfterRepeatedOwnershipChanges() {
+        replayOpeningStreamRange(STREAM0, 0, BROKER0);
+        replayOpeningStreamRange(STREAM1, 0, BROKER0);
+        for (int rangeIndex = 1; rangeIndex <= 20; rangeIndex++) {
+            int owner = rangeIndex % 2 == 0 ? BROKER0 : BROKER1;
+            replayOpeningStreamRange(STREAM0, rangeIndex, owner);
+            // Replaying the current range must not add duplicate membership.
+            manager.replay(new RangeRecord().setStreamId(STREAM0).setRangeIndex(rangeIndex)
+                .setEpoch(rangeIndex).setNodeId(owner).setStartOffset(0).setEndOffset(0));
+            assertEquals(owner == BROKER0 ? Set.of(STREAM0, STREAM1) : Set.of(STREAM1),
+                manager.getOpeningStreams(BROKER0).stream().map(StreamRuntimeMetadata::streamId).collect(Collectors.toSet()));
+            assertEquals(owner == BROKER1 ? 1 : 0, manager.getOpeningStreams(BROKER1).size());
+            assertEquals(owner == BROKER1, manager.hasOpeningStreams(BROKER1));
+            assertEquals(owner == BROKER0 ? 2 : 1, manager.getOpeningStreams(BROKER0).size());
+        }
+
+        manager.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        assertEquals(List.of(STREAM1), manager.getOpeningStreams(BROKER0).stream()
+            .map(StreamRuntimeMetadata::streamId).collect(Collectors.toList()));
+        assertFalse(manager.hasOpeningStreams(BROKER1));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM1).setRangeIndex(0)
+            .setEpoch(0).setStreamState(StreamState.CLOSED.toByte()).setStartOffset(0));
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+        assertTrue(manager.getOpeningStreams(BROKER0).isEmpty());
+
+        replayOpeningStreamRange(STREAM2, 0, BROKER1);
+        assertTrue(manager.hasOpeningStreams(BROKER1));
+        assertEquals(List.of(STREAM2), manager.getOpeningStreams(BROKER1).stream()
+            .map(StreamRuntimeMetadata::streamId).collect(Collectors.toList()));
+    }
+
+    /**
+     * Given a snapshot before a node's first ownership, rollback restores membership and
+     * reuses its registered set on retry; deleting an existing stream is also reversible.
+     */
+    @Test
+    public void testNodeStreamsSnapshotRollbackReusesRegisteredSets() {
+        SnapshotRegistry registry = spy(new SnapshotRegistry(new LogContext()));
+        manager = new StreamControlManager(quorumController, registry, new LogContext(), objectControlManager,
+            clusterControlManager, featureControlManager, replicationControlManager);
+        replayOpeningStreamRange(STREAM0, 0, BROKER0);
+        registry.getOrCreateSnapshot(0);
+        clearInvocations(registry);
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            replayOpeningStreamRange(STREAM0, 1, BROKER1);
+            assertFalse(manager.hasOpeningStreams(BROKER0));
+            assertTrue(manager.hasOpeningStreams(BROKER1));
+            registry.revertToSnapshot(0);
+            assertTrue(manager.hasOpeningStreams(BROKER0));
+            assertEquals(List.of(STREAM0), manager.getOpeningStreams(BROKER0).stream()
+                .map(StreamRuntimeMetadata::streamId).collect(Collectors.toList()));
+            assertFalse(manager.hasOpeningStreams(BROKER1));
+            assertTrue(manager.getOpeningStreams(BROKER1).isEmpty());
+        }
+        assertEquals(1, registeredTimelineSetCount(registry));
+
+        registry.getOrCreateSnapshot(1);
+        manager.replay(new RemoveS3StreamRecord().setStreamId(STREAM0));
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+        registry.revertToSnapshot(1);
+        assertTrue(manager.hasOpeningStreams(BROKER0));
+        assertEquals(1, manager.getOpeningStreams(BROKER0).size());
+
+        registry.reset();
+        assertFalse(manager.hasOpeningStreams(BROKER0));
+        assertFalse(manager.hasOpeningStreams(BROKER1));
+        clearInvocations(registry);
+        replayOpeningStreamRange(STREAM1, 0, BROKER1);
+        assertTrue(manager.hasOpeningStreams(BROKER1));
+        assertEquals(0, registeredTimelineSetCount(registry));
+    }
+
+    private long registeredTimelineSetCount(SnapshotRegistry registry) {
+        return Mockito.mockingDetails(registry).getInvocations().stream()
+            .filter(invocation -> invocation.getMethod().getName().equals("register")
+                && invocation.getArgument(0) instanceof TimelineHashSet<?>)
+            .count();
+    }
+
+    private void replayOpeningStreamRange(long streamId, int rangeIndex, int nodeId) {
+        manager.replay(new S3StreamRecord().setStreamId(streamId).setRangeIndex(rangeIndex)
+            .setEpoch(rangeIndex).setStreamState(StreamState.OPENED.toByte()).setStartOffset(0));
+        manager.replay(new RangeRecord().setStreamId(streamId).setRangeIndex(rangeIndex)
+            .setEpoch(rangeIndex).setNodeId(nodeId).setStartOffset(0).setEndOffset(0));
     }
 
     @Test
