@@ -45,6 +45,24 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
     }
 
     public LoadAwarePartitionLeaderSelector(Random r, List<BrokerRegistration> aliveBrokers, BrokerRegistration brokerToRemove) {
+        this(r, aliveBrokers, brokerToRemove, false);
+    }
+
+    /**
+     * Creates a selector using the existing load weights, optionally across all eligible racks.
+     * The departing broker and excluded brokers remain ineligible when load data is available.
+     *
+     * @param aliveBrokers active destination candidates
+     * @param brokerToRemove departing broker
+     * @param allowCrossRack whether weighted candidates may be outside the departing rack
+     */
+    public LoadAwarePartitionLeaderSelector(List<BrokerRegistration> aliveBrokers,
+        BrokerRegistration brokerToRemove, boolean allowCrossRack) {
+        this(new Random(), aliveBrokers, brokerToRemove, allowCrossRack);
+    }
+
+    LoadAwarePartitionLeaderSelector(Random r, List<BrokerRegistration> aliveBrokers,
+        BrokerRegistration brokerToRemove, boolean allowCrossRack) {
         Map<Integer, Double> brokerLoadMap = ClusterStats.getInstance().brokerLoads();
         if (brokerLoadMap == null) {
             this.brokerLoads = null;
@@ -65,7 +83,7 @@ public class LoadAwarePartitionLeaderSelector implements PartitionLeaderSelector
         brokerLoads = new WeightedRandomList<>(r);
         for (BrokerRegistration broker : availableBrokers) {
             int brokerId = broker.id();
-            if (!broker.rack().equals(brokerToRemove.rack()) || !brokerLoadMap.containsKey(brokerId)) {
+            if ((!allowCrossRack && !broker.rack().equals(brokerToRemove.rack())) || !brokerLoadMap.containsKey(brokerId)) {
                 continue;
             }
             double load = Math.max(1, brokerLoadMap.get(brokerId));
