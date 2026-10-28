@@ -26,6 +26,7 @@ import kafka.autobalancer.config.AutoBalancerControllerConfig;
 import kafka.autobalancer.executor.ActionExecutorService;
 import kafka.autobalancer.goals.Goal;
 import kafka.autobalancer.goals.GoalUtils;
+import kafka.autobalancer.listeners.BrokerStatusListener;
 import kafka.autobalancer.listeners.LeaderChangeListener;
 import kafka.autobalancer.model.BrokerUpdater;
 import kafka.autobalancer.model.ClusterModel;
@@ -35,6 +36,7 @@ import kafka.autobalancer.model.TopicPartitionReplicaUpdater;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.utils.ConfigUtils;
+import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.controller.es.ClusterStats;
 
 import com.automq.stream.utils.LogContext;
@@ -61,6 +63,8 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
     private final ClusterModel clusterModel;
     private final ScheduledExecutorService executorService;
     private final ActionExecutorService actionExecutor;
+    private final PartitionReassignmentCooldown partitionReassignmentCooldown;
+    private final BrokerRecoveryCooldown brokerRecoveryCooldown;
     private final Lock configChangeLock = new ReentrantLock();
     private List<Goal> goalsByPriority;
     private Set<Integer> excludedBrokers;
@@ -70,13 +74,21 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
     private long maxTolerateMetricsDelayMs;
     private int executionConcurrency;
     private long executionIntervalMs;
+    private long partitionReassignmentCooldownMs;
     private volatile boolean isLeader = false;
 
     public AnomalyDetectorImpl(Map<String, ?> configs, LogContext logContext, ClusterModel clusterModel, ActionExecutorService actionExecutor) {
+        this(configs, logContext, clusterModel, actionExecutor, Time.SYSTEM);
+    }
+
+    AnomalyDetectorImpl(Map<String, ?> configs, LogContext logContext, ClusterModel clusterModel,
+        ActionExecutorService actionExecutor, Time time) {
         super(logContext);
         this.configure(configs);
         this.clusterModel = clusterModel;
         this.actionExecutor = actionExecutor;
+        this.partitionReassignmentCooldown = new PartitionReassignmentCooldown(time);
+        this.brokerRecoveryCooldown = new BrokerRecoveryCooldown(time);
         this.executorService = Executors.newScheduledThreadPool(2, new AutoBalancerThreadFactory("anomaly-detector"));
         Collections.sort(this.goalsByPriority);
         this.executorService.schedule(this::detect, detectInterval, TimeUnit.MILLISECONDS);
@@ -85,8 +97,10 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
                 updateClusterStats(clusterModel, maxTolerateMetricsDelayMs);
             }
         }, 30, 30, TimeUnit.SECONDS);
-        logger.info("detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
-                this.detectInterval, this.executionConcurrency, this.executionIntervalMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
+        logger.info("detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, "
+                + "partitionReassignmentCooldownMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
+                this.detectInterval, this.executionConcurrency, this.executionIntervalMs,
+                this.partitionReassignmentCooldownMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
     }
 
     @Override
@@ -145,6 +159,8 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
         ClusterStats.getInstance().updateExcludedBrokers(this.excludedBrokers);
         this.excludedTopics = new HashSet<>(config.getList(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS));
         this.executionIntervalMs = config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
+        this.partitionReassignmentCooldownMs = config.getLong(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS);
         List<Goal> goals = config.getConfiguredInstances(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS, Goal.class);
         Collections.sort(goals);
         this.goalsByPriority = goals;
@@ -201,6 +217,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
                     throw new ConfigException(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, interval);
                 }
             }
+            validatePartitionReassignmentCooldown(configs);
             validateGoalsReconfiguration(configs);
         } catch (ConfigException e) {
             throw e;
@@ -212,6 +229,20 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
     private void validateGoalsReconfiguration(Map<String, Object> configs) {
         for (Goal goal : this.goalsByPriority) {
             goal.validateReconfiguration(configs);
+        }
+    }
+
+    private void validatePartitionReassignmentCooldown(Map<String, Object> configs) {
+        if (!configs.containsKey(
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS)) {
+            return;
+        }
+        long cooldown = ConfigUtils.getLong(configs,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS);
+        if (cooldown < 0) {
+            throw new ConfigException(
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS,
+                cooldown);
         }
     }
 
@@ -242,11 +273,23 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS)) {
                 this.executionIntervalMs = ConfigUtils.getLong(configs, AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS);
             }
+            if (configs.containsKey(
+                AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS)) {
+                this.partitionReassignmentCooldownMs = ConfigUtils.getLong(configs,
+                    AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS);
+                if (this.partitionReassignmentCooldownMs == 0) {
+                    this.partitionReassignmentCooldown.clear();
+                }
+            }
             if (configs.containsKey(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_GOALS)) {
                 reconfigureGoals(configs);
             }
-            logger.info("Reconfigured anomaly detector with detectInterval: {}ms, executionConcurrency: {}, executionIntervalMs: {}ms, goals: {}, excluded brokers: {}, excluded topics: {}",
-                    this.detectInterval, this.executionConcurrency, this.executionIntervalMs, this.goalsByPriority, this.excludedBrokers, this.excludedTopics);
+            logger.info("Reconfigured anomaly detector with detectInterval: {}ms, executionConcurrency: {}, "
+                    + "executionIntervalMs: {}ms, partitionReassignmentCooldownMs: {}ms, goals: {}, "
+                    + "excluded brokers: {}, excluded topics: {}",
+                    this.detectInterval, this.executionConcurrency, this.executionIntervalMs,
+                    this.partitionReassignmentCooldownMs, this.goalsByPriority, this.excludedBrokers,
+                    this.excludedTopics);
         } finally {
             configChangeLock.unlock();
         }
@@ -277,6 +320,11 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
         this.lockedNodes = lockedNodes;
     }
 
+    /** Returns the metadata listener used to invalidate balancing plans and apply broker recovery cooldown. */
+    public BrokerStatusListener recoveryListener() {
+        return brokerRecoveryCooldown;
+    }
+
     private boolean isRunnable() {
         return this.running.get() && this.isLeader;
     }
@@ -289,6 +337,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
         long maxTolerateMetricsDelayMs;
         int maxExecutionConcurrency;
         long executionIntervalMs;
+        long partitionReassignmentCooldownMs;
         List<Goal> goals;
         configChangeLock.lock();
         try {
@@ -299,6 +348,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
             maxTolerateMetricsDelayMs = this.maxTolerateMetricsDelayMs;
             maxExecutionConcurrency = this.executionConcurrency;
             executionIntervalMs = this.executionIntervalMs;
+            partitionReassignmentCooldownMs = this.partitionReassignmentCooldownMs;
             goals = new ArrayList<>(this.goalsByPriority);
         } finally {
             configChangeLock.unlock();
@@ -308,6 +358,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
             return detectInterval;
         }
         logger.info("Start detect");
+        long recoveryGeneration = brokerRecoveryCooldown.generation();
         // The delay in processing kraft log could result in outdated cluster snapshot
         ClusterModelSnapshot snapshot = this.clusterModel.snapshot(excludedBrokers, excludedTopics, maxTolerateMetricsDelayMs);
         snapshot.markSlowBrokers();
@@ -326,6 +377,14 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
             }
         }
         this.slowBrokers = slowBrokers;
+
+        // Count before cooldown exclusion so the per-topic reassignment ratio is based on the full topic size.
+        Map<String, Integer> topicPartitionCount = getTopicPartitionCount(snapshot);
+        int cooldownExclusions = excludeRecentlyReassignedPartitions(snapshot, partitionReassignmentCooldownMs);
+        if (cooldownExclusions > 0) {
+            logger.info("Excluded {} recently reassigned partition(s) from optimization", cooldownExclusions);
+        }
+        excludeDuringBrokerRecovery(snapshot, partitionReassignmentCooldownMs);
 
         List<Action> totalActions = new ArrayList<>();
         Map<String, Set<String>> goalsByGroup = GoalUtils.groupGoals(goals);
@@ -351,7 +410,7 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
 
         int totalActionSize = totalActions.size();
         List<List<Action>> actionsToExecute = checkAndGroupActions(totalActions, maxExecutionConcurrency,
-            MAX_PARTITION_REASSIGNMENT_RATIO, MAX_REASSIGNMENT_SOURCE_NODE_COUNT, getTopicPartitionCount(snapshot));
+            MAX_PARTITION_REASSIGNMENT_RATIO, MAX_REASSIGNMENT_SOURCE_NODE_COUNT, topicPartitionCount);
         logger.info("Total actions num: {}, split to {} batches, estimated time to complete: {}ms", totalActionSize,
             actionsToExecute.size(), Math.max(0, actionsToExecute.size() - 1) * executionIntervalMs);
 
@@ -364,10 +423,44 @@ public class AnomalyDetectorImpl extends AbstractAnomalyDetector implements Lead
             if (i != 0) {
                 Thread.sleep(executionIntervalMs);
             }
-            this.actionExecutor.execute(actionsToExecute.get(i)).get();
+            if (isBalancingPlanStale(recoveryGeneration)) {
+                logger.info("Discard remaining balancing plan after broker lifecycle or controller leadership change");
+                break;
+            }
+            executeActionBatch(actionsToExecute.get(i), partitionReassignmentCooldownMs);
         }
 
         return detectInterval;
+    }
+
+    private void excludeDuringBrokerRecovery(ClusterModelSnapshot snapshot, long cooldownMs) {
+        int exclusions = brokerRecoveryCooldown.excludeFrom(snapshot, cooldownMs);
+        if (exclusions > 0) {
+            logger.info("Broker recovery cooldown: excluded {} healthy-source partition(s) from optional optimization", exclusions);
+        }
+    }
+
+    private boolean isBalancingPlanStale(long recoveryGeneration) {
+        return !isRunnable() || recoveryGeneration != brokerRecoveryCooldown.generation();
+    }
+
+    void executeActionBatch(List<Action> actions, long cooldownMs) throws Exception {
+        this.actionExecutor.execute(actions).get();
+        this.partitionReassignmentCooldown.record(actions, cooldownMs);
+    }
+
+    int excludeRecentlyReassignedPartitions(ClusterModelSnapshot snapshot, long cooldownMs) {
+        return this.partitionReassignmentCooldown.excludeFrom(snapshot, cooldownMs)
+            + this.brokerRecoveryCooldown.excludeRecoveredPartitions(snapshot, cooldownMs);
+    }
+
+    long partitionReassignmentCooldownMs() {
+        configChangeLock.lock();
+        try {
+            return partitionReassignmentCooldownMs;
+        } finally {
+            configChangeLock.unlock();
+        }
     }
 
     Map<String, Integer> getTopicPartitionCount(ClusterModelSnapshot snapshot) {

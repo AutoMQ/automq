@@ -33,9 +33,52 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 @Tag("S3Unit")
 public class AutoBalancerConfigTest {
+
+    /**
+     * Given no explicit partition reassignment cooldown, when the controller config is parsed, then the default
+     * cooldown is five minutes.
+     */
+    @Test
+    public void testPartitionReassignmentCooldownDefault() {
+        AutoBalancerControllerConfig config = new AutoBalancerControllerConfig(Map.of(), false);
+
+        Assertions.assertEquals(TimeUnit.MINUTES.toMillis(5),
+            config.getLong(AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS));
+    }
+
+    /**
+     * Given explicit non-negative partition reassignment cooldowns, when the controller config is parsed, then zero
+     * disables the cooldown and positive values are preserved.
+     */
+    @Test
+    public void testPartitionReassignmentCooldownConfiguration() {
+        String configName =
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS;
+
+        AutoBalancerControllerConfig disabledConfig = new AutoBalancerControllerConfig(Map.of(configName, 0L), false);
+        AutoBalancerControllerConfig enabledConfig = new AutoBalancerControllerConfig(Map.of(configName, 1234L), false);
+
+        Assertions.assertEquals(0L, disabledConfig.getLong(configName));
+        Assertions.assertEquals(1234L, enabledConfig.getLong(configName));
+        Assertions.assertTrue(AutoBalancerControllerConfig.RECONFIGURABLE_CONFIGS.contains(configName));
+    }
+
+    /**
+     * Given a negative partition reassignment cooldown, when the controller config is parsed, then validation rejects
+     * it.
+     */
+    @Test
+    public void testPartitionReassignmentCooldownRejectsNegativeValue() {
+        String configName =
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS;
+
+        Assertions.assertThrowsExactly(ConfigException.class,
+            () -> new AutoBalancerControllerConfig(Map.of(configName, -1L), false));
+    }
 
     @Test
     public void testNoPredefinedConfig() {
