@@ -68,7 +68,7 @@ public record S3StreamArchiveMetadata(
 
     /** Returns the fully drained state aligned to a later online object boundary. */
     public S3StreamArchiveMetadata advanceEmptyCursor(long offset) {
-        return new S3StreamArchiveMetadata(streamId, offset, archiveMetadataEndOffset, offset, offset, 0L,
+        return new S3StreamArchiveMetadata(streamId, offset, offset, offset, offset, 0L,
             offset, 0L);
     }
 

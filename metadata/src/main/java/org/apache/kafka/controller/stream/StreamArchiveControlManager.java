@@ -493,7 +493,8 @@ final class StreamArchiveControlManager {
                 return ControllerResult.of(Collections.emptyList(), null);
             }
             List<S3StreamObject> ordered = stream.streamObjects().values().stream()
-                .filter(object -> object.endOffset() <= archive.archiveEndOffset())
+                .filter(object -> object.endOffset() > archive.archiveMetadataEndOffset()
+                    && object.endOffset() <= archive.archiveEndOffset())
                 .sorted(Comparator.comparingLong(S3StreamObject::startOffset))
                 .limit(MAX_METADATA_CLEANUP_OBJECTS)
                 .collect(Collectors.toList());
