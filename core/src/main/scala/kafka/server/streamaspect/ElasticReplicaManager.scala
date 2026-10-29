@@ -1494,13 +1494,25 @@ class ElasticReplicaManager(
 
   def computeSnapshotReadPartition(topicPartition: TopicPartition,
     remappingFunction: BiFunction[TopicPartition, Partition, Partition]): Partition = {
-    snapshotReadPartitions.compute(topicPartition, (tp, partition) => {
+    // AutoMQ inject start
+    var changed = false
+    val result = snapshotReadPartitions.compute(topicPartition, (tp, partition) => {
       val newPartition = remappingFunction.apply(tp, partition)
+      changed = partition ne newPartition
       if (newPartition == null) {
         brokerTopicStats.removeMetrics(tp)
       }
       newPartition
     })
+    // Snapshot replicas are not stopped through stopPartitions, which normally
+    // wakes delayed requests. Publish their new state before checking purgatory:
+    // a removed or replaced replica must not strand fetches until maxWaitMs.
+    // Do this outside ConcurrentHashMap.compute to avoid lock-order inversion.
+    if (changed) {
+      completeDelayedFetchOrProduceRequests(topicPartition)
+    }
+    result
+    // AutoMQ inject end
   }
 
   def newSnapshotReadPartition(topicIdPartition: TopicIdPartition): Partition = {
