@@ -1,0 +1,86 @@
+// Licensed to the Apache Software Foundation (ASF) under one or more
+// contributor license agreements. See the NOTICE file distributed with
+// this work for additional information regarding copyright ownership.
+// The ASF licenses this file to You under the Apache License, Version 2.0
+// (the "License"); you may not use this file except in compliance with
+// the License. You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+import java.util.jar.JarFile
+
+// parquet-jackson contains only relocated Jackson classes. Rebuild that namespace
+// from the shared, patched versions until Parquet publishes a fixed artifact.
+configurations {
+    shadedJackson {
+        canBeConsumed = false
+    }
+    // Used by the root build's shaded-publication configuration.
+    shadowed
+}
+
+dependencies {
+    shadedJackson libs.jacksonDatabind
+}
+
+shadowJar {
+    archiveClassifier = null
+    configurations = [project.configurations.shadedJackson]
+    relocate 'com.fasterxml.jackson', 'shaded.parquet.com.fasterxml.jackson'
+    mergeServiceFiles()
+    append 'META-INF/NOTICE'
+    exclude 'module-info.class', 'META-INF/versions/**/module-info.class'
+    manifest {
+        attributes 'Multi-Release': 'true'
+    }
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
+// Use the shaded artifact for both project dependencies and Maven publishing,
+// following the clients module. The unshaded inputs are not runtime dependencies.
+jar {
+    enabled = false
+    dependsOn shadowJar
+}
+
+tasks.register('verifyShadedJackson') {
+    group = 'Verification'
+    description = 'Checks the versions and relocation of the rebuilt Parquet Jackson jar.'
+    dependsOn shadowJar
+    inputs.file(shadowJar.archiveFile)
+    doLast {
+        new JarFile(shadowJar.archiveFile.get().asFile).withCloseable { jarFile ->
+            def expected = [
+                'jackson-annotations': versions.jacksonAnnotationsVersion,
+                'jackson-core': versions.jackson,
+                'jackson-databind': versions.jackson
+            ]
+            expected.each { module, version ->
+                def entry = jarFile.getJarEntry("META-INF/maven/com.fasterxml.jackson.core/${module}/pom.properties")
+                if (entry == null) {
+                    throw new GradleException("Missing version metadata for ${module}")
+                }
+                def properties = new Properties()
+                jarFile.getInputStream(entry).withCloseable { properties.load(it) }
+                if (properties.getProperty('version') != version) {
+                    throw new GradleException("Expected ${module} ${version}, found ${properties.getProperty('version')}")
+                }
+            }
+            if (jarFile.getJarEntry('shaded/parquet/com/fasterxml/jackson/databind/ObjectMapper.class') == null) {
+                throw new GradleException('Missing relocated Jackson ObjectMapper')
+            }
+            if (jarFile.entries().find { it.name ==~ /(?:META-INF\/versions\/\d+\/)?com\/fasterxml\/jackson\/.*\.class/ }) {
+                throw new GradleException('Unrelocated Jackson classes in the Parquet Jackson jar')
+            }
+        }
+    }
+}
+
+check.dependsOn 'verifyShadedJackson'

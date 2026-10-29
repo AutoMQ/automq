@@ -106,6 +106,7 @@ include 'clients',
     's3stream',
     'automq-shell',
     'automq-log-uploader',
+    'automq-parquet-jackson',
     'automq-metrics'
 
 project(":storage:api").name = "storage-api"

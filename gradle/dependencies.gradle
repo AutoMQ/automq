@@ -100,7 +100,7 @@ versions += [
   grgit: "4.1.1",
   httpclient: "4.5.14",
   // AutoMQ inject start
-  jackson: "2.21.5",
+  jackson: "2.21.8",
   // jackson-annotations uses a short version instead of the full Jackson version
   jacksonAnnotationsVersion: "2.21",
   // AutoMQ inject end
@@ -180,7 +180,6 @@ versions += [
   // AutoMQ inject start
   commonLang: "3.18.0",
   parquet: "1.15.2",
-  parquetJackson: "1.18.0",
   thrift: "0.23.0",
   ant: "1.10.15",
   aircompressor: "2.0.3",

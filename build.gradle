@@ -27,6 +27,10 @@ buildscript {
   dependencies {
     // For Apache Rat plugin to ignore non-Git files
     classpath "org.ajoberstar.grgit:grgit-core:$versions.grgit"
+    // AutoMQ inject start
+    // Shadow 8.1.0 needs a newer ASM to relocate Jackson's Java 21 multi-release classes.
+    classpath "org.ow2.asm:asm-commons:9.7.1"
+    // AutoMQ inject end
   }
 }
 
@@ -154,6 +158,10 @@ allprojects {
     exclude group: "commons-logging", module: "commons-logging"
     exclude group: "ch.qos.logback", module: "logback-classic"
     exclude group: "ch.qos.logback", module: "logback-core"
+    // AutoMQ inject start
+    // Parquet's published jar embeds a vulnerable Jackson copy. Core supplies our rebuilt shaded jar.
+    exclude group: "org.apache.parquet", module: "parquet-jackson"
+    // AutoMQ inject end
     // zinc is the Scala incremental compiler, it has a configuration for its own dependencies
     // that are unrelated to the project dependencies, we should not change them
     if (name != "zinc") {
@@ -255,7 +263,9 @@ subprojects {
   // We use the shadow plugin for the jmh-benchmarks module and the `-all` jar can get pretty large, so
   // don't publish it
   def shouldPublish = !project.name.equals('jmh-benchmarks')
-  def shouldPublishWithShadow = (['clients'].contains(project.name))
+  // AutoMQ inject start
+  def shouldPublishWithShadow = (['clients', 'automq-parquet-jackson'].contains(project.name))
+  // AutoMQ inject end
 
   if (shouldPublish) {
     apply plugin: 'maven-publish'
@@ -972,6 +982,10 @@ project(':core') {
     implementation project(':automq-shell')
     implementation project(':automq-metrics')
     implementation project(':automq-log-uploader')
+    // AutoMQ inject start
+    // Select the jar at compile time too; this project has no unshaded class output.
+    implementation project(path: ':automq-parquet-jackson', configuration: 'shadow')
+    // AutoMQ inject end
 
     implementation libs.argparse4j
     implementation libs.commonsValidator
@@ -997,7 +1011,6 @@ project(':core') {
       implementation "org.apache.parquet:parquet-encoding:${versions.parquet}"
       implementation "org.apache.parquet:parquet-format-structures:${versions.parquet}"
       implementation "org.apache.parquet:parquet-hadoop:${versions.parquet}"
-      implementation "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
       implementation "org.apache.thrift:libthrift:${versions.thrift}"
       implementation "org.apache.ant:ant:${versions.ant}"
       implementation "org.apache.ant:ant-launcher:${versions.ant}"
@@ -1285,7 +1298,31 @@ project(':core') {
     duplicatesStrategy 'exclude'
   }
 
+  // AutoMQ inject start
+  tasks.register('verifyParquetJackson') {
+    group = 'Verification'
+    description = 'Checks that the broker uses only the rebuilt Parquet Jackson artifact.'
+    dependsOn ':automq-parquet-jackson:verifyShadedJackson'
+    doLast {
+      def components = configurations.runtimeClasspath.incoming.resolutionResult.allComponents
+      if (components.any { it.moduleVersion?.group == 'org.apache.parquet' && it.moduleVersion?.name == 'parquet-jackson' }) {
+        throw new GradleException('The broker runtime still contains the published parquet-jackson artifact')
+      }
+      if (!components.any { it.id instanceof org.gradle.api.artifacts.component.ProjectComponentIdentifier &&
+          it.id.projectPath == ':automq-parquet-jackson' }) {
+        throw new GradleException('The broker runtime is missing the rebuilt Parquet Jackson artifact')
+      }
+    }
+  }
+  tasks.named('S3UnitTest') {
+    dependsOn 'verifyParquetJackson'
+  }
+  // AutoMQ inject end
+
   tasks.create(name: "releaseTarGz", dependsOn: configurations.archives.artifacts, type: Tar) {
+    // AutoMQ inject start
+    dependsOn 'verifyParquetJackson'
+    // AutoMQ inject end
     def prefix = project.findProperty('prefix') ?: ''
     archiveBaseName = "${prefix}kafka"
 
