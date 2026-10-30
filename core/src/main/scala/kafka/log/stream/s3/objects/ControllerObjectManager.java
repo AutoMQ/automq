@@ -191,7 +191,8 @@ public class ControllerObjectManager implements ObjectManager {
                 case STREAM_NOT_OPENED:
                 case STREAM_FENCED:
                 case OFFSET_NOT_MATCHED:
-                    LOGGER.error("Stream state conflict while committing stream set object: {}, code: {}", request, code);
+                case STREAM_INNER_ERROR:
+                    LOGGER.error("Stream error while committing stream set object: {}, code: {}", request, code);
                     throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
