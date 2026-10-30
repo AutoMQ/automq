@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-08-07
+last_updated: 2026-10-30
 ---
 
 # AutoMQ Agent Instructions
@@ -29,6 +29,8 @@ progressively loaded rules live in `.agents/`.
   CI failure handling.
 - Follow `.agents/pull-request-description.md` when writing a PR description
   that will become the squash commit body.
+- Put verification commands and results in PR comments, not in the PR
+  description. Do not add a Verification or Testing section to the description.
 
 ## Verification
 
