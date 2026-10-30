@@ -263,7 +263,9 @@ public class S3MetricsExporter implements MetricExporter {
         synchronized (uploadBuffer) {
             if (uploadBuffer.readableBytes() > 0) {
                 try {
-                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), CompressionUtils.compress(uploadBuffer.slice().asReadOnly())).get();
+                    // Bound the upload wait so metrics cannot hold up the final export during shutdown.
+                    objectStorage.write(WriteOptions.DEFAULT, getObjectKey(), CompressionUtils.compress(uploadBuffer.slice().asReadOnly()))
+                        .get(5, TimeUnit.SECONDS);
                 } catch (Exception e) {
                     LOGGER.error("Failed to upload metrics to s3", e);
                     return CompletableResultCode.ofFailure();
