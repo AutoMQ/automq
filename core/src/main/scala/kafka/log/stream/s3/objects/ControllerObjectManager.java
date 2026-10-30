@@ -188,6 +188,12 @@ public class ControllerObjectManager implements ObjectManager {
                 case NODE_FENCED:
                     LOGGER.error("Node epoch expired, fenced or not exist: {}, code: {}", request, Errors.forCode(resp.errorCode()));
                     throw Errors.forCode(resp.errorCode()).exception();
+                case STREAM_NOT_OPENED:
+                case STREAM_FENCED:
+                case OFFSET_NOT_MATCHED:
+                case STREAM_INNER_ERROR:
+                    LOGGER.error("Stream error while committing stream set object: {}, code: {}", request, code);
+                    throw Errors.forCode(resp.errorCode()).exception();
                 case OBJECT_NOT_EXIST:
                 case COMPACTED_OBJECTS_NOT_FOUND:
                     throw new CompactedObjectsNotFoundException();
