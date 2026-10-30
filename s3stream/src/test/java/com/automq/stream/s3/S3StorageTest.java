@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Context;
+import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.StreamClientException;
@@ -52,6 +53,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +64,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -76,14 +79,17 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
@@ -278,6 +284,63 @@ public class S3StorageTest {
 
     private static List<Long> offsets(ReadDataBlock dataBlock) {
         return dataBlock.getRecords().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList());
+    }
+
+    /** A failed link read must leave the WAL and streams intact so a later attempt can recover every stream. */
+    @Test
+    public void testRecoveryPreservesWALAfterLinkFailure() throws Exception {
+        WriteAheadLog recoveryWal = mock(WriteAheadLog.class);
+        Mockito.when(recoveryWal.recover()).thenAnswer(invocation -> List.of(
+            new WALRecoveryTest.TestRecoverResult(newRecord(42, 0)),
+            new WALRecoveryTest.TestRecoverResult(StreamRecordBatch.of(43, 0, 0, -1, random(1), DefaultByteBufSupplier.INSTANCE)),
+            new WALRecoveryTest.TestRecoverResult(newRecord(42, 1)),
+            new WALRecoveryTest.TestRecoverResult(newRecord(44, 0))).iterator());
+        Mockito.when(recoveryWal.reset()).thenReturn(CompletableFuture.completedFuture(null));
+        Mockito.when(streamManager.getOpeningStreams()).thenReturn(CompletableFuture.completedFuture(List.of(
+            new StreamMetadata(42, 0, 0, 0, StreamState.OPENED),
+            new StreamMetadata(43, 0, 0, 0, StreamState.OPENED),
+            new StreamMetadata(44, 0, 0, 0, StreamState.OPENED))));
+        Mockito.when(streamManager.closeStream(anyLong(), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+        LinkRecordDecoder decoder = mock(LinkRecordDecoder.class);
+        Mockito.when(decoder.decodedSize(any())).thenReturn(1);
+        RuntimeException readFailure = new IllegalStateException("RouterChannel temporarily unavailable");
+        Mockito.when(decoder.decode(any(), any())).thenReturn(CompletableFuture.failedFuture(readFailure));
+        storage = spy(storage);
+        UploadWriteAheadLogTask task = mock(UploadWriteAheadLogTask.class);
+        Mockito.when(task.prepare()).thenReturn(CompletableFuture.completedFuture(1L));
+        Mockito.when(task.upload()).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectRequest()));
+        Mockito.when(task.commit()).thenReturn(CompletableFuture.completedFuture(null));
+        Mockito.doReturn(task).when(storage).newUploadWriteAheadLogTask(any(), any(), anyDouble());
+        try (MockedStatic<S3Storage> staticStorage = mockStatic(S3Storage.class, Mockito.CALLS_REAL_METHODS)) {
+            staticStorage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
+            CompletionException exception = assertThrows(CompletionException.class,
+                () -> storage.recover0(recoveryWal, streamManager, objectManager, LOGGER));
+            assertSame(readFailure, exception.getCause());
+            verify(recoveryWal, never()).reset();
+            verify(recoveryWal, never()).trim(any());
+            verify(streamManager, never()).closeStream(anyLong(), anyLong());
+            verify(storage, never()).newUploadWriteAheadLogTask(any(), any(), anyDouble());
+
+            Mockito.when(decoder.decode(any(), any())).thenAnswer(invocation ->
+                CompletableFuture.completedFuture(newRecord(43, 0)));
+            Mockito.doAnswer(invocation -> {
+                Map<Long, List<StreamRecordBatch>> records = invocation.getArgument(0);
+                assertEquals(List.of(0L, 1L), records.get(42L).stream()
+                    .map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList()));
+                assertEquals(0L, records.get(43L).get(0).getBaseOffset());
+                assertEquals(0L, records.get(44L).get(0).getBaseOffset());
+                assertEquals(3, records.size());
+                return task;
+            }).when(storage).newUploadWriteAheadLogTask(any(), any(), anyDouble());
+
+            storage.recover0(recoveryWal, streamManager, objectManager, LOGGER);
+            verify(task).commit();
+            verify(recoveryWal).reset();
+            verify(streamManager).closeStream(42, 0);
+            verify(streamManager).closeStream(43, 0);
+            verify(streamManager).closeStream(44, 0);
+        }
     }
 
     @Test
