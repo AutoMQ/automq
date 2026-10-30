@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -218,7 +219,8 @@ public class ClusterEventPublisher implements IClusterEventPublisher {
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
-            producer.close();
+            // Events are best-effort; an unavailable broker must not delay shutdown indefinitely.
+            producer.close(Duration.ofSeconds(5));
         }
     }
 }
