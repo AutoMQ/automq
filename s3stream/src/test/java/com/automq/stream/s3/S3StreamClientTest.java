@@ -25,16 +25,22 @@ import com.automq.stream.api.Stream;
 import com.automq.stream.s3.compact.StreamObjectArchiveTask;
 import com.automq.stream.s3.compact.StreamObjectCompactor.CompactionType;
 import com.automq.stream.s3.exceptions.CompactedObjectsNotFoundException;
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metadata.StreamMetadata;
+import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metadata.StreamState;
+import com.automq.stream.s3.objects.CompactStreamObjectRequest;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -459,6 +465,76 @@ public class S3StreamClientTest {
             compactionTasks.remove().run();
         }
         assertEquals(List.of(CompactionType.CLEANUP, CompactionType.MINOR, CompactionType.MAJOR), types);
+    }
+
+    /**
+     * Given Archive protection, cleanup keeps boundary-touching objects and refreshes the range on the next round.
+     */
+    @Test
+    public void testCompactionRefreshesArchiveProtection() {
+        config.version(() -> Version.V2);
+        S3Stream underlying = mock(S3Stream.class);
+        when(underlying.streamId()).thenReturn(1L);
+        when(underlying.startOffset()).thenReturn(200L);
+        when(underlying.confirmOffset()).thenReturn(200L);
+        List<S3ObjectMetadata> objects = List.of(
+            cleanupObject(1, 0, 50), cleanupObject(2, 40, 60), cleanupObject(3, 50, 150),
+            cleanupObject(4, 140, 160), cleanupObject(5, 150, 200));
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(objects));
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(streamManager.getStreamArchive(1L, 0L)).thenReturn(CompletableFuture.completedFuture(
+            new StreamArchiveState(1, 0, 50, 50, 100, 150, 1, 50, 0)));
+        S3StreamClient.StreamWrapper.Compaction compaction = client.new StreamWrapper(underlying).compaction;
+
+        compaction.compact(CompactionType.CLEANUP, new S3StreamClient.CompactionHint(0));
+        // An empty range must also allow objects straddling the common cursor.
+        when(streamManager.getStreamArchive(1L, 0L)).thenReturn(CompletableFuture.completedFuture(
+            new StreamArchiveState(1, 0, 100, 100, 100, 100, 0, 100, 0)));
+        compaction.compact(CompactionType.CLEANUP, new S3StreamClient.CompactionHint(0));
+
+        ArgumentCaptor<CompactStreamObjectRequest> request = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager, times(2)).compactStreamObject(request.capture());
+        assertEquals(List.of(1L, 5L), request.getAllValues().get(0).getSourceObjectIds());
+        assertEquals(List.of(1L, 2L, 3L, 4L, 5L), request.getAllValues().get(1).getSourceObjectIds());
+    }
+
+    /**
+     * Given an Archive read failure, compaction must not proceed with an unprotected fallback.
+     */
+    @Test
+    public void testCompactionStopsWhenArchiveReadFails() {
+        config.version(() -> Version.V2);
+        when(streamManager.getStreamArchive(anyLong(), anyLong()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("Archive unavailable")));
+        S3StreamClient.StreamWrapper.Compaction compaction = client.new StreamWrapper(mock(S3Stream.class)).compaction;
+
+        assertThrows(java.util.concurrent.CompletionException.class,
+            () -> compaction.compact(CompactionType.CLEANUP, new S3StreamClient.CompactionHint(0)));
+        verify(objectManager, never()).getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt());
+        verify(objectManager, never()).compactStreamObject(any());
+    }
+
+    /**
+     * Given Archive is disabled, cleanup does not request Archive state and keeps its existing eligibility rules.
+     */
+    @Test
+    public void testLegacyCleanupDoesNotReadArchiveState() {
+        S3Stream underlying = mock(S3Stream.class);
+        when(underlying.startOffset()).thenReturn(50L);
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(List.of(cleanupObject(1, 0, 50))));
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        client.new StreamWrapper(underlying).compaction.compact(CompactionType.CLEANUP, new S3StreamClient.CompactionHint(0));
+
+        verify(streamManager, never()).getStreamArchive(anyLong(), anyLong());
+        verify(objectManager).compactStreamObject(any());
+    }
+
+    private S3ObjectMetadata cleanupObject(long id, long start, long end) {
+        return new S3ObjectMetadata(id, S3ObjectType.STREAM, List.of(new StreamOffsetRange(1, start, end)),
+            0, 0, 100, 0);
     }
 
     private S3StreamClient.StreamWrapper.Compaction compactionStream(long id) {

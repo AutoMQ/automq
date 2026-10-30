@@ -42,6 +42,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
@@ -80,6 +82,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -666,6 +669,79 @@ class StreamObjectCompactorTest {
 
         assertEquals(1, groups.size());
         assertEquals(List.of(dirtyComposite), groups.get(0));
+    }
+
+    /**
+     * Given excluded expired objects, every compaction mode deletes only eligible objects in the same batch.
+     */
+    @ParameterizedTest
+    @EnumSource(StreamObjectCompactor.CompactionType.class)
+    void testCompactionFilterExcludesExpiredObjects(StreamObjectCompactor.CompactionType type) throws Exception {
+        when(stream.startOffset()).thenReturn(30L);
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(List.of(
+                s3ObjectMetadata(1, 0, 10, 100, Normal),
+                s3ObjectMetadata(2, 10, 20, 100, Normal),
+                s3ObjectMetadata(3, 20, 30, 100, Normal))));
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        builder().objectManager(objectManager).objectStorage(objectStorage).stream(stream)
+            .compactionFilter(object -> object.objectId() != 2).build().compact0(type);
+
+        ArgumentCaptor<CompactStreamObjectRequest> request = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager).compactStreamObject(request.capture());
+        assertEquals(List.of(1L, 3L), request.getValue().getSourceObjectIds());
+        assertEquals(ObjectUtils.NOOP_OBJECT_ID, request.getValue().getObjectId());
+    }
+
+    /**
+     * Given an excluded living object, physical and composite merges retain separate groups on either side.
+     */
+    @ParameterizedTest
+    @EnumSource(value = StreamObjectCompactor.CompactionType.class, names = {"MINOR", "MAJOR", "MINOR_V1", "MAJOR_V1"})
+    void testCompactionFilterPreservesOffsetGaps(StreamObjectCompactor.CompactionType type) throws Exception {
+        List<S3ObjectMetadata> objects = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            ObjectWriter writer = ObjectWriter.writer(i + 1, objectStorage, Integer.MAX_VALUE, Integer.MAX_VALUE);
+            writer.write(streamId, List.of(newRecord(i * 10L, 10, 10)));
+            writer.close().get();
+            objects.add(s3ObjectMetadata(i + 1, i * 10L, (i + 1) * 10L, writer.size(), Normal));
+        }
+        when(stream.streamId()).thenReturn(streamId);
+        when(stream.confirmOffset()).thenReturn(50L);
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(objects));
+        when(objectManager.prepareObject(anyInt(), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(10L))
+            .thenReturn(CompletableFuture.completedFuture(11L));
+        when(objectManager.compactStreamObject(any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        builder().objectManager(objectManager).objectStorage(objectStorage).stream(stream)
+            .groupSizeThreshold(1024 * 1024).compactionFilter(object -> object.objectId() != 3).build().compact0(type);
+
+        ArgumentCaptor<CompactStreamObjectRequest> request = ArgumentCaptor.forClass(CompactStreamObjectRequest.class);
+        verify(objectManager, times(2)).compactStreamObject(request.capture());
+        assertEquals(List.of(1L, 2L), request.getAllValues().get(0).getSourceObjectIds());
+        assertEquals(List.of(4L, 5L), request.getAllValues().get(1).getSourceObjectIds());
+        assertEquals(20L, request.getAllValues().get(0).getEndOffset());
+        assertEquals(30L, request.getAllValues().get(1).getStartOffset());
+    }
+
+    /**
+     * Given an excluded dirty composite, CLEANUP_V1 does not rewrite it or allocate an output object.
+     */
+    @Test
+    void testCompactionFilterExcludesDirtyComposite() throws Exception {
+        when(stream.startOffset()).thenReturn(80L);
+        when(objectManager.getStreamObjects(anyLong(), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.completedFuture(List.of(
+                s3ObjectMetadata(1, 0, 100, 1024L * 1024 * 1024, Composite))));
+
+        builder().objectManager(objectManager).objectStorage(objectStorage).stream(stream)
+            .compactionFilter(object -> false).build().compact0(StreamObjectCompactor.CompactionType.CLEANUP_V1);
+
+        verify(objectManager, never()).prepareObject(anyInt(), anyLong());
+        verify(objectManager, never()).compactStreamObject(any());
     }
 
     @Test
