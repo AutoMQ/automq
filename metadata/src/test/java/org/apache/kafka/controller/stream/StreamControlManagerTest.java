@@ -2043,12 +2043,33 @@ public class StreamControlManagerTest {
         assertEquals(Errors.NONE.code(), result.response().errorCode());
         replay(manager, result.records());
         assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveStartOffset());
-        assertEquals(0L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
         assertTrue(manager.updateStreamArchive(BROKER0, BROKER_EPOCH0, advance).records().isEmpty());
 
         assertEquals(Errors.STREAM_ARCHIVE_STATE_CONFLICT.code(), manager.updateStreamArchive(
             BROKER0, BROKER_EPOCH0, archiveUpdate(75L, 75L, 75L, 0L, 75L, 0L))
             .response().errorCode());
+    }
+
+    /**
+     * Given an empty Archive advances past expired objects, its metadata cursor must advance in the same record.
+     */
+    @Test
+    public void testUpdateStreamArchiveEmptyCursorAdvancesMetadataCursor() {
+        registerAlwaysSuccessEpoch(BROKER0);
+        createAndOpenStream(BROKER0, EPOCH0);
+        replay(manager, List.of(archiveMetadata(0L, 0L, 0L, 0L, 0L, 0L, 0L).toRecord()));
+        manager.replay(new S3StreamRecord().setStreamId(STREAM0).setEpoch(EPOCH0)
+            .setRangeIndex(0).setStartOffset(100L).setStreamState(StreamState.OPENED.toByte()));
+        manager.replay(new S3StreamObjectRecord().setStreamId(STREAM0).setObjectId(10L)
+            .setStartOffset(50L).setEndOffset(150L));
+
+        ControllerResult<UpdateStreamResponse> advance = manager.updateStreamArchive(
+            BROKER0, BROKER_EPOCH0, archiveUpdate(50L, 50L, 50L, 0L, 50L, 0L));
+        replay(manager, advance.records());
+
+        assertEquals(Errors.NONE.code(), advance.response().errorCode());
+        assertEquals(50L, manager.getStreamArchiveMetadata(STREAM0).archiveMetadataEndOffset());
     }
 
     /**
