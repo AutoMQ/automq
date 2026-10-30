@@ -1,5 +1,5 @@
 ---
-last_updated: 2026-08-07
+last_updated: 2026-10-30
 ---
 
 # Pull Request Description Conventions
@@ -8,6 +8,13 @@ The PR title and description form the squashed commit message. Write them in
 English as durable engineering history for future readers, without relying on
 the review conversation. Put transient information such as reviewer pings,
 current CI status, and coordination notes in PR comments.
+
+Do not add a Verification, Testing, or Test Plan section to the PR description.
+Put verification commands, pass/fail results, skipped or unavailable checks,
+and detailed validation reports in PR comments instead. This does not relax
+the verification requirements in `testing.md`. Test behavior may be described
+in the explanation of the change when it helps reviewers understand the
+contract being protected.
 
 Use the following template for non-trivial changes. Subsections are optional;
 add them only when they improve clarity. Small or mechanical changes may use a
