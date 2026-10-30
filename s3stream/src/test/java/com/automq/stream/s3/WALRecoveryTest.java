@@ -40,6 +40,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -384,12 +385,13 @@ public class WALRecoveryTest {
         }
     }
 
-    /** An oversized link truncates recovery before decoding, preserving any prefix and leaving the suffix unread. */
+    /** An oversized link fails recovery before decoding and leaves the suffix unread for a later attempt. */
     @ParameterizedTest
     @ValueSource(booleans = {false, true})
-    public void testRecoverTruncatesOversizedLinkBeforeDecoding(boolean withPrefix) {
+    public void testRecoverRejectsOversizedLinkBeforeDecoding(boolean withPrefix) {
         List<RecoverResult> records = new ArrayList<>();
         StreamRecordBatch prefix = withPrefix ? newRecord(42, 0) : null;
+        ByteBuf prefixBuffer = prefix == null ? null : prefix.encoded();
         if (prefix != null) {
             records.add(new TestRecoverResult(prefix, DefaultRecordOffset.of(0, 100, 0)));
         }
@@ -404,17 +406,16 @@ public class WALRecoveryTest {
         List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(iterator, endOffsets, Long.MAX_VALUE, LOGGER, blocks::add);
+            CompletionException exception = assertThrows(CompletionException.class,
+                () -> WALRecovery.recover(iterator, endOffsets, Long.MAX_VALUE, LOGGER, blocks::add));
+            assertTrue(exception.getCause() instanceof IllegalArgumentException);
             assertEquals(0, buffer.refCnt());
-            assertEquals(Map.of(42L, withPrefix ? 1L : 0L, 43L, 0L), endOffsets);
+            assertEquals(Map.of(42L, 0L, 43L, 0L), endOffsets);
             assertSame(suffix, iterator.next().record());
             if (withPrefix) {
-                assertEquals(1, blocks.size());
-                assertEquals(Map.of(42L, List.of(prefix)), blocks.get(0).records());
-                assertEquals(DefaultRecordOffset.of(0, 100, 0), blocks.get(0).lastRecordOffset());
-            } else {
-                assertTrue(blocks.isEmpty());
+                assertEquals(0, prefixBuffer.refCnt());
             }
+            assertTrue(blocks.isEmpty());
             verify(decoder, never()).decode(any(), any());
         } finally {
             suffix.release();
@@ -422,11 +423,12 @@ public class WALRecoveryTest {
         }
     }
 
-    /** A decode failure truncates the whole WAL, including later records of otherwise healthy streams. */
+    /** A decode failure aborts recovery and releases prefetched records from every stream without uploading them. */
     @Test
-    public void testDecodeFailureRecoversGlobalPrefix() {
+    public void testDecodeFailureAbortsRecoveryAcrossStreams() {
         StreamRecordBatch first = newLinkRecord(42, 0);
         StreamRecordBatch decodedFirst = newRecord(42, 0);
+        ByteBuf decodedFirstBuffer = decodedFirst.encoded();
         StreamRecordBatch failed = newLinkRecord(43, 0);
         StreamRecordBatch laterSameStream = newRecord(42, 1);
         StreamRecordBatch laterOtherStream = newLinkRecord(44, 0);
@@ -455,11 +457,12 @@ public class WALRecoveryTest {
         Logger logger = mock(Logger.class);
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(records.iterator(), ends, 100_000, logger, recovered::add);
-            assertEquals(1, recovered.size());
-            assertEquals(Map.of(42L, List.of(decodedFirst)), recovered.get(0).records());
-            assertEquals(DefaultRecordOffset.of(0, 100, 0), recovered.get(0).lastRecordOffset());
-            assertEquals(Map.of(42L, 1L, 43L, 0L, 44L, 0L), ends);
+            CompletionException exception = assertThrows(CompletionException.class,
+                () -> WALRecovery.recover(records.iterator(), ends, 100_000, logger, recovered::add));
+            assertSame(failure, exception.getCause());
+            assertTrue(recovered.isEmpty());
+            assertEquals(Map.of(42L, 0L, 43L, 0L, 44L, 0L), ends);
+            assertEquals(0, decodedFirstBuffer.refCnt());
             assertEquals(0, suffixBuffer.refCnt());
             verify(logger).error(anyString(), eq(DefaultRecordOffset.of(0, 200, 0)), eq(43L), eq(0L), same(failure));
         } finally {
@@ -468,13 +471,15 @@ public class WALRecoveryTest {
         sources.forEach(buf -> assertEquals(0, buf.refCnt()));
     }
 
-    /** A failed block releases its deferred record without advancing the stream past the retained prefix. */
+    /** A failed batch releases all its pending records without advancing the recovered stream offset. */
     @Test
     public void testDecodeFailureReleasesDeferredRecord() {
         StreamRecordBatch first = newRecord(42, 0);
         StreamRecordBatch second = newRecord(42, 1);
         StreamRecordBatch failed = newLinkRecord(42, 2);
         StreamRecordBatch deferred = newLinkRecord(42, 3);
+        ByteBuf firstBuffer = first.encoded();
+        ByteBuf secondBuffer = second.encoded();
         ByteBuf failedBuffer = failed.encoded();
         ByteBuf deferredBuffer = deferred.encoded();
         List<RecoverResult> records = List.of(new TestRecoverResult(first), new TestRecoverResult(second),
@@ -486,9 +491,12 @@ public class WALRecoveryTest {
         Map<Long, Long> ends = new HashMap<>(Map.of(42L, 0L));
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(records.iterator(), ends, Long.MAX_VALUE, LOGGER, blocks::add);
-            assertEquals(List.of(first, second), blocks.get(0).records().get(42L));
-            assertEquals(2L, ends.get(42L));
+            assertThrows(CompletionException.class,
+                () -> WALRecovery.recover(records.iterator(), ends, Long.MAX_VALUE, LOGGER, blocks::add));
+            assertTrue(blocks.isEmpty());
+            assertEquals(0L, ends.get(42L));
+            assertEquals(0, firstBuffer.refCnt());
+            assertEquals(0, secondBuffer.refCnt());
             assertEquals(0, failedBuffer.refCnt());
             assertEquals(0, deferredBuffer.refCnt());
             verify(decoder).decode(same(deferred), any());
@@ -504,6 +512,7 @@ public class WALRecoveryTest {
         StreamRecordBatch failed = newLinkRecord(43, 0);
         StreamRecordBatch later = newLinkRecord(42, 1);
         StreamRecordBatch last = newLinkRecord(44, 0);
+        List<ByteBuf> buffers = List.of(first.encoded(), failed.encoded(), later.encoded(), last.encoded());
         CompletableFuture<StreamRecordBatch> firstFailure = new CompletableFuture<>();
         RuntimeException failure = new RuntimeException("earliest WAL failure");
         LinkRecordDecoder decoder = mock(LinkRecordDecoder.class);
@@ -523,18 +532,21 @@ public class WALRecoveryTest {
         Logger logger = mock(Logger.class);
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(List.<RecoverResult>of(new TestRecoverResult(first),
-                new TestRecoverResult(failed, DefaultRecordOffset.of(0, 200, 0)),
-                new TestRecoverResult(later), new TestRecoverResult(last)).iterator(), ends, 100_000, logger, blocks::add);
-            assertEquals(Map.of(42L, List.of(first)), blocks.get(0).records());
-            assertEquals(Map.of(42L, 1L, 43L, 0L, 44L, 0L), ends);
+            CompletionException exception = assertThrows(CompletionException.class, () ->
+                WALRecovery.recover(List.<RecoverResult>of(new TestRecoverResult(first),
+                    new TestRecoverResult(failed, DefaultRecordOffset.of(0, 200, 0)),
+                    new TestRecoverResult(later), new TestRecoverResult(last)).iterator(), ends, 100_000, logger, blocks::add));
+            assertSame(failure, exception.getCause());
+            assertTrue(blocks.isEmpty());
+            assertEquals(Map.of(42L, 0L, 43L, 0L, 44L, 0L), ends);
+            buffers.forEach(buffer -> assertEquals(0, buffer.refCnt()));
             verify(logger).error(anyString(), eq(DefaultRecordOffset.of(0, 200, 0)), eq(43L), eq(0L), same(failure));
         } finally {
             blocks.forEach(block -> WALRecovery.releaseAllRecords(block.records().values()));
         }
     }
 
-    /** Recovery keeps earlier blocks and stops reading later WAL blocks after a decode failure. */
+    /** A failure propagates even after earlier blocks were uploaded, leaving unread WAL records for retry. */
     @Test
     public void testDecodeFailureStopsAfterEarlierBlocks() {
         StreamRecordBatch first = newRecord(42, 0);
@@ -551,7 +563,8 @@ public class WALRecoveryTest {
         List<LogCache.LogCacheBlock> blocks = new ArrayList<>();
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(iterator, ends, 2050, LOGGER, blocks::add);
+            assertThrows(CompletionException.class,
+                () -> WALRecovery.recover(iterator, ends, 2050, LOGGER, blocks::add));
             assertEquals(List.of(first, second), blocks.get(0).records().get(42L));
             assertEquals(1, blocks.size());
             assertEquals(Map.of(42L, 2L, 43L, 0L), ends);
@@ -562,11 +575,13 @@ public class WALRecoveryTest {
         }
     }
 
-    /** Malformed link metadata must truncate at that record even when sizing fails before decoding. */
+    /** Malformed link metadata fails recovery without uploading the pending batch or reading the suffix. */
     @Test
-    public void testSizingFailureRecoversPrefix() {
+    public void testSizingFailureAbortsRecovery() {
         StreamRecordBatch first = newRecord(42, 0);
         StreamRecordBatch failed = newLinkRecord(43, 0);
+        ByteBuf firstBuffer = first.encoded();
+        ByteBuf failedBuffer = failed.encoded();
         StreamRecordBatch suffix = newRecord(42, 1);
         LinkRecordDecoder decoder = mock(LinkRecordDecoder.class);
         RuntimeException failure = new IllegalArgumentException("invalid link header");
@@ -578,10 +593,14 @@ public class WALRecoveryTest {
             new TestRecoverResult(failed, DefaultRecordOffset.of(0, 200, 0)), new TestRecoverResult(suffix)).iterator();
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(iterator, ends, 100_000, logger, blocks::add);
+            CompletionException exception = assertThrows(CompletionException.class,
+                () -> WALRecovery.recover(iterator, ends, 100_000, logger, blocks::add));
+            assertSame(failure, exception.getCause());
             assertSame(suffix, iterator.next().record());
-            assertEquals(Map.of(42L, List.of(first)), blocks.get(0).records());
-            assertEquals(Map.of(42L, 1L, 43L, 0L), ends);
+            assertTrue(blocks.isEmpty());
+            assertEquals(Map.of(42L, 0L, 43L, 0L), ends);
+            assertEquals(0, firstBuffer.refCnt());
+            assertEquals(0, failedBuffer.refCnt());
             verify(decoder, never()).decode(any(), any());
             verify(logger).error(anyString(), eq(DefaultRecordOffset.of(0, 200, 0)), eq(43L), eq(0L), same(failure));
         } finally {
@@ -590,12 +609,13 @@ public class WALRecoveryTest {
         }
     }
 
-    /** A sizing failure stops prefetch, but an earlier decode failure still determines the WAL cutoff. */
+    /** A sizing failure stops prefetch, but recovery still reports the earlier decode failure in WAL order. */
     @Test
     public void testEarlierDecodeFailurePrecedesSizingFailure() {
         StreamRecordBatch first = newRecord(42, 0);
         StreamRecordBatch failed = newLinkRecord(43, 0);
         StreamRecordBatch malformed = newLinkRecord(42, 1);
+        ByteBuf firstBuffer = first.encoded();
         ByteBuf failedBuffer = failed.encoded();
         ByteBuf malformedBuffer = malformed.encoded();
         RuntimeException failure = new IllegalStateException("earlier decode failure");
@@ -607,12 +627,15 @@ public class WALRecoveryTest {
         Logger logger = mock(Logger.class);
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(List.<RecoverResult>of(new TestRecoverResult(first),
-                new TestRecoverResult(failed, DefaultRecordOffset.of(0, 200, 0)),
-                new TestRecoverResult(malformed, DefaultRecordOffset.of(0, 300, 0))).iterator(),
-                ends, 100_000, logger, blocks::add);
-            assertEquals(Map.of(42L, List.of(first)), blocks.get(0).records());
-            assertEquals(Map.of(42L, 1L, 43L, 0L), ends);
+            CompletionException exception = assertThrows(CompletionException.class, () ->
+                WALRecovery.recover(List.<RecoverResult>of(new TestRecoverResult(first),
+                    new TestRecoverResult(failed, DefaultRecordOffset.of(0, 200, 0)),
+                    new TestRecoverResult(malformed, DefaultRecordOffset.of(0, 300, 0))).iterator(),
+                    ends, 100_000, logger, blocks::add));
+            assertSame(failure, exception.getCause());
+            assertTrue(blocks.isEmpty());
+            assertEquals(Map.of(42L, 0L, 43L, 0L), ends);
+            assertEquals(0, firstBuffer.refCnt());
             assertEquals(0, failedBuffer.refCnt());
             assertEquals(0, malformedBuffer.refCnt());
             verify(decoder, never()).decode(same(malformed), any());
@@ -622,7 +645,7 @@ public class WALRecoveryTest {
         }
     }
 
-    /** A full block must not prefetch a suffix record that would be abandoned if this block is truncated. */
+    /** A failing full batch must not allocate a suffix record through an unnecessary iterator prefetch. */
     @Test
     public void testDecodeFailureDoesNotLeakPrefetchedSuffix() {
         List<ByteBuf> allocated = new ArrayList<>();
@@ -653,8 +676,9 @@ public class WALRecoveryTest {
         when(decoder.decode(any(), any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("missing")));
         try (MockedStatic<S3Storage> storage = mockStatic(S3Storage.class)) {
             storage.when(S3Storage::getLinkRecordDecoder).thenReturn(decoder);
-            WALRecovery.recover(iterator, new HashMap<>(Map.of(42L, 0L)), 1, LOGGER,
-                block -> assertTrue(block.records().isEmpty()));
+            assertThrows(CompletionException.class, () ->
+                WALRecovery.recover(iterator, new HashMap<>(Map.of(42L, 0L)), 1, LOGGER,
+                    block -> assertTrue(block.records().isEmpty())));
         }
         assertEquals(1, allocated.size());
         assertEquals(0, allocated.get(0).refCnt());
