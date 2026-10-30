@@ -41,6 +41,7 @@ import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamManager;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
@@ -550,6 +551,15 @@ public class S3StreamClient implements StreamClient {
                     .groupSizeThreshold(groupSizeThreshold)
                     .majorV1MinNormalObjectSize(majorV1MinNormalObjectSize);
 
+                if (config.version().isStreamArchiveSupported()) {
+                    // Refresh the protection range every round. The Controller still validates commits because
+                    // Archive state may change after this snapshot is read.
+                    StreamArchiveState archiveState = streamManager.getStreamArchive(streamId(), streamEpoch()).join();
+                    long protectedStart = archiveState.archiveMetadataEndOffset();
+                    long protectedEnd = archiveState.archivePreparedEndOffset();
+                    taskBuilder.compactionFilter(object -> protectedStart == protectedEnd
+                        || object.endOffset() <= protectedStart || object.startOffset() >= protectedEnd);
+                }
                 taskBuilder.build().compact(compactionType);
                 if (config.version().isStreamArchiveSupported()) {
                     int objectsCountAfterCompaction = objectManager.getObjectsCount().join();

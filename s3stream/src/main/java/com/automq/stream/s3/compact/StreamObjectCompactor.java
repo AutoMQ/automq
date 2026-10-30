@@ -54,11 +54,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.BiPredicate;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
@@ -105,6 +107,7 @@ public class StreamObjectCompactor {
     private final ObjectStorage objectStorage;
     private final int dataBlockGroupSizeThreshold;
     private final long majorV1MinNormalObjectSize;
+    private final Predicate<S3ObjectMetadata> compactionFilter;
     private CompactStreamObjectRequest request;
 
     private StreamObjectCompactor(ObjectManager objectManager,
@@ -112,7 +115,9 @@ public class StreamObjectCompactor {
                                   Stream stream,
                                   long groupSizeThreshold,
                                   int dataBlockGroupSizeThreshold,
-                                  long majorV1MinNormalObjectSize) {
+                                  long majorV1MinNormalObjectSize,
+                                  Predicate<S3ObjectMetadata> compactionFilter) {
+        this.compactionFilter = Objects.requireNonNull(compactionFilter);
         this.objectManager = objectManager;
         this.objectStorage = objectStorage;
         this.stream = stream;
@@ -191,6 +196,9 @@ public class StreamObjectCompactor {
         List<S3ObjectMetadata> expiredObjects = new ArrayList<>(objects.size());
         List<S3ObjectMetadata> livingObjects = new ArrayList<>(objects.size());
         for (S3ObjectMetadata object : objects) {
+            if (!compactionFilter.test(object)) {
+                continue;
+            }
             if (object.endOffset() <= startOffset) {
                 expiredObjects.add(object);
             } else {
@@ -612,6 +620,7 @@ public class StreamObjectCompactor {
         private long groupSizeThreshold;
         private int dataBlockGroupSizeThreshold = DEFAULT_DATA_BLOCK_GROUP_SIZE_THRESHOLD;
         private long majorV1MinNormalObjectSize;
+        private Predicate<S3ObjectMetadata> compactionFilter = object -> true;
 
         public Builder objectManager(ObjectManager objectManager) {
             this.objectManager = objectManager;
@@ -657,9 +666,20 @@ public class StreamObjectCompactor {
             return this;
         }
 
+        /**
+         * Select objects eligible for both expired-object cleanup and living-object compaction.
+         *
+         * @param compactionFilter predicate returning true for eligible objects; defaults to allowing all objects.
+         * @return builder.
+         */
+        public Builder compactionFilter(Predicate<S3ObjectMetadata> compactionFilter) {
+            this.compactionFilter = Objects.requireNonNull(compactionFilter);
+            return this;
+        }
+
         public StreamObjectCompactor build() {
             return new StreamObjectCompactor(objectManager, objectStorage, stream, groupSizeThreshold,
-                dataBlockGroupSizeThreshold, majorV1MinNormalObjectSize);
+                dataBlockGroupSizeThreshold, majorV1MinNormalObjectSize, compactionFilter);
         }
     }
 
