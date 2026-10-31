@@ -2480,6 +2480,10 @@ public final class QuorumController implements Controller {
             EnumSet.of(RUNS_IN_PREMIGRATION)).whenComplete((__, t) -> {
                 if (ControllerExceptions.isTimeoutException(t)) {
                     replicationControl.processExpiredBrokerHeartbeat(request);
+                    // AutoMQ inject start
+                    // Timed-out heartbeats can end overload without a normal heartbeat to restore fencing.
+                    rescheduleMaybeFenceStaleBrokers();
+                    // AutoMQ inject end
                     controllerMetrics.incrementTimedOutHeartbeats();
                 }
             });
