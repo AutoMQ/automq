@@ -1358,6 +1358,7 @@ public final class QuorumController implements Controller {
             offsetControl.activate(newNextWriteOffset);
             clusterControl.activate();
             // AutoMQ inject start
+            clusterControl.heartbeatManager().setOnOverloadRecovery(this::rescheduleMaybeFenceStaleBrokers);
             gentleControlledShutdownControl.activate();
             // AutoMQ inject end
             extension.activate();
