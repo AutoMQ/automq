@@ -99,8 +99,8 @@ versions += [
   grgit: "4.1.1",
   httpclient: "4.5.14",
   // AutoMQ inject start
-  jackson: "2.21.5",
-  // jackson-annotations uses a short version instead of the full Jackson version
+  jackson: "2.21.8",
+  // jackson-annotations uses the minor version, as specified by the Jackson BOM.
   jacksonAnnotationsVersion: "2.21",
   // AutoMQ inject end
   jacoco: "0.8.10",
