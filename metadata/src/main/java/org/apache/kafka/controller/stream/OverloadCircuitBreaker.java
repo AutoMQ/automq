@@ -24,6 +24,7 @@ import org.apache.kafka.common.utils.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 public class OverloadCircuitBreaker {
@@ -33,9 +34,19 @@ public class OverloadCircuitBreaker {
     private long timestamp;
 
     private final Time time;
+    private Runnable onOpen = () -> { };
 
     public OverloadCircuitBreaker(Time time) {
         this.time = time;
+    }
+
+    /**
+     * Set the callback to run synchronously when recovery moves the breaker from half-open to open.
+     *
+     * @param onOpen callback to run after the breaker opens
+     */
+    public void setOnOpen(Runnable onOpen) {
+        this.onOpen = Objects.requireNonNull(onOpen);
     }
 
     public void overload() {
@@ -57,6 +68,7 @@ public class OverloadCircuitBreaker {
             if (now - timestamp >= HALF_OPEN_WINDOW_MS) {
                 this.state = State.OPEN;
                 LOGGER.info("The controller has recovered from overload, enter open state.");
+                onOpen.run();
             }
         }
     }
