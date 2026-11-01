@@ -69,10 +69,12 @@ public class DirectIOUtils {
     }
 
     /**
-     * Release the memory of the buffer.
+     * Release the native allocation owned by a buffer returned by {@link #allocateForDirectIO}.
+     * Call this exactly once on the original buffer, not on a slice or duplicate.
      */
     public static void releaseDirectBuffer(ByteBuffer buffer) {
         assert buffer.isDirect();
-        PlatformDependent.freeDirectBuffer(buffer);
+        // wrapPointer creates a buffer without a Cleaner; invoking its Cleaner would not free the allocation.
+        DirectIOLib.free(new Pointer(PlatformDependent.directBufferAddress(buffer)));
     }
 }
