@@ -36,6 +36,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 import static com.automq.stream.s3.ByteBufAlloc.DECODE_RECORD;
 
@@ -72,14 +73,15 @@ public class WALRecovery {
      * Records are processed in blocks, accounting for decoded link payloads before decoding them.
      * When a block is full (size threshold, upload byte count limit, or offset overflow),
      * it is passed to the {@code blockHandler} for upload, and a new block is started.
-     * A link decode failure ends recovery at that WAL position: only the global successful prefix
-     * is uploaded, and the failed record and all later records are discarded across all streams.
+     * A link sizing or decode failure aborts recovery. The caller must preserve the WAL and opening
+     * streams so recovery can be retried without losing records that have already been acknowledged.
      *
      * @param it                      WAL recover iterator
      * @param openingStreamEndOffsets the end offset of each opening stream
      * @param maxCacheSize            the max size of each {@link LogCache.LogCacheBlock}
      * @param logger                  logger
      * @param blockHandler            called for each block to upload and release records
+     * @throws CompletionException if a link record cannot be sized or decoded
      */
     public static void recover(
         Iterator<RecoverResult> it,
@@ -134,7 +136,7 @@ public class WALRecovery {
     }
 
     /**
-     * Filters and decodes bounded batches concurrently, yielding only the successful WAL prefix.
+     * Filters and decodes bounded batches concurrently, propagating failures in WAL order.
      * Owns prefetched records until nextBatch() transfers them to the caller; close() releases the rest.
      * Scan offsets are private so prefetch never advances the recovered stream ends.
      */
@@ -259,25 +261,20 @@ public class WALRecovery {
         }
 
         private void collectDecodedRecords(Deque<DecodingRecord> batch) {
-            boolean truncated = false;
             while (!batch.isEmpty()) {
                 DecodingRecord entry = batch.removeFirst();
                 StreamRecordBatch src = entry.source().record();
-                StreamRecordBatch record = entry.decoded().handle((rst, ex) -> rst).join();
+                StreamRecordBatch record = null;
                 boolean retained = false;
                 try {
-                    if (!truncated && entry.decoded().isCompletedExceptionally()) {
-                        Throwable cause = entry.decoded().handle((rst, ex) -> ex).join();
-                        logger.error("[RECOVERY_TRUNCATED] Link decode failed at WAL offset {}, streamId={}, baseOffset={}; "
-                            + "discarding this record and the remaining WAL suffix", entry.source().recordOffset(),
-                            src.getStreamId(), src.getBaseOffset(), cause);
-                        truncated = true;
-                        sourceFinished = true;
-                    }
-                    if (!truncated) {
-                        ready.addLast(new DecodedRecord(record, entry.source().recordOffset()));
-                        retained = true;
-                    }
+                    record = entry.decoded().join();
+                    ready.addLast(new DecodedRecord(record, entry.source().recordOffset()));
+                    retained = true;
+                } catch (CompletionException ex) {
+                    logger.error("[RECOVERY_FAILED] Link recovery failed at WAL offset {}, streamId={}, baseOffset={}; "
+                        + "aborting recovery and preserving the WAL for retry", entry.source().recordOffset(),
+                        src.getStreamId(), src.getBaseOffset(), ex.getCause());
+                    throw ex;
                 } finally {
                     if (record != src) {
                         src.release();
