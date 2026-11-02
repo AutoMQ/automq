@@ -89,6 +89,7 @@ public class ProxyWriterTest {
 
     @Test
     public void testWrite_copyWrite() {
+        when(operator.supportsUploadPartCopy((short) 0)).thenReturn(true);
         when(operator.createMultipartUpload(any(), eq("testpath"))).thenReturn(CompletableFuture.completedFuture("test_upload_id"));
         when(operator.uploadPartCopy(any(), eq("test_src_path"), eq("testpath"), eq(0L), eq(15L * 1024 * 1024), eq("test_upload_id"), eq(1)))
             .thenReturn(CompletableFuture.completedFuture(new AbstractObjectStorage.ObjectStorageCompletedPart(1, "etag1", "checksum1")));
