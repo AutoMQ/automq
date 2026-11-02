@@ -117,6 +117,14 @@ public interface ObjectStorage {
     }
 
     /**
+     * Whether the target bucket supports copying a source range directly into a multipart part.
+     * Writers use range read and upload part when this operation is unavailable.
+     */
+    default boolean supportsUploadPartCopy(short targetBucketId) {
+        return true;
+    }
+
+    /**
      * Complete a multipart upload for the target object path using the completed parts in part-number order.
      */
     default CompletableFuture<Void> completeMultipartUpload(WriteOptions options, String path, String uploadId,
