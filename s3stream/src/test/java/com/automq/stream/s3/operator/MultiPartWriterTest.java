@@ -345,6 +345,35 @@ class MultiPartWriterTest {
     }
 
     /**
+     * Given the target bucket cannot copy source ranges, a same-bucket copy uses range read and upload part.
+     */
+    @Test
+    void testUnsupportedSameBucketCopyUsesRangeReadAndUploadPart() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        ObjectStorage.WriteOptions options = ObjectStorage.WriteOptions.DEFAULT.copy().bucketId((short) 1);
+        when(storage.createMultipartUpload(options, "target")).thenReturn(CompletableFuture.completedFuture("upload"));
+        when(storage.supportsUploadPartCopy((short) 1)).thenReturn(false);
+        when(storage.rangeRead(any(), anyString(), eq(2L), eq(10L)))
+            .thenReturn(CompletableFuture.completedFuture(Unpooled.wrappedBuffer(new byte[8])));
+        when(storage.uploadPart(eq(options), eq("target"), eq("upload"), eq(1), any())).thenAnswer(invocation -> {
+            ByteBuf data = invocation.getArgument(4);
+            assertEquals(8, data.readableBytes());
+            data.release();
+            return CompletableFuture.completedFuture(new ObjectStorage.ObjectStorageCompletedPart(1, "etag", null));
+        });
+        when(storage.completeMultipartUpload(eq(options), eq("target"), eq("upload"), any()))
+            .thenReturn(CompletableFuture.completedFuture(null));
+        writer = new MultiPartWriter(options, storage, "target", 1);
+        S3ObjectMetadata source = new S3ObjectMetadata(1, ObjectAttributes.builder().bucket((short) 1).build().attributes());
+        writer.copyWrite(source, 2, 10);
+        writer.close().join();
+
+        verify(storage).rangeRead(any(), eq(source.key()), eq(2L), eq(10L));
+        verify(storage).uploadPart(eq(options), eq("target"), eq("upload"), eq(1), any());
+        verify(storage, never()).uploadPartCopy(any(), any(), any(), anyLong(), anyLong(), any(), anyInt());
+    }
+
+    /**
      * Overflow flushes a sufficient pending part or fills a short one; the write waits for every contributing part.
      * Only the logical pending size is large; all input buffers contain at most twenty bytes.
      */
@@ -454,6 +483,7 @@ class MultiPartWriterTest {
     @Test
     void testCopyFlushesSufficientPendingPartWithoutRangeRead() {
         ObjectStorage storage = mock(ObjectStorage.class);
+        when(storage.supportsUploadPartCopy((short) 1)).thenReturn(true);
         when(storage.createMultipartUpload(any(), anyString())).thenReturn(CompletableFuture.completedFuture("upload"));
         when(storage.uploadPart(any(), anyString(), anyString(), anyInt(), any())).thenAnswer(invocation -> {
             ((ByteBuf) invocation.getArgument(4)).release();
