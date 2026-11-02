@@ -130,7 +130,8 @@ public class MultiPartWriter implements Writer {
 
     @Override
     public void copyWrite(S3ObjectMetadata sourceObjectMateData, long start, long end) {
-        if (sourceObjectMateData.bucket() != writeOptions.bucketId()) {
+        if (sourceObjectMateData.bucket() != writeOptions.bucketId()
+            || !operator.supportsUploadPartCopy(writeOptions.bucketId())) {
             crossBucketCopyWrite(sourceObjectMateData, start, end);
             return;
         }
