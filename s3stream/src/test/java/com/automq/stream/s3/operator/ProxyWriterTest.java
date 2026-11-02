@@ -260,6 +260,7 @@ public class ProxyWriterTest {
     public void testFailedMultipartReplayReleasesOwnedBuffers() {
         // Given multipart replay has accumulated one range buffer, a later failed range read must release both
         // that accumulated buffer and a following write that can no longer be appended.
+        when(operator.supportsUploadPartCopy((short) 0)).thenReturn(true);
         when(operator.createMultipartUpload(any(), eq("testpath")))
             .thenReturn(CompletableFuture.completedFuture("test_upload_id"));
         when(operator.uploadPartCopy(any(), any(), eq("testpath"), anyLong(), anyLong(), eq("test_upload_id"), anyInt()))
