@@ -51,8 +51,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verifies how RouterOut V2 selects and aggregates local write paths.
@@ -62,6 +64,45 @@ public class RouterOutV2Test {
     private static final Node CURRENT_NODE = new Node(1, "localhost", 9092);
     private static final TopicPartition TOPIC_PARTITION = new TopicPartition("topic", 0);
     private static final TopicPartition REMOTE_TOPIC_PARTITION = new TopicPartition("topic", 1);
+
+    /**
+     * Given requests sharing one epoch, the batch size limit counts requests rather than distinct epochs.
+     */
+    @Test
+    public void testRequestBatchSizeCountsRequestsWithSameEpoch() {
+        RouterOutV2.RequestBatch batch = new RouterOutV2.RequestBatch(new MockTime(), 100_000L, 1_000_000L, 2);
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        assertTrue(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+    }
+
+    /**
+     * Given continued arrivals, the idle deadline moves while the hard deadline still closes the batch.
+     */
+    @Test
+    public void testRequestBatchIdleAndHardDeadlines() {
+        ManualNanoTime time = new ManualNanoTime();
+        RouterOutV2.RequestBatch batch = new RouterOutV2.RequestBatch(time, 100_000L, 1_000_000L, 8192);
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        time.nowNanos = 90_000L;
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        assertEquals(100_000L, batch.remainingFlushDelayNanos());
+        time.nowNanos = 189_999L;
+        assertEquals(1L, batch.remainingFlushDelayNanos());
+        time.nowNanos = 190_000L;
+        assertEquals(0L, batch.remainingFlushDelayNanos());
+
+        time.nowNanos = 0;
+        batch = new RouterOutV2.RequestBatch(time, 100_000L, 1_000_000L, 8192);
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        for (int i = 1; i <= 11; i++) {
+            time.nowNanos = i * 90_000L;
+            assertTrue(batch.remainingFlushDelayNanos() > 0);
+            assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        }
+        assertEquals(10_000L, batch.remainingFlushDelayNanos());
+        time.nowNanos = 1_000_000L;
+        assertEquals(0L, batch.remainingFlushDelayNanos());
+    }
 
     /**
      * Given DIRECT mode and a partition routed to the current Broker, the request writes the Partition without
@@ -316,6 +357,15 @@ public class RouterOutV2Test {
         long deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadlineNanos) {
             Thread.onSpinWait();
+        }
+    }
+
+    private static final class ManualNanoTime extends MockTime {
+        private long nowNanos;
+
+        @Override
+        public long nanoseconds() {
+            return nowNanos;
         }
     }
 
