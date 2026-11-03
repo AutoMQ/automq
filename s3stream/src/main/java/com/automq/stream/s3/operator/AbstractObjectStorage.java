@@ -61,7 +61,6 @@ import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.util.ReferenceCounted;
 import software.amazon.awssdk.http.HttpStatusCode;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
@@ -245,12 +244,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             }
         });
 
-        return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
-            logger.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
-            // The return CompletableFuture will be completed with TimeoutException,
-            // so we need to release the ByteBuf if the read complete later.
-            cf.thenAccept(ReferenceCounted::release);
-        });
+        return cf;
     }
 
     @Override
