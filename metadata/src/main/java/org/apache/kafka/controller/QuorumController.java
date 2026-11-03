@@ -1362,6 +1362,9 @@ public final class QuorumController implements Controller {
             curClaimEpoch = epoch;
             offsetControl.activate(newNextWriteOffset);
             clusterControl.activate();
+            // AutoMQ inject start
+            clusterControl.heartbeatManager().setOnOverloadRecovery(this::rescheduleMaybeFenceStaleBrokers);
+            // AutoMQ inject end
             extension.activate();
 
             // Prepend the activate event. It is important that this event go at the beginning
