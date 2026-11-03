@@ -20,7 +20,7 @@ import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest
 import org.apache.kafka.common.utils.{LogContext, Time}
-import org.apache.kafka.common.{DirectoryId, Node, TopicPartition, Uuid}
+import org.apache.kafka.common.{DirectoryId, Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.metadata.{PartitionRecord, RemoveTopicRecord, TopicRecord}
 import org.apache.kafka.image.{MetadataImage, TopicsDelta, TopicsImage}
 import org.apache.kafka.metadata.properties.{MetaProperties, MetaPropertiesEnsemble, MetaPropertiesVersion, PropertiesUtils}
@@ -40,7 +40,7 @@ import org.mockito.Mockito.{mock, when}
 
 import java.io.File
 import java.nio.file.Files
-import java.util.{Collections, Properties}
+import java.util.{Collections, Optional, Properties}
 import java.util.concurrent.{ConcurrentHashMap, CountDownLatch}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.{Map, Seq}
@@ -56,6 +56,55 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
       NoopLimiter.INSTANCE.acquire(permits, context)
 
     override def execute(connectionId: String, task: Runnable): Unit = task.run()
+  }
+
+  /** Given a long poll on a snapshot replica, removing it must wake the fetch without advancing its timer. */
+  @Test
+  def testSnapshotRemovalCompletesDelayedFetch(): Unit = {
+    checkSnapshotTransitionCompletesDelayedFetch(replace = false)
+  }
+
+  /** Given a stale-epoch long poll, replacing its snapshot must wake it after publishing the replacement. */
+  @Test
+  def testSnapshotReplacementCompletesDelayedFetch(): Unit = {
+    checkSnapshotTransitionCompletesDelayedFetch(replace = true)
+  }
+
+  private def checkSnapshotTransitionCompletesDelayedFetch(replace: Boolean): Unit = {
+    val rm = setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager]
+    try {
+      val tp = new TopicPartition("snapshot-removal", 0)
+      val partition = mock(classOf[Partition])
+      val end = new LogOffsetMetadata(10L, 0L, 100)
+      when(partition.fetchOffsetSnapshot(Optional.empty[Integer](), true))
+        .thenReturn(new LogOffsetSnapshot(0L, end, end, end))
+      val replacement = if (replace) {
+        val p = mock(classOf[Partition])
+        when(p.fetchOffsetSnapshot(Optional.empty[Integer](), true))
+          .thenThrow(Errors.FENCED_LEADER_EPOCH.exception())
+        p
+      } else null
+      rm.computeSnapshotReadPartition(tp, (_, _) => partition)
+      val tidp = new TopicIdPartition(Uuid.randomUuid(), tp)
+      val params = new FetchParams(13.toShort, -1, -1, 5000, 1, 1024, FetchIsolation.HIGH_WATERMARK, Optional.empty())
+      val status = FetchPartitionStatus(end, new FetchRequest.PartitionData(tidp.topicId(), 10L, 0L, 1024, Optional.empty[Integer]()))
+      var completedAfterPublication = false
+      val fetch = new DelayedFetch(params, Seq(tidp -> status), rm, mock(classOf[ReplicaQuota]),
+        responseCallback = _ => ()) {
+        override def onComplete(): Unit = {
+          val expected = if (replace) HostedPartition.Online(replacement) else HostedPartition.None
+          completedAfterPublication = rm.getPartition(tp) == expected
+        }
+      }
+      assertFalse(rm.delayedFetchPurgatory.tryCompleteElseWatch(fetch, Seq(TopicPartitionOperationKey(tp))))
+      assertFalse(fetch.isCompleted)
+      rm.computeSnapshotReadPartition(tp, (_, current) => current)
+      assertFalse(fetch.isCompleted, "An unchanged snapshot at the same offset must leave the fetch waiting")
+      rm.computeSnapshotReadPartition(tp, (_, _) => replacement)
+      assertTrue(fetch.isCompleted, "The snapshot transition must not strand its fetch until maxWaitMs")
+      assertTrue(completedAfterPublication, "Completion must run after the map transition is published")
+    } finally rm.shutdown(checkpointHW = false)
   }
 
   @BeforeEach
