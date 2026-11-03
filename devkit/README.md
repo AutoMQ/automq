@@ -13,7 +13,7 @@ DevKit is AutoMQ's local development environment. One-command Kafka cluster with
 - Docker & Docker Compose
 - [just](https://github.com/casey/just) — `brew install just`
 - `envsubst` — `brew install gettext` (macOS)
-- JDK 17+ (for `just start-build` only)
+- JDK 17 - 22 (for `just start-build` only)
 
 ## Quick Start
 
