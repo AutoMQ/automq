@@ -193,9 +193,14 @@ public class RouterOutV2 {
         }
     }
 
+    /**
+     * Aggregates requests for one remote node. A timer owns one batch, while sealed batches wait in order for
+     * an in-flight permit before transmission.
+     */
     class RemoteProxy implements Proxy {
         private static final int MAX_INFLIGHT_SIZE = 64;
-        private static final long LINGER_NANOS = TimeUnit.MICROSECONDS.toNanos(100);
+        private static final long IDLE_LINGER_NANOS = TimeUnit.MICROSECONDS.toNanos(100);
+        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
         private final Node node;
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
         private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
@@ -212,25 +217,38 @@ public class RouterOutV2 {
             ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
             synchronized (this) {
                 if (requestBatch == null) {
-                    requestBatch = new RequestBatch(time, LINGER_NANOS, 8192);
-                    Threads.COMMON_SCHEDULER.schedule(() -> trySendRequestBatch(requestBatch), LINGER_NANOS, TimeUnit.NANOSECONDS);
+                    requestBatch = new RequestBatch(Time.SYSTEM, IDLE_LINGER_NANOS, MAX_LINGER_NANOS, 8192);
+                    scheduleBatchTimer(requestBatch, IDLE_LINGER_NANOS);
                 }
                 if (requestBatch.add(request)) {
                     requestBatchQueue.add(requestBatch);
                     requestBatch = null;
-                    trySendRequestBatch(null);
+                    trySendRequestBatch();
                 }
             }
         }
 
-        private synchronized void trySendRequestBatch(RequestBatch forceSend) {
-            if (inflightLimiter.availablePermits() == 0) {
+        private void scheduleBatchTimer(RequestBatch batch, long delayNanos) {
+            Threads.COMMON_SCHEDULER.schedule(() -> onBatchTimer(batch), delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private synchronized void onBatchTimer(RequestBatch batch) {
+            if (requestBatch != batch) {
                 return;
             }
-            if ((requestBatch != null && requestBatch.lingerTimeout())
-                || (forceSend != null && requestBatch == forceSend)) {
-                requestBatchQueue.add(requestBatch);
-                requestBatch = null;
+            long delayNanos = batch.remainingFlushDelayNanos();
+            if (delayNanos > 0) {
+                scheduleBatchTimer(batch, delayNanos);
+                return;
+            }
+            requestBatchQueue.add(batch);
+            requestBatch = null;
+            trySendRequestBatch();
+        }
+
+        private synchronized void trySendRequestBatch() {
+            if (inflightLimiter.availablePermits() == 0) {
+                return;
             }
             for (; ; ) {
                 RequestBatch waitingSend = requestBatchQueue.peek();
@@ -247,7 +265,7 @@ public class RouterOutV2 {
                     .whenComplete((nil, ex) -> {
                         synchronized (RemoteProxy.this) {
                             inflightLimiter.release();
-                            trySendRequestBatch(null);
+                            trySendRequestBatch();
                         }
                     });
             }
@@ -314,15 +332,20 @@ public class RouterOutV2 {
         private final long batchStartNanos;
 
         private final Time time;
-        private final long lingerNanos;
+        private final long idleLingerNanos;
+        private final long maxLingerNanos;
         private final long batchSize;
         private final Map<Long, List<ProxyRequest>> requests = new TreeMap<>();
+        private int requestCount;
+        private long lastEnqueueNanos;
 
-        public RequestBatch(Time time, long lingerNanos, int batchSize) {
+        public RequestBatch(Time time, long idleLingerNanos, long maxLingerNanos, int batchSize) {
             this.time = time;
-            this.lingerNanos = lingerNanos;
+            this.idleLingerNanos = idleLingerNanos;
+            this.maxLingerNanos = maxLingerNanos;
             this.batchSize = batchSize;
-            this.batchStartNanos = System.nanoTime();
+            this.batchStartNanos = time.nanoseconds();
+            this.lastEnqueueNanos = batchStartNanos;
         }
 
         /**
@@ -333,11 +356,18 @@ public class RouterOutV2 {
          */
         public boolean add(ProxyRequest request) {
             requests.computeIfAbsent(request.epoch, key -> new ArrayList<>()).add(request);
-            return requests.size() > batchSize || time.nanoseconds() - batchStartNanos >= lingerNanos;
+            lastEnqueueNanos = time.nanoseconds();
+            return ++requestCount >= batchSize;
         }
 
-        public boolean lingerTimeout() {
-            return time.nanoseconds() - batchStartNanos >= lingerNanos;
+        /**
+         * Return the time until the first idle or hard deadline, in nanoseconds.
+         * A non-positive value means the batch is ready to be sealed; it does not bound network send time.
+         */
+        public long remainingFlushDelayNanos() {
+            long nowNanos = time.nanoseconds();
+            return Math.min(maxLingerNanos - (nowNanos - batchStartNanos),
+                idleLingerNanos - (nowNanos - lastEnqueueNanos));
         }
 
         public Map<Long, List<ProxyRequest>> getRequests() {

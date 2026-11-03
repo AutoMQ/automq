@@ -80,6 +80,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     private static final long CACHE_WEIGHT_UNIT = 100L << 20;
     private static final long HEAP_PER_CACHE_WEIGHT_UNIT = 6L << 30;
     private static final long CACHE_EXPIRE_SECONDS = 10;
+    private static final long MIN_BATCH_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(10);
     private static final long CACHE_MAX_WEIGHT = cacheMaxWeight(Systems.HEAP_MEMORY_SIZE);
 
     private final int nodeId;
@@ -104,7 +105,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     private final Queue<Long> channelEpochQueue = new LinkedList<>();
     private final AtomicLong mockOffset = new AtomicLong();
     private final long maxBatchBytes;
-    private final long batchIntervalMillis;
+    private final long batchIntervalNanos;
+    private long lastBatchForceFlushNanos;
 
     private long channelEpoch = 0L;
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
@@ -127,10 +129,12 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         validateBuckets(buckets, readOnly);
         ObjectWALConfig batching = ObjectWALConfig.builder().withURI(buckets.get(0).toIdURI()).build();
         maxBatchBytes = batching.maxBytesInBatch();
-        batchIntervalMillis = batching.batchInterval();
+        long batchIntervalMillis = batching.batchInterval();
         if (maxBatchBytes <= 0 || batchIntervalMillis <= 0) {
             throw new IllegalArgumentException("Router batching size and interval must be positive");
         }
+        batchIntervalNanos = TimeUnit.MILLISECONDS.toNanos(batchIntervalMillis);
+        lastBatchForceFlushNanos = System.nanoTime();
         for (int i = 0; i < Systems.CPU_CORES * 64; i++) {
             appendQueues.add(new ConcurrentLinkedQueue<>());
         }
@@ -405,12 +409,24 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         return Math.max(units, 1) * CACHE_WEIGHT_UNIT;
     }
 
+    static long calculateBatchFlushDelayNanos(long lastForceFlushNanos, long batchStartNanos,
+        long batchIntervalNanos) {
+        long minIntervalNanos = Math.min(MIN_BATCH_INTERVAL_NANOS, batchIntervalNanos);
+        return Math.min(Math.max(minIntervalNanos,
+            lastForceFlushNanos + batchIntervalNanos - batchStartNanos), batchIntervalNanos);
+    }
+
     private class LingerBatch {
         final List<Request> requests = new ArrayList<>();
         final ScheduledFuture<?> timer;
         long size;
 
         LingerBatch() {
+            long startNanos = System.nanoTime();
+            long delayNanos = calculateBatchFlushDelayNanos(
+                lastBatchForceFlushNanos, startNanos, batchIntervalNanos);
+            // Keep the planned schedule even if a size-triggered flush cancels this timer.
+            lastBatchForceFlushNanos = startNanos + delayNanos;
             timer = SCHEDULER.schedule(() -> {
                 writeLock.lock();
                 try {
@@ -420,7 +436,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
                 } finally {
                     writeLock.unlock();
                 }
-            }, batchIntervalMillis, TimeUnit.MILLISECONDS);
+            }, delayNanos, TimeUnit.NANOSECONDS);
         }
 
         void add(Request request) {
