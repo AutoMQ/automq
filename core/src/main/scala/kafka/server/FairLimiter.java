@@ -71,11 +71,11 @@ public class FairLimiter implements Limiter {
         return name;
     }
 
-    private Handler acquireLocked(int permit, long timeoutNs) throws InterruptedException {
+    private Handler acquireLocked(int permit, long timeoutMs) throws InterruptedException {
         if (permit > maxPermits) {
             permit = maxPermits;
         }
-        boolean acquired = permits.tryAcquire(permit, timeoutNs, TimeUnit.NANOSECONDS);
+        boolean acquired = permits.tryAcquire(permit, timeoutMs, TimeUnit.MILLISECONDS);
         return acquired ? new FairHandler(permit) : null;
     }
 
