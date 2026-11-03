@@ -297,6 +297,12 @@ public class BrokerHeartbeatManager {
         // AutoMQ inject end
     }
 
+    // AutoMQ inject start
+    void setOnOverloadRecovery(Runnable onRecovery) {
+        overloadCircuitBreaker.setOnOpen(onRecovery);
+    }
+    // AutoMQ inject end
+
     // VisibleForTesting
     Time time() {
         return time;
