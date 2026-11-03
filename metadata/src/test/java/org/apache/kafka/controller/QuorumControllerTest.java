@@ -67,9 +67,11 @@ import org.apache.kafka.common.requests.ApiError;
 import org.apache.kafka.common.security.auth.KafkaPrincipal;
 import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.kafka.common.utils.LogContext;
+import org.apache.kafka.common.utils.MockTime;
 import org.apache.kafka.common.utils.Time;
 import org.apache.kafka.common.utils.Utils;
 import org.apache.kafka.controller.QuorumController.ConfigResourceExistenceChecker;
+import org.apache.kafka.controller.stream.StreamClient;
 import org.apache.kafka.image.AclsDelta;
 import org.apache.kafka.image.AclsImage;
 import org.apache.kafka.image.ClientQuotasDelta;
@@ -114,7 +116,11 @@ import org.apache.kafka.snapshot.Snapshots;
 import org.apache.kafka.test.TestUtils;
 import org.apache.kafka.timeline.SnapshotRegistry;
 
+import com.automq.stream.s3.Config;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -362,6 +368,58 @@ public class QuorumControllerTest {
             testToImages(logEnv.allRecords());
         }
     }
+
+    // AutoMQ inject start
+    /**
+     * Given overload has cancelled automatic fencing, timed-out heartbeats that restore a valid
+     * broker session must restart fencing for another broker whose session remains expired.
+     */
+    @Test
+    @Tag("S3Unit")
+    public void testTimedOutHeartbeatReschedulesFencingAfterOverloadRecovery() throws Exception {
+        MockTime time = new MockTime(0, 0, 0);
+        long sessionTimeoutMillis = TimeUnit.MINUTES.toMillis(1);
+        try (
+            LocalLogManagerTestEnv logEnv = new LocalLogManagerTestEnv.Builder(1).build();
+            QuorumControllerTestEnv controlEnv = new QuorumControllerTestEnv.Builder(logEnv).
+                setControllerBuilderInitializer(builder -> builder.setTime(time).
+                    setStreamClient(StreamClient.builder().streamConfig(new Config()).
+                        objectStorage(new MemoryObjectStorage()).build())).
+                setSessionTimeoutMillis(OptionalLong.of(sessionTimeoutMillis)).
+                setBootstrapMetadata(SIMPLE_BOOTSTRAP).
+                build()
+        ) {
+            QuorumController controller = controlEnv.activeController(true);
+            Map<Integer, Long> brokerEpochs = registerBrokersAndUnfence(controller, 2);
+            BrokerHeartbeatManager heartbeatManager = controller.clusterControl().heartbeatManager();
+
+            time.sleep(sessionTimeoutMillis + 1);
+            controller.appendReadEvent("wait for overload", OptionalLong.empty(), () -> null).get();
+            assertEquals(Long.MAX_VALUE, heartbeatManager.nextCheckTimeNs());
+            assertTrue(controller.clusterControl().isUnfenced(0));
+            assertTrue(controller.clusterControl().isUnfenced(1));
+
+            BrokerHeartbeatRequestData heartbeat = new BrokerHeartbeatRequestData().
+                setBrokerId(0).
+                setBrokerEpoch(brokerEpochs.get(0)).
+                setCurrentMetadataOffset(100000L);
+            ControllerRequestContext expiredContext = new ControllerRequestContext(
+                new RequestHeaderData(), KafkaPrincipal.ANONYMOUS, OptionalLong.of(time.nanoseconds()));
+            assertYieldsTimeout(controller.processBrokerHeartbeat(expiredContext, heartbeat));
+            TestUtils.waitForCondition(() -> heartbeatManager.hasValidSession(0), 5_000,
+                "The first timed-out heartbeat did not refresh broker 0's session");
+            assertEquals(Long.MAX_VALUE, heartbeatManager.nextCheckTimeNs());
+
+            time.sleep(TimeUnit.SECONDS.toMillis(30));
+            expiredContext = new ControllerRequestContext(
+                new RequestHeaderData(), KafkaPrincipal.ANONYMOUS, OptionalLong.of(time.nanoseconds()));
+            assertYieldsTimeout(controller.processBrokerHeartbeat(expiredContext, heartbeat));
+            TestUtils.waitForCondition(() -> !controller.clusterControl().isUnfenced(1), 5_000,
+                "Fencing was not rescheduled when the controller recovered from overload");
+            assertTrue(controller.clusterControl().isUnfenced(0));
+        }
+    }
+    // AutoMQ inject end
 
     @Test
     public void testUncleanShutdownBroker() throws Throwable {
