@@ -1004,7 +1004,9 @@ project(':core') {
       implementation "org.apache.parquet:parquet-encoding:${versions.parquet}"
       implementation "org.apache.parquet:parquet-format-structures:${versions.parquet}"
       implementation "org.apache.parquet:parquet-hadoop:${versions.parquet}"
-      implementation "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
+      implementation("org.apache.parquet:parquet-jackson:${versions.parquetJackson}") {
+        because 'Parquet shades Jackson, so upgrading the unshaded Jackson dependencies does not patch its embedded copy'
+      }
       implementation "org.apache.thrift:libthrift:${versions.thrift}"
       implementation "org.apache.ant:ant:${versions.ant}"
       implementation "org.apache.ant:ant-launcher:${versions.ant}"
@@ -1132,6 +1134,11 @@ project(':core') {
     testImplementation libs.mockitoJunitJupiter // supports MockitoExtension
     testImplementation libs.mockitoCore
     testImplementation libs.guava
+    // AutoMQ inject start
+    // Iceberg supplies Parquet at runtime; expose its API only for the compatibility test compilation.
+    testCompileOnly "org.apache.parquet:parquet-hadoop:${versions.parquet}"
+    testCompileOnly "org.apache.parquet:parquet-jackson:${versions.parquetJackson}"
+    // AutoMQ inject end
     testImplementation(libs.apacheda) {
       exclude group: 'xml-apis', module: 'xml-apis'
       // `mina-core` is a transitive dependency for `apacheds` and `apacheda`.

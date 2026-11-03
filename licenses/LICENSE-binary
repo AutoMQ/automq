@@ -51,6 +51,7 @@ netty-transport-classes-epoll-4.1.137.Final
 netty-transport-native-epoll-4.1.137.Final
 netty-transport-native-unix-common-4.1.137.Final
 opentelemetry-proto-1.0.0-alpha
+parquet-jackson-1.18.0 (includes jackson-core-2.22.1, jackson-databind-2.22.1, jackson-annotations-2.22)
 plexus-utils-3.6.1
 reflections-0.10.2
 reload4j-1.2.25
