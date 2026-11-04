@@ -39,12 +39,15 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 public class StreamReaders implements S3BlockCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamReaders.class);
     private static final long STREAM_READER_EXPIRED_MILLS = TimeUnit.MINUTES.toMillis(1);
     private static final long STREAM_READER_EXPIRED_CHECK_INTERVAL_MILLS = TimeUnit.MINUTES.toMillis(1);
+    private static final long READ_RETRY_DELAY_SECONDS = 10;
+    private final ScheduledExecutorService retryScheduler;
     private final Cache[] caches;
     private final Time time;
     private final DataBlockCache dataBlockCache;
@@ -63,9 +66,16 @@ public class StreamReaders implements S3BlockCache {
         this(size, objectManager, objectStorage, objectReaderFactory, concurrency, Time.SYSTEM);
     }
 
-    @SuppressWarnings("this-escape")
     public StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
         ObjectReaderFactory objectReaderFactory, int concurrency, Time time) {
+        this(size, objectManager, objectStorage, objectReaderFactory, concurrency, time, Threads.COMMON_SCHEDULER);
+    }
+
+    @VisibleForTesting
+    @SuppressWarnings("this-escape")
+    StreamReaders(long size, ObjectManager objectManager, ObjectStorage objectStorage,
+        ObjectReaderFactory objectReaderFactory, int concurrency, Time time, ScheduledExecutorService retryScheduler) {
+        this.retryScheduler = retryScheduler;
         this.time = time;
         EventLoop[] eventLoops = new EventLoop[concurrency];
         for (int i = 0; i < concurrency; i++) {
@@ -91,7 +101,29 @@ public class StreamReaders implements S3BlockCache {
     public CompletableFuture<ReadDataBlock> read(TraceContext context, long streamId, long startOffset, long endOffset,
         int maxBytes) {
         Cache cache = caches[Math.abs((int) (streamId % caches.length))];
-        return cache.read(streamId, startOffset, endOffset, maxBytes);
+        CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
+        cache.read(streamId, startOffset, endOffset, maxBytes, false).whenComplete((rst, ex) -> {
+            if (ex == null) {
+                cf.complete(rst);
+                return;
+            }
+            // Reads should recover from transient errors internally. An unexpected failure may leave reader state
+            // unusable, so retry once with a fresh reader after allowing storage/metadata conditions to settle.
+            LOGGER.error("read {} [{}, {}), maxBytes: {} from block cache failed, retry once with a new reader in {}s",
+                streamId, startOffset, endOffset, maxBytes, READ_RETRY_DELAY_SECONDS, ex);
+            try {
+                retryScheduler.schedule(() -> {
+                    try {
+                        FutureUtil.propagate(cache.read(streamId, startOffset, endOffset, maxBytes, true), cf);
+                    } catch (Throwable retryEx) {
+                        cf.completeExceptionally(retryEx);
+                    }
+                }, READ_RETRY_DELAY_SECONDS, TimeUnit.SECONDS);
+            } catch (Throwable scheduleEx) {
+                cf.completeExceptionally(scheduleEx);
+            }
+        });
+        return cf;
     }
 
     /**
@@ -159,12 +191,16 @@ public class StreamReaders implements S3BlockCache {
 
         public CompletableFuture<ReadDataBlock> read(long streamId, long startOffset,
             long endOffset,
-            int maxBytes) {
+            int maxBytes, boolean forceNewReader) {
             CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
             eventLoop.execute(() -> {
                 cleanupExpiredStreamReader();
                 StreamReaderKey key = new StreamReaderKey(streamId, startOffset);
                 StreamReader streamReader = streamReaders.remove(key);
+                if (streamReader != null && forceNewReader) {
+                    streamReader.close();
+                    streamReader = null;
+                }
                 if (streamReader == null) {
                     streamReader = new StreamReader(streamId, startOffset, eventLoop, objectManager, objectReaderFactory, dataBlockCache, time);
                 }
