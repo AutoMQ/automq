@@ -120,6 +120,52 @@ class ElasticProducerStateManagerTest {
     }
 
     @Test
+    def testPromoteBootstrapAcceptsFirstNonZeroSequenceOnce(): Unit = {
+        val epoch = 0.toShort
+        assertThrows(classOf[OutOfOrderSequenceException], () => append(stateManager, producerId, epoch, 4, 0L))
+
+        stateManager.asInstanceOf[ElasticProducerStateManager].registerRoutedProducer(producerId, epoch)
+        stateManager.asInstanceOf[ElasticProducerStateManager].enablePromoteBootstrap()
+        append(stateManager, producerId, epoch, 4, 1L)
+        assertEquals(4, stateManager.lastEntry(producerId).get.lastSeq)
+
+        assertThrows(classOf[OutOfOrderSequenceException], () => append(stateManager, producerId, epoch, 9, 2L))
+        stateManager.asInstanceOf[ElasticProducerStateManager].disablePromoteBootstrap()
+    }
+
+    @Test
+    def testPromoteBootstrapMarkerAndMultipleProducers(): Unit = {
+        val manager = stateManager.asInstanceOf[ElasticProducerStateManager]
+        val epoch = 0.toShort
+        manager.registerRoutedProducer(producerId, epoch)
+        manager.registerRoutedProducer(producerId + 1, epoch)
+        manager.enablePromoteBootstrap()
+        assertTrue(manager.shouldSkipPromoteMarker(producerId, epoch))
+        assertFalse(manager.shouldSkipPromoteMarker(producerId + 2, epoch))
+        assertFalse(manager.shouldSkipPromoteMarker(producerId, 1.toShort))
+        append(stateManager, producerId, epoch, 4, 0L)
+        assertFalse(manager.shouldSkipPromoteMarker(producerId, epoch))
+        append(stateManager, producerId + 1, epoch, 7, 1L)
+        assertEquals(7, stateManager.lastEntry(producerId + 1).get.lastSeq)
+        assertThrows(classOf[OutOfOrderSequenceException], () => append(stateManager, producerId + 2, epoch, 4, 2L))
+    }
+
+    @Test
+    def testPromoteBootstrapExpiresAndPreservesEpochFencing(): Unit = {
+        val manager = stateManager.asInstanceOf[ElasticProducerStateManager]
+        val epoch = 1.toShort
+        manager.registerRoutedProducer(producerId, epoch)
+        manager.enablePromoteBootstrap()
+        append(stateManager, producerId, epoch, 4, 0L)
+        assertThrows(classOf[InvalidProducerEpochException], () => append(stateManager, producerId, 0.toShort, 5, 1L))
+        manager.registerRoutedProducer(producerId + 1, epoch)
+        time.sleep(60000)
+        assertFalse(manager.isPromoteBootstrapEnabled())
+        assertFalse(manager.shouldSkipPromoteMarker(producerId + 1, epoch))
+        assertThrows(classOf[OutOfOrderSequenceException], () => append(stateManager, producerId + 1, epoch, 4, 1L))
+    }
+
+    @Test
     def testProducerSequenceWrapAround(): Unit = {
         val epoch = 15.toShort
         val sequence = Int.MaxValue
