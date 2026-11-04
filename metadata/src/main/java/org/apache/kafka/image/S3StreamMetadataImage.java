@@ -31,10 +31,7 @@ import com.automq.stream.s3.metadata.StreamState;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.NavigableMap;
 import java.util.Objects;
-import java.util.TreeMap;
 
 public class S3StreamMetadataImage {
     public static final S3StreamMetadataImage EMPTY =
@@ -57,10 +54,6 @@ public class S3StreamMetadataImage {
     // this should be created only once in each image and not be modified
     private volatile List<S3StreamObject> sortedStreamObjects;
     private final Object sortedStreamObjectsLock = new Object();
-
-    // this should be created only once in each image and not be modified
-    private volatile NavigableMap<Long /* stream object start offset */, Integer /* stream object index */> streamObjectOffsets;
-    private final Object streamObjectOffsetsLock = new Object();
 
     public S3StreamMetadataImage(
         long streamId, long epoch, StreamState state, TagCollection tags,
@@ -157,27 +150,26 @@ public class S3StreamMetadataImage {
 
     public int floorStreamObjectIndex(long offset) {
         List<S3StreamObject> sortedStreamObjects = getStreamObjects();
+        if (sortedStreamObjects.isEmpty() || offset < sortedStreamObjects.get(0).streamOffsetRange().startOffset()) {
+            return -1;
+        }
 
-        if (streamObjectOffsets == null) {
-            synchronized (streamObjectOffsetsLock) {
-                if (streamObjectOffsets == null) {
-                    // TODO: optimize, get floor index without construct sorted map
-                    NavigableMap<Long, Integer> streamObjectOffsets = new TreeMap<>();
-                    final int sortedStreamObjectsSize = sortedStreamObjects.size();
-                    for (int i = 0; i < sortedStreamObjectsSize; i++) {
-                        S3StreamObject streamObject = sortedStreamObjects.get(i);
-                        streamObjectOffsets.put(streamObject.streamOffsetRange().startOffset(), i);
-                    }
-                    this.streamObjectOffsets = Collections.unmodifiableNavigableMap(streamObjectOffsets);
-                }
+        int low = 0;
+        int high = sortedStreamObjects.size() - 1;
+        int result = -1;
+
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            long startOffset = sortedStreamObjects.get(mid).streamOffsetRange().startOffset();
+            if (startOffset <= offset) {
+                result = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
             }
         }
 
-        Map.Entry<Long, Integer> entry = streamObjectOffsets.floorEntry(offset);
-        if (entry == null) {
-            return -1;
-        }
-        return entry.getValue();
+        return result;
     }
 
     public long getEpoch() {
