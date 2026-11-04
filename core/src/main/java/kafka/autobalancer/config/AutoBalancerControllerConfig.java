@@ -52,6 +52,8 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = PREFIX + "network.out.distribution.detect.avg.deviation";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY = PREFIX + "execution.concurrency";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = PREFIX + "execution.interval.ms";
+    public static final String AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS =
+        PREFIX + "partition.reassignment.cooldown.ms";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = PREFIX + "exclude.broker.ids";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = PREFIX + "exclude.topics";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO = PREFIX + "network.in.trivial.change.ratio";
@@ -74,6 +76,8 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION = 0.1;
     public static final int DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY = 50;
     public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS = 5000;
+    public static final long DEFAULT_AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS =
+        TimeUnit.MINUTES.toMillis(5);
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS = "";
     public static final String DEFAULT_AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS = "";
     public static final double DEFAULT_AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO = 0.05;
@@ -97,6 +101,12 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION_DOC = "The acceptable range of deviation for average network out bandwidth usage. Default is 0.2, which means the expected network traffic range will be [0.8 * loadAvg, 1.2 * loadAvg]";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY_DOC = "The maximum number of actions that can be executed in a single batch per broker, including partition closing and opening";
     public static final String AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC = "Time interval between each action batch in milliseconds";
+    public static final String AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS_DOC =
+        "Minimum time in milliseconds before Auto Balancer may reassign the same partition again after a "
+            + "reassignment batch is accepted or a controller leader handoff is observed. Also holds healthy-source "
+            + "optional balancing for up to 30 seconds after broker shutdown, fencing or incarnation transitions. "
+            + "This is a cooldown, not a storage/client health gate; "
+            + "controller failover and slow-source evacuation are not blocked. Set to 0 to disable.";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS_DOC = "Broker ids that auto balancer will ignore during balancing";
     public static final String AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS_DOC = "Topics that auto balancer will ignore during balancing";
     public static final String AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO_DOC = "The ratio of network inbound traffic change that is considered trivial. Trivial change will not be applied to the cluster";
@@ -113,6 +123,7 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_OUT_DISTRIBUTION_DETECT_AVG_DEVIATION,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_CONCURRENCY,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS,
+            AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_BROKER_IDS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_EXCLUDE_TOPICS,
             AutoBalancerControllerConfig.AUTO_BALANCER_CONTROLLER_NETWORK_IN_TRIVIAL_CHANGE_RATIO,
@@ -163,6 +174,10 @@ public class AutoBalancerControllerConfig extends AbstractConfig {
                 .define(AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_EXECUTION_INTERVAL_MS_DOC)
+                .define(AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS, ConfigDef.Type.LONG,
+                        DEFAULT_AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS,
+                        ConfigDef.Range.atLeast(0), ConfigDef.Importance.HIGH,
+                        AUTO_BALANCER_CONTROLLER_PARTITION_REASSIGNMENT_COOLDOWN_MS_DOC)
                 .define(AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, ConfigDef.Type.LONG,
                         DEFAULT_AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS, ConfigDef.Importance.HIGH,
                         AUTO_BALANCER_CONTROLLER_ANOMALY_DETECT_INTERVAL_MS_DOC)

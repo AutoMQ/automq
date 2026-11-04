@@ -82,6 +82,19 @@ public class ClusterModelSnapshot {
         return brokerToReplicaMap.get(brokerId).values();
     }
 
+    /**
+     * Excludes a partition from optimization without changing its broker's modeled load.
+     *
+     * @param brokerId current broker for the partition
+     * @param tp partition to exclude
+     * @return true when the partition was present and excluded
+     */
+    public boolean excludeTopicPartition(int brokerId, TopicPartition tp) {
+        Map<TopicPartition, TopicPartitionReplicaUpdater.TopicPartitionReplica> replicas =
+            brokerToReplicaMap.get(brokerId);
+        return replicas != null && replicas.remove(tp) != null;
+    }
+
     public void applyAction(Action action) {
         BrokerUpdater.Broker srcBroker = brokerMap.get(action.getSrcBrokerId());
         BrokerUpdater.Broker destBroker = brokerMap.get(action.getDestBrokerId());

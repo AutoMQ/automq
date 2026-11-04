@@ -88,6 +88,7 @@ public class AutoBalancerManager extends AutoBalancerService {
         this.reconfigurables.add(anomalyDetector);
 
         ClusterStatusListenerRegistry registry = new ClusterStatusListenerRegistry();
+        registry.register(((AnomalyDetectorImpl) this.anomalyDetector).recoveryListener());
         registry.register((BrokerStatusListener) clusterModel);
         registry.register((TopicPartitionStatusListener) clusterModel);
         registry.register((BrokerStatusListener) this.actionExecutorService);
