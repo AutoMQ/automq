@@ -648,7 +648,7 @@ class BrokerTopicStats(remoteStorageEnabled: Boolean = false) extends Logging {
       // AutoMQ inject start
       val partitionMetrics = partitionStats.getAndMaybePut(topicPartition)
       partitionMetrics.bytesOutRate.mark(value)
-      // AutoMQ inject start
+      // AutoMQ inject end
       topicStats(topicPartition.topic()).bytesOutRate.mark(value)
       allTopicsStats.bytesOutRate.mark(value)
     }
