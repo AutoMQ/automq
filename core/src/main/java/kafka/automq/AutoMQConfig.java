@@ -209,6 +209,14 @@ public class AutoMQConfig {
     public static final String S3_BACK_PRESSURE_COOLDOWN_MS_DOC = "The cooldown time in milliseconds to wait between two regulator actions";
     public static final long S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT = TimeUnit.SECONDS.toMillis(15);
 
+    public static final String CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_CONFIG = "automq.controlled.shutdown.cross.rack.enabled";
+    public static final boolean CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_DEFAULT = false;
+    public static final String CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_DOC =
+        "Allow load-weighted placement across all eligible racks during controlled broker shutdown. "
+            + "When false, preserve same-rack weighted placement and its existing random fallback. "
+            + "Enabling this may increase cross-AZ traffic. This static setting must be configured consistently "
+            + "on all controllers and requires a controller restart; it does not change unclean failure recovery.";
+
     public static final String RETRY_STORM_BACKOFF_ENABLED_CONFIG = "automq.retry.storm.backoff.enabled";
     public static final String RETRY_STORM_BACKOFF_ENABLED_DOC = "Whether retry storm delayed response backoff is enabled";
     public static final boolean RETRY_STORM_BACKOFF_ENABLED_DEFAULT = false;
@@ -336,6 +344,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_BACK_PRESSURE_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_ENABLED_DOC)
             .define(AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_CONFIG, LONG, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DEFAULT, atLeast(0), MEDIUM, AutoMQConfig.S3_BACK_PRESSURE_COOLDOWN_MS_DOC)
             .define(AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_ENABLED_DOC)
+            .define(CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_CONFIG, BOOLEAN, CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_DEFAULT, MEDIUM, CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_DOC)
             .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, between(0, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
             .define(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
