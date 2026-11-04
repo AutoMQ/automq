@@ -35,25 +35,21 @@ import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
 import org.apache.kafka.metadata.stream.S3StreamObject;
 import org.apache.kafka.metadata.stream.S3StreamSetObject;
 
-import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
 import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
-import com.automq.stream.s3.metadata.ObjectUtils;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3StreamConstant;
 import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metadata.StreamOffsetRange;
-import com.automq.stream.s3.objects.ObjectAttributes;
-import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 import com.automq.stream.s3.streams.StreamArchiveState;
 import com.automq.stream.s3.streams.StreamMetadataListener;
 import com.automq.stream.utils.FutureUtil;
+import com.google.common.collect.Sets;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -65,10 +61,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
-import io.netty.buffer.ByteBuf;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import static com.automq.stream.utils.FutureUtil.exec;
+import static kafka.log.stream.s3.metadata.DefaultRangeGetter.STREAM_ID_BLOOM_FILTER;
 
 public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPublisher {
     private static final Logger LOGGER = LoggerFactory.getLogger(StreamMetadataManager.class);
@@ -80,6 +76,12 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
     private final LocalStreamRangeIndexCache indexCache;
     private final StreamArchiveReader archiveReader;
     private final Map<Long, StreamMetadataListener> streamMetadataListeners = new ConcurrentHashMap<>();
+
+    private Set<Long> streamSetObjectIds = Collections.emptySet();
+    // Cluster-wide (all nodes), unlike streamSetObjectIds above which is this node's own SSOs
+    // only — separate scope because STREAM_ID_BLOOM_FILTER caches entries for objects any node
+    // produced, not just this one's. See allStreamSetObjectIds() for why.
+    private Set<Long> clusterStreamSetObjectIds = Collections.emptySet();
 
     public StreamMetadataManager(BrokerServer broker, int nodeId, ObjectReaderFactory objectReaderFactory,
         LocalStreamRangeIndexCache indexCache) {
@@ -111,9 +113,26 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
             changedStreams = delta.getOrCreateStreamsMetadataDelta().changedStreams();
             oldImage.release();
         }
+        this.streamSetObjectIds = Collections.unmodifiableSet(getStreamSetObjectIds());
+
+        // Bloom-filter cleanup must see deletions cluster-wide: STREAM_ID_BLOOM_FILTER caches
+        // entries by object id for any node's SSOs read through getObjects, not just this
+        // node's own — diffing against the per-node set above would leak every other node's
+        // deleted object out of the cache forever (#2731 review).
+        Set<Long> oldClusterStreamSetObjectIds = this.clusterStreamSetObjectIds;
+        try (Image image = getImage()) {
+            this.clusterStreamSetObjectIds = Collections.unmodifiableSet(image.streamsMetadata().allStreamSetObjectIds());
+        }
+        Set<Long> removedStreamSetObjectIds = Sets.difference(oldClusterStreamSetObjectIds, this.clusterStreamSetObjectIds);
+        removedStreamSetObjectIds.forEach(STREAM_ID_BLOOM_FILTER::removeObject);
+
         // retry all pending tasks
         retryPendingTasks();
-        this.indexCache.asyncPrune(this::getStreamSetObjectIds);
+        // Reads the field lazily each time the supplier runs: asyncPrune's pruning happens
+        // later, asynchronously, and must see whatever is current by then, not a value frozen
+        // at the moment pruning was merely scheduled (this used to capture a shadowed local
+        // holding the stale pre-update set by mistake).
+        this.indexCache.asyncPrune(() -> this.streamSetObjectIds);
         notifyMetadataListeners(changedStreams);
     }
 
@@ -394,37 +413,6 @@ public class StreamMetadataManager implements InRangeObjectsFetcher, MetadataPub
         @Override
         public void close() {
             image.release();
-        }
-    }
-
-    private static class DefaultRangeGetter implements S3StreamsMetadataImage.RangeGetter {
-        private final S3ObjectsImage objectsImage;
-        private final ObjectReaderFactory objectReaderFactory;
-
-        public DefaultRangeGetter(S3ObjectsImage objectsImage,
-            ObjectReaderFactory objectReaderFactory) {
-            this.objectsImage = objectsImage;
-            this.objectReaderFactory = objectReaderFactory;
-        }
-
-        @Override
-        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
-            S3Object s3Object = objectsImage.getObjectMetadata(objectId);
-            if (s3Object == null) {
-                return FutureUtil.failedFuture(new IllegalArgumentException("Cannot find object metadata for object: " + objectId));
-            }
-            // The reader will be release after the find operation
-            @SuppressWarnings("resource")
-            ObjectReader reader = objectReaderFactory.get(new S3ObjectMetadata(objectId, s3Object.getObjectSize(), s3Object.getAttributes()));
-            CompletableFuture<Optional<StreamOffsetRange>> cf = reader.basicObjectInfo().thenApply(info -> info.indexBlock().findStreamOffsetRange(streamId));
-            cf.whenComplete((rst, ex) -> reader.release());
-            return cf;
-        }
-
-        @Override
-        public CompletableFuture<ByteBuf> readNodeRangeIndex(long nodeId) {
-            ObjectStorage storage = objectReaderFactory.getObjectStorage();
-            return storage.read(new ReadOptions().bucket(ObjectAttributes.MATCH_ALL_BUCKET), ObjectUtils.genIndexKey(0, nodeId));
         }
     }
 }
