@@ -21,6 +21,7 @@ import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.MockTime;
 
 import org.junit.jupiter.api.AfterEach;
@@ -32,14 +33,26 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
@@ -54,6 +67,8 @@ public class StreamReadersTest {
     private ObjectReaderFactory objectReaderFactory;
     private StreamReaders streamReaders;
     private MockTime mockTime;
+    private ScheduledExecutorService retryScheduler;
+    private CompletableFuture<Runnable> retryTask;
 
     @BeforeEach
     void setup() {
@@ -95,7 +110,13 @@ public class StreamReadersTest {
         };
 
         mockTime = new MockTime();
-        streamReaders = new StreamReaders(Long.MAX_VALUE, objectManager, objectStorage, objectReaderFactory, 2, mockTime);
+        retryScheduler = mock(ScheduledExecutorService.class);
+        retryTask = new CompletableFuture<>();
+        doAnswer(invocation -> {
+            retryTask.complete(invocation.getArgument(0));
+            return null;
+        }).when(retryScheduler).schedule(any(Runnable.class), eq(10L), eq(TimeUnit.SECONDS));
+        streamReaders = new StreamReaders(Long.MAX_VALUE, objectManager, objectStorage, objectReaderFactory, 2, mockTime, retryScheduler);
     }
 
     @AfterEach
@@ -127,6 +148,72 @@ public class StreamReadersTest {
 
         // Should still have 1 StreamReader (reused)
         assertEquals(1, streamReaders.getActiveStreamReaderCount());
+        verifyNoInteractions(retryScheduler);
+    }
+
+    /**
+     * Given an arbitrary read failure, retry the original range after ten seconds while other reads can proceed.
+     */
+    @Test
+    public void testReadRetriesOnceAfterFailure() throws Exception {
+        when(objectManager.getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("first read failed")))
+            .thenReturn(CompletableFuture.completedFuture(List.of(objects.get(1L).metadata)));
+
+        CompletableFuture<ReadDataBlock> readFuture = streamReaders.read(STREAM_ID_1, 0, 1, 100);
+        Runnable retry = retryTask.get(5, TimeUnit.SECONDS);
+        assertFalse(readFuture.isDone());
+        assertEquals(0, streamReaders.getActiveStreamReaderCount());
+        verify(objectManager).getObjects(eq(STREAM_ID_1), eq(0L), eq(1L), anyInt());
+
+        ReadDataBlock otherRead = streamReaders.read(STREAM_ID_2, 0, 1, 100).get(5, TimeUnit.SECONDS);
+        otherRead.getRecords().forEach(StreamRecordBatch::release);
+
+        retry.run();
+        ReadDataBlock result = readFuture.get(5, TimeUnit.SECONDS);
+        try {
+            assertEquals(1, result.getRecords().size());
+            assertEquals(0, result.getRecords().get(0).getBaseOffset());
+        } finally {
+            result.getRecords().forEach(StreamRecordBatch::release);
+        }
+        verify(objectManager, times(2)).getObjects(eq(STREAM_ID_1), eq(0L), eq(1L), anyInt());
+        verify(retryScheduler).schedule(any(Runnable.class), eq(10L), eq(TimeUnit.SECONDS));
+    }
+
+    /**
+     * Given two failed attempts, propagate the second failure without scheduling another retry.
+     */
+    @Test
+    public void testReadStopsAfterSecondFailure() throws Exception {
+        IllegalArgumentException secondFailure = new IllegalArgumentException("second read failed");
+        when(objectManager.getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("first read failed")))
+            .thenReturn(CompletableFuture.failedFuture(secondFailure));
+
+        CompletableFuture<ReadDataBlock> readFuture = streamReaders.read(STREAM_ID_1, 0, 1, 100);
+        retryTask.get(5, TimeUnit.SECONDS).run();
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> readFuture.get(5, TimeUnit.SECONDS));
+        assertSame(secondFailure, FutureUtil.cause(exception));
+        assertEquals(0, streamReaders.getActiveStreamReaderCount());
+        verify(objectManager, times(2)).getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt());
+        verify(retryScheduler).schedule(any(Runnable.class), eq(10L), eq(TimeUnit.SECONDS));
+    }
+
+    /**
+     * Given a rejected retry task, complete the read exceptionally instead of leaving it pending.
+     */
+    @Test
+    public void testRejectedRetryCompletesRead() throws Exception {
+        when(objectManager.getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("first read failed")));
+        RejectedExecutionException rejection = new RejectedExecutionException("scheduler stopped");
+        doThrow(rejection).when(retryScheduler).schedule(any(Runnable.class), eq(10L), eq(TimeUnit.SECONDS));
+
+        CompletableFuture<ReadDataBlock> readFuture = streamReaders.read(STREAM_ID_1, 0, 1, 100);
+        ExecutionException exception = assertThrows(ExecutionException.class, () -> readFuture.get(5, TimeUnit.SECONDS));
+        assertSame(rejection, FutureUtil.cause(exception));
+        verify(objectManager).getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt());
     }
 
     @Test
