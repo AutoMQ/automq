@@ -21,6 +21,7 @@ package com.automq.stream.s3;
 
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -50,8 +51,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -83,8 +86,10 @@ public class DefaultUploadWriteAheadLogTaskTest {
             DefaultUploadWriteAheadLogTask.streamSize(List.of(large, large, large, large, small)));
     }
 
+    /** Both stream-set and split stream objects carry the WAL upload throttling strategy. */
     @Test
     public void testUpload() throws Exception {
+        objectStorage = spy(objectStorage);
         AtomicLong objectIdAlloc = new AtomicLong(10);
         doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
         when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
@@ -113,6 +118,10 @@ public class DefaultUploadWriteAheadLogTaskTest {
         deltaWALUploadTask.prepare().get();
         deltaWALUploadTask.upload().get();
         deltaWALUploadTask.commit().get();
+
+        ArgumentCaptor<ObjectStorage.WriteOptions> options = ArgumentCaptor.forClass(ObjectStorage.WriteOptions.class);
+        verify(objectStorage, times(2)).writer(options.capture(), anyString());
+        options.getAllValues().forEach(option -> assertEquals(ThrottleStrategy.WAL_UPLOAD, option.throttleStrategy()));
 
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));

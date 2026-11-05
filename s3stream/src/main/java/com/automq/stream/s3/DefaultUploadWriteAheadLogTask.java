@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -148,7 +149,8 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             ssoWriter = ObjectWriter.noop(objectId);
         } else {
             streamSetObjectId = objectId++;
-            ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize);
+            ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize,
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
@@ -224,7 +226,8 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     private CompletableFuture<StreamObject> writeStreamObject(long objectId, List<StreamRecordBatch> streamRecords) {
         long streamSize = streamSize(streamRecords);
         return acquireLimiter(streamSize).thenComposeAsync(nil -> {
-            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
+            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize,
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();

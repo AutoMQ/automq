@@ -149,6 +149,21 @@ class SmoothNetworkBandwidthLimiterTest {
         assertEquals(4, completed(pending));
     }
 
+    /** WAL upload waits for budget and receives its larger configured share without starving tail reads. */
+    @Test
+    void testWalUploadIsThrottledWithHigherWeight() {
+        SmoothNetworkBandwidthLimiter limiter = create(320, 320, 0, 64,
+            Map.of(ThrottleStrategy.WAL_UPLOAD, 4, ThrottleStrategy.TAIL, 1));
+        limiter.consume(ThrottleStrategy.BYPASS, 320).join();
+        List<CompletableFuture<Void>> uploads = enqueue(limiter, ThrottleStrategy.WAL_UPLOAD, 10, 64);
+        List<CompletableFuture<Void>> reads = enqueue(limiter, ThrottleStrategy.TAIL, 10, 64);
+        assertEquals(0, completed(uploads));
+        assertEquals(0, completed(reads));
+        advance(limiter, 1);
+        assertEquals(4, completed(uploads));
+        assertEquals(1, completed(reads));
+    }
+
     /** Given weights 4:2:1, continuously queued groups receive that byte ratio across refill boundaries. */
     @Test
     void testWeightedRoundSpansWindows() {
