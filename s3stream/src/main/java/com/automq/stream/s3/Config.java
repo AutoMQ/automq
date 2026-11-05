@@ -20,6 +20,7 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Version;
+import com.automq.stream.s3.network.NetworkBandwidthLimiterType;
 import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
@@ -58,7 +59,10 @@ public class Config {
     // 1GBps/s
     private long networkBaselineBandwidth = 1024 * 1024 * 1024;
     private NetworkBandwidthMode networkBandwidthMode = NetworkBandwidthMode.SEPARATE;
+    private long networkBurstBandwidth = -1;
+    private long networkMaxBurstWindowMs = 60000;
     private int refillPeriodMs = 10;
+    private NetworkBandwidthLimiterType networkLimiterType = NetworkBandwidthLimiterType.LEGACY;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
     private boolean snapshotReadEnable = false;
@@ -175,6 +179,21 @@ public class Config {
      */
     public NetworkBandwidthMode networkBandwidthMode() {
         return networkBandwidthMode;
+    }
+
+    /** Returns the peak bandwidth in bytes/second; minus one uses the baseline bandwidth. */
+    public long networkBurstBandwidth() {
+        return networkBurstBandwidth == -1 ? networkBaselineBandwidth : networkBurstBandwidth;
+    }
+
+    /** Returns the duration in milliseconds that a full savings pool can sustain peak bandwidth. */
+    public long networkMaxBurstWindowMs() {
+        return networkMaxBurstWindowMs;
+    }
+
+    /** Returns the network limiter implementation selected at startup. */
+    public NetworkBandwidthLimiterType networkLimiterType() {
+        return networkLimiterType;
     }
 
     public int refillPeriodMs() {
@@ -316,6 +335,24 @@ public class Config {
      */
     public Config networkBandwidthMode(NetworkBandwidthMode networkBandwidthMode) {
         this.networkBandwidthMode = networkBandwidthMode;
+        return this;
+    }
+
+    /** Sets the peak bandwidth in bytes/second; minus one uses the baseline bandwidth. */
+    public Config networkBurstBandwidth(long networkBurstBandwidth) {
+        this.networkBurstBandwidth = networkBurstBandwidth;
+        return this;
+    }
+
+    /** Sets the maximum peak-bandwidth duration in milliseconds funded by saved tokens; zero disables savings. */
+    public Config networkMaxBurstWindowMs(long networkMaxBurstWindowMs) {
+        this.networkMaxBurstWindowMs = networkMaxBurstWindowMs;
+        return this;
+    }
+
+    /** Selects the network limiter implementation for startup. */
+    public Config networkLimiterType(NetworkBandwidthLimiterType networkLimiterType) {
+        this.networkLimiterType = networkLimiterType;
         return this;
     }
 

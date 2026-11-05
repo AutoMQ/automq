@@ -23,6 +23,7 @@ import kafka.automq.AutoMQConfig;
 import kafka.server.KafkaConfig;
 
 import com.automq.stream.s3.Config;
+import com.automq.stream.s3.network.NetworkBandwidthLimiterType;
 import com.automq.stream.s3.network.NetworkBandwidthMode;
 
 public class ConfigUtils {
@@ -54,6 +55,9 @@ public class ConfigUtils {
             .streamSetObjectCompactionMaxObjectNum(s.s3StreamSetObjectCompactionMaxObjectNum())
             .mockEnable(s.s3MockEnable())
             .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
+            .networkLimiterType(NetworkBandwidthLimiterType.parse(s.s3NetworkLimiterTypeProp()))
+            .networkBurstBandwidth(s.s3NetworkBurstBandwidthProp())
+            .networkMaxBurstWindowMs(s.s3NetworkMaxBurstWindowMsProp())
             .networkBandwidthMode(NetworkBandwidthMode.parse(s.s3NetworkBandwidthModeProp()))
             .refillPeriodMs(s.s3RefillPeriodMsProp())
             .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());

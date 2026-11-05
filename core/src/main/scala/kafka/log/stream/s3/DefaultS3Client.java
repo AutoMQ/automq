@@ -167,8 +167,8 @@ public class DefaultS3Client implements Client {
     }
 
     protected void setupNetworkLimiters() {
-        GlobalNetworkBandwidthLimiters.instance().setup(
-            config.networkBandwidthMode(), config.networkBaselineBandwidth(), config.refillPeriodMs());
+        GlobalNetworkBandwidthLimiters.instance().setup(config.networkLimiterType(), config.networkBandwidthMode(),
+            config.networkBaselineBandwidth(), config.networkBurstBandwidth(), config.refillPeriodMs(), config.networkMaxBurstWindowMs());
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().inbound();
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().outbound();
     }

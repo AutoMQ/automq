@@ -26,6 +26,9 @@ import com.automq.stream.utils.LogContext;
 
 import org.slf4j.Logger;
 
+import java.time.Duration;
+import java.util.Map;
+
 import io.opentelemetry.api.common.Attributes;
 
 public class GlobalNetworkBandwidthLimiters {
@@ -44,10 +47,9 @@ public class GlobalNetworkBandwidthLimiters {
         return INSTANCE;
     }
 
-    /**
-     * Initializes global directional limiter views from the configured bandwidth mode.
-     */
-    public synchronized void setup(NetworkBandwidthMode mode, long bandwidth, int refillIntervalMs) {
+    /** Initializes process-wide limiter views from startup settings; bandwidths are bytes/second and durations are milliseconds. */
+    public synchronized void setup(NetworkBandwidthLimiterType type, NetworkBandwidthMode mode, long bandwidth,
+        long burstBandwidth, int refillIntervalMs, long maxBurstWindowMs) {
         if (setup) {
             throw new IllegalArgumentException("Network bandwidth limiters are already setup");
         }
@@ -59,20 +61,16 @@ public class GlobalNetworkBandwidthLimiters {
         NetworkStats.getInstance().setup(bandwidth, mode);
 
         if (mode == NetworkBandwidthMode.SHARED) {
-            AsyncNetworkBandwidthLimiter physicalSharedLimiter = new AsyncNetworkBandwidthLimiter(
-                tokenSize, refillIntervalMs, bandwidth * SHARED_MAX_TOKENS_MULTIPLIER);
+            NetworkBandwidthLimiter physicalSharedLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, SHARED_MAX_TOKENS_MULTIPLIER);
             inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalSharedLimiter);
             outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalSharedLimiter);
             Metrics.LongGaugeBundle.LongGauge networkSharedAvailableBandwidthMetric =
                 NetworkSharedAvailableBandwidthMetric.BUNDLE.register(MetricsLevel.INFO, Attributes.empty());
             networkSharedAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkSharedRate());
         } else {
-            AsyncNetworkBandwidthLimiter physicalInboundLimiter = new AsyncNetworkBandwidthLimiter(
-                tokenSize, refillIntervalMs, bandwidth);
-            // Use a larger token pool for outbound traffic to avoid spikes caused by Upload WAL affecting
-            // tail-reading performance.
-            AsyncNetworkBandwidthLimiter physicalOutboundLimiter = new AsyncNetworkBandwidthLimiter(
-                tokenSize, refillIntervalMs, bandwidth * OUTBOUND_MAX_TOKENS_MULTIPLIER);
+            NetworkBandwidthLimiter physicalInboundLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, 1);
+            // Preserve the legacy outbound token pool; smooth uses the same configured budgets in both directions.
+            NetworkBandwidthLimiter physicalOutboundLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, OUTBOUND_MAX_TOKENS_MULTIPLIER);
             inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalInboundLimiter);
             outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalOutboundLimiter);
             Metrics.LongGaugeBundle.LongGauge networkInboundAvailableBandwidthMetric =
@@ -83,8 +81,25 @@ public class GlobalNetworkBandwidthLimiters {
             networkOutboundAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkOutboundRate());
         }
         setup = true;
-        LOGGER.info("Global network bandwidth limiters setup, mode: {}, bandwidth: {}, tokenSize: {}, refillIntervalMs: {}",
-            mode.getName(), bandwidth, tokenSize, refillIntervalMs);
+        LOGGER.info("Global network bandwidth limiters setup, type: {}, mode: {}, bandwidth: {}, refillIntervalMs: {}",
+            type.getName(), mode.getName(), bandwidth, refillIntervalMs);
+    }
+
+    private static NetworkBandwidthLimiter createLimiter(NetworkBandwidthLimiterType type, long bandwidth,
+        long burstBandwidth, int refillIntervalMs, long maxBurstWindowMs, int legacyCapacityMultiplier) {
+        if (type == NetworkBandwidthLimiterType.SMOOTH) {
+            return new SmoothNetworkBandwidthLimiter(new SmoothNetworkBandwidthLimiter.Configuration(
+                bandwidth, burstBandwidth, Duration.ofMillis(refillIntervalMs),
+                maxBurstWindowMs / refillIntervalMs, 32 * 1024, Map.of(
+                    ThrottleStrategy.WAL_UPLOAD, 8,
+                    ThrottleStrategy.COMPACTION, 4,
+                    ThrottleStrategy.TAIL, 4,
+                    ThrottleStrategy.CATCH_UP, 2,
+                    ThrottleStrategy.ICEBERG_WRITE, 2)));
+        }
+        long tokenSize = (long) (bandwidth * ((double) refillIntervalMs / 1000));
+        return new AsyncNetworkBandwidthLimiter(tokenSize, refillIntervalMs,
+            bandwidth * legacyCapacityMultiplier);
     }
 
     private NetworkBandwidthLimiter meter(MeteredNetworkBandwidthLimiter.Direction direction, NetworkBandwidthLimiter delegate) {
