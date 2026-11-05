@@ -80,8 +80,8 @@ class GlobalNetworkBandwidthLimitersTest {
             assertEquals(2048, config.peakTokens());
             assertEquals(10240, config.capacity());
             assertEquals(32768, config.baseQuantum());
-            assertEquals(Map.of(ThrottleStrategy.WAL_UPLOAD, 8, ThrottleStrategy.COMPACTION, 4,
-                ThrottleStrategy.TAIL, 4, ThrottleStrategy.CATCH_UP, 2, ThrottleStrategy.ICEBERG_WRITE, 2), config.weights());
+            assertEquals(Map.of(ThrottleStrategy.WAL, 10, ThrottleStrategy.WAL_UPLOAD, 4, ThrottleStrategy.COMPACTION, 3,
+                ThrottleStrategy.TAIL, 2, ThrottleStrategy.CATCH_UP, 1, ThrottleStrategy.ICEBERG_WRITE, 1), config.weights());
             global.inbound().consume(ThrottleStrategy.TAIL, 10).join();
             global.outbound().consume(ThrottleStrategy.WAL_UPLOAD, 20).join();
             verify(mocks.constructed().get(0)).consume(ThrottleStrategy.TAIL, 10);

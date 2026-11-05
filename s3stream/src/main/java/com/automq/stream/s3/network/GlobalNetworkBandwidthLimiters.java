@@ -91,11 +91,12 @@ public class GlobalNetworkBandwidthLimiters {
             return new SmoothNetworkBandwidthLimiter(new SmoothNetworkBandwidthLimiter.Configuration(
                 bandwidth, burstBandwidth, Duration.ofMillis(refillIntervalMs),
                 maxBurstWindowMs / refillIntervalMs, 32 * 1024, Map.of(
-                    ThrottleStrategy.WAL_UPLOAD, 8,
-                    ThrottleStrategy.COMPACTION, 4,
-                    ThrottleStrategy.TAIL, 4,
-                    ThrottleStrategy.CATCH_UP, 2,
-                    ThrottleStrategy.ICEBERG_WRITE, 2)));
+                    ThrottleStrategy.WAL, 10,
+                    ThrottleStrategy.WAL_UPLOAD, 4,
+                    ThrottleStrategy.COMPACTION, 3,
+                    ThrottleStrategy.TAIL, 2,
+                    ThrottleStrategy.CATCH_UP, 1,
+                    ThrottleStrategy.ICEBERG_WRITE, 1)));
         }
         long tokenSize = (long) (bandwidth * ((double) refillIntervalMs / 1000));
         return new AsyncNetworkBandwidthLimiter(tokenSize, refillIntervalMs,
