@@ -24,6 +24,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 
@@ -601,8 +602,22 @@ class AbstractObjectStorageTest {
         buf.release();
     }
 
+    /** A merged GET must not charge one traffic group's bytes to another group's strategy. */
     @Test
-    void testReadToEndWithNetworkLimiter() throws InterruptedException {
+    void testMergeKeepsThrottleStrategiesSeparate() {
+        AbstractObjectStorage.ReadTask tail = new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.TAIL), "key", 0, 100, new CompletableFuture<>());
+        AbstractObjectStorage.MergedReadTask merged = new AbstractObjectStorage.MergedReadTask(tail, 0);
+        assertFalse(merged.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.CATCH_UP), "key", 100, 200, new CompletableFuture<>())));
+        assertTrue(merged.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.TAIL), "key", 100, 200, new CompletableFuture<>())));
+        assertEquals(200, merged.end);
+    }
+
+    /** The abstract layer neither precharges read-to-end requests nor bypass-charges their results. */
+    @Test
+    void testReadToEndDoesNotChargeInAbstractLayer() {
         int objectSize = 4096;
         objectStorage = new MemoryObjectStorage(false);
         MemoryObjectStorage memoryObjectStorage = (MemoryObjectStorage) objectStorage;
@@ -612,12 +627,10 @@ class AbstractObjectStorageTest {
         objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
         objectStorage = spy(objectStorage);
 
-        // check read to end range read will increase the inboundWidthLimiter
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
 
-        cf2.join();
-        Thread.sleep(100); // wait for async reacquire token
-        assertEquals(objectSize, networkInboundBandwidthLimiter.getConsumed());
+        cf2.join().release();
+        assertEquals(0, networkInboundBandwidthLimiter.getConsumed());
     }
 
     @Test

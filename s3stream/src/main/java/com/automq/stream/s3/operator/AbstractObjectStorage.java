@@ -61,7 +61,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
@@ -225,32 +224,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return cf;
         }
 
-        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
-            networkInboundBandwidthLimiter::consume;
-
-        long acquiredSize = end - start;
-
-        if (end == RANGE_READ_TO_END) {
-            // we don't know the size so acquire size 1 first.
-            acquiredSize = 1;
-
-            // when read complete use bypass to forceConsume limiter token.
-            cf.whenComplete((data, ex) -> {
-                if (ex == null && data.readableBytes() - 1 > 0) {
-                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
-                }
-            });
+        synchronized (waitingReadTasks) {
+            waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
         }
 
-        networkInboundBandwidthLimiterFunction.apply(requestOptions.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
-            if (ex != null) {
-                cf.completeExceptionally(ex);
-            } else {
-                synchronized (waitingReadTasks) {
-                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
-                }
-            }
-        });
 
         return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
             logger.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
@@ -1137,6 +1114,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
             return objectPath != null &&
                 objectPath.equals(readTask.objectPath) &&
+                // The merged request is charged to one strategy by the SDK response subscriber.
+                readTasks.get(0).options.throttleStrategy() == readTask.options.throttleStrategy() &&
                 dataSparsityRate <= this.maxMergeReadSparsityRate &&
                 // Don't allow merge read to end task.
                 readTask.end != RANGE_READ_TO_END &&

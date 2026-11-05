@@ -33,6 +33,9 @@ import software.amazon.awssdk.auth.credentials.AwsCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.SdkSystemSetting;
 import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.async.ResponsePublisher;
+import software.amazon.awssdk.core.async.SdkPublisher;
 import software.amazon.awssdk.core.exception.ApiCallTimeoutException;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder;
@@ -44,6 +47,8 @@ import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
@@ -87,7 +92,7 @@ public class AwsObjectStorageTest {
                 invocation.<AsyncRequestBody>getArgument(1).subscribe(bytes -> { }).thenApply(nil ->
                     UploadPartResponse.builder().eTag("etag").build()));
             AwsObjectStorage storage = spy(new AwsObjectStorage(client, client, "bucket",
-                ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, limiter));
+                ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, NetworkBandwidthLimiter.NOOP, limiter));
             ByteBuf data = Unpooled.buffer(ThrottledAsyncRequestBody.CHUNK_SIZE + 7)
                 .writeZero(ThrottledAsyncRequestBody.CHUNK_SIZE + 7);
             try {
@@ -126,6 +131,56 @@ public class AwsObjectStorageTest {
         } finally {
             storage.close();
             data.release();
+        }
+    }
+
+    /** Bounded and read-to-end GETs charge SDK buffers once, without abstract-layer precharge or BYPASS debt. */
+    @Tag("S3Unit")
+    @Test
+    void testReadsMeterSdkBuffersWithoutUpfrontCharge() throws Exception {
+        for (long end : List.of(3L, -1L)) {
+            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+            List<Long> sizes = new java.util.concurrent.CopyOnWriteArrayList<>();
+            java.util.concurrent.BlockingQueue<CompletableFuture<Void>> grants = new java.util.concurrent.LinkedBlockingQueue<>();
+            when(limiter.consume(eq(ThrottleStrategy.TAIL), anyLong())).thenAnswer(invocation -> {
+                sizes.add(invocation.getArgument(1));
+                CompletableFuture<Void> grant = new CompletableFuture<>();
+                grants.add(grant);
+                return grant;
+            });
+            S3AsyncClient client = mock(S3AsyncClient.class);
+            SdkPublisher<ByteBuffer> publisher = SdkPublisher.fromIterable(List.of(
+                    ByteBuffer.wrap(new byte[] {1, 2}), ByteBuffer.wrap(new byte[] {3})));
+            var response = new ResponsePublisher<>(
+                GetObjectResponse.builder().contentLength(3L).build(), publisher);
+            when(client.getObject(any(GetObjectRequest.class),
+                org.mockito.ArgumentMatchers.<AsyncResponseTransformer<GetObjectResponse, ResponsePublisher<GetObjectResponse>>>any()))
+                .thenReturn(CompletableFuture.completedFuture(response));
+            AwsObjectStorage storage = new AwsObjectStorage(client, client, "bucket",
+                ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, limiter, NetworkBandwidthLimiter.NOOP);
+            try {
+                CompletableFuture<ByteBuf> read = storage.rangeRead(new ObjectStorage.ReadOptions()
+                    .bucket((short) 0).throttleStrategy(ThrottleStrategy.TAIL), "key", 0, end);
+                CompletableFuture<Void> first = grants.poll(5, TimeUnit.SECONDS);
+                Assertions.assertNotNull(first);
+                Assertions.assertEquals(List.of(2L), sizes);
+                Assertions.assertFalse(read.isDone());
+                first.complete(null);
+                CompletableFuture<Void> last = grants.poll(5, TimeUnit.SECONDS);
+                Assertions.assertNotNull(last);
+                Assertions.assertEquals(List.of(2L, 1L), sizes);
+                Assertions.assertFalse(read.isDone());
+                last.complete(null);
+                ByteBuf result = read.get(5, TimeUnit.SECONDS);
+                try {
+                    Assertions.assertEquals(3, result.readableBytes());
+                    Assertions.assertEquals(3, result.getByte(2));
+                } finally {
+                    result.release();
+                }
+            } finally {
+                storage.close();
+            }
         }
     }
 

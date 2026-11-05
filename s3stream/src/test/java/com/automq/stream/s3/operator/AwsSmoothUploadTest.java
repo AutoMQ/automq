@@ -96,7 +96,7 @@ class AwsSmoothUploadTest {
                 .retryStrategy(AwsRetryStrategy.standardRetryStrategy().toBuilder().maxAttempts(1).build()))
             .build();
         AwsObjectStorage storage = new AwsObjectStorage(client, client, "bucket",
-            ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, limiter);
+            ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, NetworkBandwidthLimiter.NOOP, limiter);
         ByteBuf data = Unpooled.buffer(chunk + 7).writeZero(chunk + 7);
         try {
             CompletableFuture<Void> upload = storage.doWrite(

@@ -51,7 +51,6 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -182,13 +181,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
         ChecksumAlgorithm checksumAlgorithm) {
-        this(s3Client, controlS3Client, bucket, checksumAlgorithm, NetworkBandwidthLimiter.NOOP);
+        this(s3Client, controlS3Client, bucket, checksumAlgorithm, NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP);
     }
 
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
-        ChecksumAlgorithm checksumAlgorithm, NetworkBandwidthLimiter outboundLimiter) {
-        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, outboundLimiter, 50, 0, true, false, false, "test");
+        ChecksumAlgorithm checksumAlgorithm, NetworkBandwidthLimiter inboundLimiter, NetworkBandwidthLimiter outboundLimiter) {
+        super(BucketURI.parse("0@s3://b"), inboundLimiter, outboundLimiter, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -262,28 +261,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.checksumMode(ChecksumMode.ENABLED);
         }
 
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
-            .thenAccept(responsePublisher -> {
-                // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
-                CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
-                responsePublisher.subscribe(bytes -> {
-                    // the aws client will copy DefaultHttpContent to heap ByteBuffer
-                    buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
-                }).whenComplete((rst, ex) -> {
-                    if (ex != null) {
-                        buf.release();
-                        cf.completeExceptionally(ex);
-                    } else {
-                        cf.complete(buf);
-                    }
-                });
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
+        return readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
+            .thenCompose(responsePublisher -> {
+                ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(
+                    networkInboundBandwidthLimiter, options.throttleStrategy());
+                responsePublisher.subscribe(subscriber);
+                return subscriber.result();
             });
-        return cf;
     }
 
     @Override
