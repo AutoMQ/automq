@@ -61,7 +61,6 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
 import software.amazon.awssdk.checksums.SdkChecksum;
-import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
@@ -183,7 +182,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
         ChecksumAlgorithm checksumAlgorithm) {
-        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
+        this(s3Client, controlS3Client, bucket, checksumAlgorithm, NetworkBandwidthLimiter.NOOP);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
+        ChecksumAlgorithm checksumAlgorithm, NetworkBandwidthLimiter outboundLimiter) {
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, outboundLimiter, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -283,7 +288,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
-        // Compute checksum before handing unsafe ByteBuffers to the SDK. A timed-out attempt may still be writing
+        // Compute checksum before handing shared ByteBuffer views to the SDK. A timed-out attempt may still be writing
         // after a later retry completes and the caller releases/reuses the ByteBuf; the stale attempt would then read
         // dirty bytes. A fixed request checksum makes the service reject that corrupted body instead of persisting it.
         PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
@@ -298,8 +303,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         PutObjectRequest request = builder.build();
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
-        return writeS3Client.putObject(request, body).thenApply(rst -> null);
+        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, networkOutboundBandwidthLimiter, options.throttleStrategy());
+        return writeS3Client.putObject(request, body).whenComplete((rst, ex) -> body.close()).thenApply(rst -> null);
     }
 
     @Override
@@ -320,7 +325,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
-        // Same dirty-retry protection as doWrite.
+        // Same fixed-checksum protection as doWrite, covering the entire part across all chunks.
         UploadPartRequest.Builder builder = UploadPartRequest.builder()
             .bucket(bucket)
             .key(path)
@@ -333,8 +338,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.contentMD5(contentMd5(part));
         }
 
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
-        return writeS3Client.uploadPart(builder.build(), body)
+        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(part, networkOutboundBandwidthLimiter, options.throttleStrategy());
+        return writeS3Client.uploadPart(builder.build(), body).whenComplete((rst, ex) -> body.close())
             .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
     }
 

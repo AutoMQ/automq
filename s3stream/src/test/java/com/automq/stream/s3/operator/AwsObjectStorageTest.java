@@ -3,6 +3,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.apache.commons.lang3.tuple.Pair;
 import org.junit.jupiter.api.Assertions;
@@ -56,6 +57,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doReturn;
@@ -65,6 +67,67 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class AwsObjectStorageTest {
+
+    /** PUT and UploadPart meter the SDK body once in chunks instead of precharging the entire buffer. */
+    @Tag("S3Unit")
+    @Test
+    void testUploadsMeterChunksWithoutUpfrontCharge() throws Exception {
+        for (boolean multipart : List.of(false, true)) {
+            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+            List<Long> sizes = new java.util.concurrent.CopyOnWriteArrayList<>();
+            when(limiter.consume(eq(ThrottleStrategy.WAL_UPLOAD), anyLong())).thenAnswer(invocation -> {
+                sizes.add(invocation.getArgument(1));
+                return CompletableFuture.completedFuture(null);
+            });
+            S3AsyncClient client = mock(S3AsyncClient.class);
+            when(client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation ->
+                invocation.<AsyncRequestBody>getArgument(1).subscribe(bytes -> { }).thenApply(nil ->
+                    software.amazon.awssdk.services.s3.model.PutObjectResponse.builder().build()));
+            when(client.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation ->
+                invocation.<AsyncRequestBody>getArgument(1).subscribe(bytes -> { }).thenApply(nil ->
+                    UploadPartResponse.builder().eTag("etag").build()));
+            AwsObjectStorage storage = spy(new AwsObjectStorage(client, client, "bucket",
+                ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION, limiter));
+            ByteBuf data = Unpooled.buffer(ThrottledAsyncRequestBody.CHUNK_SIZE + 7)
+                .writeZero(ThrottledAsyncRequestBody.CHUNK_SIZE + 7);
+            try {
+                ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
+                    .throttleStrategy(ThrottleStrategy.WAL_UPLOAD).enableFastRetry(true);
+                if (multipart) {
+                    storage.uploadPart(options, "key", "upload", 1, data).get(10, TimeUnit.SECONDS);
+                } else {
+                    storage.write(options, "key", data).get(10, TimeUnit.SECONDS);
+                    verify(storage).doWrite(org.mockito.ArgumentMatchers.argThat(ObjectStorage.WriteOptions::enableFastRetry),
+                        eq("key"), any(ByteBuf.class));
+                    Assertions.assertTrue(options.enableFastRetry());
+                }
+                Assertions.assertEquals(List.of((long) ThrottledAsyncRequestBody.CHUNK_SIZE, 7L), sizes);
+                Assertions.assertEquals(0, data.refCnt());
+            } finally {
+                storage.close();
+            }
+        }
+    }
+
+    /** An exceptional SDK future releases the request body's retained source. */
+    @Tag("S3Unit")
+    @Test
+    void testFailedPutReleasesBody() {
+        S3AsyncClient client = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(client, "bucket");
+        ByteBuf data = Unpooled.buffer(8).writeZero(8);
+        RuntimeException failure = new IllegalStateException("SDK failure");
+        try {
+            when(client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+                .thenReturn(CompletableFuture.failedFuture(failure));
+            Assertions.assertThrows(java.util.concurrent.CompletionException.class,
+                () -> storage.doWrite(new ObjectStorage.WriteOptions(), "key", data).join());
+            Assertions.assertEquals(1, data.refCnt());
+        } finally {
+            storage.close();
+            data.release();
+        }
+    }
 
     /**
      * CRT keeps PUTs single-request while AutoMQ retains ownership of multipart uploads and precomputed checksums.

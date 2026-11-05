@@ -91,7 +91,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    protected final ExecutorService writeLimiterCallbackExecutor;
+    private final ExecutorService writeRequestExecutor;
     private final ExecutorService readCallbackExecutor;
     private final ExecutorService writeCallbackExecutor;
     final ScheduledExecutorService scheduler;
@@ -164,8 +164,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.checkS3ApiMode = checkS3ApiMode;
 
         String prefix = threadPrefix + "-" + currentIndex + "-";
-        writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
-            prefix + "s3-write-limiter-cb-executor", true, logger);
+        writeRequestExecutor = Threads.newFixedThreadPool(1,
+            prefix + "s3-write-request-executor", true, logger);
         readCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-read-cb-executor", true, logger);
         writeCallbackExecutor = Threads.newFixedThreadPool(1,
@@ -269,20 +269,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             data.release();
             return retCf;
         }
-        networkOutboundBandwidthLimiter
-            .consume(requestOptions.throttleStrategy(), data.readableBytes())
-            .whenCompleteAsync((v, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                    data.release();
-                    return;
-                }
-                if (checkTimeout(requestOptions, cf)) {
-                    data.release();
-                    return;
-                }
-                queuedWrite0(requestOptions, objectPath, data, cf);
-            }, writeLimiterCallbackExecutor);
+        writeRequestExecutor.execute(() -> {
+            if (checkTimeout(requestOptions, cf)) {
+                data.release();
+                return;
+            }
+            queuedWrite0(requestOptions, objectPath, data, cf);
+        });
         return retCf;
     }
 
@@ -450,18 +443,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (refCf.isDone()) {
             return refCf;
         }
-        networkOutboundBandwidthLimiter
-            .consume(options.throttleStrategy(), data.readableBytes())
-            .whenCompleteAsync((v, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                    return;
-                }
-                if (checkTimeout(options, cf)) {
-                    return;
-                }
+        writeRequestExecutor.execute(() -> {
+            if (!checkTimeout(options, cf)) {
                 queuedUploadPart0(options, path, uploadId, partNumber, data, cf);
-            }, writeLimiterCallbackExecutor);
+            }
+        });
         return refCf;
     }
 
@@ -707,7 +693,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
-        writeLimiterCallbackExecutor.shutdown();
+        writeRequestExecutor.shutdown();
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
