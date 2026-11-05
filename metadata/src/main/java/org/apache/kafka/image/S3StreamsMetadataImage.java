@@ -832,6 +832,46 @@ public final class S3StreamsMetadataImage extends AbstractReferenceCounted {
         return "S3StreamsMetadataImage{nextAssignedStreamId=" + nextAssignedStreamId + '}';
     }
 
+    // AutoMQ inject start
+    /**
+     * The shared empty image has process lifetime; ordinary images retain their normal ownership counts.
+     */
+    @Override
+    public ReferenceCounted retain() {
+        return this == EMPTY ? this : super.retain();
+    }
+
+    /**
+     * Retains an ordinary image, or leaves the shared empty image unchanged.
+     */
+    @Override
+    public ReferenceCounted retain(int increment) {
+        if (increment <= 0) {
+            throw new IllegalArgumentException("increment must be positive");
+        }
+        return this == EMPTY ? this : super.retain(increment);
+    }
+
+    /**
+     * Releases an ordinary image without invalidating the globally shared empty image.
+     */
+    @Override
+    public boolean release() {
+        return this != EMPTY && super.release();
+    }
+
+    /**
+     * Releases ownership of an ordinary image, or leaves the shared empty image unchanged.
+     */
+    @Override
+    public boolean release(int decrement) {
+        if (decrement <= 0) {
+            throw new IllegalArgumentException("decrement must be positive");
+        }
+        return this != EMPTY && super.release(decrement);
+    }
+    // AutoMQ inject end
+
     @Override
     protected void deallocate() {
         if (registryRef == RegistryRef.NOOP) {
