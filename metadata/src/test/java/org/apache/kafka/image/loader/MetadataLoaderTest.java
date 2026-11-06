@@ -25,6 +25,7 @@ import org.apache.kafka.common.metadata.BeginTransactionRecord;
 import org.apache.kafka.common.metadata.ConfigRecord;
 import org.apache.kafka.common.metadata.EndTransactionRecord;
 import org.apache.kafka.common.metadata.FeatureLevelRecord;
+import org.apache.kafka.common.metadata.KVRecord;
 import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RemoveTopicRecord;
 import org.apache.kafka.common.metadata.TopicRecord;
@@ -45,6 +46,7 @@ import org.apache.kafka.server.fault.MockFaultHandler;
 import org.apache.kafka.snapshot.SnapshotReader;
 import org.apache.kafka.test.TestUtils;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -78,6 +80,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(value = 40)
 public class MetadataLoaderTest {
+    // AutoMQ inject start
+    /**
+     * Given independent loaders sharing EMPTY, the first KV commit in each loader must succeed in the same JVM.
+     */
+    @Test
+    @Tag("S3Unit")
+    public void testEmptyKVSurvivesTwoLoaders() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            MockFaultHandler faults = new MockFaultHandler("testEmptyKVSurvivesTwoLoaders");
+            try (MetadataLoader loader = new MetadataLoader.Builder().setFaultHandler(faults)
+                .setHighWaterMarkAccessor(OptionalLong::empty).build()) {
+                loader.handleCommit(MockBatchReader.newSingleBatchReader(0, 1,
+                    List.of(new ApiMessageAndVersion(new KVRecord().setKeyValues(List.of(
+                        new KVRecord.KeyValue().setKey("key1").setValue(new byte[] {1}))), (short) 0))));
+                loader.waitForAllEventsToBeHandled();
+                faults.maybeRethrowFirstException();
+            }
+            faults.maybeRethrowFirstException();
+        }
+    }
+    // AutoMQ inject end
+
     @Test
     public void testCreateAndClose() throws Exception {
         MockFaultHandler faultHandler = new MockFaultHandler("testCreateAndClose");
