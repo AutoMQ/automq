@@ -24,7 +24,7 @@ import org.apache.kafka.server.metrics.KafkaYammerMetrics;
 
 import com.automq.opentelemetry.AutoMQTelemetryManager;
 import com.automq.opentelemetry.exporter.MetricsExportConfig;
-import com.automq.opentelemetry.exporter.PrometheusBasicAuthenticator;
+import com.automq.opentelemetry.exporter.PrometheusAuthenticatorFactory;
 import com.automq.shell.AutoMQApplication;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsConfig;
@@ -75,13 +75,9 @@ public final class TelemetrySupport {
         return telemetryManager;
     }
 
-    private static Authenticator buildPrometheusAuthenticator(KafkaConfig config) {
+    static Authenticator buildPrometheusAuthenticator(KafkaConfig config) {
         String authType = config.getString(
             AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_CONFIG);
-
-        if (AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_TYPE_DEFAULT.equals(authType)) {
-            return null;
-        }
 
         String username = config.getString(
             AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_USERNAME_CONFIG);
@@ -89,7 +85,8 @@ public final class TelemetrySupport {
         Password password = config.getPassword(
             AutoMQConfig.S3_TELEMETRY_METRICS_PROMETHEUS_AUTH_PASSWORD_CONFIG);
 
-        return new PrometheusBasicAuthenticator(
+        return PrometheusAuthenticatorFactory.create(
+            authType,
             username,
             password == null ? null : password.value());
     }

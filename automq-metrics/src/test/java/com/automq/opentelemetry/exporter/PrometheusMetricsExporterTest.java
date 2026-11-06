@@ -178,6 +178,46 @@ public class PrometheusMetricsExporterTest {
     }
 
     @Test
+    public void testEncodedPublicEndpointAliasesRequireAuthenticationOverHttp() throws Exception {
+        int port = availablePort();
+        MetricReader metricReader = authenticatedMetricReader(port);
+
+        try {
+            String[] paths = {
+                "/%2D/healthy",
+                "/%2d/healthy",
+                "/-/health%79",
+                "/-/healthy%2F",
+                "/%2D/healthy?probe=1"
+            };
+
+            for (String path : paths) {
+                HttpResponse<String> response = sendRequest(
+                    port,
+                    path,
+                    null
+                );
+
+                Assertions.assertEquals(
+                    401,
+                    response.statusCode(),
+                    "Encoded path bypassed authentication: " + path
+                );
+
+                Assertions.assertEquals(
+                    "Basic realm=\"AutoMQ Prometheus metrics\"",
+                    response.headers()
+                        .firstValue("WWW-Authenticate")
+                        .orElse(null),
+                    "Missing authentication challenge: " + path
+                );
+            }
+        } finally {
+            metricReader.close();
+        }
+    }
+
+    @Test
     public void testRejectsWrongUsername() throws Exception {
         int port = availablePort();
         MetricReader metricReader = authenticatedMetricReader(port);
@@ -366,7 +406,7 @@ public class PrometheusMetricsExporterTest {
             "127.0.0.1",
             port,
             Collections.emptyList(),
-            new PrometheusBasicAuthenticator(USERNAME, PASSWORD)
+            PrometheusAuthenticatorFactory.create("basic", USERNAME, PASSWORD)
         ).asMetricReader();
     }
 

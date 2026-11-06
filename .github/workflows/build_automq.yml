@@ -88,3 +88,5 @@ jobs:
         uses: gradle/gradle-build-action@v2.9.0
       - name: Unit Test
         run: ./gradlew --build-cache metadata:S3UnitTest core:S3UnitTest s3stream:test
+      - name: Prometheus metrics unit tests
+        run: ./gradlew --build-cache :automq-metrics:test

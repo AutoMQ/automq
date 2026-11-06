@@ -30,10 +30,8 @@ import java.security.MessageDigest;
 import java.util.Base64;
 
 /**
- * Basic authentication for the built-in Prometheus endpoint.
- *
- * <p>Only the metrics resource is protected. Health and default HTTP resources remain available
- * without credentials so existing liveness/readiness probes are not disrupted.</p>
+ * Validates Basic credentials for the built-in Prometheus endpoint.
+ * Public endpoint access is handled by PrometheusEndpointAuthenticator.
  */
 public class PrometheusBasicAuthenticator extends Authenticator {
     static final String REALM = "AutoMQ Prometheus metrics";
@@ -41,7 +39,6 @@ public class PrometheusBasicAuthenticator extends Authenticator {
     private static final String WWW_AUTHENTICATE_HEADER = "WWW-Authenticate";
     private static final String BASIC_SCHEME = "Basic";
     private static final String CHALLENGE = BASIC_SCHEME + " realm=\"" + REALM + "\"";
-    private static final HttpPrincipal PUBLIC_PRINCIPAL = new HttpPrincipal("anonymous", "public");
 
     private final String username;
     private final byte[] expectedCredentials;
@@ -62,10 +59,6 @@ public class PrometheusBasicAuthenticator extends Authenticator {
 
     @Override
     public Result authenticate(HttpExchange exchange) {
-        if (isPublicPath(exchange.getRequestURI().getPath())) {
-            return new Success(PUBLIC_PRINCIPAL);
-        }
-
 
         String authorization = exchange.getRequestHeaders().getFirst(AUTHORIZATION_HEADER);
         if (StringUtils.isBlank(authorization)) {
@@ -92,10 +85,6 @@ public class PrometheusBasicAuthenticator extends Authenticator {
             return new Failure(401);
         }
         return new Success(new HttpPrincipal(username, REALM));
-    }
-
-    private static boolean isPublicPath(String path) {
-        return "/".equals(path) || "/-/healthy".equals(path);
     }
 
     private static void addChallenge(HttpExchange exchange) {
