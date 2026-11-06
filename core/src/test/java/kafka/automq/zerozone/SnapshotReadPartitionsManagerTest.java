@@ -155,8 +155,10 @@ public class SnapshotReadPartitionsManagerTest {
         subscriber.onNewOperationBatch(operationBatch);
 
         subscriber.run();
-        verify(dataLoader, timeout(1000L).times(1)).replayWal();
+        verify(replicaManager, timeout(5000L).times(2))
+            .computeSnapshotReadPartition(any(), any());
         awaitEventLoopClear();
+        verify(dataLoader, times(1)).replayWal();
 
         assertEquals(2, subscriber.partitions.size());
         verify(partitions.get(new TopicPartition(topicName, 1)), times(1)).snapshot(any());
