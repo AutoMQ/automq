@@ -189,6 +189,8 @@ versions += [
   opentelemetrySDK: "1.50.0",
   opentelemetrySDKAlpha: "1.50.0-alpha",
   opentelemetryInstrument: "2.16.0-alpha",
+  // Preserve compatibility with JMX rules that omit units.
+  opentelemetryJmxInstrument: "2.6.0-alpha",
   awsSdk:"2.57.1",
   bucket4j:"8.10.1",
   jna:"5.2.0",
@@ -333,7 +335,7 @@ libs += [
   opentelemetryExporterSenderJdk: "io.opentelemetry:opentelemetry-exporter-sender-jdk:$versions.opentelemetrySDK",
   opentelemetryExporterSenderGrpcManagedChannel: "io.opentelemetry:opentelemetry-exporter-sender-grpc-managed-channel:$versions.opentelemetrySDK",
   grpcNettyShaded: "io.grpc:grpc-netty-shaded:$versions.grpc",
-  opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryInstrument",
+  opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryJmxInstrument",
   bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",
   jna: "net.java.dev.jna:jna:$versions.jna",
   guava: "com.google.guava:guava:$versions.guava",

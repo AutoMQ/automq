@@ -253,7 +253,7 @@ public class AutoMQTelemetryManager {
             }
         }
 
-        jmxMetricInsight.startLocal(metricConfig);
+        jmxMetricInsight.start(metricConfig);
         // JmxMetricInsight doesn't implement Closeable, but we can create a wrapper
 
         LOGGER.info("JMX metrics registered with config paths: {}", jmxConfigPaths);
