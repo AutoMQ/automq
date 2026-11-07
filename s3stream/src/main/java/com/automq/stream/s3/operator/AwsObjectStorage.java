@@ -54,6 +54,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+import io.netty.handler.ssl.SslProvider;
+import org.apache.kafka.common.security.fips.FipsRuntime;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
@@ -583,8 +585,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
                                       Configuration configuration) {
+        FipsRuntime.initialize();
         String endpoint = uri.endpoint();
         String region = uri.region();
+        if (FipsRuntime.enabled() && !"netty".equals(configuration.sdkImplementation())) {
+            throw new IllegalArgumentException("FIPS mode requires the Netty JDK S3 HTTP implementation");
+        }
         boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
         int maxConcurrency = getMaxObjectStorageConcurrency();
         if ("crt".equals(configuration.sdkImplementation())) {
@@ -614,9 +620,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             if (!OpenSsl.isAvailable()) {
                 logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
             }
-            builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
+            NettyNioAsyncHttpClient.Builder httpBuilder = NettyNioAsyncHttpClient.builder()
                 .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
-                .connectionTimeout(configuration.connectionTimeout()));
+                .connectionTimeout(configuration.connectionTimeout());
+            if (FipsRuntime.enabled()) {
+                httpBuilder.sslProvider(SslProvider.JDK);
+            }
+            builder.httpClientBuilder(httpBuilder);
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
