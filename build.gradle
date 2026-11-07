@@ -1339,6 +1339,8 @@ project(':core') {
     from(project(':streams:examples').configurations.runtimeClasspath) { into("libs/") }
     from(project(':tools:tools-api').jar) { into("libs/") }
     from(project(':tools:tools-api').configurations.runtimeClasspath) { into("libs/") }
+    // macOS resource-fork entries are not JARs and must never be shipped as dependencies.
+    exclude { details -> details.file.name.startsWith('._') }
     duplicatesStrategy 'exclude'
   }
   
@@ -1370,6 +1372,7 @@ project(':core') {
       }
       from(subproject.configurations.runtimeClasspath) { into('libs/') }
     }
+    exclude { details -> details.file.name.startsWith('._') }
     duplicatesStrategy 'exclude'
   }
   // AutoMQ inject end

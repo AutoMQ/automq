@@ -54,6 +54,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+import io.netty.handler.ssl.SslProvider;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
@@ -531,9 +532,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         if (!OpenSsl.isAvailable()) {
             logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
         }
-        SdkAsyncHttpClient httpClient = NettyNioAsyncHttpClient.builder()
-            .maxConcurrency(maxConcurrency)
-            .build();
+        NettyNioAsyncHttpClient.Builder httpClientBuilder = NettyNioAsyncHttpClient.builder()
+            .maxConcurrency(maxConcurrency);
+        // AutoMQ inject start: BoringSSL native transport is outside the FIPS provider boundary.
+        if ("enabled".equalsIgnoreCase(System.getProperty("automq.fips.mode", "disabled"))) {
+            // Do not allow the native BoringSSL path in FIPS mode. JDK SSL uses the
+            // provider initialized by FipsRuntime before the broker creates storage clients.
+            httpClientBuilder.sslProvider(SslProvider.JDK);
+        }
+        // AutoMQ inject end
+        SdkAsyncHttpClient httpClient = httpClientBuilder.build();
         builder.httpClient(httpClient);
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle).checksumValidationEnabled(false));
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
