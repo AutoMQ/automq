@@ -154,7 +154,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
             checksumAlgorithm = fipsModeEnabled()
-                ? ChecksumAlgorithm.SHA256 : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+                ? ChecksumAlgorithm.CRC32_C : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
         this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
 
@@ -202,7 +202,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     private static ChecksumAlgorithm fipsChecksumOr(ChecksumAlgorithm checksumAlgorithm) {
         return fipsModeEnabled() && checksumAlgorithm == ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION
-            ? ChecksumAlgorithm.SHA256 : checksumAlgorithm;
+            ? ChecksumAlgorithm.CRC32_C : checksumAlgorithm;
     }
 
     private static boolean fipsModeEnabled() {
@@ -396,10 +396,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 .build()
         ).toArray(ObjectIdentifier[]::new);
 
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+        DeleteObjectsRequest.Builder deleteBuilder = DeleteObjectsRequest.builder()
             .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+            .delete(Delete.builder().objects(toDeleteKeys).build());
+        if (fipsModeEnabled()) {
+            deleteBuilder.checksumAlgorithm(checksumAlgorithm);
+        }
+        DeleteObjectsRequest request = deleteBuilder.build();
 
         return retryOnThrottle(() -> {
             CompletableFuture<Void> cf = new CompletableFuture<>();
@@ -638,10 +641,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.httpClientBuilder(httpBuilder);
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
-        // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
+        // Preserve precomputed upload checksums and use the legacy MD5 plugin only outside FIPS mode.
         builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
-            .addPlugin(LegacyMd5Plugin.create());
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
+        if (!fipsModeEnabled()) {
+            builder.addPlugin(LegacyMd5Plugin.create());
+        }
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();

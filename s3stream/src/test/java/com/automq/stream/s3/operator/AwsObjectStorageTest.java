@@ -688,7 +688,7 @@ public class AwsObjectStorageTest {
     }
 
     @Test
-    void testFipsModeUsesSha256InsteadOfContentMd5() throws Exception {
+    void testFipsModeUsesCrc32cInsteadOfContentMd5() throws Exception {
         System.setProperty("automq.fips.mode", "enabled");
         try {
             S3AsyncClient s3 = mock(S3AsyncClient.class);
@@ -703,10 +703,28 @@ public class AwsObjectStorageTest {
             try {
                 storage.doWrite(ObjectStorage.WriteOptions.DEFAULT, "test-key", data).get();
                 Assertions.assertNull(requests.get(0).contentMD5());
-                Assertions.assertEquals(sha256Base64(data), requests.get(0).checksumSHA256());
+                Assertions.assertEquals(crc32cBase64(data), requests.get(0).checksumCRC32C());
             } finally {
                 data.release();
             }
+        } finally {
+            System.clearProperty("automq.fips.mode");
+        }
+    }
+
+    @Test
+    void testFipsModeUsesCrc32cForDeleteObjects() throws Exception {
+        System.setProperty("automq.fips.mode", "enabled");
+        try {
+            S3AsyncClient s3 = mock(S3AsyncClient.class);
+            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+            when(s3.deleteObjects(any(DeleteObjectsRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(DeleteObjectsResponse.builder().build()));
+            storage.doDeleteObjects(List.of("test-key")).get();
+            org.mockito.ArgumentCaptor<DeleteObjectsRequest> captor =
+                org.mockito.ArgumentCaptor.forClass(DeleteObjectsRequest.class);
+            verify(s3).deleteObjects(captor.capture());
+            Assertions.assertEquals(ChecksumAlgorithm.CRC32_C, captor.getValue().checksumAlgorithm());
         } finally {
             System.clearProperty("automq.fips.mode");
         }
@@ -764,14 +782,6 @@ public class AwsObjectStorageTest {
             md5.update(buffer.duplicate());
         }
         return Base64.getEncoder().encodeToString(md5.digest());
-    }
-
-    private static String sha256Base64(ByteBuf data) throws Exception {
-        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
-        for (ByteBuffer buffer : data.nioBuffers()) {
-            sha256.update(buffer.duplicate());
-        }
-        return Base64.getEncoder().encodeToString(sha256.digest());
     }
 
     private static S3Object object(String key) {
