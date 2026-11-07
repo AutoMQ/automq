@@ -141,9 +141,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
-            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+            checksumAlgorithm = fipsModeEnabled()
+                ? ChecksumAlgorithm.CRC32_C : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
 
         long apiCallTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"));
         long apiCallAttemptTimeoutMs = Long.parseLong(bucketURI.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"));
@@ -165,7 +166,16 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
         this.tagging = null;
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
+    }
+
+    private static ChecksumAlgorithm fipsChecksumOr(ChecksumAlgorithm checksumAlgorithm) {
+        return fipsModeEnabled() && checksumAlgorithm == ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION
+            ? ChecksumAlgorithm.CRC32_C : checksumAlgorithm;
+    }
+
+    private static boolean fipsModeEnabled() {
+        return "enabled".equalsIgnoreCase(System.getProperty("automq.fips.mode", "disabled"));
     }
 
     public static Builder builder() {
@@ -355,10 +365,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 .build()
         ).toArray(ObjectIdentifier[]::new);
 
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+        DeleteObjectsRequest.Builder deleteBuilder = DeleteObjectsRequest.builder()
             .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+            .delete(Delete.builder().objects(toDeleteKeys).build());
+        if (fipsModeEnabled()) {
+            deleteBuilder.checksumAlgorithm(checksumAlgorithm);
+        }
+        DeleteObjectsRequest request = deleteBuilder.build();
 
         return retryOnThrottle(() -> {
             CompletableFuture<Void> cf = new CompletableFuture<>();

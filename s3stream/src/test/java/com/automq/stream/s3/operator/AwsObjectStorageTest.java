@@ -137,6 +137,30 @@ public class AwsObjectStorageTest {
         }
     }
 
+    @Test
+    void testFipsModeUsesCrc32cInsteadOfContentMd5() throws Exception {
+        System.setProperty("automq.fips.mode", "enabled");
+        try {
+            S3AsyncClient s3 = mock(S3AsyncClient.class);
+            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+            ByteBuf data = Unpooled.wrappedBuffer("fips checksum".getBytes(StandardCharsets.UTF_8));
+            List<PutObjectRequest> requests = new ArrayList<>();
+            when(s3.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
+                requests.add(invocation.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            });
+            try {
+                storage.doWrite(ObjectStorage.WriteOptions.DEFAULT, "test-key", data).get();
+                Assertions.assertNull(requests.get(0).contentMD5());
+                Assertions.assertEquals(crc32cBase64(data), requests.get(0).checksumCRC32C());
+            } finally {
+                data.release();
+            }
+        } finally {
+            System.clearProperty("automq.fips.mode");
+        }
+    }
+
     /**
      * Given a source in another data bucket, when Archive renames it into the first bucket, then CopyObject carries
      * both bucket identities and both keys without transferring payload through the Broker.
