@@ -688,6 +688,31 @@ public class AwsObjectStorageTest {
     }
 
     @Test
+    void testFipsModeUsesSha256InsteadOfContentMd5() throws Exception {
+        System.setProperty("automq.fips.mode", "enabled");
+        try {
+            S3AsyncClient s3 = mock(S3AsyncClient.class);
+            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+            ByteBuf data = Unpooled.wrappedBuffer("fips checksum".getBytes(StandardCharsets.UTF_8));
+            List<PutObjectRequest> requests = new ArrayList<>();
+            when(s3.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
+                requests.add(invocation.getArgument(0));
+                return CompletableFuture.completedFuture(null);
+            });
+
+            try {
+                storage.doWrite(ObjectStorage.WriteOptions.DEFAULT, "test-key", data).get();
+                Assertions.assertNull(requests.get(0).contentMD5());
+                Assertions.assertEquals(sha256Base64(data), requests.get(0).checksumSHA256());
+            } finally {
+                data.release();
+            }
+        } finally {
+            System.clearProperty("automq.fips.mode");
+        }
+    }
+
+    @Test
     void testCredentialsProviderChain() {
         AwsObjectStorage storage = mock(AwsObjectStorage.class);
         doCallRealMethod().when(storage).credentialsProviders0(any());
@@ -739,6 +764,14 @@ public class AwsObjectStorageTest {
             md5.update(buffer.duplicate());
         }
         return Base64.getEncoder().encodeToString(md5.digest());
+    }
+
+    private static String sha256Base64(ByteBuf data) throws Exception {
+        MessageDigest sha256 = MessageDigest.getInstance("SHA-256");
+        for (ByteBuffer buffer : data.nioBuffers()) {
+            sha256.update(buffer.duplicate());
+        }
+        return Base64.getEncoder().encodeToString(sha256.digest());
     }
 
     private static S3Object object(String key) {

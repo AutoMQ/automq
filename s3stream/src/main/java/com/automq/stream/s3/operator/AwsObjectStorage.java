@@ -55,7 +55,6 @@ import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SslProvider;
-import org.apache.kafka.common.security.fips.FipsRuntime;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
@@ -154,9 +153,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
-            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+            checksumAlgorithm = fipsModeEnabled()
+                ? ChecksumAlgorithm.SHA256 : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
 
         Configuration configuration = Configuration.fromBucketURI(bucketURI);
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
@@ -196,8 +196,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.controlS3Client = controlS3Client;
         this.controlClientSupplier = () -> controlS3Client;
         this.tagging = null;
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
         this.usesCrt = false;
+    }
+
+    private static ChecksumAlgorithm fipsChecksumOr(ChecksumAlgorithm checksumAlgorithm) {
+        return fipsModeEnabled() && checksumAlgorithm == ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION
+            ? ChecksumAlgorithm.SHA256 : checksumAlgorithm;
+    }
+
+    private static boolean fipsModeEnabled() {
+        return "enabled".equalsIgnoreCase(System.getProperty("automq.fips.mode", "disabled"));
     }
 
     public static Builder builder() {
@@ -585,10 +594,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
                                       Configuration configuration) {
-        FipsRuntime.initialize();
+        initializeFipsRuntime();
         String endpoint = uri.endpoint();
         String region = uri.region();
-        if (FipsRuntime.enabled() && !"netty".equals(configuration.sdkImplementation())) {
+        if (fipsModeEnabled() && !"netty".equals(configuration.sdkImplementation())) {
             throw new IllegalArgumentException("FIPS mode requires the Netty JDK S3 HTTP implementation");
         }
         boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
@@ -623,7 +632,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             NettyNioAsyncHttpClient.Builder httpBuilder = NettyNioAsyncHttpClient.builder()
                 .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
                 .connectionTimeout(configuration.connectionTimeout());
-            if (FipsRuntime.enabled()) {
+            if (fipsModeEnabled()) {
                 httpBuilder.sslProvider(SslProvider.JDK);
             }
             builder.httpClientBuilder(httpBuilder);
@@ -636,6 +645,18 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
+    }
+
+    private static void initializeFipsRuntime() {
+        if (!fipsModeEnabled()) {
+            return;
+        }
+        try {
+            Class<?> runtime = Class.forName("org.apache.kafka.common.security.fips.FipsRuntime");
+            runtime.getMethod("initialize").invoke(null);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to initialize AutoMQ FIPS runtime", e);
+        }
     }
 
     protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {
