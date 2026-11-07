@@ -1,0 +1,246 @@
+name: DevKit CI
+
+on:
+  pull_request:
+    paths:
+      - 'devkit/**'
+  workflow_dispatch:
+    inputs:
+      level:
+        description: 'Test level'
+        type: choice
+        options: [lint, smoke, full]
+        default: smoke
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  AUTOMQ_DEV_HOME: ${{ github.workspace }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install envsubst
+        run: sudo apt-get install -y gettext-base
+
+      - name: Validate justfile
+        working-directory: devkit
+        run: just --list
+
+      - name: Validate docker-compose
+        working-directory: devkit
+        run: |
+          for p in single cluster cluster4 cluster5 tabletopic analytics; do
+            echo "=== Profile: $p ==="
+            docker compose -f docker-compose.yml --profile $p config --services
+          done
+
+      - name: Validate config generation
+        working-directory: devkit
+        run: |
+          # Generate cluster-id without kafka-storage.sh
+          mkdir -p .devkit
+          echo "test-cluster-id" > .devkit/cluster-id
+
+          # Single node, no features
+          just generate-config 1 ""
+          grep -q "node.id=0" .devkit/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093" .devkit/config/node-0.properties
+          ! grep -q "broker.rack" .devkit/config/node-0.properties
+          echo "✓ Single node config OK"
+
+          # 3-node cluster with zerozone
+          just generate-config 3 "zerozone"
+          grep -q "broker.rack=az-0" .devkit/config/node-0.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-1.properties
+          grep -q "broker.rack=az-2" .devkit/config/node-2.properties
+          grep -q "zonerouter" .devkit/config/node-0.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devkit/config/node-0.properties
+          echo "✓ Cluster + zerozone config OK"
+
+          # Tabletopic feature
+          just generate-config 1 "tabletopic"
+          grep -q "automq.table.topic.catalog.type=rest" .devkit/config/node-0.properties
+          echo "✓ Tabletopic config OK"
+
+          # Combined features
+          just generate-config 1 "tabletopic zerozone"
+          grep -q "automq.table.topic" .devkit/config/node-0.properties
+          grep -q "zonerouter" .devkit/config/node-0.properties
+          grep -q "broker.rack" .devkit/config/node-0.properties
+          echo "✓ Combined features config OK"
+
+  smoke:
+    name: Smoke
+    needs: lint
+    if: ${{ github.event_name == 'pull_request' || inputs.level == 'smoke' || inputs.level == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: extractions/setup-just@v2
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Gradle build
+        run: ./gradlew :core:build :tools:build :shell:build -x test
+
+      - name: Start single node
+        working-directory: devkit
+        run: just start
+
+      - name: Wait for healthy
+        working-directory: devkit
+        run: just wait
+
+      - name: Topic operations
+        working-directory: devkit
+        run: |
+          just topic-create ci-test
+          just topic-list 2>&1 | grep ci-test
+          just topic-describe ci-test 2>&1 | grep "PartitionCount: 1"
+          echo "✓ Topic operations OK"
+
+      - name: Produce and consume
+        working-directory: devkit
+        run: |
+          echo -e "ci-msg-1\nci-msg-2" | just produce ci-test
+          just consume ci-test --from-beginning --max-messages 2 --timeout-ms 15000 2>&1 | grep ci-msg-1
+          echo "✓ Produce/consume OK"
+
+      - name: Consumer group operations
+        working-directory: devkit
+        run: |
+          just group-list 2>&1 | grep -q "."
+          just group-describe ci-consumer 2>&1 || true   # group may not exist yet, just verify command works
+          just broker-list 2>&1 | grep -q "node-0"
+          just broker-config 0 2>&1 | grep -q "advertised.listeners"
+          echo "✓ Consumer group and cluster operations OK"
+
+      - name: Bin passthrough
+        working-directory: devkit
+        run: |
+          just bin kafka-broker-api-versions.sh --bootstrap-server localhost:9092 2>&1 | grep -q "ApiVersion"
+          echo "✓ Bin passthrough OK"
+
+      - name: JMX operations
+        working-directory: devkit
+        run: |
+          just jmx -e domains 2>&1 | grep -q "kafka.server"
+          just jmx -e 'get -b kafka.server:name=BrokerState,type=KafkaServer Value' 2>&1 | grep -q "Value = 3"
+          echo "✓ JMX operations OK"
+
+      - name: Stop
+        if: always()
+        working-directory: devkit
+        run: just stop
+
+  full:
+    name: Full
+    needs: lint
+    if: ${{ github.event_name == 'pull_request' || inputs.level == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: extractions/setup-just@v2
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Gradle build
+        run: ./gradlew :core:build :tools:build :shell:build -x test
+
+      - name: Test tabletopic
+        working-directory: devkit
+        run: |
+          just start 1 tabletopic
+          just wait
+          curl -sf http://localhost:8181/v1/config > /dev/null
+          echo "✓ Iceberg REST OK"
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081/ > /dev/null && echo "✓ Schema Registry OK" && break
+            sleep 5
+          done
+          grep -q "automq.table.topic" .devkit/config/node-0.properties
+          echo "✓ Tabletopic config merged"
+          just stop
+
+      - name: Test 4-node cluster (3 controller + 1 broker)
+        working-directory: devkit
+        run: |
+          just start 4
+          just wait
+          grep -q "process.roles=broker,controller" .devkit/config/node-0.properties
+          grep -q "process.roles=broker,controller" .devkit/config/node-1.properties
+          grep -q "process.roles=broker,controller" .devkit/config/node-2.properties
+          grep -q "^process.roles=broker$" .devkit/config/node-3.properties
+          grep -q "controller.quorum.voters=0@node-0:9093,1@node-1:9093,2@node-2:9093" .devkit/config/node-0.properties
+          echo "✓ Role configs correct"
+          just topic-create mixed-ci-test
+          just topic-describe mixed-ci-test 2>&1 | grep -E "Leader: [0123]"
+          echo "✓ Mixed cluster (3 controller + 1 broker) OK"
+          just perf-produce mixed-ci-test --num-records 100 --record-size 512 --throughput -1 2>&1 | grep -q "records sent"
+          echo "✓ Perf produce OK"
+          just arthas-exec 0 version 2>&1 | grep -q "arthas"
+          echo "✓ Arthas OK"
+          just chaos-delay 100 node-0
+          just chaos-status 2>&1 | grep -q "node-0"
+          just chaos-reset
+          just chaos-status 2>&1 | grep -q "minio"
+          echo "✓ Chaos OK"
+          just stop
+
+      - name: Test zerozone config
+        working-directory: devkit
+        run: |
+          just start 5 zerozone
+          grep -q "broker.rack=az-0" .devkit/config/node-0.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-1.properties
+          grep -q "broker.rack=az-2" .devkit/config/node-2.properties
+          grep -q "broker.rack=az-0" .devkit/config/node-3.properties
+          grep -q "broker.rack=az-1" .devkit/config/node-4.properties
+          echo "✓ ZeroZone broker.rack round-robin OK"
+          just stop
+
+      - name: Cleanup
+        if: always()
+        working-directory: devkit
+        run: just clean

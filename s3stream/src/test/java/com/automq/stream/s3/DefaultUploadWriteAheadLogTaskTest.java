@@ -1,0 +1,241 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.automq.stream.s3;
+
+import com.automq.stream.s3.metadata.S3ObjectMetadata;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
+import com.automq.stream.s3.objects.CommitStreamSetObjectResponse;
+import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.objects.StreamObject;
+import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.utils.CloseableIterator;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
+
+import static com.automq.stream.s3.TestUtils.random;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@Tag("S3Unit")
+public class DefaultUploadWriteAheadLogTaskTest {
+    private static final short DATA_BUCKET_ID = 3;
+
+    ObjectManager objectManager;
+    ObjectStorage objectStorage;
+    DefaultUploadWriteAheadLogTask deltaWALUploadTask;
+
+    @BeforeEach
+    public void setup() {
+        objectManager = mock(ObjectManager.class);
+        objectStorage = new MemoryObjectStorage(DATA_BUCKET_ID);
+    }
+
+    /**
+     * Summing payloads preserves values beyond both the signed and unsigned int range.
+     */
+    @Test
+    public void testStreamSizeUsesLongArithmetic() {
+        StreamRecordBatch large = mock(StreamRecordBatch.class);
+        StreamRecordBatch small = mock(StreamRecordBatch.class);
+        when(large.size()).thenReturn((int) Constants.MAX_UPLOAD_STREAM_SIZE);
+        when(small.size()).thenReturn(1);
+        assertEquals(4 * Constants.MAX_UPLOAD_STREAM_SIZE + 1,
+            DefaultUploadWriteAheadLogTask.streamSize(List.of(large, large, large, large, small)));
+    }
+
+    @Test
+    public void testUpload() throws Exception {
+        AtomicLong objectIdAlloc = new AtomicLong(10);
+        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+
+        Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
+        map.put(233L, List.of(
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512), DefaultByteBufSupplier.INSTANCE)
+        ));
+        map.put(234L, List.of(
+            StreamRecordBatch.of(234, 0, 20, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(234, 0, 22, 2, random(128), DefaultByteBufSupplier.INSTANCE)
+        ));
+
+        Config config = new Config()
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(1000);
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
+        assertEquals(2, deltaWALUploadTask.objectCount());
+        assertEquals(1, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(1, deltaWALUploadTask.getStreamSetObjectMap().size());
+
+        deltaWALUploadTask.prepare().get();
+        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.commit().get();
+
+        // Release all the buffers
+        map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
+
+        ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).prepareObject(2, TimeUnit.MINUTES.toMillis(60));
+        verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
+        // expect
+        // - stream233 split
+        // - stream234 write to one stream range
+        CommitStreamSetObjectRequest request = reqArg.getValue();
+        assertEquals(10, request.getObjectId());
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(request.getAttributes()).bucket());
+        assertEquals(1, request.getStreamRanges().size());
+        assertEquals(234, request.getStreamRanges().get(0).getStreamId());
+        assertEquals(20, request.getStreamRanges().get(0).getStartOffset());
+        assertEquals(24, request.getStreamRanges().get(0).getEndOffset());
+
+        assertEquals(1, request.getStreamObjects().size());
+        StreamObject streamObject = request.getStreamObjects().get(0);
+        assertEquals(DATA_BUCKET_ID, ObjectAttributes.from(streamObject.getAttributes()).bucket());
+        assertEquals(233, streamObject.getStreamId());
+        assertEquals(11, streamObject.getObjectId());
+        assertEquals(10, streamObject.getStartOffset());
+        assertEquals(16, streamObject.getEndOffset());
+
+        {
+            S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(request.getObjectId(), request.getAttributes());
+            s3ObjectMetadata.setObjectSize(request.getObjectSize());
+            ObjectReader objectReader = ObjectReader.reader(s3ObjectMetadata, objectStorage);
+            DataBlockIndex blockIndex = objectReader.find(234, 20, 24).get()
+                .streamDataBlocks().get(0).dataBlockIndex();
+            ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();
+            try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator()) {
+                StreamRecordBatch record = it.next();
+                assertEquals(20, record.getBaseOffset());
+                record = it.next();
+                assertEquals(24, record.getLastOffset());
+                record.release();
+            }
+        }
+
+        {
+            S3ObjectMetadata streamObjectMetadata = new S3ObjectMetadata(11, request.getStreamObjects().get(0).getAttributes());
+            streamObjectMetadata.setObjectSize(request.getStreamObjects().get(0).getObjectSize());
+            ObjectReader objectReader = ObjectReader.reader(streamObjectMetadata, objectStorage);
+            DataBlockIndex blockIndex = objectReader.find(233, 10, 16).get()
+                .streamDataBlocks().get(0).dataBlockIndex();
+            ObjectReader.DataBlockGroup dataBlockGroup = objectReader.read(blockIndex).get();
+            try (CloseableIterator<StreamRecordBatch> it = dataBlockGroup.iterator()) {
+                StreamRecordBatch r1 = it.next();
+                assertEquals(10, r1.getBaseOffset());
+                r1.release();
+                StreamRecordBatch r2 = it.next();
+                assertEquals(12, r2.getBaseOffset());
+                r2.release();
+                StreamRecordBatch r3 = it.next();
+                assertEquals(14, r3.getBaseOffset());
+                r3.release();
+            }
+        }
+    }
+
+    @Test
+    public void testUpload_oneStream() throws Exception {
+        AtomicLong objectIdAlloc = new AtomicLong(10);
+        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+
+        Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
+        map.put(233L, List.of(
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 12, 2, random(128), DefaultByteBufSupplier.INSTANCE),
+            StreamRecordBatch.of(233, 0, 14, 2, random(512), DefaultByteBufSupplier.INSTANCE)
+        ));
+        Config config = new Config()
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(16 * 1024 * 1024);
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
+        assertEquals(1, deltaWALUploadTask.objectCount());
+        assertEquals(1, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(0, deltaWALUploadTask.getStreamSetObjectMap().size());
+
+        deltaWALUploadTask.prepare().get();
+        deltaWALUploadTask.upload().get();
+        deltaWALUploadTask.commit().get();
+
+        // Release all the buffers
+        map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
+
+        ArgumentCaptor<CommitStreamSetObjectRequest> reqArg = ArgumentCaptor.forClass(CommitStreamSetObjectRequest.class);
+        verify(objectManager, times(1)).prepareObject(1, TimeUnit.MINUTES.toMillis(60));
+        verify(objectManager, times(1)).commitStreamSetObject(reqArg.capture());
+        CommitStreamSetObjectRequest request = reqArg.getValue();
+        assertEquals(0, request.getObjectSize());
+        assertEquals(0, request.getStreamRanges().size());
+        assertEquals(1, request.getStreamObjects().size());
+    }
+
+    @Test
+    public void test_emptyWALData() throws ExecutionException, InterruptedException, TimeoutException {
+        AtomicLong objectIdAlloc = new AtomicLong(10);
+        doAnswer(invocation -> CompletableFuture.completedFuture(objectIdAlloc.getAndIncrement())).when(objectManager).prepareObject(anyInt(), anyLong());
+        when(objectManager.commitStreamSetObject(any())).thenReturn(CompletableFuture.completedFuture(new CommitStreamSetObjectResponse()));
+
+        Map<Long, List<StreamRecordBatch>> map = new HashMap<>();
+        map.put(233L, List.of(
+            StreamRecordBatch.of(233, 0, 10, 2, random(512), DefaultByteBufSupplier.INSTANCE)
+        ));
+        map.put(234L, List.of(
+            StreamRecordBatch.of(234, 0, 20, 2, random(128), DefaultByteBufSupplier.INSTANCE)
+        ));
+
+        Config config = new Config()
+            .objectBlockSize(16 * 1024 * 1024)
+            .objectPartSize(16 * 1024 * 1024)
+            .streamSplitSize(64);
+        deltaWALUploadTask = DefaultUploadWriteAheadLogTask.builder().config(config).streamRecordsMap(map).objectManager(objectManager)
+            .objectStorage(objectStorage).executor(ForkJoinPool.commonPool()).build();
+        assertEquals(2, deltaWALUploadTask.objectCount());
+        assertEquals(2, deltaWALUploadTask.getStreamObjectMap().size());
+        assertEquals(0, deltaWALUploadTask.getStreamSetObjectMap().size());
+    }
+}

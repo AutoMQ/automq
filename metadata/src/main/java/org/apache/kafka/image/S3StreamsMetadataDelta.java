@@ -1,0 +1,387 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.kafka.image;
+
+import org.apache.kafka.common.Uuid;
+import org.apache.kafka.common.metadata.AssignedStreamIdRecord;
+import org.apache.kafka.common.metadata.NodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.NodeWALUncommittedOffsetsRecord;
+import org.apache.kafka.common.metadata.RangeRecord;
+import org.apache.kafka.common.metadata.RemoveNodeWALMetadataRecord;
+import org.apache.kafka.common.metadata.RemoveRangeRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamArchiveRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamObjectRecord;
+import org.apache.kafka.common.metadata.RemoveS3StreamRecord;
+import org.apache.kafka.common.metadata.RemoveStreamSetObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamArchiveRecord;
+import org.apache.kafka.common.metadata.S3StreamEndOffsetsRecord;
+import org.apache.kafka.common.metadata.S3StreamObjectRecord;
+import org.apache.kafka.common.metadata.S3StreamRecord;
+import org.apache.kafka.common.metadata.S3StreamSetObjectRecord;
+import org.apache.kafka.metadata.stream.NodeWALUncommittedOffset;
+import org.apache.kafka.metadata.stream.S3StreamArchiveMetadata;
+import org.apache.kafka.metadata.stream.S3StreamEndOffsetsCodec;
+import org.apache.kafka.metadata.stream.S3StreamSetObject;
+import org.apache.kafka.metadata.stream.StreamEndOffset;
+import org.apache.kafka.metadata.stream.StreamTags;
+import org.apache.kafka.timeline.TimelineHashMap;
+
+import com.automq.stream.s3.metadata.StreamOffsetRange;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+
+public final class S3StreamsMetadataDelta {
+
+    private final S3StreamsMetadataImage image;
+
+    private long currentAssignedStreamId;
+
+    private final Map<Long, S3StreamMetadataDelta> changedStreams = new HashMap<>();
+
+    private final Map<Integer, NodeS3WALMetadataDelta> changedNodes = new HashMap<>();
+    private final Map<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> changedUncommittedOffsets =
+        new HashMap<>();
+    private boolean snapshotReplay = false;
+
+    private final Set<Long> newStreams = new HashSet<>();
+    private final Set<Long> deletedStreams = new HashSet<>();
+    // TODO: when we recycle the node's memory data structure
+    // We don't use pair of specify NodeCreateRecord and NodeRemoveRecord to create or remove nodes, and
+    // we create NodeStreamMetadataImage when we create the first StreamSetObjectRecord for a node,
+    // so we should decide when to recycle the node's memory data structure
+    private final Set<Integer> deletedNodes = new HashSet<>();
+
+    private final Map<Long, Long> changedStreamEndOffsets = new HashMap<>();
+    private final Map<Long, S3StreamArchiveMetadata> changedStreamArchiveMetadata = new HashMap<>();
+    private final Set<Long> removedStreamArchiveMetadata = new HashSet<>();
+
+    public S3StreamsMetadataDelta(S3StreamsMetadataImage image) {
+        this.image = image;
+        this.currentAssignedStreamId = image.nextAssignedStreamId() - 1;
+    }
+
+    public void replay(AssignedStreamIdRecord record) {
+        this.currentAssignedStreamId = record.assignedStreamId();
+    }
+
+    public void replay(S3StreamRecord record) {
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        updateStreamEndOffset(record.streamId(), record.startOffset());
+        deletedStreams.remove(record.streamId());
+    }
+
+    public void replay(RemoveS3StreamRecord record) {
+        // add the streamId to the deletedStreams
+        deletedStreams.add(record.streamId());
+        changedStreams.remove(record.streamId());
+        newStreams.remove(record.streamId());
+    }
+
+    public void replay(NodeWALMetadataRecord record) {
+        getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
+        deletedNodes.remove(record.nodeId());
+    }
+
+    /**
+     * Replay a chunk of node WAL responsibility entry upserts and tombstones.
+     */
+    public void replay(NodeWALUncommittedOffsetsRecord record) {
+        for (NodeWALUncommittedOffsetsRecord.NodeWALUncommittedOffset entry : record.entries()) {
+            NodeWALUncommittedOffsetKey key = new NodeWALUncommittedOffsetKey(record.nodeId(), entry.streamId());
+            changedUncommittedOffsets.put(key, new NodeWALUncommittedOffset(
+                entry.streamId(), entry.startOffset(), entry.endOffset()));
+        }
+    }
+
+    public void replay(RemoveNodeWALMetadataRecord record) {
+        // add the nodeId to the deletedNodes
+        deletedNodes.add(record.nodeId());
+        changedNodes.remove(record.nodeId());
+    }
+
+    public void replay(RangeRecord record) {
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        updateStreamEndOffset(record.streamId(), record.endOffset());
+    }
+
+    public void replay(RemoveRangeRecord record) {
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+    }
+
+    public void replay(S3StreamObjectRecord record) {
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+        // https://github.com/AutoMQ/automq/issues/2333
+        // try to fix the old stream end offset
+        updateStreamEndOffset(record.streamId(), record.endOffset());
+    }
+
+    public void replay(RemoveS3StreamObjectRecord record) {
+        getOrCreateStreamMetadataDelta(record.streamId()).replay(record);
+    }
+
+    public void replay(S3StreamSetObjectRecord record) {
+        getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
+        if (record.ranges().length != 0) {
+            List<StreamOffsetRange> range = S3StreamSetObject.decode(record.ranges());
+            range.forEach(r -> updateStreamEndOffset(r.streamId(), r.endOffset()));
+        }
+    }
+
+    public void replay(RemoveStreamSetObjectRecord record) {
+        getOrCreateNodeStreamMetadataDelta(record.nodeId()).replay(record);
+    }
+
+    public void replay(S3StreamEndOffsetsRecord record) {
+        for (StreamEndOffset streamEndOffset : S3StreamEndOffsetsCodec.decode(record.endOffsets())) {
+            updateStreamEndOffset(streamEndOffset.streamId(), streamEndOffset.endOffset());
+        }
+    }
+
+    /**
+     * Replaces the complete durable Archive state for the record's Stream.
+     */
+    public void replay(S3StreamArchiveRecord record) {
+        changedStreamArchiveMetadata.put(record.streamId(), S3StreamArchiveMetadata.fromRecord(record));
+        removedStreamArchiveMetadata.remove(record.streamId());
+    }
+
+    /**
+     * Removes the durable Archive state for the record's Stream.
+     */
+    public void replay(RemoveS3StreamArchiveRecord record) {
+        changedStreamArchiveMetadata.remove(record.streamId());
+        removedStreamArchiveMetadata.add(record.streamId());
+    }
+
+    public Set<Long> changedStreams() {
+        Set<Long> set = new HashSet<>();
+        set.addAll(changedStreams.keySet());
+        set.addAll(changedStreamEndOffsets.keySet());
+        set.addAll(changedStreamArchiveMetadata.keySet());
+        set.addAll(removedStreamArchiveMetadata);
+        return set;
+    }
+
+    public void finishSnapshot() {
+        snapshotReplay = true;
+        for (S3StreamMetadataImage stream : image.streamMetadataList()) {
+            long streamId = stream.getStreamId();
+            S3StreamMetadataDelta delta = changedStreams.get(streamId);
+            if (delta == null) {
+                deletedStreams.add(streamId);
+            } else {
+                delta.finishSnapshot();
+            }
+        }
+        for (NodeS3StreamSetObjectMetadataImage node : image.nodeMetadataList()) {
+            NodeS3WALMetadataDelta delta = changedNodes.get(node.getNodeId());
+            if (delta == null) {
+                deletedNodes.add(node.getNodeId());
+            } else {
+                delta.finishSnapshot();
+            }
+        }
+        for (Long streamId : image.streamEndOffsets().keySet()) {
+            if (!changedStreamEndOffsets.containsKey(streamId)) {
+                // Null marks an end-offset deletion during snapshot finalization.
+                changedStreamEndOffsets.put(streamId, null);
+            }
+        }
+        for (Long streamId : image.archiveMetadataMap().keySet()) {
+            if (!changedStreamArchiveMetadata.containsKey(streamId)) {
+                removedStreamArchiveMetadata.add(streamId);
+            }
+        }
+    }
+
+    private void updateStreamEndOffset(long streamId, long newEndOffset) {
+        changedStreamEndOffsets.compute(streamId, (id, offset) -> {
+            if (offset == null) {
+                return newEndOffset;
+            }
+            return Math.max(offset, newEndOffset);
+        });
+    }
+
+    private S3StreamMetadataDelta getOrCreateStreamMetadataDelta(Long streamId) {
+        S3StreamMetadataDelta delta = changedStreams.get(streamId);
+        if (delta == null) {
+            delta = new S3StreamMetadataDelta(image.timelineStreamMetadata().getOrDefault(streamId, S3StreamMetadataImage.EMPTY));
+            changedStreams.put(streamId, delta);
+            if (!image.timelineStreamMetadata().containsKey(streamId)) {
+                newStreams.add(streamId);
+            }
+        }
+        return delta;
+    }
+
+    private NodeS3WALMetadataDelta getOrCreateNodeStreamMetadataDelta(Integer nodeId) {
+        NodeS3WALMetadataDelta delta = changedNodes.get(nodeId);
+        if (delta == null) {
+            delta = new NodeS3WALMetadataDelta(
+                image.timelineNodeMetadata().
+                    getOrDefault(nodeId, NodeS3StreamSetObjectMetadataImage.EMPTY));
+            changedNodes.put(nodeId, delta);
+        }
+        return delta;
+    }
+
+    S3StreamsMetadataImage apply() {
+
+        RegistryRef registry = image.registryRef();
+        TimelineHashMap<Long, Long> newStreamEndOffsets;
+        TimelineHashMap<Long, S3StreamMetadataImage> newStreamMetadataMap;
+        TimelineHashMap<Integer, NodeS3StreamSetObjectMetadataImage> newNodeMetadataMap;
+        TimelineHashMap<NodeWALUncommittedOffsetKey, NodeWALUncommittedOffset> newUncommittedOffsets;
+        TimelineHashMap<TopicIdPartition, Set<Long>> partition2streams;
+        TimelineHashMap<Long, TopicIdPartition> stream2partition;
+        TimelineHashMap<Long, S3StreamArchiveMetadata> newStreamArchiveMetadata;
+        if (registry == RegistryRef.NOOP) {
+            registry = new RegistryRef();
+            newStreamEndOffsets = new TimelineHashMap<>(registry.registry(), 100000);
+            newStreamMetadataMap = new TimelineHashMap<>(registry.registry(), 100000);
+            newNodeMetadataMap = new TimelineHashMap<>(registry.registry(), 100);
+            newUncommittedOffsets = new TimelineHashMap<>(registry.registry(), 100000);
+            partition2streams = new TimelineHashMap<>(registry.registry(), 100000);
+            stream2partition = new TimelineHashMap<>(registry.registry(), 100000);
+            newStreamArchiveMetadata = new TimelineHashMap<>(registry.registry(), 100000);
+        } else {
+            newStreamEndOffsets = image.timelineStreamEndOffsets();
+            newStreamMetadataMap = image.timelineStreamMetadata();
+            newNodeMetadataMap = image.timelineNodeMetadata();
+            newUncommittedOffsets = image.timelineUncommittedOffsets();
+            partition2streams = image.partition2streams();
+            stream2partition = image.stream2partition();
+            newStreamArchiveMetadata = image.timelineStreamArchiveMetadata();
+        }
+        registry.inLock(() -> {
+            // apply the delta changes of old streams since the last image
+            changedStreams.forEach((streamId, delta) -> newStreamMetadataMap.put(streamId, delta.apply()));
+            deletedStreams.forEach(newStreamMetadataMap::remove);
+
+            changedStreamEndOffsets.forEach((streamId, newEndOffset) -> newStreamEndOffsets.compute(streamId, (key, oldEndOffset) -> {
+                if (!newStreamMetadataMap.containsKey(streamId)) {
+                    return null;
+                }
+                if (newEndOffset == null) {
+                    // Returning null from compute removes the entry marked by finishSnapshot().
+                    return null;
+                }
+                if (oldEndOffset == null) {
+                    return newEndOffset;
+                }
+                // S3StreamSetObjectRecord maybe the SSO compaction record, we need ignore the offset.
+                return Math.max(oldEndOffset, newEndOffset);
+            }));
+            deletedStreams.forEach(newStreamEndOffsets::remove);
+
+            changedStreamArchiveMetadata.forEach(newStreamArchiveMetadata::put);
+            removedStreamArchiveMetadata.forEach(newStreamArchiveMetadata::remove);
+
+            // apply the delta changes of old nodes since the last image
+            this.changedNodes.forEach((nodeId, delta) -> newNodeMetadataMap.put(nodeId, delta.apply()));
+            // remove the deleted nodes
+            deletedNodes.forEach(newNodeMetadataMap::remove);
+
+            if (snapshotReplay) {
+                // The image writer intentionally snapshots raw WAL responsibility. Remove only entries absent from
+                // the complete snapshot; Controller commit cleanup and lazy activity checks handle inactive entries.
+                List<NodeWALUncommittedOffsetKey> absentSnapshotOffsets = new ArrayList<>();
+                newUncommittedOffsets.keySet().forEach(key -> {
+                    if (!changedUncommittedOffsets.containsKey(key)) {
+                        absentSnapshotOffsets.add(key);
+                    }
+                });
+                absentSnapshotOffsets.forEach(newUncommittedOffsets::remove);
+            }
+            changedUncommittedOffsets.forEach((key, offset) -> {
+                if (offset.startOffset() < offset.endOffset()) {
+                    newUncommittedOffsets.put(key, offset);
+                } else if (offset.startOffset() == offset.endOffset()) {
+                    newUncommittedOffsets.remove(key);
+                }
+            });
+            Map<TopicIdPartition, Set<Long>> newPartition2streams = new HashMap<>();
+            Function<TopicIdPartition, Set<Long>> getPartitionStreams = k -> {
+                Set<Long> s = partition2streams.get(k);
+                s = new HashSet<>(s == null ? Collections.emptySet() : s);
+                partition2streams.put(k, s);
+                return s;
+            };
+            for (Long streamId : deletedStreams) {
+                TopicIdPartition tp = stream2partition.get(streamId);
+                if (tp == null) {
+                    continue;
+                }
+                stream2partition.remove(streamId);
+                Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+                if (partitionStreams != null) {
+                    partitionStreams.remove(streamId);
+                }
+            }
+            for (Long streamId : newStreams) {
+                S3StreamRecord.Tag topicTag = newStreamMetadataMap.get(streamId).tags().find(StreamTags.Topic.KEY);
+                S3StreamRecord.Tag partitionTag = newStreamMetadataMap.get(streamId).tags().find(StreamTags.Partition.KEY);
+                if (topicTag == null || partitionTag == null) {
+                    continue;
+                }
+                try {
+                    Uuid topicId = StreamTags.Topic.decode(topicTag.value());
+                    int partition = StreamTags.Partition.decode(partitionTag.value());
+                    TopicIdPartition tp = new TopicIdPartition(topicId, partition);
+                    Set<Long> partitionStreams = newPartition2streams.computeIfAbsent(tp, getPartitionStreams);
+                    if (partitionStreams != null) {
+                        partitionStreams.add(streamId);
+                    }
+                    stream2partition.put(streamId, tp);
+                } catch (Throwable e) {
+                    // skip
+                }
+            }
+            // Remove empty mappings only after additions, since a delta can replace a partition's last stream.
+            newPartition2streams.forEach((tp, streams) -> {
+                if (streams.isEmpty()) {
+                    partition2streams.remove(tp);
+                }
+            });
+        });
+        registry = registry.next();
+        return new S3StreamsMetadataImage(currentAssignedStreamId, registry, newStreamMetadataMap, newNodeMetadataMap,
+            newUncommittedOffsets, partition2streams, stream2partition, newStreamEndOffsets,
+            newStreamArchiveMetadata);
+    }
+
+    @Override
+    public String toString() {
+        return "S3StreamsMetadataDelta{" +
+            "image=" + image +
+            ", currentAssignedStreamId=" + currentAssignedStreamId +
+            ", changedStreams=" + changedStreams +
+            ", changedNodes=" + changedNodes +
+            ", deletedStreams=" + deletedStreams +
+            ", deletedNodes=" + deletedNodes +
+            '}';
+    }
+}

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package test;
+
+option java_package = "protobuf";
+option java_outer_classname = "OrderProtos";
+
+// Order message represents a complete order
+message Order {
+  // Address represents a physical address
+  message Address {
+    string street = 1;
+    string city = 2;
+  }
+
+  // Customer represents the person placing the order
+  message Customer {
+    string name = 1;
+    Address shipping_address = 2;
+    Address billing_address = 3;
+  }
+
+  // Price represents monetary value with currency
+  message Price {
+    double amount = 1;
+    string currency = 2;
+  }
+
+  // Product represents an item that can be ordered
+  message Product {
+    string id = 1;
+    Price price = 2;
+  }
+
+  Customer customer = 1;
+  repeated Product items = 2;
+} 

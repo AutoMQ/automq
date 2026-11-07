@@ -1,0 +1,69 @@
+plugins {
+    id 'java'
+}
+
+project(':automq-shell') {
+    archivesBaseName = "automq-shell"
+}
+
+checkstyle {
+    configProperties = checkstyleConfigProperties("import-control-automq.xml")
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly libs.awsSdkAuth
+    implementation libs.reload4j
+    implementation libs.nettyBuffer
+    implementation project(':automq-metrics')
+    implementation project(':automq-log-uploader')
+    implementation libs.jacksonDatabind
+    implementation libs.jacksonYaml
+    implementation libs.commonLang
+    implementation libs.guava
+    implementation 'info.picocli:picocli:4.7.6'
+    implementation(project(':s3stream')) {
+        exclude(group: 'io.opentelemetry', module: '*')
+        exclude(group: 'io.opentelemetry.instrumentation', module: '*')
+        exclude(group: 'io.opentelemetry.proto', module: '*')
+        exclude(group: 'io.netty', module: 'netty-tcnative-boringssl-static')
+        exclude(group: 'com.github.jnr', module: '*')
+        exclude(group: 'org.aspectj', module: '*')
+        exclude(group: 'net.java.dev.jna', module: '*')
+        exclude(group: 'net.sourceforge.argparse4j', module: '*')
+        exclude(group: 'com.bucket4j', module: '*')
+        exclude(group: 'com.yammer.metrics', module: '*')
+        exclude(group: 'com.github.spotbugs', module: '*')
+        exclude(group: 'software.amazon.awssdk', module: '*')
+        exclude(group: 'org.apache.kafka.shaded', module: '*')
+    }
+    implementation(project(':clients')) {
+        exclude(group: 'io.opentelemetry.proto', module: '*')
+        exclude(group: 'com.github.luben', module: '*')
+        exclude(group: 'org.xerial.snappy', module: '*')
+        exclude(group: 'at.yawk.lz4', module: '*')
+        exclude(group: 'org.apache.kafka.shaded', module: '*')
+    }
+
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+}
+
+compileJava {
+    options.compilerArgs += ["-Aproject=${project.group}/${project.name}", "-Xlint:-processing"]
+}
+
+test {
+    useJUnitPlatform()
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.automq.shell.AutoMQCLI'
+    }
+}

@@ -1,0 +1,5 @@
+connect_test_suite:
+  included:
+    - ../kafkatest/tests/connect/connect_plugin_discovery_test.py
+    - ../kafkatest/tests/connect/connect_rest_test.py
+    - ../kafkatest/tests/connect/connect_test.py

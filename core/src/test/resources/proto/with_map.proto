@@ -1,0 +1,22 @@
+syntax = "proto3";
+package test;
+
+message MapMessage {
+  // Various map field examples
+  map<string, string> string_to_string = 1;
+  map<int32, string> int_to_string = 2;
+  map<string, int32> string_to_int = 3;
+  
+  // Map with complex value
+  message NestedValue {
+    string name = 1;
+    int32 value = 2;
+    bool active = 3;
+  }
+  
+  map<string, NestedValue> string_to_nested = 4;
+  
+  // Other standard fields
+  string id = 5;
+  repeated string tags = 6;
+}

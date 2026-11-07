@@ -1,0 +1,59 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package kafka.autobalancer.common.types;
+
+import kafka.autobalancer.common.Utils;
+
+import java.util.Map;
+
+public class Resource {
+    public static final Double IGNORED_VALUE = -1.0;
+    public static final byte NW_IN = (byte) 0;
+    public static final byte NW_OUT = (byte) 1;
+
+    public static final Map<Byte, String> HUMAN_READABLE_RESOURCE_NAMES = Map.of(
+            NW_IN, "NWIn",
+            NW_OUT, "NWOut"
+    );
+
+    public static String resourceString(byte type, double value) {
+        if (!HUMAN_READABLE_RESOURCE_NAMES.containsKey(type)) {
+            return "";
+        }
+        return HUMAN_READABLE_RESOURCE_NAMES.get(type) + "=" + valueString(type, value);
+    }
+
+    public static String valueString(byte type, double value) {
+        String valueStr = String.valueOf(value);
+        if (value == IGNORED_VALUE) {
+            valueStr = "ignored";
+        } else {
+            switch (type) {
+                case NW_IN:
+                case NW_OUT:
+                    valueStr = Utils.formatDataSize((long) value) + "/s";
+                    break;
+                default:
+                    break;
+            }
+        }
+        return valueStr;
+    }
+}

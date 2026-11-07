@@ -1,0 +1,74 @@
+syntax = "proto3";
+package test;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Request message
+message GetUserRequest {
+  string user_id = 1;
+}
+
+// Response message
+message User {
+  string id = 1;
+  string name = 2;
+  string email = 3;
+  google.protobuf.Timestamp created_at = 4;
+  bool is_active = 5;
+}
+
+// List request
+message ListUsersRequest {
+  int32 limit = 1;
+  int32 offset = 2;
+  string filter = 3;
+}
+
+// List response
+message ListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+  int32 next_offset = 3;
+}
+
+// Create request
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+}
+
+// Update request
+message UpdateUserRequest {
+  string user_id = 1;
+  string name = 2;
+  string email = 3;
+  bool is_active = 4;
+}
+
+// Service definition
+service UserService {
+  // Get a user by ID
+  rpc GetUser(GetUserRequest) returns (User);
+  
+  // List users with pagination
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  
+  // Create a new user
+  rpc CreateUser(CreateUserRequest) returns (User);
+  
+  // Update an existing user
+  rpc UpdateUser(UpdateUserRequest) returns (User);
+  
+  // Delete a user
+  rpc DeleteUser(GetUserRequest) returns (google.protobuf.Empty);
+  
+  // Stream updated users
+  rpc StreamUserUpdates(google.protobuf.Empty) returns (stream User);
+  
+  // Process user uploads
+  rpc UploadUserData(stream CreateUserRequest) returns (ListUsersResponse);
+  
+  // Bidirectional streaming
+  rpc ProcessUserBatch(stream UpdateUserRequest) returns (stream User);
+}

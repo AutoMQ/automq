@@ -1,0 +1,356 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+ext {
+  versions = [:]
+  libs = [:]
+  extLibs = [:]
+  branchVersions = [:]
+
+  // Available if -PscalaVersion is used. This is useful when we want to support a Scala version that has
+  // a higher minimum Java requirement than Kafka. This was previously the case for Scala 2.12 and Java 7.
+  availableScalaVersions = [ '2.12', '2.13' ]
+}
+
+// Add Scala version
+def defaultScala212Version = '2.12.19'
+def defaultScala213Version = '2.13.15'
+if (hasProperty('scalaVersion')) {
+  if (scalaVersion == '2.12') {
+    versions["scala"] = defaultScala212Version
+  } else if (scalaVersion == '2.13') {
+    versions["scala"] = defaultScala213Version
+  }  else {
+    versions["scala"] = scalaVersion
+  }
+} else {
+  versions["scala"] = defaultScala212Version
+}
+
+/* Resolve base Scala version according to these patterns:
+ 1. generally available Scala versions (such as: 2.12.y and 2.13.z) corresponding base versions will be: 2.12 and 2.13 (respectively)
+ 2. pre-release Scala versions (i.e. milestone/rc, such as: 2.13.0-M5, 2.13.0-RC1, 2.14.0-M1, etc.) will have identical base versions;
+    rationale: pre-release Scala versions are not binary compatible with each other and that's the reason why libraries include the full
+    Scala release string in their name for pre-releases (see dependencies below with an artifact name suffix '_$versions.baseScala')
+*/
+if ( !versions.scala.contains('-') ) {
+  versions["baseScala"] = versions.scala.substring(0, versions.scala.lastIndexOf("."))
+} else {
+  versions["baseScala"] = versions.scala
+}
+
+// mockito >= 5.5 is required for Java 21 and mockito 5.x requires at least Java 11
+// mockito 4.9 is required for Scala 2.12 as a workaround for compiler errors due to ambiguous reference to `Mockito.spy`
+// since Scala 2.12 support is going away soon, this is simpler than adjusting the code.
+// mockito 4.11 is used with Java 8 and Scala 2.13
+String mockitoVersion
+if (scalaVersion == "2.12")
+  mockitoVersion = "4.9.0"
+else if (JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_11))
+  mockitoVersion = "5.20.0"
+else
+  mockitoVersion = "4.11.0"
+
+// mockito 4.x has two mocking strategies: subclass (mockito-core) and inline (mockito-inline).
+// mockito 5.x has two mocking strategies: inline (mockito-core) and subclass (mockito-subclass).
+// The default strategy (i.e. what `mockito-core` uses) changed to `inline` in 5.x because it works better with newer
+// Java versions.
+// We always use the `inline` strategy.
+String mockitoArtifactName
+if (mockitoVersion.startsWith("4."))
+  mockitoArtifactName = "mockito-inline"
+else
+  mockitoArtifactName = "mockito-core"
+
+// When adding, removing or updating dependencies, please also update the LICENSE-binary file accordingly.
+// See https://issues.apache.org/jira/browse/KAFKA-12622 for steps to verify the LICENSE-binary file is correct.
+versions += [
+  activation: "1.1.1",
+  apacheda: "1.0.2",
+  apacheds: "2.0.0-M24",
+  argparse4j: "0.7.0",
+  bcpkix: "1.75",
+  bcprov: "1.84",
+  caffeine: "2.9.3", // 3.x supports JDK 11 and above
+  // when updating checkstyle, check whether the exclusion of
+  // CVE-2023-2976 and CVE-2020-8908 can be dropped from
+  // gradle/resources/dependencycheck-suppressions.xml
+  checkstyle: "8.36.2",
+  commonsCli: "1.4",
+  commonsIo: "2.14.0", // ZooKeeper dependency. Do not use, this is going away.
+  commonsLang: "3.18.0",
+  commonsValidator: "1.10.1",
+  dropwizardMetrics: "4.1.12.1",
+  gradle: "8.10.2",
+  grgit: "4.1.1",
+  httpclient: "4.5.14",
+  // AutoMQ inject start
+  jackson: "2.21.8",
+  // jackson-annotations uses the minor version, as specified by the Jackson BOM.
+  jacksonAnnotationsVersion: "2.21",
+  // AutoMQ inject end
+  jacoco: "0.8.10",
+  javassist: "3.29.2-GA",
+  jetty: "9.4.58.v20250814",
+  jersey: "2.47",
+  jline: "3.30.14",
+  jmh: "1.37",
+  hamcrest: "2.2",
+  scalaLogging: "3.9.5",
+  jaxAnnotation: "1.3.2",
+  jaxb: "2.3.1",
+  jaxbRI: "2.3.1", // JAXB Reference Implementation version matching jaxb-api 2.3.1
+  jaxrs: "2.1.1",
+  jfreechart: "1.0.0",
+  jopt: "5.0.4",
+  jose4j: "0.9.6",
+  junit: "5.10.2",
+  jqwik: "1.8.3",
+  kafka_0100: "0.10.0.1",
+  kafka_0101: "0.10.1.1",
+  kafka_0102: "0.10.2.2",
+  kafka_0110: "0.11.0.3",
+  kafka_10: "1.0.2",
+  kafka_11: "1.1.1",
+  kafka_20: "2.0.1",
+  kafka_21: "2.1.1",
+  kafka_22: "2.2.2",
+  kafka_23: "2.3.1",
+  kafka_24: "2.4.1",
+  kafka_25: "2.5.1",
+  kafka_26: "2.6.3",
+  kafka_27: "2.7.2",
+  kafka_28: "2.8.2",
+  kafka_30: "3.0.2",
+  kafka_31: "3.1.2",
+  kafka_32: "3.2.3",
+  kafka_33: "3.3.2",
+  kafka_34: "3.4.1",
+  kafka_35: "3.5.2",
+  kafka_36: "3.6.2",
+  kafka_37: "3.7.2",
+  kafka_38: "3.8.1",
+  // When updating lz4 make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
+  // https://github.com/apache/kafka/blob/trunk/clients/src/main/java/org/apache/kafka/common/record/CompressionType.java#L73-L74
+  // https://github.com/yawkat/lz4-java/blob/main/src/java/net/jpountz/lz4/LZ4Constants.java#L23-L24
+  lz4: "1.10.1",
+  mavenArtifact: "3.9.6",
+  plexusUtils: "3.6.1",
+  metrics: "2.2.0",
+  netty: "4.1.137.Final",
+  opentelemetryProto: "1.0.0-alpha",
+  // AutoMQ inject start
+  protobuf: "4.32.1",
+  protoGoogleCommonProtos: "2.40.0",
+  // AutoMQ inject end
+  pcollections: "4.0.1",
+  reflections: "0.10.2",
+  reload4j: "1.2.25",
+  rocksDB: "7.9.2",
+  scalaCollectionCompat: "2.10.0",
+  // When updating the scalafmt version please also update the version field in checkstyle/.scalafmt.conf. scalafmt now
+  // has the version field as mandatory in its configuration, see
+  // https://github.com/scalameta/scalafmt/releases/tag/v3.1.0.
+  scalafmt: "3.7.14",
+  scalaJava8Compat : "1.0.2",
+  scoverage: "2.0.11",
+  slf4j: "1.7.36",
+  jclOverSlf4j: "1.7.36",
+  // AutoMQ inject start
+  snakeyaml: "2.5",
+  // AutoMQ inject end
+  snappy: "1.1.10.5",
+  spotbugs: "4.8.6",
+  zinc: "1.9.2",
+  zookeeper: "3.8.6",
+
+  // AutoMQ inject start
+  commonLang: "3.18.0",
+  parquet: "1.15.2",
+  parquetJackson: "1.18.0",
+  thrift: "0.23.0",
+  ant: "1.10.15",
+  aircompressor: "2.0.3",
+  httpcore5: "5.4.3",
+  beanutils: "1.11.0",
+  commonio: "2.15.1",
+  commonMath3: "3.6.1",
+  opentelemetrySDK: "1.40.0",
+  opentelemetrySDKAlpha: "1.40.0-alpha",
+  opentelemetryInstrument: "2.6.0-alpha",
+  awsSdk:"2.57.1",
+  bucket4j:"8.10.1",
+  jna:"5.2.0",
+  guava:"32.0.1-jre",
+  hdrHistogram:"2.1.12",
+  nettyTcnativeBoringSsl: "2.0.69.Final",
+  grpc: "1.65.0",
+  avro: "1.11.4",
+  confluentSchema: "7.8.0",
+  iceberg: "1.6.1",
+  wire: "6.3.0",
+  oshi: "6.8.1",
+  cloudevents: "4.0.1",
+  // AutoMQ inject end
+
+  // When updating the zstd version, please do as well in docker/native/native-image-configs/resource-config.json
+  // Also make sure the compression levels in org.apache.kafka.common.record.CompressionType are still valid
+  zstd: "1.5.6-4",
+  junitPlatform: "1.10.2"
+]
+
+libs += [
+  activation: "javax.activation:activation:$versions.activation",
+  apacheda: "org.apache.directory.api:api-all:$versions.apacheda",
+  apachedsCoreApi: "org.apache.directory.server:apacheds-core-api:$versions.apacheds",
+  apachedsInterceptorKerberos: "org.apache.directory.server:apacheds-interceptor-kerberos:$versions.apacheds",
+  apachedsProtocolShared: "org.apache.directory.server:apacheds-protocol-shared:$versions.apacheds",
+  apachedsProtocolKerberos: "org.apache.directory.server:apacheds-protocol-kerberos:$versions.apacheds",
+  apachedsProtocolLdap: "org.apache.directory.server:apacheds-protocol-ldap:$versions.apacheds",
+  apachedsLdifPartition: "org.apache.directory.server:apacheds-ldif-partition:$versions.apacheds",
+  apachedsMavibotPartition: "org.apache.directory.server:apacheds-mavibot-partition:$versions.apacheds",
+  apachedsJdbmPartition: "org.apache.directory.server:apacheds-jdbm-partition:$versions.apacheds",
+  argparse4j: "net.sourceforge.argparse4j:argparse4j:$versions.argparse4j",
+  bcpkix: "org.bouncycastle:bcpkix-jdk18on:$versions.bcpkix",
+  caffeine: "com.github.ben-manes.caffeine:caffeine:$versions.caffeine",
+  commonsCli: "commons-cli:commons-cli:$versions.commonsCli",
+  commonsIo: "commons-io:commons-io:$versions.commonsIo",
+  commonsLang: "org.apache.commons:commons-lang3:$versions.commonsLang",
+  commonsValidator: "commons-validator:commons-validator:$versions.commonsValidator",
+  // AutoMQ inject start
+  jacksonAnnotations: "com.fasterxml.jackson.core:jackson-annotations:$versions.jacksonAnnotationsVersion",
+  // AutoMQ inject end
+  jacksonDatabind: "com.fasterxml.jackson.core:jackson-databind:$versions.jackson",
+  jacksonDataformatCsv: "com.fasterxml.jackson.dataformat:jackson-dataformat-csv:$versions.jackson",
+  jacksonModuleScala: "com.fasterxml.jackson.module:jackson-module-scala_$versions.baseScala:$versions.jackson",
+  jacksonJDK8Datatypes: "com.fasterxml.jackson.datatype:jackson-datatype-jdk8:$versions.jackson",
+  jacksonAfterburner: "com.fasterxml.jackson.module:jackson-module-afterburner:$versions.jackson",
+  jacksonJaxrsJsonProvider: "com.fasterxml.jackson.jaxrs:jackson-jaxrs-json-provider:$versions.jackson",
+  jacksonYaml: "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:$versions.jackson",
+  // AutoMQ inject start
+  snakeyaml: "org.yaml:snakeyaml:$versions.snakeyaml",
+  protoGoogleCommonProtos: "com.google.api.grpc:proto-google-common-protos:$versions.protoGoogleCommonProtos",
+  // AutoMQ inject end
+  jaxAnnotationApi: "javax.annotation:javax.annotation-api:$versions.jaxAnnotation",
+  jaxbApi: "javax.xml.bind:jaxb-api:$versions.jaxb",
+  jaxbImpl: "com.sun.xml.bind:jaxb-impl:$versions.jaxbRI",
+  jaxrsApi: "javax.ws.rs:javax.ws.rs-api:$versions.jaxrs",
+  javassist: "org.javassist:javassist:$versions.javassist",
+  jettyServer: "org.eclipse.jetty:jetty-server:$versions.jetty",
+  jettyClient: "org.eclipse.jetty:jetty-client:$versions.jetty",
+  jettyServlet: "org.eclipse.jetty:jetty-servlet:$versions.jetty",
+  jettyServlets: "org.eclipse.jetty:jetty-servlets:$versions.jetty",
+  jerseyContainerServlet: "org.glassfish.jersey.containers:jersey-container-servlet:$versions.jersey",
+  jerseyHk2: "org.glassfish.jersey.inject:jersey-hk2:$versions.jersey",
+  jline: "org.jline:jline:$versions.jline",
+  jmhCore: "org.openjdk.jmh:jmh-core:$versions.jmh",
+  jmhCoreBenchmarks: "org.openjdk.jmh:jmh-core-benchmarks:$versions.jmh",
+  jmhGeneratorAnnProcess: "org.openjdk.jmh:jmh-generator-annprocess:$versions.jmh",
+  joptSimple: "net.sf.jopt-simple:jopt-simple:$versions.jopt",
+  jose4j: "org.bitbucket.b_c:jose4j:$versions.jose4j",
+  junitJupiter: "org.junit.jupiter:junit-jupiter:$versions.junit",
+  junitJupiterApi: "org.junit.jupiter:junit-jupiter-api:$versions.junit",
+  junitPlatformSuiteEngine: "org.junit.platform:junit-platform-suite-engine:$versions.junitPlatform",
+  junitPlatformLanucher: "org.junit.platform:junit-platform-launcher:$versions.junitPlatform",
+  jqwik: "net.jqwik:jqwik:$versions.jqwik",
+  hamcrest: "org.hamcrest:hamcrest:$versions.hamcrest",
+  kafkaStreams_0100: "org.apache.kafka:kafka-streams:$versions.kafka_0100",
+  kafkaStreams_0101: "org.apache.kafka:kafka-streams:$versions.kafka_0101",
+  kafkaStreams_0102: "org.apache.kafka:kafka-streams:$versions.kafka_0102",
+  kafkaStreams_0110: "org.apache.kafka:kafka-streams:$versions.kafka_0110",
+  kafkaStreams_10: "org.apache.kafka:kafka-streams:$versions.kafka_10",
+  kafkaStreams_11: "org.apache.kafka:kafka-streams:$versions.kafka_11",
+  kafkaStreams_20: "org.apache.kafka:kafka-streams:$versions.kafka_20",
+  kafkaStreams_21: "org.apache.kafka:kafka-streams:$versions.kafka_21",
+  kafkaStreams_22: "org.apache.kafka:kafka-streams:$versions.kafka_22",
+  kafkaStreams_23: "org.apache.kafka:kafka-streams:$versions.kafka_23",
+  kafkaStreams_24: "org.apache.kafka:kafka-streams:$versions.kafka_24",
+  kafkaStreams_25: "org.apache.kafka:kafka-streams:$versions.kafka_25",
+  kafkaStreams_26: "org.apache.kafka:kafka-streams:$versions.kafka_26",
+  kafkaStreams_27: "org.apache.kafka:kafka-streams:$versions.kafka_27",
+  kafkaStreams_28: "org.apache.kafka:kafka-streams:$versions.kafka_28",
+  kafkaStreams_30: "org.apache.kafka:kafka-streams:$versions.kafka_30",
+  kafkaStreams_31: "org.apache.kafka:kafka-streams:$versions.kafka_31",
+  kafkaStreams_32: "org.apache.kafka:kafka-streams:$versions.kafka_32",
+  kafkaStreams_33: "org.apache.kafka:kafka-streams:$versions.kafka_33",
+  kafkaStreams_34: "org.apache.kafka:kafka-streams:$versions.kafka_34",
+  kafkaStreams_35: "org.apache.kafka:kafka-streams:$versions.kafka_35",
+  kafkaStreams_36: "org.apache.kafka:kafka-streams:$versions.kafka_36",
+  kafkaStreams_37: "org.apache.kafka:kafka-streams:$versions.kafka_37",
+  kafkaStreams_38: "org.apache.kafka:kafka-streams:$versions.kafka_38",
+  lz4: "at.yawk.lz4:lz4-java:$versions.lz4",
+  metrics: "com.yammer.metrics:metrics-core:$versions.metrics",
+  dropwizardMetrics: "io.dropwizard.metrics:metrics-core:$versions.dropwizardMetrics",
+  mockitoCore: "org.mockito:$mockitoArtifactName:$mockitoVersion",
+  mockitoJunitJupiter: "org.mockito:mockito-junit-jupiter:$mockitoVersion",
+  nettyHandler: "io.netty:netty-handler:$versions.netty",
+  nettyTransportNativeEpoll: "io.netty:netty-transport-native-epoll:$versions.netty",
+  nettyCommon: "io.netty:netty-common:$versions.netty",
+  nettyHttp2: "io.netty:netty-codec-http2:$versions.netty",
+  nettyBuffer: "io.netty:netty-buffer:$versions.netty",
+  nettyTcnativeBoringSsl: "io.netty:netty-tcnative-boringssl-static:$versions.nettyTcnativeBoringSsl",
+  pcollections: "org.pcollections:pcollections:$versions.pcollections",
+  opentelemetryProto: "io.opentelemetry.proto:opentelemetry-proto:$versions.opentelemetryProto",
+  protobuf: "com.google.protobuf:protobuf-java:$versions.protobuf",
+  reflections: "org.reflections:reflections:$versions.reflections",
+  reload4j: "ch.qos.reload4j:reload4j:$versions.reload4j",
+  rocksDBJni: "org.rocksdb:rocksdbjni:$versions.rocksDB",
+  scalaCollectionCompat: "org.scala-lang.modules:scala-collection-compat_$versions.baseScala:$versions.scalaCollectionCompat",
+  scalaJava8Compat: "org.scala-lang.modules:scala-java8-compat_$versions.baseScala:$versions.scalaJava8Compat",
+  scalaLibrary: "org.scala-lang:scala-library:$versions.scala",
+  scalaLogging: "com.typesafe.scala-logging:scala-logging_$versions.baseScala:$versions.scalaLogging",
+  scalaReflect: "org.scala-lang:scala-reflect:$versions.scala",
+  slf4jApi: "org.slf4j:slf4j-api:$versions.slf4j",
+  slf4jReload4j: "org.slf4j:slf4j-reload4j:$versions.slf4j",
+  jclOverSlf4j: "org.slf4j:jcl-over-slf4j:$versions.jclOverSlf4j",
+  slf4jBridge: "org.slf4j:jul-to-slf4j:$versions.slf4j",
+  snappy: "org.xerial.snappy:snappy-java:$versions.snappy",
+  swaggerAnnotations: "io.swagger.core.v3:swagger-annotations:$swaggerVersion",
+  swaggerJaxrs2: "io.swagger.core.v3:swagger-jaxrs2:$swaggerVersion",
+  zookeeper: "org.apache.zookeeper:zookeeper:$versions.zookeeper",
+  jfreechart: "jfreechart:jfreechart:$versions.jfreechart",
+  mavenArtifact: "org.apache.maven:maven-artifact:$versions.mavenArtifact",
+  zstd: "com.github.luben:zstd-jni:$versions.zstd",
+  httpclient: "org.apache.httpcomponents:httpclient:$versions.httpclient",
+  commonLang: "org.apache.commons:commons-lang3:$versions.commonLang",
+  commonio          : "commons-io:commons-io:$versions.commonio",
+  commonMath3: "org.apache.commons:commons-math3:$versions.commonMath3",
+  awsSdkAuth: "software.amazon.awssdk:auth:$versions.awsSdk",
+  awsSdk: "software.amazon.awssdk:s3:$versions.awsSdk",
+  awsSdkNetty: "software.amazon.awssdk:netty-nio-client:$versions.awsSdk",
+  opentelemetryJava8: "io.opentelemetry.instrumentation:opentelemetry-runtime-telemetry-java8:$versions.opentelemetryInstrument",
+  opentelemetryOshi: "io.opentelemetry.instrumentation:opentelemetry-oshi:$versions.opentelemetryInstrument",
+  opentelemetrySdk: "io.opentelemetry:opentelemetry-sdk:$versions.opentelemetrySDK",
+  opentelemetrySdkMetrics: "io.opentelemetry:opentelemetry-sdk-metrics:$versions.opentelemetrySDK",
+  opentelemetryExporterLogging: "io.opentelemetry:opentelemetry-exporter-logging:$versions.opentelemetrySDK",
+  opentelemetryExporterProm: "io.opentelemetry:opentelemetry-exporter-prometheus:$versions.opentelemetrySDKAlpha",
+  opentelemetryExporterOTLP: "io.opentelemetry:opentelemetry-exporter-otlp:$versions.opentelemetrySDK",
+  opentelemetryExporterSenderJdk: "io.opentelemetry:opentelemetry-exporter-sender-jdk:$versions.opentelemetrySDK",
+  opentelemetryExporterSenderGrpcManagedChannel: "io.opentelemetry:opentelemetry-exporter-sender-grpc-managed-channel:$versions.opentelemetrySDK",
+  grpcNettyShaded: "io.grpc:grpc-netty-shaded:$versions.grpc",
+  opentelemetryJmx: "io.opentelemetry.instrumentation:opentelemetry-jmx-metrics:$versions.opentelemetryInstrument",
+  bucket4j: "com.bucket4j:bucket4j-core:$versions.bucket4j",
+  jna: "net.java.dev.jna:jna:$versions.jna",
+  guava: "com.google.guava:guava:$versions.guava",
+  hdrHistogram: "org.hdrhistogram:HdrHistogram:$versions.hdrHistogram",
+  kafkaAvroSerializer: "io.confluent:kafka-avro-serializer:$versions.confluentSchema",
+  spotbugsAnnotations: "com.github.spotbugs:spotbugs-annotations:$versions.spotbugs",
+  oshi: "com.github.oshi:oshi-core:$versions.oshi",
+  cloudeventsKafka: "io.cloudevents:cloudevents-kafka:$versions.cloudevents",
+]

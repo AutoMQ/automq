@@ -1,0 +1,73 @@
+name: GitHub Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-alpha[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-beta[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+
+jobs:
+  github-release:
+    name: GitHub Release with tgz
+    strategy:
+      matrix:
+        platform: [ "ubuntu-22.04" ]
+        jdk: ["17"]
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Set up JDK ${{ matrix.jdk }}
+        uses: actions/setup-java@v3
+        with:
+          java-version: ${{ matrix.jdk }}
+          distribution: "zulu"
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v2.12.0
+
+      - name: Build TarGz
+        id: build-targz 
+        run: |
+          ./gradlew -Pprefix=automq-${{ github.ref_name }}_ --build-cache --refresh-dependencies clean releaseTarGz
+          mkdir -p core/build/distributions/latest
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1)
+          echo "LATEST_TAG=$LATEST_TAG"
+          IS_LATEST="false"
+          if [ "$LATEST_TAG" == "${{ github.ref_name }}" ]; then
+              IS_LATEST=true
+          fi
+          echo "IS_LATEST=$IS_LATEST" >> $GITHUB_OUTPUT
+          for file in core/build/distributions/automq-*.tgz; do
+              if [[ ! "$file" =~ site-docs ]]; then
+                  if [ "$IS_LATEST" = "true" ]; then
+                      echo "Find latest tgz file: $file"
+                      cp "$file" core/build/distributions/latest/automq-kafka-latest.tgz
+                  fi
+              else
+                  echo "Skip and remove site-docs file: $file"
+                  rm "$file"
+              fi
+          done
+
+      - uses: tvrcgo/oss-action@master
+        name: upload-latest
+        if: ${{ github.repository_owner == 'AutoMQ' && steps.build-targz.outputs.IS_LATEST == 'true' }}
+        with:
+          bucket:  ${{ secrets.UPLOAD_BUCKET }}
+          key-id:  ${{ secrets.UPLOAD_BUCKET_AK }}
+          key-secret:  ${{ secrets.UPLOAD_BUCKET_SK }}
+          region: 'oss-cn-hangzhou'
+          assets: |
+            core/build/distributions/latest/automq-kafka-latest.tgz:community_edition/artifacts/automq-kafka-latest.tgz
+
+      - name: GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          draft: false
+          generate_release_notes: true
+          files: |
+            ./core/build/distributions/automq-*.tgz

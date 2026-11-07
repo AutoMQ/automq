@@ -1,0 +1,570 @@
+package com.automq.stream.s3.wal.impl.object;
+
+import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.trace.context.TraceContext;
+import com.automq.stream.s3.wal.AppendResult;
+import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.RecoverResult;
+import com.automq.stream.s3.wal.common.Record;
+import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
+import com.automq.stream.s3.wal.util.WALUtil;
+import com.automq.stream.utils.MockTime;
+import com.automq.stream.utils.Time;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
+
+import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static com.automq.stream.s3.wal.impl.object.RecoverIterator.getContinuousFromTrimOffset;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@Timeout(120)
+@Tag("S3Unit")
+public class ObjectWALServiceTest {
+    private MockObjectStorage objectStorage;
+    private Random random;
+    private Time time;
+
+    @BeforeEach
+    public void setUp() throws IOException {
+        objectStorage = new MockObjectStorage();
+        time = new MockTime();
+        random = new Random();
+    }
+
+    @AfterEach
+    public void tearDown() {
+        objectStorage.triggerAll();
+        objectStorage.close();
+    }
+
+    /** Both layouts defer manual-mode uploads until an explicit flush. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testManualBatchingFlush(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000)
+            .withBatchInterval(1).withMaxBytesInBatch(1).withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            assertThrows(TimeoutException.class, () -> append.get(30, TimeUnit.MILLISECONDS));
+            wal.flush().get(5, TimeUnit.SECONDS);
+            assertTrue(append.isDone());
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    /** Both layouts propagate upload failures through append and flush futures. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testManualFlushPropagatesUploadFailure(int version) throws Exception {
+        MockObjectStorage storage = new MockObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> write(WriteOptions options, String path, ByteBuf data) {
+                data.release();
+                return CompletableFuture.failedFuture(new IllegalStateException("upload failed"));
+            }
+        };
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000).withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            CompletableFuture<Void> flush = wal.flush();
+            assertThrows(ExecutionException.class, () -> flush.get(5, TimeUnit.SECONDS));
+            assertTrue(append.isCompletedExceptionally());
+        } finally {
+            wal.shutdownGracefully();
+            storage.close();
+        }
+    }
+
+    /** Both layouts flush trim markers without a caller-issued flush. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testManualTrimFlushesMarker(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withNodeId(100).withEpoch(1000)
+            .withManualMode(true).build();
+        ObjectWALService wal = new ObjectWALService(Time.SYSTEM, objectStorage, config);
+        wal.start();
+        try {
+            CompletableFuture<AppendResult> append = wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233, 0, 0, 1, generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            wal.flush().get(5, TimeUnit.SECONDS);
+            wal.trim(append.get(5, TimeUnit.SECONDS).recordOffset()).get(5, TimeUnit.SECONDS);
+        } finally {
+            wal.shutdownGracefully();
+        }
+    }
+
+    @Test
+    public void testShutdownClosesOwnedObjectStorageOnce() {
+        TrackingObjectStorage storage = new TrackingObjectStorage();
+        ObjectWALConfig config = ObjectWALConfig.builder().withOpenMode(OpenMode.FAILOVER).build();
+        ObjectWALService wal = new ObjectWALService(time, storage, config, true);
+
+        wal.shutdownGracefully();
+        wal.shutdownGracefully();
+
+        assertEquals(1, storage.closeCount.get());
+    }
+
+    @Test
+    public void testShutdownDoesNotCloseBorrowedObjectStorage() {
+        TrackingObjectStorage storage = new TrackingObjectStorage();
+        ObjectWALConfig config = ObjectWALConfig.builder().withOpenMode(OpenMode.READ_ONLY).build();
+        ObjectWALService wal = new ObjectWALService(time, storage, config);
+
+        wal.shutdownGracefully();
+
+        assertFalse(storage.closeCount.get() > 0);
+        storage.close();
+        assertTrue(storage.closeCount.get() > 0);
+    }
+
+    private static class TrackingObjectStorage extends MockObjectStorage {
+        private final AtomicInteger closeCount = new AtomicInteger();
+
+        @Override
+        public void close() {
+            closeCount.incrementAndGet();
+            super.close();
+        }
+    }
+
+    /** Single reads preserve record contents across epochs in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testGet_single(int version) throws IOException, OverCapacityException, ExecutionException, InterruptedException {
+        ObjectWALConfig config;
+        ObjectWALService wal;
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int r = 0; r < 3; r++) {
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            wal = new ObjectWALService(time, objectStorage, config);
+            acquire(config);
+            wal.start();
+
+            // append new record and verify
+            for (int i = 0; i < 10; i++) {
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
+            }
+            List<CompletableFuture<StreamRecordBatch>> getCfList = new ArrayList<>();
+            for (int i = 0; i < appendCfList.size(); i++) {
+                AppendResult appendRst = appendCfList.get(i).get();
+                getCfList.add(wal.get(appendRst.recordOffset()));
+            }
+            for (int i = 0; i < getCfList.size(); i++) {
+                StreamRecordBatch record = getCfList.get(i).get();
+                assertEquals(233L, record.getStreamId());
+                assertEquals(i, record.getBaseOffset());
+            }
+
+            // restart wal and test get with multiple wal epoch
+            wal.shutdownGracefully();
+        }
+    }
+
+    /** Batch reads cross objects and epochs in order in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testGet_batch(int version) throws Exception {
+        ObjectWALConfig config;
+        ObjectWALService wal;
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int r = 0; r < 3; r++) {
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            wal = new ObjectWALService(time, objectStorage, config);
+            acquire(config);
+            wal.start();
+            // append new record and verify
+            for (int i = 0; i < 10; i++) {
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
+            }
+            ((DefaultWriter) (wal.writer)).flush().join();
+            for (int i = 0; i < appendCfList.size() - 3; i++) {
+                List<StreamRecordBatch> records = wal.get(
+                    DefaultRecordOffset.of(appendCfList.get(i).get().recordOffset()),
+                    DefaultRecordOffset.of(appendCfList.get(i + 3).get().recordOffset())
+                ).get();
+                assertEquals(3, records.size());
+                for (int j = 0; j < 3; j++) {
+                    assertEquals(i + j, records.get(j).getBaseOffset());
+                }
+            }
+            // TODO: wal end offset
+
+            // restart wal and test get with multiple wal epoch
+            wal.shutdownGracefully();
+        }
+    }
+
+    /** Batch reads omit synthetic trim records in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testGet_batchSkipTrim(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version)
+            .withEpoch(1L)
+            .withMaxBytesInBatch(1024)
+            .withBatchInterval(1000)
+            .build();
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            appendCfList.add(wal.append(TraceContext.DEFAULT,
+                StreamRecordBatch.of(233L, 10, 100L + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
+            // ensure objects are flushed/uploaded
+            ((DefaultWriter) (wal.writer)).flush().join();
+            if (i == 4) {
+                // write a trim marker by trimming to the 4th record's offset (this will produce a trim record object)
+                wal.trim(appendCfList.get(3).get().recordOffset()).get();
+            }
+        }
+
+
+        // query across a range that spans objects including the trim marker
+        List<StreamRecordBatch> records = wal.get(
+            DefaultRecordOffset.of(appendCfList.get(4).get().recordOffset()),
+            DefaultRecordOffset.of(wal.confirmOffset())
+        ).get();
+
+        assertEquals(4, records.size());
+        for (int i = 0; i < records.size(); i++) {
+            assertEquals(104L + i, records.get(i).getBaseOffset());
+        }
+        wal.shutdownGracefully();
+    }
+
+
+    /** Trim progress survives restart and recovery in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testTrim(int version) throws Exception {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE)));
+            if (i % 2 == 0) {
+                ((DefaultWriter) (wal.writer)).flush().join();
+            }
+        }
+
+        wal.trim(appendCfList.get(1).get().recordOffset()).get();
+
+        wal.shutdownGracefully();
+
+        wal = new ObjectWALService(time, objectStorage, config);
+        wal.start();
+
+        List<RecoverResult> records = new ArrayList<>();
+        wal.recover().forEachRemaining(records::add);
+
+        assertEquals(6, records.size());
+        for (int i = 0; i < records.size(); i++) {
+            assertEquals(102L + i, records.get(i).record().getBaseOffset());
+        }
+    }
+
+    /** Recovery retains only records after the trim boundary in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testRecover(int version) throws Exception {
+        ObjectWALConfig config;
+        ObjectWALService wal;
+        int trimIndex = 0;
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int r = 0; r < 4; r++) {
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            wal = new ObjectWALService(time, objectStorage, config);
+            acquire(config);
+            wal.start();
+            List<RecoverResult> records = new ArrayList<>();
+            wal.recover().forEachRemaining(records::add);
+            // expect keep all records after trim offset
+            for (int i = 0; i < records.size(); i++) {
+                assertEquals(trimIndex + i + 1, records.get(i).record().getBaseOffset());
+            }
+            if (r == 3) {
+                break;
+            }
+            for (int i = 0; i < 10; i++) {
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
+            }
+            ((DefaultWriter) (wal.writer)).flush().join();
+            trimIndex = r * 9;
+            wal.trim(appendCfList.get(trimIndex).get().recordOffset()).get();
+            wal.shutdownGracefully();
+        }
+    }
+
+    /** Reset preserves monotonic offsets across restarts in both write layouts. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testReset(int version) throws Exception {
+        ObjectWALConfig config;
+        ObjectWALService wal;
+        int resetIndex = 0;
+        List<CompletableFuture<AppendResult>> appendCfList = new ArrayList<>();
+        for (int r = 0; r < 4; r++) {
+            config = ObjectWALConfig.builder().withVersion(version).withEpoch(r).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+            wal = new ObjectWALService(time, objectStorage, config);
+            acquire(config);
+            wal.start();
+            List<RecoverResult> records = new ArrayList<>();
+            wal.recover().forEachRemaining(records::add);
+            if (r != 0) {
+                assertEquals(10, records.size());
+            }
+            for (int i = 0; i < records.size(); i++) {
+                assertEquals(resetIndex + i, records.get(i).record().getBaseOffset());
+            }
+            resetIndex = appendCfList.size();
+            wal.reset().get();
+            for (int i = 0; i < 10; i++) {
+                appendCfList.add(wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 10, r * 10 + i, 1, generateByteBuf(256), DefaultByteBufSupplier.INSTANCE)));
+            }
+            wal.shutdownGracefully();
+        }
+    }
+
+    public static Stream<Arguments> testRecoverIteratorGetContinuousFromTrimOffsetData() {
+        return Stream.of(
+            Arguments.of(
+                "basic",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                -1L,
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "empty",
+                List.of(),
+                -1L,
+                List.of()
+            ),
+            Arguments.of(
+                "discontinuous",
+                List.of(mockWALObject(0, 10), mockWALObject(20, 30)),
+                -1L,
+                List.of(mockWALObject(0, 10))
+            ),
+            Arguments.of(
+                "trimmed at boundary",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                10L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed in middle",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                15L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed nothing",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                10L,
+                List.of(mockWALObject(10, 20), mockWALObject(20, 30))
+            ),
+            Arguments.of(
+                "trimmed all",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(20, 30)),
+                30L,
+                List.of()
+            ),
+            Arguments.of(
+                "trimmed and discontinuous",
+                List.of(mockWALObject(0, 10), mockWALObject(10, 20), mockWALObject(30, 40)),
+                10L,
+                List.of(mockWALObject(10, 20))
+            )
+        );
+    }
+
+    private static WALObject mockWALObject(long start, long end) {
+        return new WALObject((short) 0, String.format("%d-%d", start, end), 0, start, end, end - start);
+    }
+
+    @ParameterizedTest(name = "Test {index} {0}")
+    @MethodSource("testRecoverIteratorGetContinuousFromTrimOffsetData")
+    public void testRecoverIteratorGetContinuousFromTrimOffset(
+        String name,
+        List<WALObject> objectList,
+        long trimOffset,
+        List<WALObject> expected
+    ) {
+        List<WALObject> got = getContinuousFromTrimOffset(objectList, trimOffset);
+        assertEquals(expected, got, name);
+    }
+
+    /** Recovery stops at missing objects even when keys are distributed across shards. */
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1})
+    public void testRecoverDiscontinuousObjects(int version) throws IOException, OverCapacityException, InterruptedException, ExecutionException {
+        ObjectWALConfig config = ObjectWALConfig.builder().withVersion(version).withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        // write 4 objects
+        for (int i = 0; i < 4; i++) {
+            wal.append(TraceContext.DEFAULT, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE));
+            ((DefaultWriter) (wal.writer)).flush().join();
+        }
+
+        wal.shutdownGracefully();
+
+        // Delete the 3nd wal object to mock it upload fail.
+        String nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId());
+        WALObject walObject = ObjectUtils.parse(objectStorage.list(nodePrefix).get()).get(2);
+        objectStorage.delete(List.of(new ObjectStorage.ObjectPath(objectStorage.bucketId(), walObject.path()))).get();
+
+        wal = new ObjectWALService(time, objectStorage, config);
+        wal.start();
+
+        List<RecoverResult> records = new ArrayList<>();
+        wal.recover().forEachRemaining(records::add);
+
+        assertEquals(2, records.size());
+        assertEquals(100L, records.get(0).record().getBaseOffset());
+        assertEquals(101L, records.get(1).record().getBaseOffset());
+    }
+
+    @Test
+    public void testRecoverFromV0Objects() throws IOException {
+        ObjectWALConfig config = ObjectWALConfig.builder().withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+
+        long startOffset = 0L;
+        for (int i = 0; i < 4; i++) {
+            startOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L + i, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), startOffset);
+        }
+
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+
+        List<RecoverResult> records = new ArrayList<>();
+        wal.recover().forEachRemaining(records::add);
+
+        assertEquals(4, records.size());
+        for (int i = 0; i < 4; i++) {
+            assertEquals(100L + i, records.get(i).record().getBaseOffset());
+        }
+    }
+
+    @Test
+    public void testRecoverFromV0AndV1Objects() throws IOException {
+        ObjectWALConfig config = ObjectWALConfig.builder().withEpoch(1L).withMaxBytesInBatch(1024).withBatchInterval(1000).build();
+        long nextOffset = 0L;
+        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 100L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset);
+        long record1Offset = nextOffset;
+        nextOffset = writeV0Object(config, StreamRecordBatch.of(233L, 0, 101L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset);
+        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 102L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset, false, 0);
+        nextOffset = writeV1Object(config, StreamRecordBatch.of(233L, 0, 103L, 1, generateByteBuf(1), DefaultByteBufSupplier.INSTANCE).encoded(), nextOffset, false, record1Offset);
+
+        ObjectWALService wal = new ObjectWALService(time, objectStorage, config);
+        acquire(config);
+        wal.start();
+        List<RecoverResult> records = new ArrayList<>();
+        wal.recover().forEachRemaining(records::add);
+
+        assertEquals(2, records.size());
+        for (int i = 2; i < 4; i++) {
+            assertEquals(100L + i, records.get(i - 2).record().getBaseOffset());
+        }
+    }
+
+    private long writeV0Object(ObjectWALConfig config, ByteBuf data, long startOffset) {
+        data = addRecordHeader(data, startOffset);
+        long endOffset = startOffset + data.readableBytes();
+
+        String path = ObjectUtils.genObjectPathV0(ObjectUtils.nodePrefix(config.clusterId(), config.nodeId()), config.epoch(), startOffset);
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        WALObjectHeader header = new WALObjectHeader(startOffset, data.readableBytes(), 0, 0, 0);
+        buffer.addComponents(true, header.marshal(), data);
+
+        objectStorage.write(new ObjectStorage.WriteOptions(), path, buffer).join();
+        return endOffset;
+    }
+
+    private long writeV1Object(ObjectWALConfig config, ByteBuf data, long startOffset, boolean align, long trimOffset) {
+        data = addRecordHeader(data, startOffset);
+        long endOffset;
+        if (align) {
+            endOffset = ObjectUtils.ceilAlignOffset(startOffset);
+        } else {
+            endOffset = startOffset + data.readableBytes();
+        }
+        String path = ObjectUtils.genObjectPathV1(ObjectUtils.nodePrefix(config.clusterId(), config.nodeId()), config.epoch(), startOffset, endOffset);
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        WALObjectHeader header = new WALObjectHeader(startOffset, data.readableBytes(), 0, 0, 0, trimOffset);
+        buffer.addComponents(true, header.marshal(), data);
+
+        objectStorage.write(new ObjectStorage.WriteOptions(), path, buffer).join();
+        return endOffset;
+    }
+
+    private ByteBuf addRecordHeader(ByteBuf data, long startOffset) {
+        ByteBuf header = ByteBufAlloc.byteBuffer(RECORD_HEADER_SIZE);
+        Record record = WALUtil.generateRecord(data, header, 0, startOffset);
+
+        CompositeByteBuf buffer = ByteBufAlloc.compositeByteBuffer();
+        buffer.addComponents(true, record.header(), record.body());
+        return buffer;
+    }
+
+    private void acquire(ObjectWALConfig config) {
+        new ObjectReservationService(config.clusterId(), objectStorage, objectStorage.bucketId())
+            .acquire(config.nodeId(), config.epoch(), false)
+            .join();
+    }
+
+    private ByteBuf generateByteBuf(int size) {
+        ByteBuf byteBuf = Unpooled.buffer(size);
+        byte[] bytes = new byte[size];
+        random.nextBytes(bytes);
+        byteBuf.writeBytes(bytes);
+        return byteBuf;
+    }
+}

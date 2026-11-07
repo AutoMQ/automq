@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "EmptyCasesProtos";
+
+message EmptyCases {
+  repeated string empty_list = 1;
+  map<string, string> empty_map = 2;
+}

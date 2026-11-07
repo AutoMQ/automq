@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package test;
+
+import "simple_message.proto";
+
+message ComplexMessage {
+  SimpleMessage simple_message = 1;
+  repeated string tags = 2;
+}

@@ -1,0 +1,558 @@
+# This is the main input for unit testing.
+rule_files:
+  # Alert rules to test
+  - ./alert_rules_template.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Test ActiveControllerCount
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_controller_active_count{job="cluster_1", instance="0"}'
+        values: '1x5 0x5 1x5'
+      - series: 'kafka_controller_active_count{job="cluster_1", instance="1"}'
+        values: '0x10 1x5'
+
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ActiveControllerCount
+        exp_alerts:
+      # Test no active controller.
+      - eval_time: 7m
+        alertname: ActiveControllerCount
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+            exp_annotations:
+              summary: "Illegal kafka active controller number for cluster cluster_1"
+              description: "Current number of active controller is 0"
+      # Test more than one active controller.
+      - eval_time: 13m
+        alertname: ActiveControllerCount
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+            exp_annotations:
+              summary: "Illegal kafka active controller number for cluster cluster_1"
+              description: "Current number of active controller is 2"
+  # Test KafkaClusterHighBytesInPerSec
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_broker_network_io_bytes_total{direction="in", job="cluster_1", instance="0"}'
+        values: '0 0 1887436800 1887436800 1887436800 1887436800' # 0 0 1800MB 1800MB 1800MB 1800MB
+      - series: 'kafka_broker_network_io_bytes_total{direction="in", job="cluster_1", instance="1"}'
+        values: '0 1572864000 3460300800 7235174400 8074035200 9227468800' # 0 1500MB 3300MB 6900MB 7700MB 8800MB
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaClusterHighBytesInPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+            exp_annotations:
+              summary: "High Kafka inbound network throughput 62914560 Bytes/s for cluster cluster_1"
+              description: "The number of bytes per second received by Kafka cluster cluster_1 is exceeding threshold."
+  # Test KafkaClusterHighBytesOutPerSec
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_broker_network_io_bytes_total{direction="out", job="cluster_1", instance="0"}'
+        values: '0 0 1887436800 1887436800 1887436800 1887436800' # 0 0 1800MB 1800MB 1800MB 1800MB
+      - series: 'kafka_broker_network_io_bytes_total{direction="out", job="cluster_1", instance="1"}'
+        values: '0 1572864000 3460300800 7235174400 8074035200 9227468800' # 0 1500MB 3300MB 6900MB 7700MB 8800MB
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaClusterHighBytesOutPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+            exp_annotations:
+              summary: "High Kafka outbound network throughput 62914560 Bytes/s for cluster cluster_1"
+              description: "The number of bytes per second fetched from Kafka cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighBytesInPerSec
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_broker_network_io_bytes_total{direction="in", job="cluster_1", instance="0"}'
+        values: '0 62914560 125829120 188743680 251658240 314572800' # 0 60MB 120MB 180MB 240MB 300MB
+      - series: 'kafka_broker_network_io_bytes_total{direction="in", job="cluster_1", instance="1"}'
+        values: '0 629145600 2516582400 5033164800 7864320000 7864320000' # 0 600MB 2400MB 4800MB 7500MB 7500MB
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              direction: in
+            exp_annotations:
+              summary: "High Kafka inbound network throughput 41943040 Bytes/s for broker 1 in cluster cluster_1"
+              description: "The number of bytes per second received by Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+      - eval_time: 4m
+        alertname: KafkaBrokerHighBytesInPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              direction: in
+            exp_annotations:
+              summary: "High Kafka inbound network throughput 47185920 Bytes/s for broker 1 in cluster cluster_1"
+              description: "The number of bytes per second received by Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighBytesOutPerSec
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_broker_network_io_bytes_total{direction="out", job="cluster_1", instance="0"}'
+        values: '0 62914560 125829120 188743680 251658240 314572800' # 0 60MB 120MB 180MB 240MB 300MB
+      - series: 'kafka_broker_network_io_bytes_total{direction="out", job="cluster_1", instance="1"}'
+        values: '0 629145600 2516582400 5033164800 7864320000 7864320000' # 0 600MB 2400MB 4800MB 7500MB 7500MB
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              direction: out
+            exp_annotations:
+              summary: "High Kafka outbound network throughput 41943040 Bytes/s for broker 1 in cluster cluster_1"
+              description: "The number of bytes per second fetched from Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+      - eval_time: 4m
+        alertname: KafkaBrokerHighBytesOutPerSec
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              direction: out
+            exp_annotations:
+              summary: "High Kafka outbound network throughput 47185920 Bytes/s for broker 1 in cluster cluster_1"
+              description: "The number of bytes per second fetched from Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighProduceRequestRate
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_request_count_total{type="Produce", job="cluster_1", instance="0"}'
+        values: '0 30000 67000 151000 241000 251000'
+      - series: 'kafka_request_count_total{type="Produce", job="cluster_1", instance="1"}'
+        values: '0 50 100 160 166 200'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaBrokerHighProduceRequestRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 0
+            exp_annotations:
+              summary: "High Kafka produce request rate 1500.00 req/s for broker 0 in cluster cluster_1"
+              description: "The number of produce requests per second received by Kafka broker 0 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighFetchRequestRate
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_request_count_total{type="Fetch", job="cluster_1", instance="0"}'
+        values: '0 30000 67000 151000 241000 251000'
+      - series: 'kafka_request_count_total{type="Fetch", job="cluster_1", instance="1"}'
+        values: '0 50 100 160 166 200'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaBrokerHighFetchRequestRate
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 0
+            exp_annotations:
+              summary: "High Kafka fetch request rate 1500.00 req/s for broker 0 in cluster cluster_1"
+              description: "The number of fetch requests per second received by Kafka broker 0 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighProduceLatency
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_request_time_99p_milliseconds{type="Produce", job="cluster_1", instance="0"}'
+        values: '0 10 15 11 12 20'
+      - series: 'kafka_request_time_99p_milliseconds{type="Produce", job="cluster_1", instance="1"}'
+        values: '0 16 17 120 170 10'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaBrokerHighProduceLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              type: Produce
+            exp_annotations:
+              summary: "High Kafka produce request latency (P99) 170.00 ms for broker 1 in cluster cluster_1"
+              description: "The 99th percentile of produce request latency of Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighFetchLatency
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_request_time_99p_milliseconds{type="Fetch", job="cluster_1", instance="0"}'
+        values: '0 10 15 11 12 20'
+      - series: 'kafka_request_time_99p_milliseconds{type="Fetch", job="cluster_1", instance="1"}'
+        values: '0 160 170 1200 1700 100'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaBrokerHighFetchLatency
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              instance: 1
+              type: Fetch
+            exp_annotations:
+              summary: "High Kafka fetch request latency (P99) 1700.00 ms for broker 1 in cluster cluster_1"
+              description: "The 99th percentile of fetch request latency of Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighErrorRequestRate
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_request_error_count_total{error="NONE", job="cluster_1", instance="0"}'
+        values: '0 0 0 0 0 0'
+      - series: 'kafka_request_error_count_total{error="NOT_LEADER_OR_FOLLOWER", job="cluster_1", instance="1"}'
+        values: '0 50 100 160 166 200'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaBrokerHighErrorRequestRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+              instance: 1
+              error: NOT_LEADER_OR_FOLLOWER
+            exp_annotations:
+              summary: "High Kafka error request rate 1.00 req/s for broker 1 in cluster cluster_1"
+              description: "The error request rate of Kafka broker 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighPartitionCount
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_partition_count{job="cluster_1", instance="0"}'
+        values: '0 100 1000 2000 3000 4000'
+      - series: 'kafka_partition_count{job="cluster_1", instance="1"}'
+        values: '0 2000 5000 6000 7000 4000'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaBrokerHighPartitionCount
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+              instance: 1
+            exp_annotations:
+              summary: "Kafka node 1 in cluster cluster_1 has too many partitions: 7000."
+              description: "The partition count of node 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaBrokerHighConnectionCount
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_server_connection_count{job="cluster_1", instance="0", listener="PLAINTEXT"}'
+        values: '0 100 200 300 400 500'
+      - series: 'kafka_server_connection_count{job="cluster_1", instance="1", listener="PLAINTEXT"}'
+        values: '0 100 600 500 300 200'
+      - series: 'kafka_server_connection_count{job="cluster_1", instance="1", listener="CONTROLLER"}'
+        values: '0 100 600 800 300 500'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaBrokerHighConnectionCount
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+              instance: 1
+            exp_annotations:
+              summary: "Kafka node 1 in cluster cluster_1 has too many connections: 1300."
+              description: "The connection count of node 1 in cluster cluster_1 is exceeding threshold."
+  # Test KafkaGroupHighConsumerLag
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_log_end_offset{job="cluster_1", instance="0", topic="test-topic", partition="0"}'
+        values: '0 10000 30000 50000 70000 90000'
+      # Mock metrics stale since 3m on test-topic partition reassignment
+      - series: 'kafka_log_end_offset{job="cluster_1", instance="0", topic="test-topic", partition="1"}'
+        values: '0 20000 40000 60000 60000 60000'
+      - series: 'kafka_log_end_offset{job="cluster_1", instance="1", topic="test-topic", partition="1"}'
+        values: '0 20000 40000 60000 80000 100000'
+      # Mock metrics stale since 2m on __consumer_offsets partition reassignment
+      - series: 'kafka_group_commit_offset{job="cluster_1", instance="1", topic="test-topic", partition="0", consumer_group="test-group"}'
+        values: '0 9000 9000 9000 9000 9000'
+      - series: 'kafka_group_commit_offset{job="cluster_1", instance="1", topic="test-topic", partition="1", consumer_group="test-group"}'
+        values: '0 15000 15000 15000 15000 15000'
+      - series: 'kafka_group_commit_offset{job="cluster_1", instance="2", topic="test-topic", partition="0", consumer_group="test-group"}'
+        values: '0 9000 25000 46000 67000 84000'
+      - series: 'kafka_group_commit_offset{job="cluster_1", instance="2", topic="test-topic", partition="1", consumer_group="test-group"}'
+        values: '0 15000 38000 52000 71000 99000'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+      - eval_time: 3m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+      # Test alert.
+      - eval_time: 4m
+        alertname: KafkaGroupHighConsumerLag
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: cluster_1
+              topic: test-topic
+              consumer_group: test-group
+            exp_annotations:
+              summary: "High group consumer lag 12000 for consumer group test-group in cluster cluster_1 on topic test-topic."
+              description: "The consumer lag of consumer group test-group in cluster cluster_1 on topic test-topic is exceeding threshold."
+  # Test KafkaHighS3RequestErrorRate
+  - interval: 1m
+    # Series data.
+    input_series:
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="get_object", operation_type="S3Request", status="failed"}'
+        values: '0 5 60 180 0 0'
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="get_object", operation_type="S3Request", status="success"}'
+        values: '0 100 200 300 400 500'
+      - series: 'kafka_stream_operation_latency_count{job="cluster_1", instance="0", operation_name="append", operation_type="S3Stream"}'
+        values: '0 100 200 300 400 500'
+
+    alert_rule_test:
+      # Test no alert.
+      - eval_time: 0m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 1m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 2m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 4m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      - eval_time: 5m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+      # Test alert.
+      - eval_time: 3m
+        alertname: KafkaHighS3RequestErrorRate
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: cluster_1
+              operation_name: get_object
+            exp_annotations:
+              summary: "High Kafka S3 request get_object error rate 2.00 req/s for cluster cluster_1"
+              description: "The S3 request get_object error rate of Kafka cluster cluster_1 is exceeding threshold."

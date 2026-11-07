@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "EventProtos";
+
+import "google/protobuf/timestamp.proto";
+
+message Event {
+  google.protobuf.Timestamp event_time = 1;
+}

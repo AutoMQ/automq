@@ -1,0 +1,26 @@
+syntax = "proto3";
+package test;
+
+import "google/protobuf/timestamp.proto";
+
+message RepeatedFieldsMessage {
+  // Simple repeated fields
+  repeated string tags = 1;
+  repeated int32 values = 2;
+  
+  // Repeated complex types
+  message Item {
+    string name = 1;
+    int32 quantity = 2;
+    double price = 3;
+  }
+  
+  repeated Item items = 3;
+  
+  // Repeated with Google types
+  repeated google.protobuf.Timestamp event_times = 4;
+  
+  // Standard fields
+  string id = 5;
+  string name = 6;
+}

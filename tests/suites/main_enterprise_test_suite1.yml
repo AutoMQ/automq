@@ -1,0 +1,7 @@
+main_enterprise_test_suite:
+  included:
+    - ../kafkatest/tests/core/automq_remote_write_test.py::AutoMQRemoteWriteTest.test_remote_write_metrics_exporter
+    - ../kafkatest/tests/core/automq_remote_write_test.py::AutoMQRemoteWriteTest.test_remote_write_with_compression
+    - ../kafkatest/tests/core/automq_remote_write_test.py::AutoMQRemoteWriteTest.test_remote_write_batch_size_limits
+    - ../kafkatest/tests/core/automq_remote_write_test.py::AutoMQRemoteWriteTest.test_remote_write_server_unavailable
+

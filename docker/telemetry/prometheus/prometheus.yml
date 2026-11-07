@@ -1,0 +1,37 @@
+# my global config
+global:
+  scrape_interval: 30s # Set the scrape interval to every 30 seconds. Default is every 1 minute.
+  evaluation_interval: 30s # Evaluate rules every 30 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["host.docker.internal:9087"]
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+   - "/prometheus/rules/alert_rules_template.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: "prometheus"
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    scrape_interval: 60s
+
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          group: 'prometheus'
+
+  - job_name: "kafka"
+    scrape_interval: 30s
+    honor_labels: true
+    static_configs:
+      - targets: ["host.docker.internal:8890"]

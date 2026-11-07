@@ -1,0 +1,131 @@
+# This is the alert rules template for AutoMQ, please modify the alert thresholds and period per your needs
+# before applying it to your production environment.
+groups:
+  - name: kafka_alerts
+    rules:
+      - alert: ActiveControllerCount
+        expr: sum(kafka_controller_active_count) by (job) != 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Illegal kafka active controller number for cluster {{ $labels.job }}"
+          description: "Current number of active controller is {{ $value }}"
+
+      - alert: KafkaClusterHighBytesInPerSec
+        expr: sum(rate(kafka_broker_network_io_bytes_total{direction="in"}[1m])) by (job) > 50 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka inbound network throughput {{ printf \"%0.f\" $value }} Bytes/s for cluster {{ $labels.job }}"
+          description: "The number of bytes per second received by Kafka cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaClusterHighBytesOutPerSec
+        expr: sum(rate(kafka_broker_network_io_bytes_total{direction="out"}[1m])) by (job) > 50 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka outbound network throughput {{ printf \"%0.f\" $value }} Bytes/s for cluster {{ $labels.job }}"
+          description: "The number of bytes per second fetched from Kafka cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighBytesInPerSec
+        expr: rate(kafka_broker_network_io_bytes_total{direction="in"}[1m]) > 20 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka inbound network throughput {{ printf \"%0.f\" $value }} Bytes/s for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The number of bytes per second received by Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighBytesOutPerSec
+        expr: rate(kafka_broker_network_io_bytes_total{direction="out"}[1m]) > 20 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka outbound network throughput {{ printf \"%0.f\" $value }} Bytes/s for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The number of bytes per second fetched from Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighProduceRequestRate
+        expr: sum(rate(kafka_request_count_total{type="Produce"}[1m])) by (job, instance) > 1000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka produce request rate {{ printf \"%0.2f\" $value }} req/s for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The number of produce requests per second received by Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighFetchRequestRate
+        expr: sum(rate(kafka_request_count_total{type="Fetch"}[1m])) by (job, instance) > 1000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka fetch request rate {{ printf \"%0.2f\" $value }} req/s for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The number of fetch requests per second received by Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighProduceLatency
+        expr: kafka_request_time_99p_milliseconds{type="Produce"} > 100
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka produce request latency (P99) {{ printf \"%0.2f\" $value }} ms for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The 99th percentile of produce request latency of Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighFetchLatency
+        expr: kafka_request_time_99p_milliseconds{type="Fetch"} > 1000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High Kafka fetch request latency (P99) {{ printf \"%0.2f\" $value }} ms for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The 99th percentile of fetch request latency of Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighErrorRequestRate
+        expr: sum(rate(kafka_request_error_count_total{error!="NONE"}[1m])) by (job, instance, error) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Kafka error request rate {{ printf \"%0.2f\" $value }} req/s for broker {{ $labels.instance }} in cluster {{ $labels.job }}"
+          description: "The error request rate of Kafka broker {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighPartitionCount
+        expr: kafka_partition_count > 5000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka node {{ $labels.instance }} in cluster {{ $labels.job }} has too many partitions: {{ $value }}."
+          description: "The partition count of node {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaBrokerHighConnectionCount
+        expr: sum(kafka_server_connection_count) by (job, instance) > 1000
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Kafka node {{ $labels.instance }} in cluster {{ $labels.job }} has too many connections: {{ $value }}."
+          description: "The connection count of node {{ $labels.instance }} in cluster {{ $labels.job }} is exceeding threshold."
+
+      - alert: KafkaGroupHighConsumerLag
+        expr: sum(max(kafka_log_end_offset) by (job, topic, partition)) by (job, topic)
+          - on (topic) group_left (consumer_group) sum(max(kafka_group_commit_offset) by (job, consumer_group, topic, partition)) by (job, consumer_group, topic) > 10000
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High group consumer lag {{ printf \"%0.f\" $value }} for consumer group {{ $labels.consumer_group }} in cluster {{ $labels.job }} on topic {{ $labels.topic }}."
+          description: "The consumer lag of consumer group {{ $labels.consumer_group }} in cluster {{ $labels.job }} on topic {{ $labels.topic }} is exceeding threshold."
+
+      - alert: KafkaHighS3RequestErrorRate
+        expr: sum(rate(kafka_stream_operation_latency_count{operation_type="S3Request", status="failed"}[1m])) by (job, operation_name) > 0.1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Kafka S3 request {{ $labels.operation_name }} error rate {{ printf \"%0.2f\" $value }} req/s for cluster {{ $labels.job }}"
+          description: "The S3 request {{ $labels.operation_name }} error rate of Kafka cluster {{ $labels.job }} is exceeding threshold."

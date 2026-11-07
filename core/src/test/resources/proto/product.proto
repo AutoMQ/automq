@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package product;
+option java_package = "protobuf.product";
+option java_outer_classname = "ProductProtos";
+
+message Product {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+
+  enum Category {
+    CATEGORY_UNSPECIFIED = 0;
+    ELECTRONICS = 1;
+    CLOTHING = 2;
+    BOOKS = 3;
+    FOOD = 4;
+  }
+
+  message Price {
+    double value = 1;
+    string currency_code = 2;
+  }
+
+  Price price = 4;
+  Category category = 5;
+}

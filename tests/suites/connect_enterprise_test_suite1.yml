@@ -1,0 +1,6 @@
+connect_enterprise_test_suite:
+  included:
+    - ../kafkatest/tests/connect/connect_remote_write_test.py::ConnectRemoteWriteTest.test_opentelemetry_remote_write_exporter
+    - ../kafkatest/tests/connect/connect_remote_write_test.py::ConnectRemoteWriteTest.test_remote_write_with_compression
+    - ../kafkatest/tests/connect/connect_remote_write_test.py::ConnectRemoteWriteTest.test_remote_write_batch_size_limits
+    - ../kafkatest/tests/connect/connect_remote_write_test.py::ConnectRemoteWriteTest.test_remote_write_server_unavailable

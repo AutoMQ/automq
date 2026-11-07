@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+option java_package = "protobuf";
+option java_outer_classname = "PaymentProtos";
+
+message Payment {
+  oneof method {
+      string credit_card = 1;
+      string paypal = 2;
+    }
+}

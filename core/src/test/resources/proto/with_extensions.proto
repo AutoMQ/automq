@@ -1,0 +1,21 @@
+syntax = "proto2";
+
+package test;
+
+// Base message that allows extensions
+message ExtendTestMessage {
+    required string id = 1;
+    optional string name = 2;
+    
+    // Define extension range
+    extensions 100 to 199;
+}
+
+// Another message that extends the base message
+message ExtendingMessage {
+    extend ExtendTestMessage {
+        optional string test_field = 100;
+    }
+    
+    optional string extra_field = 1;
+}

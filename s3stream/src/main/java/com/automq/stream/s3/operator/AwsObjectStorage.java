@@ -1,0 +1,1096 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.automq.stream.s3.operator;
+
+import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.utils.FutureUtil;
+
+import org.apache.commons.lang3.StringUtils;
+import org.apache.commons.lang3.tuple.Pair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.net.URI;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.handler.ssl.OpenSsl;
+import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
+import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
+import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
+import software.amazon.awssdk.checksums.SdkChecksum;
+import software.amazon.awssdk.core.async.AsyncRequestBody;
+import software.amazon.awssdk.core.async.AsyncResponseTransformer;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
+import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.crt.CRT;
+import software.amazon.awssdk.http.HttpStatusCode;
+import software.amazon.awssdk.http.crt.AwsCrtAsyncHttpClient;
+import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.LegacyMd5Plugin;
+import software.amazon.awssdk.services.s3.S3AsyncClient;
+import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
+import software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
+import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
+import software.amazon.awssdk.services.s3.model.CompletedPart;
+import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
+import software.amazon.awssdk.services.s3.model.CopyPartResult;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
+import software.amazon.awssdk.services.s3.model.CreateMultipartUploadResponse;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Error;
+import software.amazon.awssdk.services.s3.model.S3Exception;
+import software.amazon.awssdk.services.s3.model.Tagging;
+import software.amazon.awssdk.services.s3.model.UploadPartCopyRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartRequest;
+import software.amazon.awssdk.services.s3.model.UploadPartResponse;
+
+import static com.automq.stream.s3.metadata.ObjectUtils.tagging;
+import static com.automq.stream.s3.metrics.operations.S3Operation.COMPLETE_MULTI_PART_UPLOAD;
+import static com.automq.stream.s3.metrics.operations.S3Operation.GET_OBJECT;
+import static com.automq.stream.utils.FutureUtil.cause;
+
+@SuppressWarnings({"this-escape", "NPathComplexity"})
+public class AwsObjectStorage extends AbstractObjectStorage {
+    // use the root logger to log the error to both log file and stdout
+    private static final Logger READINESS_CHECK_LOGGER = LoggerFactory.getLogger("ObjectStorageReadinessCheck");
+    public static final String S3_API_NO_SUCH_KEY = "NoSuchKey";
+    private static final Set<String> RETRIABLE_DELETE_OBJECT_ERROR_CODES = Set.of(
+        "InternalError", "ServiceUnavailable", "SlowDown", "RequestTimeout", "OperationAborted");
+    private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
+    public static final String PATH_STYLE_KEY = "pathStyle";
+    public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
+    // LIST, DELETE, and multipart control requests move little data on the HTTP connection and may wait on S3 processing.
+    private static final long CONTROL_MINIMUM_THROUGHPUT_BPS = 1;
+    private static final Duration CONTROL_MINIMUM_THROUGHPUT_TIMEOUT = Duration.ofSeconds(30);
+
+    // https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html
+    // The maximum number of keys that can be deleted in a single request is 1000.
+    public static final int AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER = 1000;
+
+    private final String bucket;
+    private final Tagging tagging;
+    private final S3AsyncClient readS3Client;
+    private final S3AsyncClient writeS3Client;
+    private final Supplier<S3AsyncClient> controlClientSupplier;
+    private final boolean usesCrt;
+    // Guarded by the monitor used by controlClient() and doClose().
+    private S3AsyncClient controlS3Client;
+    private boolean closed;
+
+    private final ChecksumAlgorithm checksumAlgorithm;
+
+    public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        boolean readWriteIsolate, boolean checkMode, String threadPrefix) {
+        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, threadPrefix);
+        this.bucket = bucketURI.bucket();
+        this.tagging = tagging(tagging);
+        List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
+
+        String checksumAlgorithmStr = bucketURI.extensionString(CHECKSUM_ALGORITHM_KEY);
+        if (checksumAlgorithmStr != null) {
+            checksumAlgorithmStr = checksumAlgorithmStr.toUpperCase(Locale.ROOT);
+        }
+
+        ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
+        if (checksumAlgorithm == null) {
+            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+        }
+        this.checksumAlgorithm = checksumAlgorithm;
+
+        Configuration configuration = Configuration.fromBucketURI(bucketURI);
+        Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
+        this.writeS3Client = clientSupplier.get();
+        this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
+        this.usesCrt = !"netty".equals(configuration.sdkImplementation());
+        if (usesCrt) {
+            // CRT connection health is configured per client, not per request. Create this client on its first use.
+            this.controlClientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration.forControl());
+        } else {
+            this.controlClientSupplier = () -> readS3Client;
+            this.controlS3Client = readS3Client;
+        }
+        if (usesCrt) {
+            // Keep CRT alive until this storage finishes flushing and closes during JVM shutdown.
+            CRT.acquireShutdownRef();
+        }
+    }
+
+    // used for test only
+    public AwsObjectStorage(S3AsyncClient s3Client, String bucket) {
+        this(s3Client, bucket, ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, String bucket, ChecksumAlgorithm checksumAlgorithm) {
+        this(s3Client, s3Client, bucket, checksumAlgorithm);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
+        ChecksumAlgorithm checksumAlgorithm) {
+        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
+        this.bucket = bucket;
+        this.writeS3Client = s3Client;
+        this.readS3Client = s3Client;
+        this.controlS3Client = controlS3Client;
+        this.controlClientSupplier = () -> controlS3Client;
+        this.tagging = null;
+        this.checksumAlgorithm = checksumAlgorithm;
+        this.usesCrt = false;
+    }
+
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    void checkDeleteObjectsResponse(DeleteObjectsResponse response, List<String> objectKeys) throws Exception {
+        Set<String> successKeys = new HashSet<>(objectKeys);
+        Map<String, DeleteObjectError> retriableKeys = new HashMap<>();
+        Map<String, DeleteObjectError> failedKeys = new HashMap<>();
+        for (S3Error error : response.errors()) {
+            if (S3_API_NO_SUCH_KEY.equals(error.code())) {
+                // ignore for delete objects.
+                continue;
+            }
+            successKeys.remove(error.key());
+            DeleteObjectError deleteObjectError = new DeleteObjectError(error.code(), -1, error.message());
+            if (RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code())) {
+                retriableKeys.put(error.key(), deleteObjectError);
+            } else {
+                failedKeys.put(error.key(), deleteObjectError);
+            }
+        }
+        logDeleteObjectErrors(retriableKeys, failedKeys);
+        if (!retriableKeys.isEmpty() || !failedKeys.isEmpty()) {
+            throw new DeleteObjectsException("Failed to delete objects", successKeys, retriableKeys, failedKeys);
+        }
+    }
+
+    private void logDeleteObjectErrors(Map<String, DeleteObjectError> retriableKeys,
+        Map<String, DeleteObjectError> failedKeys) {
+        if (!retriableKeys.isEmpty() && logger.isWarnEnabled()) {
+            logger.warn("Delete objects retriable failures, count={}, samples={}",
+                retriableKeys.size(), formatDeleteObjectErrors(retriableKeys));
+        }
+        if (!failedKeys.isEmpty() && logger.isErrorEnabled()) {
+            logger.error("Delete objects failed, count={}, samples={}",
+                failedKeys.size(), formatDeleteObjectErrors(failedKeys));
+        }
+    }
+
+    private String formatDeleteObjectErrors(Map<String, DeleteObjectError> errors) {
+        StringBuilder builder = new StringBuilder();
+        int count = 0;
+        for (Map.Entry<String, DeleteObjectError> entry : errors.entrySet()) {
+            if (count >= DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT) {
+                break;
+            }
+            if (count > 0) {
+                builder.append(", ");
+            }
+            builder.append('(').append(entry.getKey()).append(", ").append(entry.getValue()).append(')');
+            count++;
+        }
+        return builder.toString();
+    }
+
+    @Override
+    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
+        GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
+
+        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
+            builder.checksumMode(ChecksumMode.ENABLED);
+        }
+
+        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
+            .thenAccept(responsePublisher -> {
+                // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
+                CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
+                responsePublisher.subscribe(bytes -> {
+                    // the aws client will copy DefaultHttpContent to heap ByteBuffer
+                    buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                }).whenComplete((rst, ex) -> {
+                    if (ex != null) {
+                        buf.release();
+                        cf.completeExceptionally(ex);
+                    } else {
+                        cf.complete(buf);
+                    }
+                });
+            })
+            .exceptionally(ex -> {
+                cf.completeExceptionally(ex);
+                return null;
+            });
+        return cf;
+    }
+
+    @Override
+    CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
+        // Compute checksum before handing unsafe ByteBuffers to the SDK. A timed-out attempt may still be writing
+        // after a later retry completes and the caller releases/reuses the ByteBuf; the stale attempt would then read
+        // dirty bytes. A fixed request checksum makes the service reject that corrupted body instead of persisting it.
+        PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+
+        if (hasFlexibleChecksumAlgorithm()) {
+            putChecksum(builder, data);
+        } else {
+            builder.contentMD5(contentMd5(data));
+        }
+
+        PutObjectRequest request = builder.build();
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
+        return writeS3Client.putObject(request, body).thenApply(rst -> null);
+    }
+
+    @Override
+    CompletableFuture<Void> doCopy(String sourceBucket, String sourcePath, String destinationPath) {
+        CopyObjectRequest.Builder builder = CopyObjectRequest.builder()
+            .sourceBucket(sourceBucket)
+            .sourceKey(sourcePath)
+            .destinationBucket(bucket)
+            .destinationKey(destinationPath);
+        return writeS3Client.copyObject(builder.build()).thenApply(ignored -> null);
+    }
+
+    @Override
+    CompletableFuture<String> doCreateMultipartUpload(WriteOptions options, String path) {
+        CreateMultipartUploadRequest.Builder builder = CreateMultipartUploadRequest.builder().bucket(bucket).key(path);
+        if (null != tagging) {
+            builder.tagging(tagging);
+        }
+
+        if (hasFlexibleChecksumAlgorithm()) {
+            builder.checksumAlgorithm(checksumAlgorithm);
+        }
+
+        CreateMultipartUploadRequest request = builder.build();
+        return writeControlClient().createMultipartUpload(request).thenApply(CreateMultipartUploadResponse::uploadId);
+    }
+
+    @Override
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
+        int partNumber, ByteBuf part) {
+        // Same dirty-retry protection as doWrite.
+        UploadPartRequest.Builder builder = UploadPartRequest.builder()
+            .bucket(bucket)
+            .key(path)
+            .uploadId(uploadId)
+            .partNumber(partNumber);
+
+        if (hasFlexibleChecksumAlgorithm()) {
+            putChecksum(builder, part);
+        } else {
+            builder.contentMD5(contentMd5(part));
+        }
+
+        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
+        return writeS3Client.uploadPart(builder.build(), body)
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
+    }
+
+    @Override
+    CompletableFuture<ObjectStorageCompletedPart> doUploadPartCopy(WriteOptions options, String sourcePath, String path,
+        long start, long end, String uploadId, int partNumber) {
+        UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber)
+            .overrideConfiguration(
+                AwsRequestOverrideConfiguration.builder()
+                    .apiCallAttemptTimeout(Duration.ofMillis(options.apiCallAttemptTimeout()))
+                    .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
+            )
+            .build();
+        return writeControlClient().uploadPartCopy(request)
+            .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), checksumValue(resp.copyPartResult())));
+    }
+
+    @Override
+    public CompletableFuture<Void> doCompleteMultipartUpload(WriteOptions options, String path, String uploadId,
+        List<ObjectStorageCompletedPart> parts) {
+        List<CompletedPart> completedParts = parts.stream()
+            .map(this::completedPart)
+            .collect(Collectors.toList());
+        CompletedMultipartUpload multipartUpload = CompletedMultipartUpload.builder().parts(completedParts).build();
+        CompleteMultipartUploadRequest request = CompleteMultipartUploadRequest.builder().bucket(bucket).key(path).uploadId(uploadId).multipartUpload(multipartUpload).build();
+        return writeControlClient().completeMultipartUpload(request).thenApply(resp -> null);
+    }
+
+    public CompletableFuture<Void> doDeleteObjects(List<String> objectKeys) {
+        ObjectIdentifier[] toDeleteKeys = objectKeys.stream().map(key ->
+            ObjectIdentifier.builder()
+                .key(key)
+                .build()
+        ).toArray(ObjectIdentifier[]::new);
+
+        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+            .bucket(bucket)
+            .delete(Delete.builder().objects(toDeleteKeys).build())
+            .build();
+
+        return retryOnThrottle(() -> {
+            CompletableFuture<Void> cf = new CompletableFuture<>();
+            writeControlClient().deleteObjects(request)
+                .thenAccept(resp -> {
+                    try {
+                        checkDeleteObjectsResponse(resp, objectKeys);
+                        cf.complete(null);
+                    } catch (Throwable ex) {
+                        cf.completeExceptionally(ex);
+                    }
+                })
+                .exceptionally(ex -> {
+                    cf.completeExceptionally(toDeleteObjectsException(objectKeys, cause(ex)));
+                    return null;
+                });
+            return cf;
+        }, S3Operation.DELETE_OBJECTS, 0);
+    }
+
+    private DeleteObjectsException toDeleteObjectsException(List<String> objectKeys, Throwable ex) {
+        DeleteObjectError error = deleteObjectError(ex);
+        Map<String, DeleteObjectError> retriableKeys = new HashMap<>();
+        Map<String, DeleteObjectError> failedKeys = new HashMap<>();
+        Map<String, DeleteObjectError> target = isRetriableDeleteError(error) ? retriableKeys : failedKeys;
+        objectKeys.forEach(key -> target.put(key, error));
+        logDeleteObjectErrors(retriableKeys, failedKeys);
+        return new DeleteObjectsException("Failed to delete objects", Set.of(), retriableKeys, failedKeys);
+    }
+
+    private boolean isRetriableDeleteError(DeleteObjectError error) {
+        return isRetriableStatus(error.statusCode())
+            || RETRIABLE_DELETE_OBJECT_ERROR_CODES.contains(error.code());
+    }
+
+    private boolean isRetriableStatus(int statusCode) {
+        return statusCode == HttpStatusCode.THROTTLING
+            || statusCode == HttpStatusCode.REQUEST_TIMEOUT
+            || statusCode == HttpStatusCode.INTERNAL_SERVER_ERROR
+            || statusCode == HttpStatusCode.BAD_GATEWAY
+            || statusCode == HttpStatusCode.SERVICE_UNAVAILABLE
+            || statusCode == HttpStatusCode.GATEWAY_TIMEOUT;
+    }
+
+    private DeleteObjectError deleteObjectError(Throwable ex) {
+        if (ex instanceof S3Exception s3Ex) {
+            String code = s3Ex.awsErrorDetails() == null ? "Unknown" : s3Ex.awsErrorDetails().errorCode();
+            return new DeleteObjectError(code, s3Ex.statusCode(), s3Ex.getMessage());
+        }
+        if (ex instanceof ApiCallAttemptTimeoutException || ex instanceof TimeoutException || ex instanceof SdkClientException) {
+            return new DeleteObjectError(ex.getClass().getSimpleName(), HttpStatusCode.SERVICE_UNAVAILABLE, ex.getMessage());
+        }
+        return new DeleteObjectError(ex.getClass().getSimpleName(), -1, ex.getMessage());
+    }
+
+    @Override
+    @SuppressWarnings("checkstyle:CyclomaticComplexity")
+    Pair<RetryStrategy, Throwable> toRetryStrategyAndCause(Throwable ex, S3Operation operation) {
+        Throwable cause = cause(ex);
+        if (cause instanceof ApiCallAttemptTimeoutException) {
+            cause = new TimeoutException(cause.getMessage());
+        }
+        // Common transport and service failures are retriable for every operation.
+        if (cause instanceof S3Exception s3Exception && isRetriableStatus(s3Exception.statusCode())
+            || cause instanceof SdkClientException || cause instanceof TimeoutException) {
+            return Pair.of(RetryStrategy.RETRY, cause);
+        }
+        if (cause instanceof IllegalArgumentException || cause instanceof ObjectNotExistException) {
+            return Pair.of(RetryStrategy.ABORT, cause);
+        }
+        if (cause instanceof NoSuchUploadException) {
+            if (COMPLETE_MULTI_PART_UPLOAD == operation) {
+                return Pair.of(RetryStrategy.VISIBILITY_CHECK, cause);
+            }
+            if (S3Operation.UPLOAD_PART == operation || S3Operation.UPLOAD_PART_COPY == operation) {
+                // The multipart upload no longer exists (expired, aborted, or cleaned by the backend).
+                // Retrying with a dead upload ID is futile and would loop until the broker crashes.
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        if (cause instanceof S3Exception s3Exception) {
+            if (GET_OBJECT == operation && cause instanceof NoSuchKeyException) {
+                return Pair.of(RetryStrategy.ABORT, new ObjectNotExistException(cause));
+            }
+            if (s3Exception.statusCode() == HttpStatusCode.NOT_FOUND
+                || operation == S3Operation.LIST_OBJECTS || operation == S3Operation.COPY_OBJECT) {
+                return Pair.of(RetryStrategy.ABORT, cause);
+            }
+        }
+        return Pair.of(RetryStrategy.RETRY, cause);
+    }
+
+    @Override
+    synchronized void doClose() {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        try {
+            writeS3Client.close();
+            if (readS3Client != writeS3Client) {
+                readS3Client.close();
+            }
+            if (controlS3Client != null && controlS3Client != readS3Client && controlS3Client != writeS3Client) {
+                controlS3Client.close();
+            }
+        } finally {
+            if (usesCrt) {
+                CRT.releaseShutdownRef();
+            }
+        }
+    }
+
+    private synchronized S3AsyncClient controlClient() {
+        if (closed) {
+            throw new IllegalStateException("Object storage is closed");
+        }
+        if (controlS3Client == null) {
+            controlS3Client = controlClientSupplier.get();
+        }
+        return controlS3Client;
+    }
+
+    private S3AsyncClient writeControlClient() {
+        return usesCrt ? controlClient() : writeS3Client;
+    }
+
+    @Override
+    CompletableFuture<List<ObjectInfo>> doList(ListOptions options) {
+        if (options.maxKeys() == 0) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        S3AsyncClient client = controlClient();
+        CompletableFuture<List<ObjectInfo>> resultFuture = new CompletableFuture<>();
+        List<ObjectInfo> allObjects = new ArrayList<>();
+        listNextBatch(client, options, null, allObjects, resultFuture);
+        return resultFuture;
+    }
+
+    private void listNextBatch(S3AsyncClient client, ListOptions options, String continuationToken, List<ObjectInfo> allObjects,
+        CompletableFuture<List<ObjectInfo>> resultFuture) {
+        client.listObjectsV2(builder -> {
+            builder.bucket(bucket).prefix(options.prefix());
+            if (continuationToken != null) {
+                builder.continuationToken(continuationToken);
+            } else if (options.startAfter() != null) {
+                builder.startAfter(options.startAfter());
+            }
+            if (options.maxKeys() != ListOptions.UNLIMITED) {
+                builder.maxKeys(options.maxKeys() - allObjects.size());
+            }
+        }).thenAccept(resp -> {
+            resp.contents()
+                .stream()
+                .map(object -> new ObjectInfo(bucketURI.bucketId(), object.key(), object.lastModified().toEpochMilli(), object.size()))
+                .forEach(allObjects::add);
+            boolean limitReached = options.maxKeys() != ListOptions.UNLIMITED
+                && allObjects.size() >= options.maxKeys();
+            if (resp.isTruncated() && !limitReached) {
+                listNextBatch(client, options, resp.nextContinuationToken(), allObjects, resultFuture);
+            } else {
+                int resultSize = options.maxKeys() == ListOptions.UNLIMITED
+                    ? allObjects.size() : Math.min(options.maxKeys(), allObjects.size());
+                resultFuture.complete(new ArrayList<>(allObjects.subList(0, resultSize)));
+            }
+        }).exceptionally(ex -> {
+            resultFuture.completeExceptionally(ex);
+            return null;
+        });
+    }
+
+    @Override
+    protected DeleteObjectsAccumulator newDeleteObjectsAccumulator() {
+        return new DeleteObjectsAccumulator(AWS_DEFAULT_BATCH_DELETE_OBJECTS_NUMBER, getMaxObjectStorageConcurrency(), this::doDeleteObjects);
+    }
+
+    protected List<AwsCredentialsProvider> credentialsProviders() {
+        return credentialsProviders0(bucketURI);
+    }
+
+    protected List<AwsCredentialsProvider> credentialsProviders0(BucketURI bucketURI) {
+        return List.of(new AutoMQStaticCredentialsProvider(bucketURI), DefaultCredentialsProvider.builder().build());
+    }
+
+    private String range(long start, long end) {
+        if (end == -1L) {
+            return "bytes=" + start + "-";
+        }
+        // the range end is inclusive end
+        return "bytes=" + start + "-" + (end - 1);
+    }
+
+    protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
+                                      Configuration configuration) {
+        String endpoint = uri.endpoint();
+        String region = uri.region();
+        boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
+        int maxConcurrency = getMaxObjectStorageConcurrency();
+        if ("crt".equals(configuration.sdkImplementation())) {
+            S3CrtAsyncClientBuilder crtBuilder = S3AsyncClient.crtBuilder()
+                .region(Region.of(region))
+                .credentialsProvider(newCredentialsProviderChain(credentialsProviders))
+                .forcePathStyle(forcePathStyle)
+                .checksumValidationEnabled(false);
+            configuration.configureCrtBuilder(crtBuilder, maxConcurrency);
+            if (StringUtils.isNotBlank(endpoint)) {
+                crtBuilder.endpointOverride(URI.create(endpoint));
+            }
+            logger.info("Using CRT S3 client with minimum throughput {} B/s and health timeout {} seconds; "
+                    + "SDK API call/attempt timeouts are not supported by this client",
+                configuration.crtMinimumThroughputBps(), configuration.crtMinimumThroughputTimeout().getSeconds());
+            return crtBuilder.build();
+        }
+        S3AsyncClientBuilder builder = S3AsyncClient.builder().region(Region.of(region));
+        if (StringUtils.isNotBlank(endpoint)) {
+            builder.endpointOverride(URI.create(endpoint));
+        }
+        if ("crt-http".equals(configuration.sdkImplementation())) {
+            AwsCrtAsyncHttpClient.Builder httpBuilder = AwsCrtAsyncHttpClient.builder();
+            configuration.configureCrtHttpBuilder(httpBuilder, maxConcurrency);
+            builder.httpClientBuilder(httpBuilder);
+        } else {
+            if (!OpenSsl.isAvailable()) {
+                logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
+            }
+            builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
+                .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
+                .connectionTimeout(configuration.connectionTimeout()));
+        }
+        builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
+        // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
+        builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
+            .addPlugin(LegacyMd5Plugin.create());
+        builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
+        builder.overrideConfiguration(clientOverrideConfiguration(configuration));
+        return builder.build();
+    }
+
+    protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {
+        return ClientOverrideConfiguration.builder()
+            .apiCallTimeout(configuration.apiCallTimeout())
+            .apiCallAttemptTimeout(configuration.apiCallAttemptTimeout())
+            .retryStrategy(software.amazon.awssdk.awscore.retry.AwsRetryStrategy.standardRetryStrategy()
+                .toBuilder().maxAttempts(configuration.numRetries() + 1).build())
+            .build();
+    }
+
+    protected AwsCredentialsProvider newCredentialsProviderChain(List<AwsCredentialsProvider> credentialsProviders) {
+        List<AwsCredentialsProvider> providers = new ArrayList<>(credentialsProviders);
+        // Add default providers to the end of the chain
+        providers.add(AnonymousCredentialsProvider.create());
+        return AwsCredentialsProviderChain.builder()
+            .reuseLastProviderEnabled(true)
+            .credentialsProviders(providers)
+            .build();
+    }
+
+    private CompletedPart completedPart(ObjectStorageCompletedPart part) {
+        CompletedPart.Builder builder = CompletedPart.builder()
+            .partNumber(part.getPartNumber())
+            .eTag(part.getPartId());
+        if (part.getCheckSum() == null) {
+            return builder.build();
+        }
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return builder.checksumCRC32C(part.getCheckSum()).build();
+            case CRC32:
+                return builder.checksumCRC32(part.getCheckSum()).build();
+            case SHA1:
+                return builder.checksumSHA1(part.getCheckSum()).build();
+            case SHA256:
+                return builder.checksumSHA256(part.getCheckSum()).build();
+            default:
+                return builder.build();
+        }
+    }
+
+    private boolean hasFlexibleChecksumAlgorithm() {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+            case CRC32:
+            case SHA1:
+            case SHA256:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private void putChecksum(PutObjectRequest.Builder builder, ByteBuf buf) {
+        String checksum = checksum(buf);
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                builder.checksumCRC32C(checksum);
+                break;
+            case CRC32:
+                builder.checksumCRC32(checksum);
+                break;
+            case SHA1:
+                builder.checksumSHA1(checksum);
+                break;
+            case SHA256:
+                builder.checksumSHA256(checksum);
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private void putChecksum(UploadPartRequest.Builder builder, ByteBuf buf) {
+        String checksum = checksum(buf);
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                builder.checksumCRC32C(checksum);
+                break;
+            case CRC32:
+                builder.checksumCRC32(checksum);
+                break;
+            case SHA1:
+                builder.checksumSHA1(checksum);
+                break;
+            case SHA256:
+                builder.checksumSHA256(checksum);
+                break;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private String checksum(ByteBuf buf) {
+        SdkChecksum checksum = SdkChecksum.forAlgorithm(defaultChecksumAlgorithm());
+        for (ByteBuffer buffer : buf.nioBuffers()) {
+            checksum.update(buffer.duplicate());
+        }
+        return Base64.getEncoder().encodeToString(checksum.getChecksumBytes());
+    }
+
+    private software.amazon.awssdk.checksums.spi.ChecksumAlgorithm defaultChecksumAlgorithm() {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return DefaultChecksumAlgorithm.CRC32C;
+            case CRC32:
+                return DefaultChecksumAlgorithm.CRC32;
+            case SHA1:
+                return DefaultChecksumAlgorithm.SHA1;
+            case SHA256:
+                return DefaultChecksumAlgorithm.SHA256;
+            default:
+                throw new IllegalArgumentException("Unsupported checksum algorithm: " + checksumAlgorithm);
+        }
+    }
+
+    private String checksumValue(UploadPartResponse response) {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return response.checksumCRC32C();
+            case CRC32:
+                return response.checksumCRC32();
+            case SHA1:
+                return response.checksumSHA1();
+            case SHA256:
+                return response.checksumSHA256();
+            default:
+                return null;
+        }
+    }
+
+    private String checksumValue(CopyPartResult response) {
+        switch (checksumAlgorithm) {
+            case CRC32_C:
+                return response.checksumCRC32C();
+            case CRC32:
+                return response.checksumCRC32();
+            case SHA1:
+                return response.checksumSHA1();
+            case SHA256:
+                return response.checksumSHA256();
+            default:
+                return null;
+        }
+    }
+
+    static String contentMd5(ByteBuf buf) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            for (ByteBuffer buffer : buf.nioBuffers()) {
+                md5.update(buffer.duplicate());
+            }
+            return Base64.getEncoder().encodeToString(md5.digest());
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("MD5 algorithm is not available", e);
+        }
+    }
+
+    public boolean readinessCheck() {
+        return new ReadinessCheck().readinessCheck();
+    }
+
+    class ReadinessCheck {
+        public boolean readinessCheck() {
+            READINESS_CHECK_LOGGER.info("Start readiness check for {}", bucketURI);
+            String normalPath = String.format("__automq/readiness_check/normal_obj/%d", System.nanoTime());
+            try {
+                writeS3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(normalPath).build()).get();
+            } catch (Throwable e) {
+                Throwable cause = FutureUtil.cause(e);
+                if (cause instanceof SdkClientException) {
+                    READINESS_CHECK_LOGGER.error("Cannot connect to s3, please check the s3 endpoint config", cause);
+                } else if (cause instanceof S3Exception) {
+                    int code = ((S3Exception) cause).statusCode();
+                    switch (code) {
+                        case HttpStatusCode.NOT_FOUND:
+                            break;
+                        case HttpStatusCode.FORBIDDEN:
+                            READINESS_CHECK_LOGGER.error("Please check whether config is correct", cause);
+                            return false;
+                        default:
+                            READINESS_CHECK_LOGGER.error("Please check config is correct", cause);
+                    }
+                }
+            }
+
+            try {
+                byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+                doWrite(new WriteOptions(), normalPath, Unpooled.wrappedBuffer(content)).get();
+            } catch (Throwable e) {
+                Throwable cause = FutureUtil.cause(e);
+                if (cause instanceof S3Exception && ((S3Exception) cause).statusCode() == HttpStatusCode.NOT_FOUND) {
+                    READINESS_CHECK_LOGGER.error("Cannot find the bucket={}", bucket, cause);
+                } else {
+                    READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Write Object operation", cause);
+                }
+                return false;
+            }
+
+            String copyPath = String.format("__automq/readiness_check/copy_obj/%d", System.nanoTime());
+            boolean copySuccess = true;
+            try {
+                doCopy(bucket, normalPath, copyPath).get();
+            } catch (Throwable e) {
+                READINESS_CHECK_LOGGER.error(
+                    "Please check the identity have the permission to do Copy Object operation", FutureUtil.cause(e));
+                copySuccess = false;
+            }
+
+            try {
+                doDeleteObjects(List.of(normalPath, copyPath)).get();
+            } catch (Throwable e) {
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do Delete Object operation", FutureUtil.cause(e));
+                return false;
+            }
+            if (!copySuccess) {
+                return false;
+            }
+
+            String multiPartPath = String.format("__automq/readiness_check/multi_obj/%d", System.nanoTime());
+            try {
+                WriteOptions options = new WriteOptions();
+                String uploadId = doCreateMultipartUpload(options, multiPartPath).get();
+                byte[] content = new Date().toString().getBytes(StandardCharsets.UTF_8);
+                ObjectStorageCompletedPart part = doUploadPart(options, multiPartPath, uploadId, 1, Unpooled.wrappedBuffer(content)).get();
+                doCompleteMultipartUpload(options, multiPartPath, uploadId, List.of(part)).get();
+
+                ByteBuf buf = doRangeRead(new ReadOptions(), multiPartPath, 0, -1L).get();
+                byte[] readContent = new byte[buf.readableBytes()];
+                buf.readBytes(readContent);
+                buf.release();
+                if (!Arrays.equals(content, readContent)) {
+                    READINESS_CHECK_LOGGER.error("Read get mismatch content from multi-part upload object, expect {}, but {}", content, readContent);
+                }
+                doDeleteObjects(List.of(multiPartPath)).get();
+            } catch (Throwable e) {
+                READINESS_CHECK_LOGGER.error("Please check the identity have the permission to do MultiPart Object operation", FutureUtil.cause(e));
+                return false;
+            }
+
+            READINESS_CHECK_LOGGER.info("Readiness check pass!");
+            return true;
+        }
+
+    }
+
+    /**
+     * Immutable per-bucket client options. SDK-specific constraints are checked by the SDK when constructing clients.
+     */
+    public record Configuration(String sdkImplementation, long crtMinimumThroughputBps, Duration crtMinimumThroughputTimeout,
+                                double crtTargetThroughputGbps, int maxConcurrency, long crtMaxNativeMemoryBytes,
+                                Duration connectionTimeout, int numRetries,
+                                Duration apiCallTimeout, Duration apiCallAttemptTimeout) {
+        Configuration forControl() {
+            // Keep any explicitly configured health check that is already more lenient.
+            return new Configuration(sdkImplementation, Math.min(crtMinimumThroughputBps, CONTROL_MINIMUM_THROUGHPUT_BPS),
+                crtMinimumThroughputTimeout.compareTo(CONTROL_MINIMUM_THROUGHPUT_TIMEOUT) >= 0
+                    ? crtMinimumThroughputTimeout : CONTROL_MINIMUM_THROUGHPUT_TIMEOUT,
+                crtTargetThroughputGbps, maxConcurrency, crtMaxNativeMemoryBytes, connectionTimeout, numRetries,
+                apiCallTimeout, apiCallAttemptTimeout);
+        }
+
+        /**
+         * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
+         */
+        public static Configuration fromBucketURI(BucketURI uri) {
+            String implementation = uri.extensionString("sdkImpl", "crt-http");
+            if (!"netty".equals(implementation) && !"crt".equals(implementation) && !"crt-http".equals(implementation)) {
+                throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
+            }
+            Builder builder = builder().sdkImplementation(implementation)
+                .maxConcurrency(Integer.parseInt(uri.extensionString(BucketURI.MAX_CONCURRENCY_KEY, "-1")))
+                .connectionTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.CONNECTION_TIMEOUT_KEY, "2000"))))
+                .numRetries(Integer.parseInt(uri.extensionString(BucketURI.NUM_RETRIES_KEY, "2")))
+                .apiCallTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_TIMEOUT_KEY, "30000"))))
+                .apiCallAttemptTimeout(Duration.ofMillis(Long.parseLong(uri.extensionString(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "10000"))));
+            if ("crt".equals(implementation) || "crt-http".equals(implementation)) {
+                int healthTimeout = Integer.parseInt(uri.extensionString("crtMinimumThroughputTimeoutSeconds", "2"));
+                if (healthTimeout < 2) {
+                    throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
+                }
+                builder.crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout));
+            }
+            if ("crt".equals(implementation)) {
+                builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
+                    .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
+            }
+            return builder.build();
+        }
+
+        /**
+         * Creates a builder using Java S3 with CRT HTTP. Transfer targets and native memory options apply only to sdkImpl=crt.
+         */
+        public static Builder builder() {
+            return new Builder();
+        }
+
+        /**
+         * Builds immutable configurations; subsequent builder changes do not affect previously built snapshots.
+         */
+        public static final class Builder {
+            private String sdkImplementation = "crt-http";
+            private long crtMinimumThroughputBps = 32L * 1024 * 1024;
+            private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
+            private double crtTargetThroughputGbps = 10.0;
+            private int maxConcurrency = -1;
+            private long crtMaxNativeMemoryBytes = -1;
+            private Duration connectionTimeout = Duration.ofSeconds(2);
+            private int numRetries = 2;
+            private Duration apiCallTimeout = Duration.ofSeconds(30);
+            private Duration apiCallAttemptTimeout = Duration.ofSeconds(10);
+
+            private Builder() {
+            }
+
+            /**
+             * Selects Java S3 with CRT HTTP (crt-http), Java S3 with Netty (netty), or native CRT S3 (crt).
+             */
+            public Builder sdkImplementation(String implementation) {
+                this.sdkImplementation = implementation;
+                return this;
+            }
+
+            /**
+             * Sets the minimum healthy throughput of each CRT connection in bytes per second.
+             */
+            public Builder crtMinimumThroughputBps(long throughputBps) {
+                this.crtMinimumThroughputBps = throughputBps;
+                return this;
+            }
+
+            /**
+             * Sets how long a CRT connection may remain below the throughput threshold.
+             */
+            public Builder crtMinimumThroughputTimeout(Duration timeout) {
+                this.crtMinimumThroughputTimeout = timeout;
+                return this;
+            }
+
+            /**
+             * Sets the CRT transfer throughput target in gigabits per second; this is not a bandwidth limit.
+             */
+            public Builder crtTargetThroughputGbps(double throughputGbps) {
+                this.crtTargetThroughputGbps = throughputGbps;
+                return this;
+            }
+
+            /** Selects a connection cap, or -1 to inherit AutoMQ's existing client concurrency. */
+            public Builder maxConcurrency(int maxConcurrency) {
+                this.maxConcurrency = maxConcurrency;
+                return this;
+            }
+
+            /** Sets a per-client native memory budget, or -1 to let CRT calculate it. */
+            public Builder crtMaxNativeMemoryBytes(long memoryBytes) {
+                this.crtMaxNativeMemoryBytes = memoryBytes;
+                return this;
+            }
+
+            /** Sets the timeout for establishing a connection, independent of object completion time. */
+            public Builder connectionTimeout(Duration timeout) {
+                this.connectionTimeout = timeout;
+                return this;
+            }
+
+            /** Sets retries per HTTP request, excluding the initial attempt. */
+            public Builder numRetries(int numRetries) {
+                this.numRetries = numRetries;
+                return this;
+            }
+
+            /** Sets the Netty SDK deadline for an API call including all attempts. */
+            public Builder apiCallTimeout(Duration timeout) {
+                this.apiCallTimeout = timeout;
+                return this;
+            }
+
+            /** Sets the Netty SDK deadline for one API call attempt. */
+            public Builder apiCallAttemptTimeout(Duration timeout) {
+                this.apiCallAttemptTimeout = timeout;
+                return this;
+            }
+
+            /**
+             * Creates a snapshot without changing the process-wide configuration.
+             */
+            public Configuration build() {
+                return new Configuration(sdkImplementation, crtMinimumThroughputBps, crtMinimumThroughputTimeout,
+                    crtTargetThroughputGbps, maxConcurrency, crtMaxNativeMemoryBytes,
+                    connectionTimeout, numRetries, apiCallTimeout, apiCallAttemptTimeout);
+            }
+        }
+
+        void configureCrtBuilder(S3CrtAsyncClientBuilder builder, int inheritedMaxConcurrency) {
+            builder.maxConcurrency(maxConcurrency == -1 ? inheritedMaxConcurrency : maxConcurrency)
+                .targetThroughputInGbps(crtTargetThroughputGbps)
+                // AutoMQ owns multipart uploads and precomputes checksums for individual requests.
+                .thresholdInBytes(Long.MAX_VALUE)
+                .retryConfiguration(retry -> retry.numRetries(numRetries))
+                .httpConfiguration(http -> http.connectionTimeout(connectionTimeout)
+                    .connectionHealthConfiguration(health -> health.minimumThroughputInBps(crtMinimumThroughputBps)
+                        .minimumThroughputTimeout(crtMinimumThroughputTimeout)));
+            if (crtMaxNativeMemoryBytes != -1) {
+                builder.maxNativeMemoryLimitInBytes(crtMaxNativeMemoryBytes);
+            }
+        }
+
+        /** Configures transport-owned connections; native S3 transfer scheduling and memory settings do not apply. */
+        void configureCrtHttpBuilder(AwsCrtAsyncHttpClient.Builder builder, int inheritedMaxConcurrency) {
+            builder.maxConcurrency(maxConcurrency == -1 ? inheritedMaxConcurrency : maxConcurrency)
+                .connectionTimeout(connectionTimeout)
+                // Share connection health settings with native CRT S3; this is not a whole-response deadline.
+                .connectionHealthConfiguration(health -> health.minimumThroughputInBps(crtMinimumThroughputBps)
+                    .minimumThroughputTimeout(crtMinimumThroughputTimeout));
+        }
+    }
+
+    public static class Builder {
+        private BucketURI bucketURI;
+        private Map<String, String> tagging;
+        private NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
+        private NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
+        private boolean readWriteIsolate;
+        private boolean checkS3ApiModel = false;
+        private String threadPrefix = "";
+
+        public Builder bucket(BucketURI bucketURI) {
+            this.bucketURI = bucketURI;
+            return this;
+        }
+
+        public Builder tagging(Map<String, String> tagging) {
+            this.tagging = tagging;
+            return this;
+        }
+
+        public Builder inboundLimiter(NetworkBandwidthLimiter inboundLimiter) {
+            this.inboundLimiter = inboundLimiter;
+            return this;
+        }
+
+        public Builder outboundLimiter(NetworkBandwidthLimiter outboundLimiter) {
+            this.outboundLimiter = outboundLimiter;
+            return this;
+        }
+
+        public Builder readWriteIsolate(boolean readWriteIsolate) {
+            this.readWriteIsolate = readWriteIsolate;
+            return this;
+        }
+
+        public Builder checkS3ApiModel(boolean checkS3ApiModel) {
+            this.checkS3ApiModel = checkS3ApiModel;
+            return this;
+        }
+
+        public Builder threadPrefix(String threadPrefix) {
+            this.threadPrefix = threadPrefix;
+            return this;
+        }
+
+        public AwsObjectStorage build() {
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
+        }
+    }
+}

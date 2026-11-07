@@ -1,0 +1,144 @@
+From a46795f12e3e012e6ec1ad08783f6f0428a3c034 Mon Sep 17 00:00:00 2001
+From: 1sonofqiu <zhangjianxin@automq.com>
+Date: Wed, 10 Sep 2025 16:30:39 +0800
+Subject: [PATCH 6/6] feat(docker): add AutoMQ Kafka Docker release workflow
+ and update Dockerfile
+
+---
+ docker/jvm/Dockerfile | 58 +++++++++++--------------------------------
+ docker/jvm/launch     | 16 ------------
+ 2 files changed, 15 insertions(+), 59 deletions(-)
+
+diff --git a/docker/jvm/Dockerfile b/docker/jvm/Dockerfile
+index 72e35e63c0..de97104271 100644
+--- a/docker/jvm/Dockerfile
++++ b/docker/jvm/Dockerfile
+@@ -16,60 +16,31 @@
+ # limitations under the License.
+ ###############################################################################
+ 
+-FROM eclipse-temurin:21-jre-alpine AS build-jsa
+-
+-USER root
+-
+-# Get kafka from https://archive.apache.org/dist/kafka and pass the url through build arguments
+-ARG kafka_url
+-
+-COPY jsa_launch /etc/kafka/docker/jsa_launch
+-
+-RUN set -eux ; \
+-    apk update ; \
+-    apk upgrade ; \
+-    apk add --no-cache wget gcompat gpg gpg-agent procps bash; \
+-    mkdir opt/kafka; \
+-    wget -nv -O kafka.tgz "$kafka_url"; \
+-    wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
+-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
+-    wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
+-    gpg --import KEYS; \
+-    gpg --batch --verify kafka.tgz.asc kafka.tgz
+-
+-# Generate jsa files using dynamic CDS for kafka server start command and kafka storage format command
+-RUN /etc/kafka/docker/jsa_launch
+-
+-
+-FROM eclipse-temurin:21-jre-alpine
++FROM amazoncorretto:17-alpine
+ 
+ # exposed ports
+ EXPOSE 9092
+ 
+ USER root
+ 
+-# Get kafka from https://archive.apache.org/dist/kafka and pass the url through build arguments
++# Get AutoMQ URL from https://github.com/AutoMQ/automq/releases and pass the url passed through build arguments
+ ARG kafka_url
+ ARG build_date
+ 
+ 
+-LABEL org.label-schema.name="kafka" \
+-      org.label-schema.description="Apache Kafka" \
++LABEL org.label-schema.name="automq-kafka" \
++      org.label-schema.description="AutoMQ for Kafka" \
+       org.label-schema.build-date="${build_date}" \
+-      org.label-schema.vcs-url="https://github.com/apache/kafka" \
+-      maintainer="Apache Kafka"
++      org.label-schema.vcs-url="https://github.com/AutoMQ/automq" \
++      maintainer="AutoMQ"
+ 
+ RUN set -eux ; \
+     apk update ; \
+     apk upgrade ; \
+-    apk add --no-cache wget gcompat gpg gpg-agent procps bash; \
++    apk add --no-cache wget gcompat procps bash jemalloc; \
+     mkdir opt/kafka; \
+-    wget -nv -O kafka.tgz "$kafka_url"; \
+-    wget -nv -O kafka.tgz.asc "$kafka_url.asc"; \
+-    tar xfz kafka.tgz -C /opt/kafka --strip-components 1; \
+-    wget -nv -O KEYS https://downloads.apache.org/kafka/KEYS; \
+-    gpg --import KEYS; \
+-    gpg --batch --verify kafka.tgz.asc kafka.tgz; \
++    wget -nv -O automq.tgz "$kafka_url"; \
++    tar xfz automq.tgz -C /opt/kafka --strip-components 1; \
+     mkdir -p /var/lib/kafka/data /etc/kafka/secrets; \
+     mkdir -p /etc/kafka/docker /usr/logs /mnt/shared/config; \
+     adduser -h /home/appuser -D --shell /bin/bash appuser; \
+@@ -78,16 +49,17 @@ RUN set -eux ; \
+     chmod -R ug+w /etc/kafka /var/lib/kafka /etc/kafka/secrets; \
+     cp /opt/kafka/config/log4j.properties /etc/kafka/docker/log4j.properties; \
+     cp /opt/kafka/config/tools-log4j.properties /etc/kafka/docker/tools-log4j.properties; \
+-    cp /opt/kafka/config/kraft/server.properties /etc/kafka/docker/server.properties; \
+-    rm kafka.tgz kafka.tgz.asc KEYS; \
+-    apk del wget gpg gpg-agent; \
++    cp /opt/kafka/config/kraft/reconfig-server.properties /etc/kafka/docker/server.properties; \
++    rm automq.tgz; \
++    apk del wget; \
+     apk cache clean;
+ 
+-COPY --from=build-jsa kafka.jsa /opt/kafka/kafka.jsa
+-COPY --from=build-jsa storage.jsa /opt/kafka/storage.jsa
+ COPY --chown=appuser:appuser resources/common-scripts /etc/kafka/docker
+ COPY --chown=appuser:appuser launch /etc/kafka/docker/launch
+ 
++# Configure jemalloc as the memory allocator
++ENV LD_PRELOAD="/usr/lib/libjemalloc.so.2"
++
+ USER appuser
+ 
+ VOLUME ["/etc/kafka/secrets", "/var/lib/kafka/data", "/mnt/shared/config"]
+diff --git a/docker/jvm/launch b/docker/jvm/launch
+index 6c4ca1d2e0..fa0010ff03 100755
+--- a/docker/jvm/launch
++++ b/docker/jvm/launch
+@@ -38,16 +38,6 @@ if [ "${KAFKA_JMX_PORT-}" ]; then
+     -Dcom.sun.management.jmxremote.port=$JMX_PORT"
+ fi
+ 
+-# Make a temp env variable to store user provided performance otps
+-if [ -z "${KAFKA_JVM_PERFORMANCE_OPTS-}" ]; then
+-    export TEMP_KAFKA_JVM_PERFORMANCE_OPTS=""
+-else
+-    export TEMP_KAFKA_JVM_PERFORMANCE_OPTS="$KAFKA_JVM_PERFORMANCE_OPTS"
+-fi
+-
+-# We will first use CDS for storage to format storage
+-export KAFKA_JVM_PERFORMANCE_OPTS="${KAFKA_JVM_PERFORMANCE_OPTS-} -XX:SharedArchiveFile=/opt/kafka/storage.jsa"
+-
+ echo "===> Using provided cluster id $CLUSTER_ID ..."
+ 
+ # Invoke the docker wrapper to setup property files and format storage
+@@ -58,11 +48,5 @@ result=$(/opt/kafka/bin/kafka-run-class.sh kafka.docker.KafkaDockerWrapper setup
+       echo $result | grep -i "already formatted" || \
+       { echo $result && (exit 1) }
+ 
+-# Using temp env variable to get rid of storage CDS command
+-export KAFKA_JVM_PERFORMANCE_OPTS="$TEMP_KAFKA_JVM_PERFORMANCE_OPTS"
+-
+-# Now we will use CDS for kafka to start kafka server
+-export KAFKA_JVM_PERFORMANCE_OPTS="$KAFKA_JVM_PERFORMANCE_OPTS -XX:SharedArchiveFile=/opt/kafka/kafka.jsa"
+-
+ # Start kafka broker
+ exec /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/server.properties
+-- 
+2.39.5 (Apple Git-154)
+

@@ -1,0 +1,438 @@
+/*
+ * Copyright 2025, AutoMQ HK Limited.
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package kafka.automq.zerozone;
+
+import kafka.automq.interceptor.ProduceRequestArgs;
+import kafka.automq.utils.AsyncSender;
+
+import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
+import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
+import org.apache.kafka.common.message.ProduceRequestData;
+import org.apache.kafka.common.message.ProduceResponseData;
+import org.apache.kafka.common.protocol.Errors;
+import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.requests.ProduceResponse;
+import org.apache.kafka.common.requests.s3.AutomqZoneRouterRequest;
+import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
+import org.apache.kafka.common.utils.Time;
+
+import com.automq.stream.utils.Threads;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Queue;
+import java.util.TreeMap;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+
+public class RouterOutV2 {
+    private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
+
+    private final Node currentNode;
+    private final RouterChannel routerChannel;
+    private final Map<Node, Proxy> proxies = new ConcurrentHashMap<>();
+
+    private final LocalProxy localProxy;
+    private final LocalWriteMode localWriteMode;
+    private final GetRouterOutNode mapping;
+    private final AsyncSender asyncSender;
+    private final Time time;
+
+    public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
+        NonBlockingLocalRouterHandler localRouterHandler, LocalWriteMode localWriteMode, AsyncSender asyncSender,
+        Time time) {
+        this.currentNode = currentNode;
+        this.routerChannel = routerChannel;
+        this.mapping = mapping;
+        this.localProxy = new LocalProxy(localRouterHandler);
+        this.localWriteMode = localWriteMode;
+        this.asyncSender = asyncSender;
+        this.time = time;
+    }
+
+    public void handleProduceAppendProxy(ProduceRequestArgs args) {
+        long timeoutMillis = time.milliseconds() + args.timeout();
+        short flag = new ZoneRouterProduceRequest.Flag().internalTopicsAllowed(args.internalTopicsAllowed()).value();
+        Map<TopicPartition, ProduceResponse.PartitionResponse> responseMap = new ConcurrentHashMap<>();
+        List<CompletableFuture<Void>> cfList = new ArrayList<>(args.entriesPerPartition().size());
+        long startNanos = time.nanoseconds();
+        boolean acks0 = args.requiredAcks() == (short) 0;
+        for (Map.Entry<TopicPartition, MemoryRecords> entry : args.entriesPerPartition().entrySet()) {
+            TopicPartition tp = entry.getKey();
+            Node node = mapping.getRouteOutNode(tp.topic(), tp.partition(), args.clientId());
+            if (node.id() == Node.noNode().id()) {
+                responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NOT_LEADER_OR_FOLLOWER));
+                continue;
+            }
+            short orderHint = orderHint(tp, args.clientId().connectionId());
+            boolean directLocal = node.id() == currentNode.id() && localWriteMode == LocalWriteMode.DIRECT;
+            MemoryRecords records = directLocal ? entry.getValue() : LegacyRecordConverter.maybeConvert(entry.getValue());
+            int recordSize = records.sizeInBytes();
+            ZoneRouterProduceRequest zoneRouterProduceRequest = zoneRouterProduceRequest(args, flag, tp, records);
+            CompletableFuture<ProxyRequest> requestCf;
+            if (directLocal) {
+                requestCf = CompletableFuture.completedFuture(new ProxyRequest(tp, -1L, null,
+                    zoneRouterProduceRequest, recordSize, timeoutMillis));
+            } else {
+                requestCf = routerChannel.append(node.id(), orderHint,
+                    ZoneRouterPackWriter.encodeDataBlock(List.of(zoneRouterProduceRequest))).thenApply(channelRst -> {
+                        ZeroZoneMetricsManager.OUT_APPEND_CHANNEL_LATENCY.record(time.nanoseconds() - startNanos);
+                        return new ProxyRequest(tp, channelRst.epoch(), channelRst.channelOffset(),
+                            zoneRouterProduceRequest, recordSize, timeoutMillis);
+                    });
+            }
+            CompletableFuture<Void> proxyCf = requestCf.thenCompose(proxyRequest -> {
+                sendProxyRequest(node, proxyRequest);
+                return proxyRequest.cf.thenAccept(response -> {
+                    if (!acks0) {
+                        responseMap.put(tp, response);
+                    }
+                    if (!directLocal) {
+                        ZeroZoneMetricsManager.OUT_HANDLE_REQUEST_LATENCY.record(time.nanoseconds() - startNanos);
+                    }
+                });
+            }).exceptionally(ex -> {
+                LOGGER.error("Exception in processing append proxies", ex);
+                // Make the producer retry send.
+                responseMap.put(tp, errorPartitionResponse(Errors.LEADER_NOT_AVAILABLE));
+                return null;
+            });
+            cfList.add(proxyCf);
+        }
+        Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> responseCallback = args.responseCallback();
+        if (acks0) {
+            // When acks=0 is set, invoke the callback directly without waiting for data persistence to complete.
+            args.entriesPerPartition().forEach((tp, records) ->
+                responseMap.put(tp, new ProduceResponse.PartitionResponse(Errors.NONE)));
+            responseCallback.accept(responseMap);
+        } else {
+            CompletableFuture<Void> cf = CompletableFuture.allOf(cfList.toArray(new CompletableFuture[0]));
+            cf.thenAccept(nil -> responseCallback.accept(responseMap)).exceptionally(ex -> {
+                LOGGER.error("[UNEXPECTED],[ROUTE_FAIL]", ex);
+                return null;
+            });
+        }
+    }
+
+    private static short orderHint(TopicPartition tp, String connectionId) {
+        return (short) (Objects.hash(tp.topic(), tp.partition(), connectionId) % Short.MAX_VALUE);
+    }
+
+    private void sendProxyRequest(Node node, ProxyRequest proxyRequest) {
+        if (node.id() == currentNode.id()) {
+            localProxy.send(proxyRequest);
+        } else {
+            Proxy proxy = proxies.computeIfAbsent(node, RemoteProxy::new);
+            proxy.send(proxyRequest);
+        }
+    }
+
+    interface Proxy {
+        void send(ProxyRequest request);
+    }
+
+    static ProduceResponse.PartitionResponse errorPartitionResponse(Errors error) {
+        return new ProduceResponse.PartitionResponse(error, -1, -1, -1, -1, Collections.emptyList(), "");
+    }
+
+    static class LocalProxy implements Proxy {
+        private final NonBlockingLocalRouterHandler localRouterHandler;
+
+        LocalProxy(NonBlockingLocalRouterHandler handler) {
+            localRouterHandler = handler;
+        }
+
+        @Override
+        public void send(ProxyRequest request) {
+            ChannelOffset channelOffset = request.channelOffset == null ? null : ChannelOffset.of(request.channelOffset);
+            localRouterHandler.append(request.epoch, channelOffset, request.zoneRouterProduceRequest)
+                .whenComplete((resp, ex) -> {
+                    if (ex != null) {
+                        request.completeWithError(Errors.forException(ex));
+                    } else {
+                        ProduceResponseData produceResponseData = ZoneRouterResponseCodec.decode(Unpooled.wrappedBuffer(resp.data()));
+                        resp.setData(null); // gc the data
+                        ProduceResponseData.PartitionProduceResponse partitionData = produceResponseData.responses().iterator().next()
+                            .partitionResponses().get(0);
+                        request.cf.complete(partitionResponse(partitionData));
+                    }
+                });
+        }
+    }
+
+    /**
+     * Aggregates requests for one remote node. A timer owns one batch, while sealed batches wait in order for
+     * an in-flight permit before transmission.
+     */
+    class RemoteProxy implements Proxy {
+        private static final int MAX_INFLIGHT_SIZE = 64;
+        private static final long IDLE_LINGER_NANOS = TimeUnit.MICROSECONDS.toNanos(100);
+        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
+        private final Node node;
+        private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
+        private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
+        private RequestBatch requestBatch = null;
+
+        public RemoteProxy(Node node) {
+            this.node = node;
+        }
+
+        public synchronized void send(ProxyRequest request) {
+            long startNanos = time.nanoseconds();
+            request.cf.whenComplete((rst, ex) ->
+                ZeroZoneMetricsManager.OUT_REQUEST_TARGET_LATENCY.record(time.nanoseconds() - startNanos));
+            ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
+            synchronized (this) {
+                if (requestBatch == null) {
+                    requestBatch = new RequestBatch(Time.SYSTEM, IDLE_LINGER_NANOS, MAX_LINGER_NANOS, 8192);
+                    scheduleBatchTimer(requestBatch, IDLE_LINGER_NANOS);
+                }
+                if (requestBatch.add(request)) {
+                    requestBatchQueue.add(requestBatch);
+                    requestBatch = null;
+                    trySendRequestBatch();
+                }
+            }
+        }
+
+        private void scheduleBatchTimer(RequestBatch batch, long delayNanos) {
+            Threads.COMMON_SCHEDULER.schedule(() -> onBatchTimer(batch), delayNanos, TimeUnit.NANOSECONDS);
+        }
+
+        private synchronized void onBatchTimer(RequestBatch batch) {
+            if (requestBatch != batch) {
+                return;
+            }
+            long delayNanos = batch.remainingFlushDelayNanos();
+            if (delayNanos > 0) {
+                scheduleBatchTimer(batch, delayNanos);
+                return;
+            }
+            requestBatchQueue.add(batch);
+            requestBatch = null;
+            trySendRequestBatch();
+        }
+
+        private synchronized void trySendRequestBatch() {
+            if (inflightLimiter.availablePermits() == 0) {
+                return;
+            }
+            for (; ; ) {
+                RequestBatch waitingSend = requestBatchQueue.peek();
+                if (waitingSend == null) {
+                    break;
+                }
+                if (!inflightLimiter.tryAcquire()) {
+                    break;
+                }
+                requestBatchQueue.poll();
+                List<CompletableFuture<Void>> futures = new ArrayList<>();
+                waitingSend.getRequests().forEach((epoch, requests) -> futures.add(batchSend(epoch, requests)));
+                CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
+                    .whenComplete((nil, ex) -> {
+                        synchronized (RemoteProxy.this) {
+                            inflightLimiter.release();
+                            trySendRequestBatch();
+                        }
+                    });
+            }
+        }
+
+        private CompletableFuture<Void> batchSend(long epoch, List<ProxyRequest> requests) {
+            RouterRecordV2 routerRecord = new RouterRecordV2(
+                currentNode.id(),
+                requests.stream().map(r -> r.channelOffset).collect(Collectors.toList())
+            );
+            AutomqZoneRouterRequest.Builder builder = new AutomqZoneRouterRequest.Builder(
+                new AutomqZoneRouterRequestData().setMetadata(routerRecord.encode().array())
+                    .setVersion((short) 1)
+                    .setRouteEpoch(epoch)
+            );
+            return asyncSender.sendRequest(node, builder).thenAccept(clientResponse -> {
+                if (!clientResponse.hasResponse()) {
+                    LOGGER.error("[ROUTER_OUT],[NO_RESPONSE],node={},response={}", node, clientResponse);
+                    // Make the producer retry send.
+                    requests.forEach(r -> r.completeWithError(Errors.LEADER_NOT_AVAILABLE));
+                    return;
+                }
+                if (LOGGER.isTraceEnabled()) {
+                    LOGGER.trace("[ROUTER_OUT],[RESPONSE],node={},response={}", node, clientResponse);
+                }
+                AutomqZoneRouterResponse zoneRouterResponse = (AutomqZoneRouterResponse) clientResponse.responseBody();
+                handleRouterResponse(zoneRouterResponse, requests);
+            }).exceptionally(ex -> {
+                LOGGER.error("[ROUTER_OUT],[REQUEST_FAIL],node={}", node, ex);
+                requests.forEach(r -> r.completeWithError(Errors.LEADER_NOT_AVAILABLE));
+                return null;
+            });
+        }
+
+        private void handleRouterResponse(AutomqZoneRouterResponse zoneRouterResponse, List<ProxyRequest> requests) {
+            short errorCode = zoneRouterResponse.data().errorCode();
+            if (errorCode == Errors.UNKNOWN_SERVER_ERROR.code()) {
+                // We could find the detail error log in the rpc server side.
+                // Set the error to LEADER_NOT_AVAILABLE to make the producer retry sending.
+                errorCode = Errors.LEADER_NOT_AVAILABLE.code();
+            }
+            if (errorCode != Errors.NONE.code()) {
+                Errors error = Errors.forCode(errorCode);
+                requests.forEach(r -> r.completeWithError(error));
+                return;
+            }
+            List<AutomqZoneRouterResponseData.Response> responses = zoneRouterResponse.data().responses();
+            Iterator<ProxyRequest> requestIt = requests.iterator();
+            Iterator<AutomqZoneRouterResponseData.Response> responseIt = responses.iterator();
+            while (requestIt.hasNext()) {
+                ProxyRequest request = requestIt.next();
+                AutomqZoneRouterResponseData.Response response = responseIt.next();
+                ProduceResponseData produceResponseData = ZoneRouterResponseCodec.decode(Unpooled.wrappedBuffer(response.data()));
+                response.setData(null); // gc the data
+                ProduceResponseData.PartitionProduceResponse partitionData = produceResponseData.responses().iterator().next()
+                    .partitionResponses().get(0);
+                request.cf.complete(partitionResponse(partitionData));
+            }
+
+        }
+    }
+
+    static class RequestBatch {
+        private final long batchStartNanos;
+
+        private final Time time;
+        private final long idleLingerNanos;
+        private final long maxLingerNanos;
+        private final long batchSize;
+        private final Map<Long, List<ProxyRequest>> requests = new TreeMap<>();
+        private int requestCount;
+        private long lastEnqueueNanos;
+
+        public RequestBatch(Time time, long idleLingerNanos, long maxLingerNanos, int batchSize) {
+            this.time = time;
+            this.idleLingerNanos = idleLingerNanos;
+            this.maxLingerNanos = maxLingerNanos;
+            this.batchSize = batchSize;
+            this.batchStartNanos = time.nanoseconds();
+            this.lastEnqueueNanos = batchStartNanos;
+        }
+
+        /**
+         * Add request to batch
+         *
+         * @param request {@link ProxyRequest}
+         * @return whether the batch is full
+         */
+        public boolean add(ProxyRequest request) {
+            requests.computeIfAbsent(request.epoch, key -> new ArrayList<>()).add(request);
+            lastEnqueueNanos = time.nanoseconds();
+            return ++requestCount >= batchSize;
+        }
+
+        /**
+         * Return the time until the first idle or hard deadline, in nanoseconds.
+         * A non-positive value means the batch is ready to be sealed; it does not bound network send time.
+         */
+        public long remainingFlushDelayNanos() {
+            long nowNanos = time.nanoseconds();
+            return Math.min(maxLingerNanos - (nowNanos - batchStartNanos),
+                idleLingerNanos - (nowNanos - lastEnqueueNanos));
+        }
+
+        public Map<Long, List<ProxyRequest>> getRequests() {
+            return requests;
+        }
+    }
+
+    static class ProxyRequest {
+        final TopicPartition topicPartition;
+        final long epoch;
+        final ByteBuf channelOffset;
+        final ZoneRouterProduceRequest zoneRouterProduceRequest;
+        final int recordSize;
+        final long timeoutMillis;
+        final CompletableFuture<ProduceResponse.PartitionResponse> cf = new CompletableFuture<>();
+
+        public ProxyRequest(TopicPartition topicPartition, long epoch, ByteBuf channelOffset,
+            ZoneRouterProduceRequest zoneRouterProduceRequest, int recordSize, long timeoutMillis) {
+            this.topicPartition = topicPartition;
+            this.epoch = epoch;
+            this.channelOffset = channelOffset;
+            this.zoneRouterProduceRequest = zoneRouterProduceRequest;
+            this.recordSize = recordSize;
+            this.timeoutMillis = timeoutMillis;
+        }
+
+        public void completeWithUnknownError() {
+            completeWithError(Errors.UNKNOWN_SERVER_ERROR);
+        }
+
+        private void completeWithError(Errors errors) {
+            ProduceResponse.PartitionResponse rst = errorPartitionResponse(errors);
+            cf.complete(rst);
+        }
+    }
+
+    private static ZoneRouterProduceRequest zoneRouterProduceRequest(ProduceRequestArgs args, short flag,
+        TopicPartition tp,
+        MemoryRecords records) {
+        ProduceRequestData data = new ProduceRequestData();
+        data.setTransactionalId(args.transactionId());
+        data.setAcks(args.requiredAcks());
+        data.setTimeoutMs(args.timeout());
+        ProduceRequestData.TopicProduceDataCollection topics = new ProduceRequestData.TopicProduceDataCollection();
+        ProduceRequestData.TopicProduceData topic = new ProduceRequestData.TopicProduceData();
+        topic.setName(tp.topic());
+        topic.setPartitionData(List.of(new ProduceRequestData.PartitionProduceData().setIndex(tp.partition()).setRecords(records)));
+        topics.add(topic);
+        data.setTopicData(topics);
+        return new ZoneRouterProduceRequest(args.apiVersion(), flag, data);
+    }
+
+    private static ProduceResponse.PartitionResponse partitionResponse(
+        ProduceResponseData.PartitionProduceResponse partitionData) {
+        return new ProduceResponse.PartitionResponse(
+            Errors.forCode(partitionData.errorCode()),
+            partitionData.baseOffset(),
+            0, // last offset , the network layer don't need
+            partitionData.logAppendTimeMs(),
+            partitionData.logStartOffset(),
+            partitionData.recordErrors().stream().map(e -> new ProduceResponse.RecordError(e.batchIndex(), e.batchIndexErrorMessage())).collect(Collectors.toList()),
+            partitionData.errorMessage(),
+            partitionData.currentLeader()
+        );
+    }
+
+}

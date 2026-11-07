@@ -1,0 +1,3 @@
+.devkit/
+config/custom.properties
+__pycache__/
