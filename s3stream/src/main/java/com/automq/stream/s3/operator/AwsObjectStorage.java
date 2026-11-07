@@ -54,6 +54,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
+import io.netty.handler.ssl.SslProvider;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
@@ -152,9 +153,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
-            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+            checksumAlgorithm = fipsModeEnabled()
+                ? ChecksumAlgorithm.CRC32_C : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
 
         Configuration configuration = Configuration.fromBucketURI(bucketURI);
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
@@ -194,8 +196,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.controlS3Client = controlS3Client;
         this.controlClientSupplier = () -> controlS3Client;
         this.tagging = null;
-        this.checksumAlgorithm = checksumAlgorithm;
+        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
         this.usesCrt = false;
+    }
+
+    private static ChecksumAlgorithm fipsChecksumOr(ChecksumAlgorithm checksumAlgorithm) {
+        return fipsModeEnabled() && checksumAlgorithm == ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION
+            ? ChecksumAlgorithm.CRC32_C : checksumAlgorithm;
+    }
+
+    private static boolean fipsModeEnabled() {
+        return "enabled".equalsIgnoreCase(System.getProperty("automq.fips.mode", "disabled"));
     }
 
     public static Builder builder() {
@@ -385,10 +396,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 .build()
         ).toArray(ObjectIdentifier[]::new);
 
-        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
+        DeleteObjectsRequest.Builder deleteBuilder = DeleteObjectsRequest.builder()
             .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build())
-            .build();
+            .delete(Delete.builder().objects(toDeleteKeys).build());
+        if (fipsModeEnabled()) {
+            deleteBuilder.checksumAlgorithm(checksumAlgorithm);
+        }
+        DeleteObjectsRequest request = deleteBuilder.build();
 
         return retryOnThrottle(() -> {
             CompletableFuture<Void> cf = new CompletableFuture<>();
@@ -583,8 +597,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
                                       Configuration configuration) {
+        initializeFipsRuntime();
         String endpoint = uri.endpoint();
         String region = uri.region();
+        if (fipsModeEnabled() && !"netty".equals(configuration.sdkImplementation())) {
+            throw new IllegalArgumentException("FIPS mode requires the Netty JDK S3 HTTP implementation");
+        }
         boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
         int maxConcurrency = getMaxObjectStorageConcurrency();
         if ("crt".equals(configuration.sdkImplementation())) {
@@ -614,18 +632,36 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             if (!OpenSsl.isAvailable()) {
                 logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
             }
-            builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
+            NettyNioAsyncHttpClient.Builder httpBuilder = NettyNioAsyncHttpClient.builder()
                 .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
-                .connectionTimeout(configuration.connectionTimeout()));
+                .connectionTimeout(configuration.connectionTimeout());
+            if (fipsModeEnabled()) {
+                httpBuilder.sslProvider(SslProvider.JDK);
+            }
+            builder.httpClientBuilder(httpBuilder);
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
-        // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
+        // Preserve precomputed upload checksums and use the legacy MD5 plugin only outside FIPS mode.
         builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
-            .addPlugin(LegacyMd5Plugin.create());
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
+        if (!fipsModeEnabled()) {
+            builder.addPlugin(LegacyMd5Plugin.create());
+        }
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
+    }
+
+    private static void initializeFipsRuntime() {
+        if (!fipsModeEnabled()) {
+            return;
+        }
+        try {
+            Class<?> runtime = Class.forName("org.apache.kafka.common.security.fips.FipsRuntime");
+            runtime.getMethod("initialize").invoke(null);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException("Unable to initialize AutoMQ FIPS runtime", e);
+        }
     }
 
     protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {

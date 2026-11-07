@@ -24,6 +24,7 @@ import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.errors.InvalidConfigurationException;
 import org.apache.kafka.common.network.ConnectionMode;
 import org.apache.kafka.common.security.auth.SslEngineFactory;
+import org.apache.kafka.common.security.fips.FipsRuntime;
 import org.apache.kafka.common.utils.SecurityUtils;
 import org.apache.kafka.common.utils.Utils;
 
@@ -131,9 +132,17 @@ public class DefaultSslEngineFactory implements SslEngineFactory {
     @SuppressWarnings("unchecked")
     @Override
     public void configure(Map<String, ?> configs) {
+        // AutoMQ inject start: initialize the approved FIPS providers before creating SSL state.
+        FipsRuntime.initialize();
+        // AutoMQ inject end
         this.configs = Collections.unmodifiableMap(configs);
         this.protocol = (String) configs.get(SslConfigs.SSL_PROTOCOL_CONFIG);
         this.provider = (String) configs.get(SslConfigs.SSL_PROVIDER_CONFIG);
+        // AutoMQ inject start: use BCJSSE and BCFIPS defaults only in explicit FIPS mode.
+        if (FipsRuntime.enabled() && this.provider == null) {
+            this.provider = "BCJSSE";
+        }
+        // AutoMQ inject end
         SecurityUtils.addConfiguredSecurityProviders(this.configs);
 
         List<String> cipherSuitesList = (List<String>) configs.get(SslConfigs.SSL_CIPHER_SUITES_CONFIG);
@@ -150,8 +159,13 @@ public class DefaultSslEngineFactory implements SslEngineFactory {
             this.enabledProtocols = null;
         }
 
-        this.secureRandomImplementation = createSecureRandom((String)
-                configs.get(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG));
+        String secureRandom = (String) configs.get(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG);
+        // AutoMQ inject start: BCFIPS SecureRandom is required for FIPS TLS handshakes.
+        if (FipsRuntime.enabled() && secureRandom == null) {
+            secureRandom = "DEFAULT";
+        }
+        this.secureRandomImplementation = createSecureRandom(secureRandom, FipsRuntime.enabled() ? "BCFIPS" : null);
+        // AutoMQ inject end
 
         this.sslClientAuth = createSslClientAuth((String) configs.get(
                 BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG));
@@ -223,12 +237,12 @@ public class DefaultSslEngineFactory implements SslEngineFactory {
         return SslClientAuth.NONE;
     }
 
-    private static SecureRandom createSecureRandom(String key) {
+    private static SecureRandom createSecureRandom(String key, String provider) {
         if (key == null) {
             return null;
         }
         try {
-            return SecureRandom.getInstance(key);
+            return provider == null ? SecureRandom.getInstance(key) : SecureRandom.getInstance(key, provider);
         } catch (GeneralSecurityException e) {
             throw new KafkaException(e);
         }
