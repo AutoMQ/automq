@@ -21,6 +21,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
 import java.util.List;
@@ -313,6 +314,7 @@ public interface ObjectStorage {
         public static final short UNSET_BUCKET = (short) -2;
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
+        private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private int allocType = ByteBufAlloc.DEFAULT;
         // timeout for one single network rpc
         private long apiCallAttemptTimeout = -1L;
@@ -325,6 +327,17 @@ public interface ObjectStorage {
         private int retryCount;
         private long requestTime = System.nanoTime();
         // write context end
+
+        /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
+        public WriteOptions source(S3RequestSource source) {
+            this.source = Objects.requireNonNull(source, "source");
+            return this;
+        }
+
+        /** Returns the source carried by this request and its retries. */
+        public S3RequestSource source() {
+            return source;
+        }
 
         public WriteOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -415,6 +428,7 @@ public interface ObjectStorage {
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
+            copy.source = source;
             copy.allocType = allocType;
             copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
             copy.bucketId = bucketId;
@@ -431,8 +445,20 @@ public interface ObjectStorage {
         public static final short UNSET_BUCKET = (short) -2;
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
+        private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+
+        /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
+        public ReadOptions source(S3RequestSource source) {
+            this.source = Objects.requireNonNull(source, "source");
+            return this;
+        }
+
+        /** Returns the source carried by this request and its retries. */
+        public S3RequestSource source() {
+            return source;
+        }
 
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
@@ -466,6 +492,7 @@ public interface ObjectStorage {
         public ReadOptions copy() {
             ReadOptions copy = new ReadOptions();
             copy.throttleStrategy = throttleStrategy;
+            copy.source = source;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
             return copy;

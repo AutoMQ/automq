@@ -21,6 +21,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.Constants;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.ReservationService;
@@ -28,6 +29,7 @@ import com.automq.stream.s3.wal.ReservationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -47,14 +49,21 @@ public class ObjectReservationService implements ReservationService {
     private final String clusterId;
     private final ObjectStorage objectStorage;
     private final short bucketId;
+    private final S3RequestSource source;
 
     private final ConcurrentMap<Long, String> nodeIdPathMap;
 
     public ObjectReservationService(String clusterId, ObjectStorage objectStorage, short bucketId) {
+        this(clusterId, objectStorage, bucketId, S3RequestSource.UNCLASSIFIED);
+    }
+
+    /** Attributes ownership-verification GETs to the WAL whose append completion they guard. */
+    public ObjectReservationService(String clusterId, ObjectStorage objectStorage, short bucketId, S3RequestSource source) {
         this.clusterId = clusterId;
         this.objectStorage = objectStorage;
         this.nodeIdPathMap = new ConcurrentHashMap<>();
         this.bucketId = bucketId;
+        this.source = Objects.requireNonNull(source, "source");
     }
 
     private String path(long nodeId) {
@@ -63,7 +72,7 @@ public class ObjectReservationService implements ReservationService {
 
     // Visible for testing
     protected CompletableFuture<Boolean> verify(long nodeId, ByteBuf target) {
-        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId);
+        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId).source(source);
         return objectStorage.rangeRead(options, path(nodeId), 0, S3_RESERVATION_OBJECT_LENGTH)
             .thenApply(bytes -> {
                 try {
