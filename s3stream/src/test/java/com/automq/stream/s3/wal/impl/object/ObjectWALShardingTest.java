@@ -313,7 +313,7 @@ public class ObjectWALShardingTest {
                 verify(storage, never()).rangeRead(any(), eq(fallback), anyLong(), anyLong());
             }
             verify(storage).rangeRead(argThat(options ->
-                options.bucket() == 7 && options.throttleStrategy() == ThrottleStrategy.WAL),
+                options.bucket() == 7 && options.throttleStrategy() == ThrottleStrategy.BYPASS && options.enableFastRetry()),
                 eq(preferred), eq((long) WALObjectHeader.WAL_HEADER_SIZE_V1), eq(batch ? -1L : WALObjectHeader.WAL_HEADER_SIZE_V1 + 10L));
         }
     }

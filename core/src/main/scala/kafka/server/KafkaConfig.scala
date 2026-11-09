@@ -793,7 +793,6 @@ class KafkaConfig private(doLog: Boolean, val props: util.Map[_, _])
   val s3MockEnable = getBoolean(AutoMQConfig.S3_MOCK_ENABLE_CONFIG)
   val s3ObjectDeleteRetentionTimeInSecond = getLong(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG) * 60
   val s3NetworkBaselineBandwidthProp = getLong(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG)
-  val s3NetworkLimiterTypeProp = getString(AutoMQConfig.S3_NETWORK_LIMITER_TYPE_CONFIG)
   val s3NetworkBurstBandwidthProp = getLong(AutoMQConfig.S3_NETWORK_BURST_BANDWIDTH_CONFIG)
   val s3NetworkMaxBurstWindowMsProp = getLong(AutoMQConfig.S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG)
   val s3NetworkBandwidthModeProp = getString(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG)

@@ -46,23 +46,6 @@ class GlobalNetworkBandwidthLimitersTest {
         return constructor.newInstance();
     }
 
-    /** Defaults retain the legacy implementation, refill interval, and directional capacities. */
-    @Test
-    void legacyDefaults() throws ReflectiveOperationException {
-        Config config = new Config();
-        assertEquals(NetworkBandwidthLimiterType.LEGACY, config.networkLimiterType());
-        assertEquals(10, config.refillPeriodMs());
-        List<List<?>> arguments = new ArrayList<>();
-        try (MockedConstruction<AsyncNetworkBandwidthLimiter> mocks = mockConstruction(AsyncNetworkBandwidthLimiter.class,
-            (mock, context) -> arguments.add(context.arguments()))) {
-            newLimiters().setup(config.networkLimiterType(), config.networkBandwidthMode(), config.networkBaselineBandwidth(),
-                config.networkBurstBandwidth(), config.refillPeriodMs(), config.networkMaxBurstWindowMs());
-            assertEquals(2, mocks.constructed().size());
-            assertEquals(config.networkBaselineBandwidth(), arguments.get(0).get(2));
-            assertEquals(config.networkBaselineBandwidth() * 5, arguments.get(1).get(2));
-        }
-    }
-
     /** Both directional views share one smooth limiter in shared mode and preserve the configured budgets and weights. */
     @Test
     void smoothShared() throws ReflectiveOperationException {
@@ -73,20 +56,20 @@ class GlobalNetworkBandwidthLimitersTest {
                 when(mock.consume(any(), anyLong())).thenReturn(CompletableFuture.completedFuture(null));
             })) {
             GlobalNetworkBandwidthLimiters global = newLimiters();
-            global.setup(NetworkBandwidthLimiterType.SMOOTH, NetworkBandwidthMode.SHARED, 1024000, 2048000, 1, 10);
+            global.setup(NetworkBandwidthMode.SHARED, 1024000, 2048000, 1, 10);
             assertEquals(1, mocks.constructed().size());
             SmoothNetworkBandwidthLimiter.Configuration config = configurations.get(0);
             assertEquals(1024, config.baselineTokens());
             assertEquals(2048, config.peakTokens());
             assertEquals(10240, config.capacity());
             assertEquals(32768, config.baseQuantum());
-            assertEquals(Map.of(ThrottleStrategy.WAL, 10, ThrottleStrategy.WAL_UPLOAD, 4, ThrottleStrategy.COMPACTION, 3,
+            assertEquals(Map.of(ThrottleStrategy.WAL_UPLOAD, 4, ThrottleStrategy.COMPACTION, 3,
                 ThrottleStrategy.TAIL, 2, ThrottleStrategy.CATCH_UP, 1, ThrottleStrategy.ICEBERG_WRITE, 1), config.weights());
             global.inbound().consume(ThrottleStrategy.TAIL, 10).join();
             global.outbound().consume(ThrottleStrategy.WAL_UPLOAD, 20).join();
             verify(mocks.constructed().get(0)).consume(ThrottleStrategy.TAIL, 10);
             verify(mocks.constructed().get(0)).consume(ThrottleStrategy.WAL_UPLOAD, 20);
-            assertThrows(IllegalArgumentException.class, () -> global.setup(NetworkBandwidthLimiterType.LEGACY, NetworkBandwidthMode.SEPARATE, 1024000, 2048000, 10, 60000));
+            assertThrows(IllegalArgumentException.class, () -> global.setup(NetworkBandwidthMode.SEPARATE, 1024000, 2048000, 10, 60000));
         }
     }
 
@@ -96,8 +79,8 @@ class GlobalNetworkBandwidthLimitersTest {
         List<SmoothNetworkBandwidthLimiter.Configuration> configurations = new ArrayList<>();
         try (MockedConstruction<SmoothNetworkBandwidthLimiter> mocks = mockConstruction(SmoothNetworkBandwidthLimiter.class,
             (mock, context) -> configurations.add((SmoothNetworkBandwidthLimiter.Configuration) context.arguments().get(0)))) {
-            Config config = new Config().networkBaselineBandwidth(1024000).networkLimiterType(NetworkBandwidthLimiterType.SMOOTH);
-            newLimiters().setup(config.networkLimiterType(), config.networkBandwidthMode(), config.networkBaselineBandwidth(),
+            Config config = new Config().networkBaselineBandwidth(1024000);
+            newLimiters().setup(config.networkBandwidthMode(), config.networkBaselineBandwidth(),
                 config.networkBurstBandwidth(), config.refillPeriodMs(), config.networkMaxBurstWindowMs());
             assertEquals(2, mocks.constructed().size());
             assertEquals(configurations.get(0), configurations.get(1));
@@ -107,11 +90,4 @@ class GlobalNetworkBandwidthLimitersTest {
         }
     }
 
-    /** Limiter type parsing accepts supported names and rejects misspellings. */
-    @Test
-    void parseType() {
-        assertEquals(NetworkBandwidthLimiterType.LEGACY, NetworkBandwidthLimiterType.parse("legacy"));
-        assertEquals(NetworkBandwidthLimiterType.SMOOTH, NetworkBandwidthLimiterType.parse("SMOOTH"));
-        assertThrows(IllegalArgumentException.class, () -> NetworkBandwidthLimiterType.parse("other"));
-    }
 }

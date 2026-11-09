@@ -22,9 +22,8 @@ package com.automq.stream.s3.network;
 import com.automq.stream.utils.Time;
 
 import java.time.Duration;
-import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.EnumMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -58,6 +57,10 @@ import io.netty.util.concurrent.DefaultThreadFactory;
  * position after refill. A request completes once all its bytes have been allocated, possibly across
  * multiple windows. BYPASS succeeds immediately; its bounded debt is repaid before ordinary requests.
  *
+ * <p>Task reservations add a per-group window ceiling, with a uniform 4 MiB/s minimum. Every allocation spends both that ceiling and the global window, through the same DRR
+ * queue. Registered requests receive grants proactively; acquire only claims already allocated bytes.
+ * Fully granted requests leave the queue without waiting for their callers to finish transferring.
+ *
  * <p>This limiter grants permission to transfer bytes; callers must submit small chunks to smooth
  * actual network I/O. Returned futures are owned by the limiter and must not be completed or cancelled
  * by callers. Completion callbacks run on a separate executor. Call {@link #shutdown()} to release
@@ -65,6 +68,7 @@ import io.netty.util.concurrent.DefaultThreadFactory;
  */
 public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     private static final int MAX_BYPASS_DEBT_WINDOWS = 10;
+    private static final long MIN_RATE = 4L * 1024 * 1024;
 
     private final ReentrantLock lock = new ReentrantLock();
     private final Configuration configuration;
@@ -140,20 +144,57 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
             recordBypass(bytes);
             return CompletableFuture.completedFuture(null);
         }
+        Request request = new Request(groups.get(strategy), bytes);
+        CompletableFuture<Void> future = request.claim(bytes);
+        enqueue(request);
+        return future;
+    }
+
+    @Override
+    public Handle register(ThrottleStrategy strategy, long totalBytes) {
+        if (totalBytes < -1 || strategy == null || (strategy != ThrottleStrategy.BYPASS && !groups.containsKey(strategy))) {
+            throw new IllegalArgumentException("Invalid size or unconfigured strategy");
+        }
+        if (closed || strategy == ThrottleStrategy.BYPASS || totalBytes == -1) {
+            return NetworkBandwidthLimiter.super.register(strategy, totalBytes);
+        }
+        Request request = new Request(groups.get(strategy), totalBytes);
+        if (totalBytes != 0) {
+            enqueue(request);
+        }
+        return request;
+    }
+
+    @Override
+    public RateReservation reserve(ThrottleStrategy strategy, double bytesPerSecond) {
+        if (!(bytesPerSecond > 0) || strategy == null || (strategy != ThrottleStrategy.BYPASS && !groups.containsKey(strategy))) {
+            throw new IllegalArgumentException("Invalid rate or unconfigured strategy");
+        }
+        if (closed || strategy == ThrottleStrategy.BYPASS) {
+            return NetworkBandwidthLimiter.super.reserve(strategy, bytesPerSecond);
+        }
         Group group = groups.get(strategy);
-        Request request = new Request(bytes);
-        queueSize.incrementAndGet();
-        group.requests.add(request);
-        // A producer may pass the first closed check before shutdown drains the queues.
+        Reservation reservation = new Reservation(group, bytesPerSecond);
+        group.reservations.add(reservation);
         if (closed) {
-            if (group.requests.remove(request)) {
+            group.reservations.remove(reservation);
+        } else {
+            group.changed();
+        }
+        return reservation;
+    }
+
+    private void enqueue(Request request) {
+        queueSize.incrementAndGet();
+        request.group.requests.add(request);
+        if (closed) {
+            if (request.group.requests.remove(request)) {
                 queueSize.decrementAndGet();
-                request.future.complete(null);
+                request.release();
             }
         } else {
             tick();
         }
-        return request.future;
     }
 
     // Retain at most ten baseline windows of usage; excess BYPASS traffic is not repaid.
@@ -186,9 +227,10 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
                 advanceWindow();
                 // Account for BYPASS once per pass; concurrent usage is handled by a later pass or tick.
                 repayBypass();
-                List<Request> granted = new ArrayList<>();
-                scheduleRequests(granted);
-                dispatch(granted);
+                for (Group group : schedulingGroups) {
+                    group.refresh();
+                }
+                scheduleRequests();
                 if (!workPending.get()) {
                     break;
                 }
@@ -237,6 +279,9 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
         windowStart += windows * configuration.windowNanos();
         baselineRemaining = configuration.baselineTokens();
         peakRemaining = configuration.peakTokens();
+        for (Group group : schedulingGroups) {
+            group.allocatedInWindow = 0;
+        }
     }
 
     // All operands are nonnegative. Extreme accounting values saturate rather than wrapping negative.
@@ -248,33 +293,35 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
         return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
     }
 
-    private void scheduleRequests(List<Request> granted) {
-        int emptyGroups = 0;
-        while (available() > 0 && emptyGroups < schedulingGroups.length) {
+    private void scheduleRequests() {
+        int idleGroups = 0;
+        while (available() > 0 && idleGroups < schedulingGroups.length) {
             Group group = schedulingGroups[nextGroup];
             Request request = group.requests.peek();
-            if (request == null) {
-                group.deficit = 0;
-                emptyGroups++;
+            long groupAvailable = group.available();
+            if (request == null || groupAvailable == 0) {
+                if (request == null) {
+                    group.deficit = 0;
+                }
+                idleGroups++;
             } else {
-                emptyGroups = 0;
+                idleGroups = 0;
                 if (group.deficit == 0) {
                     group.deficit = group.quantum;
                 }
-                long allocated = Math.min(available(), Math.min(group.deficit, request.remainingBytes));
+                long allocated = Math.min(Math.min(available(), groupAvailable), Math.min(group.deficit, request.remaining()));
                 allocate(allocated);
+                group.allocatedInWindow += allocated;
                 group.deficit -= allocated;
-                request.remainingBytes -= allocated;
-                if (request.remainingBytes == 0) {
-                    group.requests.remove();
+                if (request.grant(allocated)) {
+                    group.requests.poll();
                     queueSize.decrementAndGet();
-                    granted.add(request);
                     if (group.requests.isEmpty()) {
                         group.deficit = 0;
                     }
                 }
             }
-            if (group.deficit == 0) {
+            if (group.deficit == 0 || group.available() == 0) {
                 nextGroup = (nextGroup + 1) % schedulingGroups.length;
             }
         }
@@ -285,13 +332,6 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
         baselineRemaining -= fromBaseline;
         savedTokens -= bytes - fromBaseline;
         peakRemaining -= bytes;
-    }
-
-    // Submission is serialized with shutdown, so accepted grants cannot lose their completion task.
-    private void dispatch(List<Request> granted) {
-        if (!granted.isEmpty()) {
-            completions.execute(() -> granted.forEach(request -> request.future.complete(null)));
-        }
     }
 
     private long available() {
@@ -338,17 +378,16 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
                 return;
             }
             closed = true;
-            List<Request> pending = new ArrayList<>();
             for (Group group : groups.values()) {
+                group.reservations.clear();
                 Request request;
                 while ((request = group.requests.poll()) != null) {
                     queueSize.decrementAndGet();
-                    pending.add(request);
+                    request.grant(request.remaining());
                 }
             }
             pendingBypass.set(0);
             bypassDebt = 0;
-            dispatch(pending);
             if (scheduler != null) {
                 scheduler.shutdown();
             }
@@ -412,22 +451,166 @@ public final class SmoothNetworkBandwidthLimiter implements NetworkBandwidthLimi
         }
     }
 
-    private static final class Group {
+    private final class Group {
         private final long quantum;
         private final ConcurrentLinkedQueue<Request> requests = new ConcurrentLinkedQueue<>();
+        private final ConcurrentLinkedQueue<Reservation> reservations = new ConcurrentLinkedQueue<>();
+        private final AtomicBoolean changed = new AtomicBoolean();
         private long deficit;
+        private long allocatedInWindow;
+        private long windowLimit = Long.MAX_VALUE;
 
         private Group(long quantum) {
             this.quantum = quantum;
         }
-    }
 
-    private static final class Request {
-        private long remainingBytes;
-        private final CompletableFuture<Void> future = new CompletableFuture<>();
+        void changed() {
+            changed.set(true);
+            tick();
+        }
 
-        private Request(long bytes) {
-            this.remainingBytes = bytes;
+        // Only state changes need a scan; ordinary register/acquire calls use the existing window limit.
+        void refresh() {
+            if (!changed.getAndSet(false)) {
+                return;
+            }
+            double rate = 0;
+            boolean active = false;
+            for (Reservation reservation : reservations) {
+                if (reservation.released) {
+                    reservations.remove(reservation);
+                } else {
+                    active = true;
+                    rate += reservation.rate;
+                }
+            }
+            rate = active ? Math.max(MIN_RATE, rate) : Double.POSITIVE_INFINITY;
+            // A positive rate always makes progress, even below one byte per internal window.
+            windowLimit = Math.max(1, (long) (rate * configuration.windowNanos() / 1_000_000_000.0));
+            // Release closed requests even when no global or group allowance remains.
+            for (Request request : requests) {
+                if (request.isReleased() && requests.remove(request)) {
+                    queueSize.decrementAndGet();
+                    request.completeWaiters();
+                }
+            }
+            if (requests.isEmpty()) {
+                deficit = 0;
+            }
+        }
+
+        long available() {
+            return Math.max(0, windowLimit - allocatedInWindow);
         }
     }
+
+    private static final class Reservation implements RateReservation {
+        private final Group group;
+        private volatile double rate;
+        private volatile boolean released;
+
+        Reservation(Group group, double rate) {
+            this.group = group;
+            this.rate = rate;
+        }
+
+        @Override
+        public void burst() {
+            rate = Double.POSITIVE_INFINITY;
+            group.changed();
+        }
+
+        @Override
+        public void close() {
+            released = true;
+            group.changed();
+        }
+    }
+
+    /** Both whole-request registration and one-shot consumption use this same allocation model. */
+    private final class Request implements Handle {
+        private final Group group;
+        private final long total;
+        private final ArrayDeque<Waiter> waiters = new ArrayDeque<>();
+        private long claimed;
+        private long granted;
+        private boolean released;
+
+        Request(Group group, long total) {
+            this.group = group;
+            this.total = total;
+        }
+
+        private synchronized CompletableFuture<Void> claim(long bytes) {
+            if (closed || released) {
+                return CompletableFuture.completedFuture(null);
+            }
+            if (bytes < 0 || bytes > total - claimed) {
+                return CompletableFuture.failedFuture(new IllegalArgumentException("Invalid acquire size"));
+            }
+            claimed += bytes;
+            if (granted >= claimed) {
+                return CompletableFuture.completedFuture(null);
+            }
+            CompletableFuture<Void> future = new CompletableFuture<>();
+            waiters.addLast(new Waiter(claimed, future));
+            return future;
+        }
+
+        @Override
+        public CompletableFuture<Void> acquire(long bytes) {
+            CompletableFuture<Void> future = claim(bytes);
+            // Never acquire the scheduling lock while holding the Request monitor.
+            if (!future.isDone()) {
+                tick();
+            }
+            return future;
+        }
+
+        synchronized long remaining() {
+            return total - granted;
+        }
+
+        synchronized boolean isReleased() {
+            return released;
+        }
+
+        // Called under the scheduling lock; completion submission is serialized with shutdown.
+        synchronized boolean grant(long bytes) {
+            granted += bytes;
+            completeWaiters();
+            return granted == total;
+        }
+
+        private synchronized void completeWaiters() {
+            while (!waiters.isEmpty() && (released || granted >= waiters.peekFirst().target)) {
+                Waiter waiter = waiters.pollFirst();
+                completions.execute(() -> waiter.future.complete(null));
+            }
+        }
+
+        // Enqueue lost a race with shutdown, so the completion executor may already be stopped.
+        void release() {
+            ArrayDeque<Waiter> pending;
+            synchronized (this) {
+                released = true;
+                pending = new ArrayDeque<>(waiters);
+                waiters.clear();
+            }
+            pending.forEach(waiter -> waiter.future.complete(null));
+        }
+
+        @Override
+        public void close() {
+            synchronized (this) {
+                released = true;
+                if (granted == total) {
+                    return;
+                }
+            }
+            group.changed();
+        }
+    }
+
+    private record Waiter(long target, CompletableFuture<Void> future) { }
 }

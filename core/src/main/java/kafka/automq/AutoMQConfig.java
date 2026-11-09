@@ -27,7 +27,6 @@ import org.apache.kafka.common.config.types.Password;
 import org.apache.kafka.common.utils.Utils;
 
 import com.automq.stream.s3.ByteBufAllocPolicy;
-import com.automq.stream.s3.network.NetworkBandwidthLimiterType;
 import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
@@ -169,15 +168,11 @@ public class AutoMQConfig {
         "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s.";
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 1024 * 1024 * 1024; // 1GBps
 
-    public static final String S3_NETWORK_LIMITER_TYPE_CONFIG = "s3.network.limiter.type";
-    public static final String S3_NETWORK_LIMITER_TYPE_DOC = "The network limiter implementation: legacy or smooth. " +
-        "Changing the implementation requires a restart. Smooth uses weighted scheduling and bounded burst savings.";
-
     public static final String S3_NETWORK_BURST_BANDWIDTH_CONFIG = "s3.network.burst.bandwidth";
-    public static final String S3_NETWORK_BURST_BANDWIDTH_DOC = "The peak network bandwidth in bytes per second, used only by the smooth limiter. " +
+    public static final String S3_NETWORK_BURST_BANDWIDTH_DOC = "The peak network bandwidth in bytes per second. " +
         "Minus one uses the baseline bandwidth. An explicit value must be at least the baseline bandwidth.";
     public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG = "s3.network.max.burst.window.ms";
-    public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_DOC = "Used only by the smooth limiter. The maximum duration in milliseconds that saved tokens can sustain " +
+    public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_DOC = "The maximum duration in milliseconds that saved tokens can sustain " +
         "at peak bandwidth. The duration is rounded down to whole refill windows. Savings capacity is the difference between peak and baseline bytes per window times the number of windows. " +
         "Zero disables token savings. The savings pool starts empty.";
 
@@ -338,9 +333,6 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_MOCK_ENABLE_DOC)
             .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
             .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, ConfigDef.Range.atLeast(1), MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
-            .define(S3_NETWORK_LIMITER_TYPE_CONFIG, STRING, NetworkBandwidthLimiterType.LEGACY.getName(),
-                ConfigDef.CaseInsensitiveValidString.in(NetworkBandwidthLimiterType.LEGACY.getName(), NetworkBandwidthLimiterType.SMOOTH.getName()),
-                MEDIUM, S3_NETWORK_LIMITER_TYPE_DOC)
             .define(S3_NETWORK_BURST_BANDWIDTH_CONFIG, LONG, -1L, ConfigDef.Range.atLeast(-1), MEDIUM, S3_NETWORK_BURST_BANDWIDTH_DOC)
             .define(S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG, LONG, 60000L, ConfigDef.Range.atLeast(0), MEDIUM, S3_NETWORK_MAX_BURST_WINDOW_MS_DOC)
             .define(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG, STRING, NetworkBandwidthMode.SEPARATE.getName(),

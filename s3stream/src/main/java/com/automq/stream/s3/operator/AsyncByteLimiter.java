@@ -23,6 +23,15 @@ import java.util.concurrent.CompletableFuture;
 
 /** Grants byte quota before an upload publishes data or a download requests its next buffer. */
 @FunctionalInterface
-interface AsyncByteLimiter {
+interface AsyncByteLimiter extends AutoCloseable {
     CompletableFuture<Void> acquire(int bytes);
+
+    /** Starts a fresh allocation for an SDK replay; stateless limiters may reuse themselves. */
+    default AsyncByteLimiter fork() {
+        return this;
+    }
+
+    @Override
+    default void close() {
+    }
 }

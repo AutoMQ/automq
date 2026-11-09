@@ -280,9 +280,12 @@ class SmoothNetworkBandwidthLimiterTest {
         Field requestsField = group.getClass().getDeclaredField("requests");
         requestsField.setAccessible(true);
         Object request = ((ConcurrentLinkedQueue<?>) requestsField.get(group)).peek();
-        Field futureField = request.getClass().getDeclaredField("future");
+        Field waitersField = request.getClass().getDeclaredField("waiters");
+        waitersField.setAccessible(true);
+        Object quotaWaiter = ((java.util.Queue<?>) waitersField.get(request)).peek();
+        Field futureField = quotaWaiter.getClass().getDeclaredField("future");
         futureField.setAccessible(true);
-        CompletableFuture<?> future = (CompletableFuture<?>) futureField.get(request);
+        CompletableFuture<?> future = (CompletableFuture<?>) futureField.get(quotaWaiter);
         assertFalse(future.isDone());
         advance(limiter, 1);
         future.join();

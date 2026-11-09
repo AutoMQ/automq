@@ -23,7 +23,6 @@ import kafka.log.stream.s3.ConfigUtils;
 import kafka.server.KafkaConfig;
 
 import com.automq.stream.s3.Config;
-import com.automq.stream.s3.network.NetworkBandwidthLimiterType;
 import com.automq.stream.s3.network.NetworkBandwidthMode;
 
 import org.junit.jupiter.api.Tag;
@@ -33,7 +32,6 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Tag("S3Unit")
 class NetworkLimiterConfigTest {
@@ -42,11 +40,10 @@ class NetworkLimiterConfigTest {
             "controller.listener.names", "PLAINTEXT", "controller.quorum.voters", "2@localhost:9092"));
     }
 
-    /** Broker defaults retain legacy limiting and the existing refill interval. */
+    /** Broker defaults retain the configured refill interval with no burst savings. */
     @Test
     void defaults() {
         Config config = ConfigUtils.to(new KafkaConfig(properties()));
-        assertEquals(NetworkBandwidthLimiterType.LEGACY, config.networkLimiterType());
         assertEquals(10, config.refillPeriodMs());
         assertEquals(config.networkBaselineBandwidth(), config.networkBurstBandwidth());
         assertEquals(60000, config.networkMaxBurstWindowMs());
@@ -56,14 +53,12 @@ class NetworkLimiterConfigTest {
     @Test
     void smoothProperties() {
         Map<String, Object> properties = properties();
-        properties.put("s3.network.limiter.type", "smooth");
         properties.put("s3.network.bandwidth.mode", "shared");
         properties.put("s3.network.baseline.bandwidth", "104857600");
         properties.put("s3.network.burst.bandwidth", "209715200");
         properties.put("s3.network.max.burst.window.ms", "100");
         properties.put("s3.network.refill.period.ms", "1");
         Config config = ConfigUtils.to(new KafkaConfig(properties));
-        assertEquals(NetworkBandwidthLimiterType.SMOOTH, config.networkLimiterType());
         assertEquals(NetworkBandwidthMode.SHARED, config.networkBandwidthMode());
         assertEquals(104857600, config.networkBaselineBandwidth());
         assertEquals(209715200, config.networkBurstBandwidth());
@@ -71,11 +66,4 @@ class NetworkLimiterConfigTest {
         assertEquals(1, config.refillPeriodMs());
     }
 
-    /** Invalid implementation names fail broker configuration instead of silently choosing legacy. */
-    @Test
-    void invalidType() {
-        Map<String, Object> properties = properties();
-        properties.put("s3.network.limiter.type", "other");
-        assertThrows(org.apache.kafka.common.config.ConfigException.class, () -> new KafkaConfig(properties));
-    }
 }

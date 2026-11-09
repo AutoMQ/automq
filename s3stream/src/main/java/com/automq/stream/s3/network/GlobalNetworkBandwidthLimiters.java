@@ -33,13 +33,11 @@ import io.opentelemetry.api.common.Attributes;
 
 public class GlobalNetworkBandwidthLimiters {
     private static final Logger LOGGER = new LogContext().logger(GlobalNetworkBandwidthLimiters.class);
-    private static final int OUTBOUND_MAX_TOKENS_MULTIPLIER = 5;
-    private static final int SHARED_MAX_TOKENS_MULTIPLIER = 2;
 
     private static final GlobalNetworkBandwidthLimiters INSTANCE = new GlobalNetworkBandwidthLimiters();
     private volatile boolean setup = false;
-    private volatile NetworkBandwidthLimiter inboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
-    private volatile NetworkBandwidthLimiter outboundLimiter = AsyncNetworkBandwidthLimiter.NOOP;
+    private volatile NetworkBandwidthLimiter inboundLimiter = NetworkBandwidthLimiter.NOOP;
+    private volatile NetworkBandwidthLimiter outboundLimiter = NetworkBandwidthLimiter.NOOP;
 
     private GlobalNetworkBandwidthLimiters() {}
 
@@ -48,7 +46,7 @@ public class GlobalNetworkBandwidthLimiters {
     }
 
     /** Initializes process-wide limiter views from startup settings; bandwidths are bytes/second and durations are milliseconds. */
-    public synchronized void setup(NetworkBandwidthLimiterType type, NetworkBandwidthMode mode, long bandwidth,
+    public synchronized void setup(NetworkBandwidthMode mode, long bandwidth,
         long burstBandwidth, int refillIntervalMs, long maxBurstWindowMs) {
         if (setup) {
             throw new IllegalArgumentException("Network bandwidth limiters are already setup");
@@ -61,16 +59,15 @@ public class GlobalNetworkBandwidthLimiters {
         NetworkStats.getInstance().setup(bandwidth, mode);
 
         if (mode == NetworkBandwidthMode.SHARED) {
-            NetworkBandwidthLimiter physicalSharedLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, SHARED_MAX_TOKENS_MULTIPLIER);
+            NetworkBandwidthLimiter physicalSharedLimiter = createLimiter(bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs);
             inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalSharedLimiter);
             outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalSharedLimiter);
             Metrics.LongGaugeBundle.LongGauge networkSharedAvailableBandwidthMetric =
                 NetworkSharedAvailableBandwidthMetric.BUNDLE.register(MetricsLevel.INFO, Attributes.empty());
             networkSharedAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkSharedRate());
         } else {
-            NetworkBandwidthLimiter physicalInboundLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, 1);
-            // Preserve the legacy outbound token pool; smooth uses the same configured budgets in both directions.
-            NetworkBandwidthLimiter physicalOutboundLimiter = createLimiter(type, bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs, OUTBOUND_MAX_TOKENS_MULTIPLIER);
+            NetworkBandwidthLimiter physicalInboundLimiter = createLimiter(bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs);
+            NetworkBandwidthLimiter physicalOutboundLimiter = createLimiter(bandwidth, burstBandwidth, refillIntervalMs, maxBurstWindowMs);
             inboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.INBOUND, physicalInboundLimiter);
             outboundLimiter = meter(MeteredNetworkBandwidthLimiter.Direction.OUTBOUND, physicalOutboundLimiter);
             Metrics.LongGaugeBundle.LongGauge networkInboundAvailableBandwidthMetric =
@@ -81,26 +78,20 @@ public class GlobalNetworkBandwidthLimiters {
             networkOutboundAvailableBandwidthMetric.record(() -> bandwidth - (long) NetworkStats.getInstance().networkOutboundRate());
         }
         setup = true;
-        LOGGER.info("Global network bandwidth limiters setup, type: {}, mode: {}, bandwidth: {}, refillIntervalMs: {}",
-            type.getName(), mode.getName(), bandwidth, refillIntervalMs);
+        LOGGER.info("Global network bandwidth limiters setup, mode: {}, bandwidth: {}, refillIntervalMs: {}",
+            mode.getName(), bandwidth, refillIntervalMs);
     }
 
-    private static NetworkBandwidthLimiter createLimiter(NetworkBandwidthLimiterType type, long bandwidth,
-        long burstBandwidth, int refillIntervalMs, long maxBurstWindowMs, int legacyCapacityMultiplier) {
-        if (type == NetworkBandwidthLimiterType.SMOOTH) {
-            return new SmoothNetworkBandwidthLimiter(new SmoothNetworkBandwidthLimiter.Configuration(
-                bandwidth, burstBandwidth, Duration.ofMillis(refillIntervalMs),
-                maxBurstWindowMs / refillIntervalMs, 32 * 1024, Map.of(
-                    ThrottleStrategy.WAL, 10,
-                    ThrottleStrategy.WAL_UPLOAD, 4,
-                    ThrottleStrategy.COMPACTION, 3,
-                    ThrottleStrategy.TAIL, 2,
-                    ThrottleStrategy.CATCH_UP, 1,
-                    ThrottleStrategy.ICEBERG_WRITE, 1)));
-        }
-        long tokenSize = (long) (bandwidth * ((double) refillIntervalMs / 1000));
-        return new AsyncNetworkBandwidthLimiter(tokenSize, refillIntervalMs,
-            bandwidth * legacyCapacityMultiplier);
+    private static NetworkBandwidthLimiter createLimiter(long bandwidth, long burstBandwidth,
+        int refillIntervalMs, long maxBurstWindowMs) {
+        return new SmoothNetworkBandwidthLimiter(new SmoothNetworkBandwidthLimiter.Configuration(
+            bandwidth, burstBandwidth, Duration.ofMillis(refillIntervalMs),
+            maxBurstWindowMs / refillIntervalMs, 32 * 1024, Map.of(
+                ThrottleStrategy.WAL_UPLOAD, 4,
+                ThrottleStrategy.COMPACTION, 3,
+                ThrottleStrategy.TAIL, 2,
+                ThrottleStrategy.CATCH_UP, 1,
+                ThrottleStrategy.ICEBERG_WRITE, 1)));
     }
 
     private NetworkBandwidthLimiter meter(MeteredNetworkBandwidthLimiter.Direction direction, NetworkBandwidthLimiter delegate) {

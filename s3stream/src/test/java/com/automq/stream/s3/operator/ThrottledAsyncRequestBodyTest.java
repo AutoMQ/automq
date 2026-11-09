@@ -208,29 +208,35 @@ class ThrottledAsyncRequestBodyTest {
         }
     }
 
-    /** A chunk must pass the task limiter before it can reserve global network quota. */
+    /** Replaying an SDK body gets independent request quota and closes both attempts with the body. */
     @Test
-    void testTaskQuotaPrecedesGlobalQuota() {
-        com.automq.stream.utils.AsyncRateLimiter.Handle handle = mock(com.automq.stream.utils.AsyncRateLimiter.Handle.class);
-        CompletableFuture<Void> taskGrant = new CompletableFuture<>();
-        when(handle.acquire(8)).thenReturn(taskGrant);
-        AsyncByteLimiter global = limiter();
+    void testRetryForksRequestQuota() {
+        AsyncByteLimiter initial = mock(AsyncByteLimiter.class);
+        AsyncByteLimiter retry = mock(AsyncByteLimiter.class);
+        when(initial.fork()).thenReturn(retry);
+        when(initial.acquire(8)).thenReturn(CompletableFuture.completedFuture(null));
+        CompletableFuture<Void> retryGrant = new CompletableFuture<>();
+        when(retry.acquire(8)).thenReturn(retryGrant);
         ByteBuf data = Unpooled.buffer(8).writeZero(8);
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data,
-            bytes -> handle.acquire(bytes).thenCompose(nil -> global.acquire(bytes)))) {
-            RecordingSubscriber subscriber = new RecordingSubscriber();
-            body.subscribe(subscriber);
-            subscriber.subscription.request(1);
-            assertTrue(sizes.isEmpty());
-            taskGrant.complete(null);
-            assertEquals(List.of(8L), sizes);
-            assertTrue(subscriber.chunks.isEmpty());
-            grants.get(0).complete(null);
-            assertEquals(1, subscriber.chunks.size());
-            assertTrue(subscriber.complete);
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, initial)) {
+            RecordingSubscriber first = new RecordingSubscriber();
+            body.subscribe(first);
+            first.subscription.request(1);
+            assertTrue(first.complete);
+            RecordingSubscriber second = new RecordingSubscriber();
+            body.subscribe(second);
+            second.subscription.request(1);
+            assertTrue(second.chunks.isEmpty());
+            retryGrant.complete(null);
+            assertTrue(second.complete);
+            assertEquals(1, second.chunks.size());
         } finally {
             data.release();
         }
+        org.mockito.Mockito.verify(initial).close();
+        org.mockito.Mockito.verify(retry).close();
+        org.mockito.Mockito.verify(initial).acquire(8);
+        org.mockito.Mockito.verify(retry).acquire(8);
     }
 
     private static class RecordingSubscriber implements Subscriber<ByteBuffer> {

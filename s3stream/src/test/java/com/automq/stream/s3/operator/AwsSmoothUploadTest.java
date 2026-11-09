@@ -46,7 +46,6 @@ import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -80,12 +79,14 @@ class AwsSmoothUploadTest {
         });
         server.start();
         NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+        NetworkBandwidthLimiter.Handle handle = mock(NetworkBandwidthLimiter.Handle.class);
+        when(limiter.register(ThrottleStrategy.WAL_UPLOAD, chunk + 8L)).thenReturn(handle);
         CompletableFuture<Void> lastGrant = new CompletableFuture<>();
         AtomicInteger grants = new AtomicInteger();
-        when(limiter.consume(eq(ThrottleStrategy.WAL_UPLOAD), anyLong())).thenAnswer(invocation -> {
+        when(handle.acquire(anyLong())).thenAnswer(invocation -> {
             int index = grants.getAndIncrement();
-            assertEquals(index == 0 ? (long) chunk : 7L, invocation.<Long>getArgument(1));
-            return index == 0 ? CompletableFuture.completedFuture(null) : lastGrant;
+            assertEquals(index == 0 ? 1L : index == 1 ? (long) chunk : 7L, invocation.<Long>getArgument(0));
+            return index < 2 ? CompletableFuture.completedFuture(null) : lastGrant;
         });
         S3AsyncClient client = S3AsyncClient.builder()
             .endpointOverride(URI.create("http://127.0.0.1:" + server.getAddress().getPort()))
@@ -107,7 +108,7 @@ class AwsSmoothUploadTest {
             lastGrant.complete(null);
             upload.get(10, TimeUnit.SECONDS);
             assertEquals(chunk + 7, received.get(10, TimeUnit.SECONDS));
-            assertEquals(2, grants.get());
+            assertEquals(3, grants.get());
             assertEquals(1, requests.get());
             assertEquals(1, data.refCnt());
         } finally {

@@ -23,7 +23,6 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.ThrottleStrategy;
-import com.automq.stream.utils.AsyncRateLimiter;
 
 import java.util.List;
 import java.util.Objects;
@@ -208,9 +207,9 @@ public interface ObjectStorage {
         public static final WriteOptions DEFAULT = new WriteOptions();
         public static final short UNSET_BUCKET = (short) -2;
 
+
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
-        private AsyncRateLimiter rateLimiter;
         private int allocType = ByteBufAlloc.DEFAULT;
         // timeout for one single network rpc
         private long apiCallAttemptTimeout = -1L;
@@ -321,21 +320,10 @@ public interface ObjectStorage {
             return timeout;
         }
 
-        /** Sets the task limiter shared by all objects and parts of this upload. */
-        public WriteOptions rateLimiter(AsyncRateLimiter rateLimiter) {
-            this.rateLimiter = rateLimiter;
-            return this;
-        }
-
-        public AsyncRateLimiter rateLimiter() {
-            return rateLimiter;
-        }
-
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.source = source;
-            copy.rateLimiter = rateLimiter;
             copy.allocType = allocType;
             copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
             copy.bucketId = bucketId;
@@ -351,10 +339,12 @@ public interface ObjectStorage {
     class ReadOptions {
         public static final short UNSET_BUCKET = (short) -2;
 
+
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+        private boolean enableFastRetry;
 
         /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
         public ReadOptions source(S3RequestSource source) {
@@ -370,6 +360,16 @@ public interface ObjectStorage {
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
             return this;
+        }
+
+        /** Enables speculative retries for bounded GETs; disabled by default. */
+        public ReadOptions enableFastRetry(boolean enabled) {
+            this.enableFastRetry = enabled;
+            return this;
+        }
+
+        public boolean enableFastRetry() {
+            return enableFastRetry;
         }
 
         public ReadOptions bucket(short bucket) {
@@ -402,6 +402,7 @@ public interface ObjectStorage {
             copy.source = source;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
+            copy.enableFastRetry = enableFastRetry;
             return copy;
         }
     }

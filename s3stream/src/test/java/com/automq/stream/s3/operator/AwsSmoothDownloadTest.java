@@ -77,7 +77,7 @@ class AwsSmoothDownloadTest {
             }
         });
         server.start();
-        NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+        NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class, org.mockito.Mockito.CALLS_REAL_METHODS);
         BlockingQueue<Grant> grants = new LinkedBlockingQueue<>();
         when(limiter.consume(eq(ThrottleStrategy.TAIL), anyLong())).thenAnswer(invocation -> {
             CompletableFuture<Void> future = new CompletableFuture<>();
@@ -98,7 +98,7 @@ class AwsSmoothDownloadTest {
             CompletableFuture<ByteBuf> read = storage.rangeRead(new ObjectStorage.ReadOptions()
                 .bucket((short) 0).throttleStrategy(ThrottleStrategy.TAIL), "key", 0, -1);
             long charged = 0;
-            while (charged < bytes.length) {
+            while (charged < bytes.length + 1) {
                 Grant grant = grants.poll(5, TimeUnit.SECONDS);
                 assertNotNull(grant);
                 assertFalse(read.isDone());
@@ -108,7 +108,7 @@ class AwsSmoothDownloadTest {
             }
             ByteBuf result = read.get(10, TimeUnit.SECONDS);
             try {
-                assertEquals(bytes.length, charged);
+                assertEquals(bytes.length + 1, charged);
                 assertArrayEquals(bytes, ByteBufUtil.getBytes(result));
                 assertEquals(1, requests.get());
             } finally {

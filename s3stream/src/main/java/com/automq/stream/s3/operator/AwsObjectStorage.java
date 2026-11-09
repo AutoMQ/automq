@@ -22,6 +22,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 
 import org.apache.commons.lang3.StringUtils;
@@ -261,13 +262,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.checksumMode(ChecksumMode.ENABLED);
         }
 
-        return readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
-            .thenCompose(responsePublisher -> {
-                ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(
-                    bytes -> networkInboundBandwidthLimiter.consume(options.throttleStrategy(), bytes));
-                responsePublisher.subscribe(subscriber);
-                return subscriber.result();
-            });
+        long size = end == RANGE_READ_TO_END ? -1 : end - start;
+        return requestLimiter(networkInboundBandwidthLimiter, options.throttleStrategy(), size)
+            .thenCompose(limiter -> readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
+                .thenCompose(responsePublisher -> {
+                    ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter);
+                    responsePublisher.subscribe(subscriber);
+                    return subscriber.result();
+                }).whenComplete((rst, ex) -> limiter.close()));
     }
 
     @Override
@@ -328,16 +330,17 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     }
 
     private CompletableFuture<ThrottledAsyncRequestBody> uploadBody(WriteOptions options, ByteBuf data) {
-        AsyncByteLimiter global = bytes -> networkOutboundBandwidthLimiter.consume(options.throttleStrategy(), bytes);
-        if (options.rateLimiter() == null) {
-            return CompletableFuture.completedFuture(new ThrottledAsyncRequestBody(data, global));
-        }
-        // Admission happens before the SDK call. Keep the payload alive while waiting for its handle.
+        // Keep the source alive while waiting for the synthetic one-byte admission grant.
         ByteBuf retained = data.retainedSlice();
-        return options.rateLimiter().register(retained.readableBytes())
-            .thenApply(handle -> new ThrottledAsyncRequestBody(retained,
-                bytes -> handle.acquire(bytes).thenCompose(nil -> global.acquire(bytes))))
+        return requestLimiter(networkOutboundBandwidthLimiter, options.throttleStrategy(), retained.readableBytes())
+            .thenApply(limiter -> new ThrottledAsyncRequestBody(retained, limiter))
             .whenComplete((body, ex) -> retained.release());
+    }
+
+    private CompletableFuture<AsyncByteLimiter> requestLimiter(NetworkBandwidthLimiter network,
+        ThrottleStrategy strategy, long bytes) {
+        RequestLimiter limiter = new RequestLimiter(network, strategy, bytes);
+        return limiter.start.thenApply(nil -> limiter);
     }
 
     @Override
@@ -1033,4 +1036,36 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
         }
     }
+    /** Each SDK subscription owns one whole-request allocation, including a one-byte start grant. */
+    private static final class RequestLimiter implements AsyncByteLimiter {
+        private final NetworkBandwidthLimiter network;
+        private final ThrottleStrategy strategy;
+        private final long bytes;
+        private final NetworkBandwidthLimiter.Handle handle;
+        private final CompletableFuture<Void> start;
+
+        RequestLimiter(NetworkBandwidthLimiter network, ThrottleStrategy strategy, long bytes) {
+            this.network = network;
+            this.strategy = strategy;
+            this.bytes = bytes;
+            handle = network.register(strategy, bytes < 0 ? -1 : Math.addExact(bytes, 1));
+            start = handle.acquire(1);
+        }
+
+        @Override
+        public CompletableFuture<Void> acquire(int size) {
+            return start.thenCompose(nil -> handle.acquire(size));
+        }
+
+        @Override
+        public AsyncByteLimiter fork() {
+            return new RequestLimiter(network, strategy, bytes);
+        }
+
+        @Override
+        public void close() {
+            handle.close();
+        }
+    }
+
 }

@@ -20,7 +20,6 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.Version;
-import com.automq.stream.s3.network.NetworkBandwidthLimiterType;
 import com.automq.stream.s3.network.NetworkBandwidthMode;
 import com.automq.stream.s3.operator.BucketURI;
 
@@ -62,7 +61,6 @@ public class Config {
     private long networkBurstBandwidth = -1;
     private long networkMaxBurstWindowMs = 60000;
     private int refillPeriodMs = 10;
-    private NetworkBandwidthLimiterType networkLimiterType = NetworkBandwidthLimiterType.LEGACY;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
     private boolean snapshotReadEnable = false;
@@ -191,11 +189,7 @@ public class Config {
         return networkMaxBurstWindowMs;
     }
 
-    /** Returns the network limiter implementation selected at startup. */
-    public NetworkBandwidthLimiterType networkLimiterType() {
-        return networkLimiterType;
-    }
-
+    /** Returns the network refill interval in milliseconds. */
     public int refillPeriodMs() {
         return refillPeriodMs;
     }
@@ -350,12 +344,7 @@ public class Config {
         return this;
     }
 
-    /** Selects the network limiter implementation for startup. */
-    public Config networkLimiterType(NetworkBandwidthLimiterType networkLimiterType) {
-        this.networkLimiterType = networkLimiterType;
-        return this;
-    }
-
+    /** Sets the network refill interval in milliseconds. */
     public Config refillPeriodMs(int refillPeriodMs) {
         this.refillPeriodMs = refillPeriodMs;
         return this;

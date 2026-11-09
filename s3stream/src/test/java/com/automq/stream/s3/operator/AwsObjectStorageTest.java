@@ -72,49 +72,97 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class AwsObjectStorageTest {
-
-    /** PUT and UploadPart must not call the SDK while task admission is still pending. */
+    /** The SDK PUT starts only after the synthetic byte, then claims payload from the same registered quota. */
     @Tag("S3Unit")
     @Test
-    void testTaskAdmissionPrecedesSdkRequest() {
-        S3AsyncClient client = mock(S3AsyncClient.class);
-        AwsObjectStorage storage = new AwsObjectStorage(client, "bucket");
-        com.automq.stream.utils.AsyncRateLimiter task = mock(com.automq.stream.utils.AsyncRateLimiter.class);
-        com.automq.stream.utils.AsyncRateLimiter.Handle handle = mock(com.automq.stream.utils.AsyncRateLimiter.Handle.class);
-        CompletableFuture<com.automq.stream.utils.AsyncRateLimiter.Handle> admission = new CompletableFuture<>();
-        when(task.register(8)).thenReturn(admission);
-        when(client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(CompletableFuture.completedFuture(software.amazon.awssdk.services.s3.model.PutObjectResponse.builder().build()));
-        when(client.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class)))
-            .thenReturn(CompletableFuture.completedFuture(software.amazon.awssdk.services.s3.model.UploadPartResponse.builder().eTag("etag").build()));
-        ByteBuf data = Unpooled.buffer(8).writeZero(8);
-        try {
-            ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions().rateLimiter(task).copy();
-            Assertions.assertSame(task, options.rateLimiter());
-            CompletableFuture<Void> put = storage.doWrite(options, "key", data);
-            CompletableFuture<?> part = storage.doUploadPart(options, "key", "upload", 1, data);
-            org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
-            org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
-            Assertions.assertFalse(put.isDone());
-            Assertions.assertFalse(part.isDone());
-            admission.complete(handle);
-            put.join();
-            part.join();
-            org.mockito.Mockito.verify(client).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
-            org.mockito.Mockito.verify(client).uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
-            Assertions.assertEquals(1, data.refCnt());
-        } finally {
-            storage.close();
-            data.release();
+    void testRequestBudgetGatesPutAndPart() {
+        for (ThrottleStrategy strategy : List.of(ThrottleStrategy.WAL_UPLOAD, ThrottleStrategy.TAIL)) {
+            for (boolean multipart : List.of(false, true)) {
+                S3AsyncClient client = mock(S3AsyncClient.class);
+                NetworkBandwidthLimiter network = mock(NetworkBandwidthLimiter.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+                NetworkBandwidthLimiter.Handle handle = mock(NetworkBandwidthLimiter.Handle.class);
+                CompletableFuture<Void> admission = new CompletableFuture<>();
+                CompletableFuture<Void> payload = new CompletableFuture<>();
+                when(network.register(strategy, 9)).thenReturn(handle);
+                when(handle.acquire(1)).thenReturn(admission);
+                when(handle.acquire(8)).thenReturn(payload);
+                when(network.consume(strategy, 8)).thenReturn(CompletableFuture.completedFuture(null));
+                when(client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation ->
+                    invocation.<AsyncRequestBody>getArgument(1).subscribe(bytes -> { }).thenApply(nil ->
+                        software.amazon.awssdk.services.s3.model.PutObjectResponse.builder().build()));
+                when(client.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation ->
+                    invocation.<AsyncRequestBody>getArgument(1).subscribe(bytes -> { }).thenApply(nil ->
+                        UploadPartResponse.builder().eTag("etag").build()));
+                AwsObjectStorage storage = new AwsObjectStorage(client, client, "bucket", ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION,
+                    NetworkBandwidthLimiter.NOOP, network);
+                ByteBuf data = Unpooled.buffer(8).writeZero(8);
+                try {
+                    ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions().throttleStrategy(strategy)
+                        .copy();
+                    CompletableFuture<?> result = multipart ? storage.doUploadPart(options, "key", "upload", 1, data)
+                        : storage.doWrite(options, "key", data);
+                    org.mockito.Mockito.verifyNoInteractions(client);
+                    admission.complete(null);
+                    verify(handle).acquire(8);
+                    org.mockito.Mockito.verify(network, org.mockito.Mockito.never()).consume(any(), anyLong());
+                    Assertions.assertFalse(result.isDone());
+                    payload.complete(null);
+                    result.join();
+                    org.mockito.Mockito.verify(network, org.mockito.Mockito.never()).consume(any(), anyLong());
+                    verify(handle).close();
+                    Assertions.assertEquals(1, data.refCnt());
+                } finally {
+                    data.release();
+                    storage.close();
+                }
+            }
         }
     }
+
+    /** A GET consumes one admission byte before SDK invocation and charges its actual response buffer afterward. */
+    @Tag("S3Unit")
+    @Test
+    void testRequestBudgetGatesGet() {
+        S3AsyncClient client = mock(S3AsyncClient.class);
+        NetworkBandwidthLimiter network = mock(NetworkBandwidthLimiter.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        NetworkBandwidthLimiter.Handle handle = mock(NetworkBandwidthLimiter.Handle.class);
+        CompletableFuture<Void> admission = new CompletableFuture<>();
+        CompletableFuture<Void> payload = new CompletableFuture<>();
+        when(network.register(ThrottleStrategy.COMPACTION, 4)).thenReturn(handle);
+        when(handle.acquire(1)).thenReturn(admission);
+        when(handle.acquire(3)).thenReturn(payload);
+        when(network.consume(ThrottleStrategy.COMPACTION, 3)).thenReturn(CompletableFuture.completedFuture(null));
+        var response = new ResponsePublisher<>(GetObjectResponse.builder().contentLength(3L).build(),
+            SdkPublisher.fromIterable(List.of(ByteBuffer.wrap(new byte[] {1, 2, 3}))));
+        when(client.getObject(any(GetObjectRequest.class),
+            org.mockito.ArgumentMatchers.<AsyncResponseTransformer<GetObjectResponse, ResponsePublisher<GetObjectResponse>>>any()))
+            .thenReturn(CompletableFuture.completedFuture(response));
+        AwsObjectStorage storage = new AwsObjectStorage(client, client, "bucket", ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION,
+            network, NetworkBandwidthLimiter.NOOP);
+        try {
+            ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions()
+                .throttleStrategy(ThrottleStrategy.COMPACTION).copy();
+            CompletableFuture<ByteBuf> result = storage.doRangeRead(options, "key", 0, 3);
+            org.mockito.Mockito.verifyNoInteractions(client);
+            admission.complete(null);
+            verify(handle).acquire(3);
+            org.mockito.Mockito.verify(network, org.mockito.Mockito.never()).consume(any(), anyLong());
+            payload.complete(null);
+            result.join().release();
+            org.mockito.Mockito.verify(network, org.mockito.Mockito.never()).consume(any(), anyLong());
+            verify(handle).close();
+        } finally {
+            storage.close();
+        }
+    }
+
 
     /** PUT and UploadPart meter the SDK body once in chunks instead of precharging the entire buffer. */
     @Tag("S3Unit")
     @Test
     void testUploadsMeterChunksWithoutUpfrontCharge() throws Exception {
         for (boolean multipart : List.of(false, true)) {
-            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             List<Long> sizes = new java.util.concurrent.CopyOnWriteArrayList<>();
             when(limiter.consume(eq(ThrottleStrategy.WAL_UPLOAD), anyLong())).thenAnswer(invocation -> {
                 sizes.add(invocation.getArgument(1));
@@ -142,7 +190,7 @@ public class AwsObjectStorageTest {
                         eq("key"), any(ByteBuf.class));
                     Assertions.assertTrue(options.enableFastRetry());
                 }
-                Assertions.assertEquals(List.of((long) ThrottledAsyncRequestBody.CHUNK_SIZE, 7L), sizes);
+                Assertions.assertEquals(List.of(1L, (long) ThrottledAsyncRequestBody.CHUNK_SIZE, 7L), sizes);
                 Assertions.assertEquals(0, data.refCnt());
             } finally {
                 storage.close();
@@ -175,7 +223,7 @@ public class AwsObjectStorageTest {
     @Test
     void testReadsMeterSdkBuffersWithoutUpfrontCharge() throws Exception {
         for (long end : List.of(3L, -1L)) {
-            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
+            NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class, org.mockito.Mockito.CALLS_REAL_METHODS);
             List<Long> sizes = new java.util.concurrent.CopyOnWriteArrayList<>();
             java.util.concurrent.BlockingQueue<CompletableFuture<Void>> grants = new java.util.concurrent.LinkedBlockingQueue<>();
             when(limiter.consume(eq(ThrottleStrategy.TAIL), anyLong())).thenAnswer(invocation -> {
@@ -197,14 +245,18 @@ public class AwsObjectStorageTest {
             try {
                 CompletableFuture<ByteBuf> read = storage.rangeRead(new ObjectStorage.ReadOptions()
                     .bucket((short) 0).throttleStrategy(ThrottleStrategy.TAIL), "key", 0, end);
+                CompletableFuture<Void> admission = grants.poll(5, TimeUnit.SECONDS);
+                Assertions.assertNotNull(admission);
+                Assertions.assertEquals(List.of(1L), sizes);
+                admission.complete(null);
                 CompletableFuture<Void> first = grants.poll(5, TimeUnit.SECONDS);
                 Assertions.assertNotNull(first);
-                Assertions.assertEquals(List.of(2L), sizes);
+                Assertions.assertEquals(List.of(1L, 2L), sizes);
                 Assertions.assertFalse(read.isDone());
                 first.complete(null);
                 CompletableFuture<Void> last = grants.poll(5, TimeUnit.SECONDS);
                 Assertions.assertNotNull(last);
-                Assertions.assertEquals(List.of(2L, 1L), sizes);
+                Assertions.assertEquals(List.of(1L, 2L, 1L), sizes);
                 Assertions.assertFalse(read.isDone());
                 last.complete(null);
                 ByteBuf result = read.get(5, TimeUnit.SECONDS);

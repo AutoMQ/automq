@@ -56,6 +56,7 @@ import com.automq.stream.s3.index.LocalStreamRangeIndexCache;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.objects.ObjectManager;
+import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.streams.StreamManager;
@@ -167,7 +168,7 @@ public class DefaultS3Client implements Client {
     }
 
     protected void setupNetworkLimiters() {
-        GlobalNetworkBandwidthLimiters.instance().setup(config.networkLimiterType(), config.networkBandwidthMode(),
+        GlobalNetworkBandwidthLimiters.instance().setup(config.networkBandwidthMode(),
             config.networkBaselineBandwidth(), config.networkBurstBandwidth(), config.refillPeriodMs(), config.networkMaxBurstWindowMs());
         networkInboundLimiter = GlobalNetworkBandwidthLimiters.instance().inbound();
         networkOutboundLimiter = GlobalNetworkBandwidthLimiters.instance().outbound();
@@ -209,10 +210,16 @@ public class DefaultS3Client implements Client {
 
     protected ObjectStorage newBackgroundObjectStorage() {
         return ObjectStorageFactory.instance().builder()
-            .buckets(config.dataBuckets())
+            .buckets(config.dataBuckets().stream().map(uri -> {
+                BucketURI background = BucketURI.parse(uri.toIdURI());
+                background.addExtension(BucketURI.API_CALL_ATTEMPT_TIMEOUT_KEY, "60000");
+                background.addExtension(BucketURI.API_CALL_TIMEOUT_KEY, "90000");
+                background.addExtension(BucketURI.NUM_RETRIES_KEY, "0");
+                return background;
+            }).toList())
             .tagging(config.objectTagging())
             .extension(EXTENSION_TYPE_KEY, EXTENSION_TYPE_BACKGROUND)
-            .readWriteIsolate(false)
+            .readWriteIsolate(true)
             .inboundLimiter(networkInboundLimiter)
             .outboundLimiter(networkOutboundLimiter)
             .threadPrefix("background")
@@ -230,7 +237,7 @@ public class DefaultS3Client implements Client {
     }
 
     protected S3Storage newS3Storage() {
-        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, mainObjectStorage, storageFailureHandlerChain);
+        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, backgroundObjectStorage, storageFailureHandlerChain);
     }
 
     protected Failover failover() {

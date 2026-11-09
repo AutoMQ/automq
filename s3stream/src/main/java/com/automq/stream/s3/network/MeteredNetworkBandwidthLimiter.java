@@ -47,6 +47,10 @@ public class MeteredNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
     public CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size) {
         long startNs = System.nanoTime();
         CompletableFuture<Void> cf = delegate.consume(throttleStrategy, size);
+        return record(throttleStrategy, size, startNs, cf);
+    }
+
+    private CompletableFuture<Void> record(ThrottleStrategy throttleStrategy, long size, long startNs, CompletableFuture<Void> cf) {
         boolean queued = !cf.isDone();
         cf.whenComplete((v, e) -> {
             NetworkStats.getInstance().recordNetworkUsageTotal(direction, throttleStrategy, size);
@@ -56,6 +60,28 @@ public class MeteredNetworkBandwidthLimiter implements NetworkBandwidthLimiter {
             }
         });
         return cf;
+    }
+
+    @Override
+    public Handle register(ThrottleStrategy strategy, long totalBytes) {
+        Handle handle = delegate.register(strategy, totalBytes);
+        return new Handle() {
+            @Override
+            public CompletableFuture<Void> acquire(long bytes) {
+                long startNs = System.nanoTime();
+                return record(strategy, bytes, startNs, handle.acquire(bytes));
+            }
+
+            @Override
+            public void close() {
+                handle.close();
+            }
+        };
+    }
+
+    @Override
+    public RateReservation reserve(ThrottleStrategy strategy, double bytesPerSecond) {
+        return delegate.reserve(strategy, bytesPerSecond);
     }
 
     @Override

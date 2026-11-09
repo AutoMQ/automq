@@ -24,7 +24,9 @@ import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -45,6 +47,8 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
     private final int length;
     private final ByteBuffer[] buffers;
     private final AsyncByteLimiter limiter;
+    private final List<AsyncByteLimiter> attempts = new ArrayList<>();
+    private boolean subscribed;
     // The body monitor serializes subscriptions, grant callbacks and source release.
     private boolean closed;
 
@@ -53,6 +57,7 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
         this.length = data.readableBytes();
         this.buffers = this.data.nioBuffers();
         this.limiter = limiter;
+        attempts.add(limiter);
     }
 
     @Override
@@ -62,7 +67,13 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
 
     @Override
     public synchronized void subscribe(Subscriber<? super ByteBuffer> subscriber) {
-        UploadSubscription subscription = new UploadSubscription(subscriber);
+        AsyncByteLimiter attempt = limiter;
+        if (!closed && subscribed) {
+            attempt = limiter.fork();
+            attempts.add(attempt);
+        }
+        subscribed = true;
+        UploadSubscription subscription = new UploadSubscription(subscriber, attempt);
         subscriber.onSubscribe(subscription);
         if (closed) {
             subscription.fail(new IllegalStateException("Upload request body is closed"));
@@ -76,11 +87,13 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
         if (!closed) {
             closed = true;
             data.release();
+            attempts.forEach(AsyncByteLimiter::close);
         }
     }
 
     private final class UploadSubscription implements Subscription {
         private final Subscriber<? super ByteBuffer> subscriber;
+        private final AsyncByteLimiter attemptLimiter;
         private final ByteBuffer[] source = Arrays.stream(buffers).map(ByteBuffer::duplicate).toArray(ByteBuffer[]::new);
         private int bufferIndex;
         private long demand;
@@ -88,8 +101,9 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
         private boolean terminated;
         private boolean draining;
 
-        private UploadSubscription(Subscriber<? super ByteBuffer> subscriber) {
+        private UploadSubscription(Subscriber<? super ByteBuffer> subscriber, AsyncByteLimiter attemptLimiter) {
             this.subscriber = subscriber;
+            this.attemptLimiter = attemptLimiter;
         }
 
         @Override
@@ -138,7 +152,7 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
                     ByteBuffer buffer = source[bufferIndex];
                     int size = Math.min(CHUNK_SIZE, buffer.remaining());
                     if (grant == null) {
-                        grant = limiter.acquire(size);
+                        grant = attemptLimiter.acquire(size);
                         newGrant = grant;
                     }
                     if (!grant.isDone()) {

@@ -37,12 +37,9 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledExecutorService;
 
-import io.github.bucket4j.Bucket;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 
@@ -59,24 +56,10 @@ public class DataBlockReader {
     private final String objectKey;
     private final ObjectStorage objectStorage;
     private final CompletableFuture<List<StreamDataBlock>> indexBlockCf = new CompletableFuture<>();
-    private final Bucket throttleBucket;
-    private final ScheduledExecutorService bucketCallbackExecutor;
-
     public DataBlockReader(S3ObjectMetadata metadata, ObjectStorage objectStorage) {
-        this(metadata, objectStorage, null, null);
-    }
-
-    public DataBlockReader(S3ObjectMetadata metadata, ObjectStorage objectStorage, Bucket throttleBucket,
-        ScheduledExecutorService bucketCallbackExecutor) {
         this.metadata = metadata;
         this.objectKey = metadata.key();
         this.objectStorage = objectStorage;
-        this.throttleBucket = throttleBucket;
-        if (this.throttleBucket != null) {
-            this.bucketCallbackExecutor = Objects.requireNonNull(bucketCallbackExecutor);
-        } else {
-            this.bucketCallbackExecutor = null;
-        }
     }
 
     public CompletableFuture<List<StreamDataBlock>> getDataBlockIndex() {
@@ -208,25 +191,13 @@ public class DataBlockReader {
     }
 
     private CompletableFuture<ByteBuf> rangeRead0(long start, long end) {
-        if (throttleBucket == null) {
-            return objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
-                // convert heap buffer to direct buffer
+        return objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION)
+            .bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
                 ByteBuf directBuf = DIRECT_ALLOC.alloc(buf.readableBytes());
                 directBuf.writeBytes(buf);
                 buf.release();
                 return directBuf;
             });
-        } else {
-            return throttleBucket.asScheduler().consume(end - start + 1, bucketCallbackExecutor)
-                .thenCompose(v ->
-                    objectStorage.rangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION).bucket(metadata.bucket()), objectKey, start, end).thenApply(buf -> {
-                        // convert heap buffer to direct buffer
-                        ByteBuf directBuf = DIRECT_ALLOC.alloc(buf.readableBytes());
-                        directBuf.writeBytes(buf);
-                        buf.release();
-                        return directBuf;
-                    }));
-        }
     }
 
     private void parseDataBlocks(ByteBuf buf, List<StreamDataBlock> streamDataBlocks) {

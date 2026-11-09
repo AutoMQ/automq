@@ -21,7 +21,6 @@ package com.automq.stream.s3.network;
 
 public enum ThrottleStrategy {
     BYPASS(0, "bypass"),
-    WAL(1, "wal"),
     WAL_UPLOAD(2, "wal_upload"),
     COMPACTION(3, "compaction"),
     TAIL(4, "tail"),

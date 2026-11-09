@@ -411,7 +411,7 @@ public class DefaultWriter implements Writer {
             int objectLength = objectBuffer.readableBytes();
 
             // Enable fast retry.
-            ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL)
+            ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.BYPASS)
                 .enableFastRetry(true).source(config.source());
             String path = config.version() == 1
                 ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset)

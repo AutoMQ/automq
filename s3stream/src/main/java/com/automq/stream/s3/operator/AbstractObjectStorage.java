@@ -767,7 +767,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         path, mergedReadTask.start, mergedReadTask.end,
                         mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
-                mergedRangeRead(mergedReadTask.options(), path, mergedReadTask.start, mergedReadTask.end)
+                // A merged GET honors fast retry if any of its callers explicitly requested it.
+                ReadOptions options = mergedReadTask.options().enableFastRetry(
+                    mergedReadTask.readTasks.stream().anyMatch(task -> task.options.enableFastRetry()));
+                mergedRangeRead(options, path, mergedReadTask.start, mergedReadTask.end)
                     .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), logger));
             }
         );
@@ -784,7 +787,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return retCf;
         }
         CompletableFuture<ByteBuf> readCf = mergedRangeRead0(options, path, start, end, cf);
-        if (!checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
+        if (options.enableFastRetry() && !checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
             long delayMillis = readLatencyCalculator.valueAtPercentile(end - start, 99);
             if (delayMillis > 0) {
                 ReadOptions retryOptions = options.copy();
