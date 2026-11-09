@@ -73,6 +73,42 @@ import static org.mockito.Mockito.when;
 
 public class AwsObjectStorageTest {
 
+    /** PUT and UploadPart must not call the SDK while task admission is still pending. */
+    @Tag("S3Unit")
+    @Test
+    void testTaskAdmissionPrecedesSdkRequest() {
+        S3AsyncClient client = mock(S3AsyncClient.class);
+        AwsObjectStorage storage = new AwsObjectStorage(client, "bucket");
+        com.automq.stream.utils.AsyncRateLimiter task = mock(com.automq.stream.utils.AsyncRateLimiter.class);
+        com.automq.stream.utils.AsyncRateLimiter.Handle handle = mock(com.automq.stream.utils.AsyncRateLimiter.Handle.class);
+        CompletableFuture<com.automq.stream.utils.AsyncRateLimiter.Handle> admission = new CompletableFuture<>();
+        when(task.register(8)).thenReturn(admission);
+        when(client.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(CompletableFuture.completedFuture(software.amazon.awssdk.services.s3.model.PutObjectResponse.builder().build()));
+        when(client.uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class)))
+            .thenReturn(CompletableFuture.completedFuture(software.amazon.awssdk.services.s3.model.UploadPartResponse.builder().eTag("etag").build()));
+        ByteBuf data = Unpooled.buffer(8).writeZero(8);
+        try {
+            ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions().rateLimiter(task).copy();
+            Assertions.assertSame(task, options.rateLimiter());
+            CompletableFuture<Void> put = storage.doWrite(options, "key", data);
+            CompletableFuture<?> part = storage.doUploadPart(options, "key", "upload", 1, data);
+            org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            org.mockito.Mockito.verify(client, org.mockito.Mockito.never()).uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
+            Assertions.assertFalse(put.isDone());
+            Assertions.assertFalse(part.isDone());
+            admission.complete(handle);
+            put.join();
+            part.join();
+            org.mockito.Mockito.verify(client).putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class));
+            org.mockito.Mockito.verify(client).uploadPart(any(UploadPartRequest.class), any(AsyncRequestBody.class));
+            Assertions.assertEquals(1, data.refCnt());
+        } finally {
+            storage.close();
+            data.release();
+        }
+    }
+
     /** PUT and UploadPart meter the SDK body once in chunks instead of precharging the entire buffer. */
     @Tag("S3Unit")
     @Test

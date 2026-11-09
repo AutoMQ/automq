@@ -19,8 +19,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -40,8 +38,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -51,15 +47,13 @@ class ThrottledAsyncRequestBodyTest {
     private final List<Long> sizes = new ArrayList<>();
     private final List<CompletableFuture<Void>> grants = new ArrayList<>();
 
-    private NetworkBandwidthLimiter limiter() {
-        NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
-        when(limiter.consume(eq(ThrottleStrategy.WAL_UPLOAD), anyLong())).thenAnswer(invocation -> {
-            sizes.add(invocation.getArgument(1));
+    private AsyncByteLimiter limiter() {
+        return size -> {
+            sizes.add((long) size);
             CompletableFuture<Void> grant = new CompletableFuture<>();
             grants.add(grant);
             return grant;
-        });
-        return limiter;
+        };
     }
 
     /** Demand and quota must both exist before a chunk is published, with at most one pending grant. */
@@ -70,7 +64,7 @@ class ThrottledAsyncRequestBodyTest {
             Unpooled.buffer(chunk + 5).writeZero(chunk + 5), Unpooled.buffer(chunk + 4).writeZero(chunk + 4));
         data.readerIndex(2);
         data.setByte(data.writerIndex() - 1, 42);
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter(), ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter())) {
             RecordingSubscriber subscriber = new RecordingSubscriber();
             body.subscribe(subscriber);
             assertEquals(2L * chunk + 7, body.contentLength().orElseThrow());
@@ -104,7 +98,7 @@ class ThrottledAsyncRequestBodyTest {
     @Test
     void testRetryReplaysAndPaysAgain() {
         ByteBuf data = Unpooled.wrappedBuffer(new byte[] {1, 2, 3});
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter(), ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter())) {
             RecordingSubscriber first = new RecordingSubscriber();
             body.subscribe(first);
             first.subscription.request(1);
@@ -127,7 +121,7 @@ class ThrottledAsyncRequestBodyTest {
     @Test
     void testCancelWhileWaiting() {
         ByteBuf data = Unpooled.buffer(8).writeZero(8);
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter(), ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter())) {
             RecordingSubscriber subscriber = new RecordingSubscriber();
             body.subscribe(subscriber);
             subscriber.subscription.request(1);
@@ -145,7 +139,7 @@ class ThrottledAsyncRequestBodyTest {
     @Test
     void testCloseWhileWaiting() {
         ByteBuf data = Unpooled.buffer(8).writeZero(8);
-        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter(), ThrottleStrategy.WAL_UPLOAD);
+        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter());
         data.release();
         RecordingSubscriber subscriber = new RecordingSubscriber();
         body.subscribe(subscriber);
@@ -162,8 +156,7 @@ class ThrottledAsyncRequestBodyTest {
     void testPublishedChunkSharesSourceMemory() {
         ByteBuf data = Unpooled.wrappedBuffer(new byte[] {7});
         RecordingSubscriber subscriber = new RecordingSubscriber();
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, NetworkBandwidthLimiter.NOOP,
-            ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, bytes -> CompletableFuture.completedFuture(null))) {
             body.subscribe(subscriber);
             subscriber.subscription.request(1);
             data.setByte(0, 9);
@@ -177,8 +170,7 @@ class ThrottledAsyncRequestBodyTest {
     @Test
     void testSynchronousReentry() {
         ByteBuf data = Unpooled.buffer(ThrottledAsyncRequestBody.CHUNK_SIZE * 128).writeZero(ThrottledAsyncRequestBody.CHUNK_SIZE * 128);
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, NetworkBandwidthLimiter.NOOP,
-            ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, bytes -> CompletableFuture.completedFuture(null))) {
             RecordingSubscriber subscriber = new RecordingSubscriber() {
                 @Override
                 public void onNext(ByteBuffer bytes) {
@@ -199,7 +191,7 @@ class ThrottledAsyncRequestBodyTest {
     @Test
     void testInvalidDemandAndEmptyBody() {
         ByteBuf data = Unpooled.buffer(1).writeByte(1);
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter(), ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, limiter())) {
             RecordingSubscriber subscriber = new RecordingSubscriber();
             body.subscribe(subscriber);
             subscriber.subscription.request(0);
@@ -208,12 +200,36 @@ class ThrottledAsyncRequestBodyTest {
         } finally {
             data.release();
         }
-        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(Unpooled.EMPTY_BUFFER, limiter(),
-            ThrottleStrategy.WAL_UPLOAD)) {
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(Unpooled.EMPTY_BUFFER, limiter())) {
             RecordingSubscriber subscriber = new RecordingSubscriber();
             body.subscribe(subscriber);
             assertTrue(subscriber.complete);
             assertTrue(grants.isEmpty());
+        }
+    }
+
+    /** A chunk must pass the task limiter before it can reserve global network quota. */
+    @Test
+    void testTaskQuotaPrecedesGlobalQuota() {
+        com.automq.stream.utils.AsyncRateLimiter.Handle handle = mock(com.automq.stream.utils.AsyncRateLimiter.Handle.class);
+        CompletableFuture<Void> taskGrant = new CompletableFuture<>();
+        when(handle.acquire(8)).thenReturn(taskGrant);
+        AsyncByteLimiter global = limiter();
+        ByteBuf data = Unpooled.buffer(8).writeZero(8);
+        try (ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data,
+            bytes -> handle.acquire(bytes).thenCompose(nil -> global.acquire(bytes)))) {
+            RecordingSubscriber subscriber = new RecordingSubscriber();
+            body.subscribe(subscriber);
+            subscriber.subscription.request(1);
+            assertTrue(sizes.isEmpty());
+            taskGrant.complete(null);
+            assertEquals(List.of(8L), sizes);
+            assertTrue(subscriber.chunks.isEmpty());
+            grants.get(0).complete(null);
+            assertEquals(1, subscriber.chunks.size());
+            assertTrue(subscriber.complete);
+        } finally {
+            data.release();
         }
     }
 

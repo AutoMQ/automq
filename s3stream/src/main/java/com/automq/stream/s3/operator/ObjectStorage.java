@@ -23,6 +23,7 @@ import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.ThrottleStrategy;
+import com.automq.stream.utils.AsyncRateLimiter;
 
 import java.util.List;
 import java.util.Objects;
@@ -209,6 +210,7 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
+        private AsyncRateLimiter rateLimiter;
         private int allocType = ByteBufAlloc.DEFAULT;
         // timeout for one single network rpc
         private long apiCallAttemptTimeout = -1L;
@@ -319,10 +321,21 @@ public interface ObjectStorage {
             return timeout;
         }
 
+        /** Sets the task limiter shared by all objects and parts of this upload. */
+        public WriteOptions rateLimiter(AsyncRateLimiter rateLimiter) {
+            this.rateLimiter = rateLimiter;
+            return this;
+        }
+
+        public AsyncRateLimiter rateLimiter() {
+            return rateLimiter;
+        }
+
         public WriteOptions copy() {
             WriteOptions copy = new WriteOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.source = source;
+            copy.rateLimiter = rateLimiter;
             copy.allocType = allocType;
             copy.apiCallAttemptTimeout = apiCallAttemptTimeout;
             copy.bucketId = bucketId;

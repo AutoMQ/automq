@@ -129,10 +129,6 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         }
     }
 
-    private CompletableFuture<Void> acquireLimiter(long size) {
-        return limiter.acquire(Math.toIntExact(size));
-    }
-
     @Override
     public CompletableFuture<CommitStreamSetObjectRequest> upload() {
         prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
@@ -150,7 +146,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         } else {
             streamSetObjectId = objectId++;
             ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize,
-                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD).rateLimiter(limiter));
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
@@ -165,26 +161,23 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             }));
         }
 
-        List<CompletableFuture<Void>> streamSetObjectCfList = new LinkedList<>();
         List<Long> streamSetIds = new ArrayList<>(streamSetObjectMap.keySet());
         Collections.sort(streamSetIds);
         for (Long streamId : streamSetIds) {
             List<StreamRecordBatch> streamRecords = streamSetObjectMap.get(streamId);
-            long streamSize = streamSize(streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
             long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
-            streamSetObjectCfList.add(acquireLimiter(streamSize).thenAccept(nil -> ssoWriter.write(streamId, streamRecords)));
+            ssoWriter.write(streamId, streamRecords);
             request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
         }
 
         request.setObjectId(streamSetObjectId);
         request.setOrderId(streamSetObjectId);
 
-        CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetObjectCfList.toArray(new CompletableFuture[0]))
-            .thenCompose(nil -> ssoWriter.close().thenAccept(nil2 -> {
-                request.setObjectSize(ssoWriter.size());
-                request.setAttributes(ObjectAttributes.builder().bucket(ssoWriter.bucketId()).build().attributes());
-            }));
+        CompletableFuture<Void> streamSetObjectCf = ssoWriter.close().thenAccept(nil -> {
+            request.setObjectSize(ssoWriter.size());
+            request.setAttributes(ObjectAttributes.builder().bucket(ssoWriter.bucketId()).build().attributes());
+        });
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
@@ -224,10 +217,9 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(long objectId, List<StreamRecordBatch> streamRecords) {
-        long streamSize = streamSize(streamRecords);
-        return acquireLimiter(streamSize).thenComposeAsync(nil -> {
+        return CompletableFuture.supplyAsync(() -> {
             ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize,
-                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD).rateLimiter(limiter));
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
@@ -242,7 +234,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
                 streamObject.setAttributes(ObjectAttributes.builder().bucket(streamObjectWriter.bucketId()).build().attributes());
                 return streamObject;
             });
-        }, executor);
+        }, executor).thenCompose(future -> future);
     }
 
     static long streamSize(List<StreamRecordBatch> streamRecords) {

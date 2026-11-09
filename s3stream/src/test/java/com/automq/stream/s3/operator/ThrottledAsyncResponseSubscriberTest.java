@@ -19,8 +19,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -41,12 +39,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 @Timeout(10)
@@ -54,21 +49,19 @@ class ThrottledAsyncResponseSubscriberTest {
     private final List<Long> sizes = new ArrayList<>();
     private final List<CompletableFuture<Void>> grants = new ArrayList<>();
 
-    private NetworkBandwidthLimiter limiter() {
-        NetworkBandwidthLimiter limiter = mock(NetworkBandwidthLimiter.class);
-        when(limiter.consume(eq(ThrottleStrategy.TAIL), anyLong())).thenAnswer(invocation -> {
-            sizes.add(invocation.getArgument(1));
+    private AsyncByteLimiter limiter() {
+        return size -> {
+            sizes.add((long) size);
             CompletableFuture<Void> grant = new CompletableFuture<>();
             grants.add(grant);
             return grant;
-        });
-        return limiter;
+        };
     }
 
     /** Each SDK buffer is charged at its actual size, and no next demand is issued before its grant. */
     @Test
     void testActualSizeAndSequentialDemand() {
-        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter(), ThrottleStrategy.TAIL);
+        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter());
         Subscription subscription = mock(Subscription.class);
         subscriber.onSubscribe(subscription);
         verify(subscription).request(1);
@@ -102,7 +95,7 @@ class ThrottledAsyncResponseSubscriberTest {
     /** A terminal response error wins over a pending grant, whose later completion must not request more data. */
     @Test
     void testErrorWhileWaitingForGrant() {
-        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter(), ThrottleStrategy.TAIL);
+        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter());
         Subscription subscription = mock(Subscription.class);
         subscriber.onSubscribe(subscription);
         subscriber.onNext(ByteBuffer.wrap(new byte[] {1}));
@@ -119,7 +112,7 @@ class ThrottledAsyncResponseSubscriberTest {
     /** Bytes delivered just before a synchronous stream error are still charged to the limiter. */
     @Test
     void testSynchronousErrorStillChargesReceivedBytes() {
-        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter(), ThrottleStrategy.TAIL);
+        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter());
         RuntimeException error = new IllegalStateException("response failed");
         subscriber.onSubscribe(new Subscription() {
             @Override
@@ -140,7 +133,7 @@ class ThrottledAsyncResponseSubscriberTest {
     /** Synchronous publisher callbacks and immediate grants iterate without recursive request/onNext growth. */
     @Test
     void testSynchronousPublisher() {
-        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(NetworkBandwidthLimiter.NOOP, ThrottleStrategy.TAIL);
+        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(bytes -> CompletableFuture.completedFuture(null));
         AtomicInteger emitted = new AtomicInteger();
         subscriber.onSubscribe(new Subscription() {
             @Override
@@ -168,7 +161,7 @@ class ThrottledAsyncResponseSubscriberTest {
     /** An empty response completes without charging any bandwidth. */
     @Test
     void testEmptyResponse() {
-        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter(), ThrottleStrategy.TAIL);
+        ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter());
         subscriber.onSubscribe(mock(Subscription.class));
         subscriber.onComplete();
         ByteBuf result = subscriber.result().join();
@@ -183,9 +176,9 @@ class ThrottledAsyncResponseSubscriberTest {
     /** Retrying a GET uses a fresh subscriber and charges the received bytes again. */
     @Test
     void testRetryChargesAgain() {
-        NetworkBandwidthLimiter limiter = limiter();
+        AsyncByteLimiter limiter = limiter();
         for (int attempt = 0; attempt < 2; attempt++) {
-            ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter, ThrottleStrategy.TAIL);
+            ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter);
             subscriber.onSubscribe(mock(Subscription.class));
             subscriber.onNext(ByteBuffer.wrap(new byte[] {1, 2}));
             subscriber.onComplete();

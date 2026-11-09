@@ -19,8 +19,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -36,7 +34,7 @@ import software.amazon.awssdk.core.async.AsyncRequestBody;
 /**
  * Publishes an upload in chunks, acquiring bandwidth only when the SDK requests the next chunk.
  * Each subscription starts at byte zero and pays for its own bytes, including SDK retries.
- * Quota requests use a valid configured strategy and are expected to complete successfully.
+ * The supplied limiter owns quota policy and any composition of task and network limits.
  * Chunks are shared ByteBuffer views, including for composite sources; payload bytes are not copied.
  * The source is retained until the SDK request finishes and closes this body. The caller must compute
  * a fixed checksum before publishing to detect stale attempts reading released or reused source memory.
@@ -46,17 +44,15 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
     private final ByteBuf data;
     private final int length;
     private final ByteBuffer[] buffers;
-    private final NetworkBandwidthLimiter limiter;
-    private final ThrottleStrategy strategy;
+    private final AsyncByteLimiter limiter;
     // The body monitor serializes subscriptions, grant callbacks and source release.
     private boolean closed;
 
-    ThrottledAsyncRequestBody(ByteBuf data, NetworkBandwidthLimiter limiter, ThrottleStrategy strategy) {
+    ThrottledAsyncRequestBody(ByteBuf data, AsyncByteLimiter limiter) {
         this.data = data.retainedSlice();
         this.length = data.readableBytes();
         this.buffers = this.data.nioBuffers();
         this.limiter = limiter;
-        this.strategy = strategy;
     }
 
     @Override
@@ -125,6 +121,7 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
                 return;
             }
             draining = true;
+            CompletableFuture<Void> newGrant = null;
             try {
                 while (!terminated && !closed) {
                     while (bufferIndex < source.length && !source[bufferIndex].hasRemaining()) {
@@ -141,18 +138,13 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
                     ByteBuffer buffer = source[bufferIndex];
                     int size = Math.min(CHUNK_SIZE, buffer.remaining());
                     if (grant == null) {
-                        grant = limiter.consume(strategy, size);
-                        if (!grant.isDone()) {
-                            grant.whenComplete((nil, ex) -> {
-                                synchronized (ThrottledAsyncRequestBody.this) {
-                                    drain();
-                                }
-                            });
-                        }
+                        grant = limiter.acquire(size);
+                        newGrant = grant;
                     }
                     if (!grant.isDone()) {
                         return;
                     }
+                    grant.join();
                     grant = null;
                     ByteBuffer chunk = buffer.slice();
                     chunk.limit(size);
@@ -164,6 +156,17 @@ final class ThrottledAsyncRequestBody implements AsyncRequestBody, AutoCloseable
                 fail(ex);
             } finally {
                 draining = false;
+                resumeOnGrant(newGrant);
+            }
+        }
+
+        private void resumeOnGrant(CompletableFuture<Void> newGrant) {
+            if (grant != null && grant == newGrant) {
+                grant.whenComplete((nil, ex) -> {
+                    synchronized (ThrottledAsyncRequestBody.this) {
+                        drain();
+                    }
+                });
             }
         }
 

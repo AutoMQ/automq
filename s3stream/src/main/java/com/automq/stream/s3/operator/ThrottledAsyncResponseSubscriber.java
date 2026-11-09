@@ -19,8 +19,6 @@
 
 package com.automq.stream.s3.operator;
 
-import com.automq.stream.s3.network.NetworkBandwidthLimiter;
-import com.automq.stream.s3.network.ThrottleStrategy;
 
 import org.reactivestreams.Subscriber;
 import org.reactivestreams.Subscription;
@@ -36,11 +34,10 @@ import io.netty.buffer.Unpooled;
  * Collects a GET response one SDK buffer at a time. Each received buffer is charged at its actual
  * size before requesting the next buffer, and the final grant must finish before returning the data.
  * This controls subsequent demand, not the bytes already received or prefetched by the SDK.
- * Quota requests use a valid configured strategy and are expected to complete successfully.
+ * The supplied limiter owns quota policy and any composition of task and network limits.
  */
 final class ThrottledAsyncResponseSubscriber implements Subscriber<ByteBuffer> {
-    private final NetworkBandwidthLimiter limiter;
-    private final ThrottleStrategy strategy;
+    private final AsyncByteLimiter limiter;
     // Avoid consolidation, which would copy accumulated response bytes.
     private final CompositeByteBuf data = Unpooled.compositeBuffer(Integer.MAX_VALUE);
     private final CompletableFuture<ByteBuf> result = new CompletableFuture<>();
@@ -52,9 +49,8 @@ final class ThrottledAsyncResponseSubscriber implements Subscriber<ByteBuffer> {
     private boolean terminated;
     private boolean draining;
 
-    ThrottledAsyncResponseSubscriber(NetworkBandwidthLimiter limiter, ThrottleStrategy strategy) {
+    ThrottledAsyncResponseSubscriber(AsyncByteLimiter limiter) {
         this.limiter = limiter;
-        this.strategy = strategy;
     }
 
     CompletableFuture<ByteBuf> result() {
@@ -74,7 +70,7 @@ final class ThrottledAsyncResponseSubscriber implements Subscriber<ByteBuffer> {
         }
         requested = false;
         pending = bytes.slice();
-        grant = limiter.consume(strategy, pending.remaining());
+        grant = limiter.acquire(pending.remaining());
         if (!grant.isDone()) {
             grant.whenComplete((nil, ex) -> {
                 synchronized (ThrottledAsyncResponseSubscriber.this) {
@@ -114,6 +110,7 @@ final class ThrottledAsyncResponseSubscriber implements Subscriber<ByteBuffer> {
                     if (!grant.isDone()) {
                         return;
                     }
+                    grant.join();
                     data.addComponent(true, Unpooled.wrappedBuffer(pending));
                     pending = null;
                     grant = null;

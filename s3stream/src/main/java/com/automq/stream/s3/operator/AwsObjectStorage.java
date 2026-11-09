@@ -264,7 +264,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         return readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenCompose(responsePublisher -> {
                 ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(
-                    networkInboundBandwidthLimiter, options.throttleStrategy());
+                    bytes -> networkInboundBandwidthLimiter.consume(options.throttleStrategy(), bytes));
                 responsePublisher.subscribe(subscriber);
                 return subscriber.result();
             });
@@ -287,8 +287,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         PutObjectRequest request = builder.build();
-        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(data, networkOutboundBandwidthLimiter, options.throttleStrategy());
-        return writeS3Client.putObject(request, body).whenComplete((rst, ex) -> body.close()).thenApply(rst -> null);
+        return uploadBody(options, data).thenCompose(body -> writeS3Client.putObject(request, body)
+            .whenComplete((rst, ex) -> body.close())).thenApply(rst -> null);
     }
 
     @Override
@@ -322,9 +322,22 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.contentMD5(contentMd5(part));
         }
 
-        ThrottledAsyncRequestBody body = new ThrottledAsyncRequestBody(part, networkOutboundBandwidthLimiter, options.throttleStrategy());
-        return writeS3Client.uploadPart(builder.build(), body).whenComplete((rst, ex) -> body.close())
+        return uploadBody(options, part).thenCompose(body -> writeS3Client.uploadPart(builder.build(), body)
+            .whenComplete((rst, ex) -> body.close()))
             .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
+    }
+
+    private CompletableFuture<ThrottledAsyncRequestBody> uploadBody(WriteOptions options, ByteBuf data) {
+        AsyncByteLimiter global = bytes -> networkOutboundBandwidthLimiter.consume(options.throttleStrategy(), bytes);
+        if (options.rateLimiter() == null) {
+            return CompletableFuture.completedFuture(new ThrottledAsyncRequestBody(data, global));
+        }
+        // Admission happens before the SDK call. Keep the payload alive while waiting for its handle.
+        ByteBuf retained = data.retainedSlice();
+        return options.rateLimiter().register(retained.readableBytes())
+            .thenApply(handle -> new ThrottledAsyncRequestBody(retained,
+                bytes -> handle.acquire(bytes).thenCompose(nil -> global.acquire(bytes))))
+            .whenComplete((body, ex) -> retained.release());
     }
 
     @Override

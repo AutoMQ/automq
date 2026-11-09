@@ -48,6 +48,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -121,7 +123,11 @@ public class DefaultUploadWriteAheadLogTaskTest {
 
         ArgumentCaptor<ObjectStorage.WriteOptions> options = ArgumentCaptor.forClass(ObjectStorage.WriteOptions.class);
         verify(objectStorage, times(2)).writer(options.capture(), anyString());
-        options.getAllValues().forEach(option -> assertEquals(ThrottleStrategy.WAL_UPLOAD, option.throttleStrategy()));
+        assertNotNull(options.getAllValues().get(0).rateLimiter());
+        options.getAllValues().forEach(option -> {
+            assertEquals(ThrottleStrategy.WAL_UPLOAD, option.throttleStrategy());
+            assertSame(options.getAllValues().get(0).rateLimiter(), option.rateLimiter());
+        });
 
         // Release all the buffers
         map.values().forEach(batches -> batches.forEach(StreamRecordBatch::release));
