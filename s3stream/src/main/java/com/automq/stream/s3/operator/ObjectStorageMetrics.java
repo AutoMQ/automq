@@ -24,6 +24,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.S3StreamMetricsConstant;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.metrics.stats.OperationLatencyMetrics;
 import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 
@@ -50,10 +51,10 @@ final class ObjectStorageMetrics {
         .histogram("kafka_stream_read_s3_limiter_time", "Time blocked on waiting for inflight read quota", "nanoseconds");
     private static final Metrics.HistogramBundle WRITE_S3_LIMITER_TIME = Metrics.instance()
         .histogram("kafka_stream_write_s3_limiter_time", "Time blocked on waiting for inflight write quota", "nanoseconds");
-    private static final Map<String, DeltaHistogram> GET_OBJECT_SUCCESS_STATS = new ConcurrentHashMap<>();
-    private static final Map<String, DeltaHistogram> GET_OBJECT_FAILED_STATS = new ConcurrentHashMap<>();
-    private static final Map<String, DeltaHistogram> PUT_OBJECT_SUCCESS_STATS = new ConcurrentHashMap<>();
-    private static final Map<String, DeltaHistogram> PUT_OBJECT_FAILED_STATS = new ConcurrentHashMap<>();
+    private static final Map<S3RequestSource, Map<String, DeltaHistogram>> GET_OBJECT_SUCCESS_STATS = new ConcurrentHashMap<>();
+    private static final Map<S3RequestSource, Map<String, DeltaHistogram>> GET_OBJECT_FAILED_STATS = new ConcurrentHashMap<>();
+    private static final Map<S3RequestSource, Map<String, DeltaHistogram>> PUT_OBJECT_SUCCESS_STATS = new ConcurrentHashMap<>();
+    private static final Map<S3RequestSource, Map<String, DeltaHistogram>> PUT_OBJECT_FAILED_STATS = new ConcurrentHashMap<>();
     private static final DeltaHistogram LIST_OBJECTS_SUCCESS_STATS = operationStats(
         S3Operation.LIST_OBJECTS, S3StreamMetricsConstant.LABEL_STATUS_SUCCESS);
     private static final DeltaHistogram LIST_OBJECTS_FAILED_STATS = operationStats(
@@ -94,13 +95,13 @@ final class ObjectStorageMetrics {
         DOWNLOAD_SIZE_TOTAL.add(size);
     }
 
-    static void recordGetObject(long size, boolean success, long timeNanos) {
-        objectSizeStats(GET_OBJECT_SUCCESS_STATS, GET_OBJECT_FAILED_STATS, S3Operation.GET_OBJECT, size, success)
+    static void recordGetObject(S3RequestSource source, long size, boolean success, long timeNanos) {
+        requestStats(GET_OBJECT_SUCCESS_STATS, GET_OBJECT_FAILED_STATS, S3Operation.GET_OBJECT, source, size, success)
             .record(timeNanos);
     }
 
-    static void recordPutObject(long size, boolean success, long timeNanos) {
-        objectSizeStats(PUT_OBJECT_SUCCESS_STATS, PUT_OBJECT_FAILED_STATS, S3Operation.PUT_OBJECT, size, success)
+    static void recordPutObject(S3RequestSource source, long size, boolean success, long timeNanos) {
+        requestStats(PUT_OBJECT_SUCCESS_STATS, PUT_OBJECT_FAILED_STATS, S3Operation.PUT_OBJECT, source, size, success)
             .record(timeNanos);
     }
 
@@ -133,6 +134,17 @@ final class ObjectStorageMetrics {
     static void recordWriteS3Limiter(int index, long timeNanos) {
         WRITE_S3_LIMITER_STATS.computeIfAbsent(index,
             k -> WRITE_S3_LIMITER_TIME.histogram(MetricsLevel.DEBUG, attributes(index))).record(timeNanos);
+    }
+
+    private static DeltaHistogram requestStats(Map<S3RequestSource, Map<String, DeltaHistogram>> successStats,
+        Map<S3RequestSource, Map<String, DeltaHistogram>> failedStats, S3Operation operation, S3RequestSource source,
+        long size, boolean success) {
+        Map<String, DeltaHistogram> stats = (success ? successStats : failedStats)
+            .computeIfAbsent(source, ignored -> new ConcurrentHashMap<>());
+        String sizeLabel = AttributesUtils.getObjectBucketLabel(size);
+        return stats.computeIfAbsent(sizeLabel, label -> OperationLatencyMetrics.request(MetricsLevel.INFO, operation,
+            success ? S3StreamMetricsConstant.LABEL_STATUS_SUCCESS : S3StreamMetricsConstant.LABEL_STATUS_FAILED,
+            label, source));
     }
 
     private static DeltaHistogram objectSizeStats(Map<String, DeltaHistogram> successStats,

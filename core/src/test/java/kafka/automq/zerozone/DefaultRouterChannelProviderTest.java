@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.OpenMode;
@@ -68,6 +69,7 @@ public class DefaultRouterChannelProviderTest {
         assertEquals(123L, writer.epoch());
         assertEquals("cluster", writer.clusterId());
         assertEquals("rc", writer.type());
+        assertEquals(S3RequestSource.ROUTER_WAL, writer.source());
         assertEquals(OpenMode.READ_WRITE, writer.openMode());
         assertEquals("test-secret", IdURI.parse(writer.uri()).extensionString("secretKey"));
         assertFalse(writer.toString().contains("test-secret"));
@@ -75,6 +77,7 @@ public class DefaultRouterChannelProviderTest {
 
         ObjectWALConfig reader = configs.get(1);
         assertEquals(OpenMode.READ_ONLY, reader.openMode());
+        assertEquals(S3RequestSource.ROUTER_WAL, reader.source());
         assertEquals(43, reader.nodeId());
         assertEquals(writer.uri(), reader.uri());
         assertEquals(1, reader.version());
@@ -118,6 +121,7 @@ public class DefaultRouterChannelProviderTest {
             provider.channel();
             provider.readOnlyChannel(43);
             assertEquals(4, wals.constructed().size());
+            configs.forEach(config -> assertEquals(S3RequestSource.ROUTER_WAL, config.source()));
             assertEquals(100, configs.get(0).batchInterval());
             assertEquals(200, configs.get(1).batchInterval());
             assertEquals(0, configs.get(0).bucketId());
