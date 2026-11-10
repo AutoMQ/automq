@@ -126,7 +126,7 @@ class ObjectStorageSourceTest {
         doReturn(original, hedge).when(storage).doRangeRead(any(), anyString(), anyLong(), anyLong());
         long before = count("get_object", S3RequestSource.ROUTER_WAL, "success");
         CompletableFuture<ByteBuf> result = storage.mergedRangeRead(
-            new ObjectStorage.ReadOptions().source(S3RequestSource.ROUTER_WAL), "key", 0, 64);
+            new ObjectStorage.ReadOptions().source(S3RequestSource.ROUTER_WAL).enableFastRetry(true), "key", 0, 64);
         verify(storage, timeout(1000).times(2)).doRangeRead(argThat(o -> o.source() == S3RequestSource.ROUTER_WAL),
             eq("key"), eq(0L), eq(64L));
         ByteBuf winner = data();

@@ -228,7 +228,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
         }
 
-
         return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
             logger.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
             // The return CompletableFuture will be completed with TimeoutException,
