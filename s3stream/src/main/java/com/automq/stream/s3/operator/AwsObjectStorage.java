@@ -863,7 +863,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
                 }
                 builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
-                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "1")))
                     .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout))
                     .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
             }
@@ -871,7 +871,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         /**
-         * Creates a builder with Netty, CRT health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
+         * Creates a builder with Netty, CRT health defaults of 1 B/s and two seconds, and a 10 Gbps transfer target.
          */
         public static Builder builder() {
             return new Builder();
@@ -882,7 +882,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          */
         public static final class Builder {
             private String sdkImplementation = "netty";
-            private long crtMinimumThroughputBps = 32L * 1024 * 1024;
+            private long crtMinimumThroughputBps = 1;
             private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
             private double crtTargetThroughputGbps = 10.0;
             private int maxConcurrency = -1;

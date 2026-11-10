@@ -398,7 +398,7 @@ public class AwsObjectStorageTest {
             .crtMinimumThroughputBps(1024).crtMinimumThroughputTimeout(java.time.Duration.ofSeconds(3))
             .crtTargetThroughputGbps(2.5).build();
         Assertions.assertEquals("netty", defaults.sdkImplementation());
-        Assertions.assertEquals(32L * 1024 * 1024, defaults.crtMinimumThroughputBps());
+        Assertions.assertEquals(1L, defaults.crtMinimumThroughputBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(2), defaults.crtMinimumThroughputTimeout());
         Assertions.assertEquals("crt", custom.sdkImplementation());
         Assertions.assertEquals(10.0, defaults.crtTargetThroughputGbps());
@@ -438,7 +438,7 @@ public class AwsObjectStorageTest {
             .<Consumer<software.amazon.awssdk.services.s3.crt.S3CrtRetryConfiguration.Builder>>any());
         AwsObjectStorage.Configuration.builder().build().configureCrtBuilder(builder, 77);
         Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().connectionTimeout());
-        Assertions.assertEquals(32L * 1024 * 1024, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
+        Assertions.assertEquals(1L, capturedHttp.get().healthConfiguration().minimumThroughputInBps());
         Assertions.assertEquals(java.time.Duration.ofSeconds(2), capturedHttp.get().healthConfiguration().minimumThroughputTimeout());
         org.mockito.Mockito.verify(builder).maxConcurrency(77);
         org.mockito.Mockito.verify(builder).thresholdInBytes(Long.MAX_VALUE);
