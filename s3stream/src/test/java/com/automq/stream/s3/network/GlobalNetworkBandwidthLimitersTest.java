@@ -73,9 +73,9 @@ class GlobalNetworkBandwidthLimitersTest {
         }
     }
 
-    /** Separate mode creates independent smooth limiters with identical budgets and no burst savings by default. */
+    /** Separate mode creates independent 100 ms limiters with a default peak three times the baseline. */
     @Test
-    void smoothSeparateWithoutDefaultBurst() throws ReflectiveOperationException {
+    void smoothSeparateWithDefaultBurst() throws ReflectiveOperationException {
         List<SmoothNetworkBandwidthLimiter.Configuration> configurations = new ArrayList<>();
         try (MockedConstruction<SmoothNetworkBandwidthLimiter> mocks = mockConstruction(SmoothNetworkBandwidthLimiter.class,
             (mock, context) -> configurations.add((SmoothNetworkBandwidthLimiter.Configuration) context.arguments().get(0)))) {
@@ -84,9 +84,11 @@ class GlobalNetworkBandwidthLimitersTest {
                 config.networkBurstBandwidth(), config.refillPeriodMs(), config.networkMaxBurstWindowMs());
             assertEquals(2, mocks.constructed().size());
             assertEquals(configurations.get(0), configurations.get(1));
-            assertEquals(0, configurations.get(0).capacity());
-            assertEquals(configurations.get(0).baselineBandwidth(), configurations.get(0).burstBandwidth());
-            assertEquals(6000, configurations.get(0).maxBurstWindows());
+            assertEquals(122880000, configurations.get(0).capacity());
+            assertEquals(3072000, configurations.get(0).burstBandwidth());
+            assertEquals(102400, configurations.get(0).baselineTokens());
+            assertEquals(307200, configurations.get(0).peakTokens());
+            assertEquals(600, configurations.get(0).maxBurstWindows());
         }
     }
 

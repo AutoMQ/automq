@@ -40,13 +40,24 @@ class NetworkLimiterConfigTest {
             "controller.listener.names", "PLAINTEXT", "controller.quorum.voters", "2@localhost:9092"));
     }
 
-    /** Broker defaults retain the configured refill interval with no burst savings. */
+    /** Broker defaults use 100 ms refill windows and a peak three times the baseline. */
     @Test
     void defaults() {
         Config config = ConfigUtils.to(new KafkaConfig(properties()));
-        assertEquals(10, config.refillPeriodMs());
-        assertEquals(config.networkBaselineBandwidth(), config.networkBurstBandwidth());
+        assertEquals(100, config.refillPeriodMs());
+        assertEquals(3 * config.networkBaselineBandwidth(), config.networkBurstBandwidth());
         assertEquals(60000, config.networkMaxBurstWindowMs());
+    }
+
+    /** An explicit minus-one peak follows a customized baseline instead of the default baseline. */
+    @Test
+    void automaticBurstFollowsBaseline() {
+        Map<String, Object> properties = properties();
+        properties.put("s3.network.baseline.bandwidth", "104857600");
+        properties.put("s3.network.burst.bandwidth", "-1");
+        Config config = ConfigUtils.to(new KafkaConfig(properties));
+        assertEquals(314572800, config.networkBurstBandwidth());
+        assertEquals(100, config.refillPeriodMs());
     }
 
     /** Explicit broker properties reach the stream configuration without losing burst or mode settings. */

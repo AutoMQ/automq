@@ -60,7 +60,7 @@ public class Config {
     private NetworkBandwidthMode networkBandwidthMode = NetworkBandwidthMode.SEPARATE;
     private long networkBurstBandwidth = -1;
     private long networkMaxBurstWindowMs = 60000;
-    private int refillPeriodMs = 10;
+    private int refillPeriodMs = 100;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
     private boolean snapshotReadEnable = false;
@@ -179,9 +179,9 @@ public class Config {
         return networkBandwidthMode;
     }
 
-    /** Returns the peak bandwidth in bytes/second; minus one uses the baseline bandwidth. */
+    /** Returns the peak bandwidth in bytes/second; minus one uses three times the baseline bandwidth. */
     public long networkBurstBandwidth() {
-        return networkBurstBandwidth == -1 ? networkBaselineBandwidth : networkBurstBandwidth;
+        return networkBurstBandwidth == -1 ? Math.multiplyExact(networkBaselineBandwidth, 3) : networkBurstBandwidth;
     }
 
     /** Returns the duration in milliseconds that a full savings pool can sustain peak bandwidth. */
@@ -332,7 +332,7 @@ public class Config {
         return this;
     }
 
-    /** Sets the peak bandwidth in bytes/second; minus one uses the baseline bandwidth. */
+    /** Sets the peak bandwidth in bytes/second; minus one uses three times the baseline bandwidth. */
     public Config networkBurstBandwidth(long networkBurstBandwidth) {
         this.networkBurstBandwidth = networkBurstBandwidth;
         return this;

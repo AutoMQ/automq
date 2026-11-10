@@ -170,7 +170,7 @@ public class AutoMQConfig {
 
     public static final String S3_NETWORK_BURST_BANDWIDTH_CONFIG = "s3.network.burst.bandwidth";
     public static final String S3_NETWORK_BURST_BANDWIDTH_DOC = "The peak network bandwidth in bytes per second. " +
-        "Minus one uses the baseline bandwidth. An explicit value must be at least the baseline bandwidth.";
+        "Minus one uses three times the baseline bandwidth. An explicit value must be at least the baseline bandwidth.";
     public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG = "s3.network.max.burst.window.ms";
     public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_DOC = "The maximum duration in milliseconds that saved tokens can sustain " +
         "at peak bandwidth. The duration is rounded down to whole refill windows. Savings capacity is the difference between peak and baseline bytes per window times the number of windows. " +
@@ -182,7 +182,7 @@ public class AutoMQConfig {
 
     public static final String S3_NETWORK_REFILL_PERIOD_MS_CONFIG = "s3.network.refill.period.ms";
     public static final String S3_NETWORK_REFILL_PERIOD_MS_DOC = "The network bandwidth token refill period in milliseconds.";
-    public static final int S3_REFILL_PERIOD_MS = 10; // 10ms
+    public static final int S3_REFILL_PERIOD_MS = 100; // 100ms
 
     public static final String S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG = "s3.telemetry.metrics.exporter.uri";
     public static final String S3_TELEMETRY_METRICS_EXPORTER_URI_DOC = "The metrics exporter uri, format: $type://?$param1=$value1&$param2=$value2. " +
