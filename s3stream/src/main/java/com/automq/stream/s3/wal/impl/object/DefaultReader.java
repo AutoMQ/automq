@@ -20,6 +20,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -65,6 +66,7 @@ public class DefaultReader {
     private final ObjectStorage objectStorage;
     private final String nodePrefix;
     private final boolean shardedFirst;
+    private final S3RequestSource source;
     private final Time time;
 
     private final Queue<SingleReadTask> singleReadTasks = new ConcurrentLinkedQueue<>();
@@ -80,19 +82,20 @@ public class DefaultReader {
     private final EventLoop eventLoop;
 
     public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time) {
-        this(objectStorage, clusterId, nodeId, type, time, false);
+        this(objectStorage, clusterId, nodeId, type, time, false, S3RequestSource.UNCLASSIFIED);
     }
 
     /** Creates a dual-layout reader that prefers the configured write layout and falls back only on not-found. */
     public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time) {
-        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1);
+        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1, config.source());
     }
 
     private DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
-        boolean shardedFirst) {
+        boolean shardedFirst, S3RequestSource source) {
         this.objectStorage = objectStorage;
         this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
         this.shardedFirst = shardedFirst;
+        this.source = source;
         this.time = time;
         this.eventLoop = EVENT_LOOPS[Math.abs(nodeId % EVENT_LOOPS.length)];
     }
@@ -280,7 +283,7 @@ public class DefaultReader {
 
     private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
         return objectStorage.rangeRead(
-            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS),
+            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS).source(source),
             path, start, end);
     }
 

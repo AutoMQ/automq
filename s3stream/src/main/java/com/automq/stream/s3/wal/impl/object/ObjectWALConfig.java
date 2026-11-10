@@ -19,11 +19,14 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.ReservationService;
 import com.automq.stream.utils.IdURI;
 
 import org.apache.commons.lang3.StringUtils;
+
+import java.util.Objects;
 
 public class ObjectWALConfig {
     private final String uri;
@@ -39,6 +42,7 @@ public class ObjectWALConfig {
     private final OpenMode openMode;
     private final short bucketId;
     private final String type;
+    private final S3RequestSource source;
     private final boolean manualMode;
     private final int version;
 
@@ -63,6 +67,7 @@ public class ObjectWALConfig {
         this.openMode = openMode;
         this.bucketId = bucketId;
         this.type = type;
+        this.source = S3RequestSource.UNCLASSIFIED;
         this.manualMode = false;
         this.version = 0;
     }
@@ -81,6 +86,7 @@ public class ObjectWALConfig {
         this.openMode = builder.openMode;
         this.bucketId = builder.bucketId;
         this.type = builder.type;
+        this.source = builder.source;
         this.manualMode = builder.manualMode;
         this.version = builder.version;
     }
@@ -143,6 +149,11 @@ public class ObjectWALConfig {
         return bucketId;
     }
 
+    /** Returns the metric ownership of this WAL, independently of its object-key type. */
+    public S3RequestSource source() {
+        return source;
+    }
+
     public String type() {
         return type;
     }
@@ -179,6 +190,7 @@ public class ObjectWALConfig {
         private OpenMode openMode = OpenMode.READ_WRITE;
         private short bucketId;
         private String type = "";
+        private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private boolean manualMode;
         private int version;
 
@@ -290,6 +302,12 @@ public class ObjectWALConfig {
 
         public Builder withBucketId(short bucketId) {
             this.bucketId = bucketId;
+            return this;
+        }
+
+        /** Sets metric ownership for readers and writers; existing callers remain unclassified. */
+        public Builder withSource(S3RequestSource source) {
+            this.source = Objects.requireNonNull(source, "source");
             return this;
         }
 

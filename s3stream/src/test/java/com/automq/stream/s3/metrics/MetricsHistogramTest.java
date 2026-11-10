@@ -9,23 +9,27 @@ import java.lang.reflect.Field;
 import java.util.Queue;
 import java.util.function.Consumer;
 
+import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.metrics.DoubleGaugeBuilder;
 import io.opentelemetry.api.metrics.LongGaugeBuilder;
 import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableDoubleGauge;
+import io.opentelemetry.api.metrics.ObservableDoubleMeasurement;
 import io.opentelemetry.api.metrics.ObservableLongGauge;
 import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 class MetricsHistogramTest {
-    /** Verifies HistogramBundle count and sum gauges expose cumulative values across interval snapshots. */
+    /** Count/sum remain cumulative across snapshots, and all five exports retain the request source. */
     @Test
     void histogramBundleShouldReportCumulativeCountAndSum() throws Exception {
         Metrics metrics = Metrics.instance();
@@ -35,7 +39,8 @@ class MetricsHistogramTest {
         setField(metrics, "meter", null);
         setField(metrics, "globalConfig", null);
         Metrics.HistogramBundle bundle = metrics.histogram("test_histogram", "test", "nanoseconds");
-        DeltaHistogram histogram = bundle.histogram(MetricsLevel.INFO, Attributes.empty());
+        Attributes source = Attributes.of(AttributeKey.stringKey("source"), "ROUTER_WAL");
+        DeltaHistogram histogram = bundle.histogram(MetricsLevel.INFO, source);
 
         Meter meter = mock(Meter.class);
         DoubleGaugeBuilder doubleGaugeBuilder = mock(DoubleGaugeBuilder.class);
@@ -73,10 +78,18 @@ class MetricsHistogramTest {
             countCallback.accept(countMeasurement);
             sumCallback.accept(sumMeasurement);
 
-            verify(countMeasurement).record(1L, Attributes.empty());
-            verify(countMeasurement).record(2L, Attributes.empty());
-            verify(sumMeasurement).record(10L, Attributes.empty());
-            verify(sumMeasurement).record(30L, Attributes.empty());
+            verify(countMeasurement).record(1L, source);
+            verify(countMeasurement).record(2L, source);
+            verify(sumMeasurement).record(10L, source);
+            verify(sumMeasurement).record(30L, source);
+            for (int i = 0; i < 3; i++) {
+                @SuppressWarnings("unchecked")
+                Consumer<ObservableDoubleMeasurement> callback = (Consumer<ObservableDoubleMeasurement>) getInvocationArgument(
+                    doubleGaugeBuilder, i);
+                ObservableDoubleMeasurement measurement = mock(ObservableDoubleMeasurement.class);
+                callback.accept(measurement);
+                verify(measurement).record(anyDouble(), eq(source));
+            }
         } finally {
             getWaitingSetups(metrics).remove(bundle);
             setField(metrics, "meter", previousMeter);
@@ -84,7 +97,7 @@ class MetricsHistogramTest {
         }
     }
 
-    private static Object getInvocationArgument(LongGaugeBuilder builder, int invocationIndex) {
+    private static Object getInvocationArgument(Object builder, int invocationIndex) {
         return org.mockito.Mockito.mockingDetails(builder)
             .getInvocations()
             .stream()
