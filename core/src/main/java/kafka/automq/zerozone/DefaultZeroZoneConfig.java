@@ -170,8 +170,8 @@ public class DefaultZeroZoneConfig implements ZeroZoneConfig, Reconfigurable {
 
         /**
          * Parses an {@code automq.zone.cidr.blocks} value. A zone segment that does not split into exactly one zone
-         * and one block list is skipped, as in previous releases, and reported in {@link #warnings()}, and so is an
-         * IPv4 block that previous releases accepted although it is not a standard IPv4 CIDR block.
+         * and one block list is skipped, as in previous releases, and reported in {@link #warnings()}. Non-standard
+         * IPv4 blocks accepted by previous releases retain their previous matching semantics and are also reported.
          *
          * @throws ConfigException if a block is an IPv4 block that previous releases rejected as well, or an invalid
          *                         IPv6 block
