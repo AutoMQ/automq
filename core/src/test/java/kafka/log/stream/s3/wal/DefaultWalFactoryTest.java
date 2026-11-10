@@ -84,4 +84,13 @@ public class DefaultWalFactoryTest {
             assertEquals(0, builders.constructed().size());
         }
     }
+
+    /** Uses the fixed recovery read ahead tier selected from the WAL cache size. */
+    @Test
+    public void testReadAheadTierFromWalCacheSize() {
+        assertEquals(32 * 1024 * 1024, DefaultWalFactory.readaheadDataSize(512L * 1024 * 1024));
+        assertEquals(64 * 1024 * 1024, DefaultWalFactory.readaheadDataSize(2L * 1024 * 1024 * 1024));
+        assertEquals(128 * 1024 * 1024, DefaultWalFactory.readaheadDataSize(6L * 1024 * 1024 * 1024));
+        assertEquals(256 * 1024 * 1024, DefaultWalFactory.readaheadDataSize(15L * 1024 * 1024 * 1024));
+    }
 }

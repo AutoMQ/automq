@@ -41,13 +41,21 @@ public class DefaultWalFactory implements WalFactory {
     private final Map<String, String> objectTagging;
     private final NetworkBandwidthLimiter networkInboundLimiter;
     private final NetworkBandwidthLimiter networkOutboundLimiter;
+    private final long walCacheSize;
 
     public DefaultWalFactory(int nodeId, Map<String, String> objectTagging,
-        NetworkBandwidthLimiter networkInboundLimiter, NetworkBandwidthLimiter networkOutboundLimiter) {
+        NetworkBandwidthLimiter networkInboundLimiter, NetworkBandwidthLimiter networkOutboundLimiter,
+        long walCacheSize) {
         this.nodeId = nodeId;
         this.objectTagging = objectTagging;
         this.networkInboundLimiter = networkInboundLimiter;
         this.networkOutboundLimiter = networkOutboundLimiter;
+        this.walCacheSize = walCacheSize;
+    }
+
+    public DefaultWalFactory(int nodeId, Map<String, String> objectTagging,
+        NetworkBandwidthLimiter networkInboundLimiter, NetworkBandwidthLimiter networkOutboundLimiter) {
+        this(nodeId, objectTagging, networkInboundLimiter, networkOutboundLimiter, -1L);
     }
 
     @Override
@@ -55,7 +63,9 @@ public class DefaultWalFactory implements WalFactory {
         //noinspection SwitchStatementWithTooFewBranches
         switch (uri.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3":
-                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder()
+                    .withURI(uri)
+                    .withReadaheadDataSize(readaheadDataSize(walCacheSize))
                     .withClusterId(AutoMQApplication.getClusterId())
                     .withNodeId(nodeId)
                     .withEpoch(options.nodeEpoch())
@@ -79,5 +89,30 @@ public class DefaultWalFactory implements WalFactory {
 
     static BucketURI to(IdURI uri) {
         return BucketURI.parse(uri.encode());
+    }
+
+    static int readaheadDataSize(long walCacheSize) {
+        String configured = System.getenv("AUTOMQ_S3_WAL_RECOVERY_READ_AHEAD");
+        if (configured != null && !configured.isBlank()) {
+            try {
+                int value = Integer.parseInt(configured);
+                if (value > 0) {
+                    return value;
+                }
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Invalid AUTOMQ_S3_WAL_RECOVERY_READ_AHEAD: " + configured, e);
+            }
+            throw new IllegalArgumentException("AUTOMQ_S3_WAL_RECOVERY_READ_AHEAD must be positive: " + configured);
+        }
+        if (walCacheSize <= 0) {
+            return 100 * 1024 * 1024;
+        } else if (walCacheSize <= 512L * 1024 * 1024) {
+            return 32 * 1024 * 1024;
+        } else if (walCacheSize <= 2L * 1024 * 1024 * 1024) {
+            return 64 * 1024 * 1024;
+        } else if (walCacheSize <= 6L * 1024 * 1024 * 1024) {
+            return 128 * 1024 * 1024;
+        }
+        return 256 * 1024 * 1024;
     }
 }
