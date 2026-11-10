@@ -22,6 +22,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
@@ -209,8 +210,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<ByteBuf> rangeRead(ReadOptions options, String objectPath, long start, long end) {
+        ReadOptions requestOptions = options.copy();
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        if (!bucketCheck(options.bucket(), cf)) {
+        if (!bucketCheck(requestOptions.bucket(), cf)) {
             return cf;
         }
         if (end != RANGE_READ_TO_END && start > end) {
@@ -240,12 +242,12 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             });
         }
 
-        networkInboundBandwidthLimiterFunction.apply(options.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
+        networkInboundBandwidthLimiterFunction.apply(requestOptions.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
             if (ex != null) {
                 cf.completeExceptionally(ex);
             } else {
                 synchronized (waitingReadTasks) {
-                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(options, objectPath, start, end, cf));
+                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
                 }
             }
         });
@@ -260,6 +262,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public CompletableFuture<WriteResult> write(WriteOptions options, String objectPath, ByteBuf data) {
+        WriteOptions requestOptions = options.copy();
         CompletableFuture<Void> cf = new CompletableFuture<>();
         CompletableFuture<WriteResult> retCf = acquireWritePermit(cf).thenApply(nil -> new WriteResult(bucketURI.bucketId()));
         if (retCf.isDone()) {
@@ -267,26 +270,26 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return retCf;
         }
         networkOutboundBandwidthLimiter
-            .consume(options.throttleStrategy(), data.readableBytes())
+            .consume(requestOptions.throttleStrategy(), data.readableBytes())
             .whenCompleteAsync((v, ex) -> {
                 if (ex != null) {
                     cf.completeExceptionally(ex);
                     data.release();
                     return;
                 }
-                if (checkTimeout(options, cf)) {
+                if (checkTimeout(requestOptions, cf)) {
                     data.release();
                     return;
                 }
-                queuedWrite0(options, objectPath, data, cf);
+                queuedWrite0(requestOptions, objectPath, data, cf);
             }, writeLimiterCallbackExecutor);
         return retCf;
     }
 
-    private void recordWriteStats(String path, long objectSize, TimerUtil timerUtil) {
+    private void recordWriteStats(WriteOptions options, String path, long objectSize, TimerUtil timerUtil) {
         s3LatencyCalculator.record(objectSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         ObjectStorageMetrics.recordUploadSize(objectSize);
-        ObjectStorageMetrics.recordPutObject(objectSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        ObjectStorageMetrics.recordPutObject(options.source(), objectSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
         successWriteMonitor.record(objectSize);
         if (logger.isDebugEnabled()) {
             logger.debug("put object {} with size {}, cost {}ms", path, objectSize, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
@@ -329,7 +332,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
 
         writeCf.thenAccept(nil -> {
-            recordWriteStats(path, objectSize, timerUtil);
+            recordWriteStats(options, path, objectSize, timerUtil);
             data.release();
             finalCf.complete(null);
         }).exceptionally(ex -> {
@@ -342,7 +345,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 return null;
             }
 
-            ObjectStorageMetrics.recordPutObject(objectSize, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            ObjectStorageMetrics.recordPutObject(options.source(), objectSize, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             Pair<RetryStrategy, Throwable> strategyAndCause = toRetryStrategyAndCause(ex, S3Operation.PUT_OBJECT);
             RetryStrategy retryStrategy = strategyAndCause.getLeft();
             Throwable cause = strategyAndCause.getRight();
@@ -381,9 +384,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
         return cf.whenComplete((nil, ex) -> {
             if (ex == null) {
-                recordWriteStats(path, objectSize, timerUtil);
+                recordWriteStats(options, path, objectSize, timerUtil);
             } else if (!finalCf.isDone()) {
-                ObjectStorageMetrics.recordPutObject(objectSize, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                ObjectStorageMetrics.recordPutObject(options.source(), objectSize, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             }
         });
     }
@@ -801,7 +804,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         path, mergedReadTask.start, mergedReadTask.end,
                         mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
-                mergedRangeRead(mergedReadTask.readTasks.get(0).options, path, mergedReadTask.start, mergedReadTask.end)
+                mergedRangeRead(mergedReadTask.options(), path, mergedReadTask.start, mergedReadTask.end)
                     .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), logger));
             }
         );
@@ -832,7 +835,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return retCf;
     }
 
-    private void recordReadStats(String path, long start, long end, ByteBuf buf, TimerUtil timerUtil) {
+    private void recordReadStats(ReadOptions options, String path, long start, long end, ByteBuf buf, TimerUtil timerUtil) {
         long dataSize = buf.readableBytes();
         readLatencyCalculator.record(dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         if (logger.isDebugEnabled()) {
@@ -840,7 +843,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         }
         ObjectStorageMetrics.recordDownloadSize(dataSize);
-        ObjectStorageMetrics.recordGetObject(dataSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        ObjectStorageMetrics.recordGetObject(options.source(), dataSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private CompletableFuture<ByteBuf> doFastRetryRead(ReadOptions options, String path, long start, long end,
@@ -855,13 +858,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return cf.whenComplete((buf, ex) -> {
             if (ex == null) {
                 try {
-                    recordReadStats(path, start, end, buf, timerUtil);
+                    recordReadStats(options, path, start, end, buf, timerUtil);
                 } catch (Throwable e) {
                     buf.release();
                     throw e;
                 }
             } else if (!finalCf.isDone()) {
-                ObjectStorageMetrics.recordGetObject(end - start, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                ObjectStorageMetrics.recordGetObject(options.source(), end - start, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             }
         });
     }
@@ -877,7 +880,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readCf.thenAccept(buf -> {
             boolean transferred = false;
             try {
-                recordReadStats(path, start, end, buf, timerUtil);
+                recordReadStats(options, path, start, end, buf, timerUtil);
                 transferred = cf.complete(buf);
             } finally {
                 if (!transferred) {
@@ -901,7 +904,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 logger.warn("GetObject for object {} [{}, {}) fail, retry in {}ms", path, start, end, delay, cause);
                 scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), delay, TimeUnit.MILLISECONDS);
             }
-            ObjectStorageMetrics.recordGetObject(size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            ObjectStorageMetrics.recordGetObject(options.source(), size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
         });
         return readCf;
@@ -1079,6 +1082,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             this.readTasks.add(readTask);
             this.uniqueDataSize = readTask.end - readTask.start;
             this.maxMergeReadSparsityRate = maxMergeReadSparsityRate;
+        }
+
+        // Preserve the existing first-task settings, but do not assign heterogeneous work to its first caller.
+        ReadOptions options() {
+            ReadOptions options = readTasks.get(0).options.copy();
+            for (ReadTask task : readTasks) {
+                if (task.options.source() != options.source()) {
+                    options.source(S3RequestSource.MIXED);
+                    break;
+                }
+            }
+            return options;
         }
 
         boolean tryMerge(AbstractObjectStorage.ReadTask readTask) {

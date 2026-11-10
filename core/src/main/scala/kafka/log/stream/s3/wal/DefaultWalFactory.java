@@ -20,6 +20,7 @@
 package kafka.log.stream.s3.wal;
 
 import com.automq.shell.AutoMQApplication;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -56,6 +57,7 @@ public class DefaultWalFactory implements WalFactory {
         switch (uri.protocol().toUpperCase(Locale.ENGLISH)) {
             case "S3":
                 ObjectWALConfig.Builder configBuilder = ObjectWALConfig.builder().withURI(uri)
+                    .withSource(S3RequestSource.DELTA_WAL)
                     .withClusterId(AutoMQApplication.getClusterId())
                     .withNodeId(nodeId)
                     .withEpoch(options.nodeEpoch())
@@ -68,7 +70,8 @@ public class DefaultWalFactory implements WalFactory {
                     .outboundLimiter(networkOutboundLimiter)
                     .build();
 
-                ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(), walObjectStorage, walObjectStorage.bucketId());
+                ReservationService reservationService = new ObjectReservationService(AutoMQApplication.getClusterId(),
+                    walObjectStorage, walObjectStorage.bucketId(), S3RequestSource.DELTA_WAL);
                 configBuilder.withReservationService(reservationService);
                 // This factory creates a dedicated ObjectStorage, so the WAL owns its lifecycle.
                 return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), true);

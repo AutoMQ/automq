@@ -19,11 +19,13 @@
 
 package kafka.log.stream.s3.wal;
 
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.WalFactory;
+import com.automq.stream.s3.wal.impl.object.ObjectReservationService;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.IdURI;
@@ -58,6 +60,8 @@ public class DefaultWalFactoryTest {
         List<ObjectWALConfig> configs = new ArrayList<>();
         try (MockedConstruction<ObjectStorageFactory.Builder> builders = mockConstruction(ObjectStorageFactory.Builder.class,
             withSettings().defaultAnswer(RETURNS_SELF), (builder, context) -> when(builder.build()).thenReturn(mock(ObjectStorage.class)));
+            MockedConstruction<ObjectReservationService> reservations = mockConstruction(ObjectReservationService.class,
+                (reservation, context) -> assertEquals(S3RequestSource.DELTA_WAL, context.arguments().get(3)));
             MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
                 (wal, context) -> configs.add((ObjectWALConfig) context.arguments().get(2)))) {
             WalFactory.BuildOptions options = WalFactory.BuildOptions.builder().nodeEpoch(42).openMode(mode).build();
@@ -69,7 +73,9 @@ public class DefaultWalFactoryTest {
             assertEquals(0, configs.get(2).version());
             assertEquals(3, builders.constructed().size());
             assertEquals(3, wals.constructed().size());
+            assertEquals(3, reservations.constructed().size());
             configs.forEach(config -> assertEquals(mode, config.openMode()));
+            configs.forEach(config -> assertEquals(S3RequestSource.DELTA_WAL, config.source()));
         }
     }
 

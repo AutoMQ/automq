@@ -24,6 +24,7 @@ import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -103,6 +104,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
                 .withBucketId(bucket.bucketId())
                 .withOpenMode(bucketReadOnly ? OpenMode.READ_ONLY : OpenMode.READ_WRITE)
                 .withType(WAL_TYPE)
+                .withSource(S3RequestSource.ROUTER_WAL)
                 .withManualMode(true);
             if (!bucketReadOnly) {
                 builder.withEpoch(nodeEpoch);
