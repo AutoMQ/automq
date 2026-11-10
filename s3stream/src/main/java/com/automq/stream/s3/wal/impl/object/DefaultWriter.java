@@ -25,6 +25,7 @@ import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.stats.StorageOperationStats;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.DefaultAppendResult;
@@ -410,7 +411,8 @@ public class DefaultWriter implements Writer {
             int objectLength = objectBuffer.readableBytes();
 
             // Enable fast retry.
-            ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().enableFastRetry(true).source(config.source());
+            ObjectStorage.WriteOptions writeOptions = new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.BYPASS)
+                .enableFastRetry(true).source(config.source());
             String path = config.version() == 1
                 ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset)
                 : ObjectUtils.genObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset);

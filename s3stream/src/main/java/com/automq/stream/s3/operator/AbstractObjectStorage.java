@@ -61,7 +61,6 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.function.BiFunction;
 import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
@@ -91,7 +90,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
     protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
-    protected final ExecutorService writeLimiterCallbackExecutor;
+    private final ExecutorService writeRequestExecutor;
     private final ExecutorService readCallbackExecutor;
     private final ExecutorService writeCallbackExecutor;
     final ScheduledExecutorService scheduler;
@@ -164,8 +163,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.checkS3ApiMode = checkS3ApiMode;
 
         String prefix = threadPrefix + "-" + currentIndex + "-";
-        writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
-            prefix + "s3-write-limiter-cb-executor", true, logger);
+        writeRequestExecutor = Threads.newFixedThreadPool(1,
+            prefix + "s3-write-request-executor", true, logger);
         readCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-read-cb-executor", true, logger);
         writeCallbackExecutor = Threads.newFixedThreadPool(1,
@@ -225,32 +224,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return cf;
         }
 
-        BiFunction<ThrottleStrategy, Long, CompletableFuture<Void>> networkInboundBandwidthLimiterFunction =
-            networkInboundBandwidthLimiter::consume;
-
-        long acquiredSize = end - start;
-
-        if (end == RANGE_READ_TO_END) {
-            // we don't know the size so acquire size 1 first.
-            acquiredSize = 1;
-
-            // when read complete use bypass to forceConsume limiter token.
-            cf.whenComplete((data, ex) -> {
-                if (ex == null && data.readableBytes() - 1 > 0) {
-                    networkInboundBandwidthLimiterFunction.apply(ThrottleStrategy.BYPASS, (long) (data.readableBytes() - 1));
-                }
-            });
+        synchronized (waitingReadTasks) {
+            waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
         }
-
-        networkInboundBandwidthLimiterFunction.apply(requestOptions.throttleStrategy(), acquiredSize).whenComplete((v, ex) -> {
-            if (ex != null) {
-                cf.completeExceptionally(ex);
-            } else {
-                synchronized (waitingReadTasks) {
-                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
-                }
-            }
-        });
 
         return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
             logger.warn("rangeRead {} {}-{} timeout", objectPath, start, end);
@@ -269,20 +245,13 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             data.release();
             return retCf;
         }
-        networkOutboundBandwidthLimiter
-            .consume(requestOptions.throttleStrategy(), data.readableBytes())
-            .whenCompleteAsync((v, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                    data.release();
-                    return;
-                }
-                if (checkTimeout(requestOptions, cf)) {
-                    data.release();
-                    return;
-                }
-                queuedWrite0(requestOptions, objectPath, data, cf);
-            }, writeLimiterCallbackExecutor);
+        writeRequestExecutor.execute(() -> {
+            if (checkTimeout(requestOptions, cf)) {
+                data.release();
+                return;
+            }
+            queuedWrite0(requestOptions, objectPath, data, cf);
+        });
         return retCf;
     }
 
@@ -450,18 +419,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         if (refCf.isDone()) {
             return refCf;
         }
-        networkOutboundBandwidthLimiter
-            .consume(options.throttleStrategy(), data.readableBytes())
-            .whenCompleteAsync((v, ex) -> {
-                if (ex != null) {
-                    cf.completeExceptionally(ex);
-                    return;
-                }
-                if (checkTimeout(options, cf)) {
-                    return;
-                }
+        writeRequestExecutor.execute(() -> {
+            if (!checkTimeout(options, cf)) {
                 queuedUploadPart0(options, path, uploadId, partNumber, data, cf);
-            }, writeLimiterCallbackExecutor);
+            }
+        });
         return refCf;
     }
 
@@ -707,7 +669,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
-        writeLimiterCallbackExecutor.shutdown();
+        writeRequestExecutor.shutdown();
         readCallbackExecutor.shutdown();
         writeCallbackExecutor.shutdown();
         scheduler.shutdown();
@@ -804,7 +766,10 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                         path, mergedReadTask.start, mergedReadTask.end,
                         mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
                 }
-                mergedRangeRead(mergedReadTask.options(), path, mergedReadTask.start, mergedReadTask.end)
+                // A merged GET honors fast retry if any of its callers explicitly requested it.
+                ReadOptions options = mergedReadTask.options().enableFastRetry(
+                    mergedReadTask.readTasks.stream().anyMatch(task -> task.options.enableFastRetry()));
+                mergedRangeRead(options, path, mergedReadTask.start, mergedReadTask.end)
                     .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), logger));
             }
         );
@@ -821,7 +786,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return retCf;
         }
         CompletableFuture<ByteBuf> readCf = mergedRangeRead0(options, path, start, end, cf);
-        if (!checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
+        if (options.enableFastRetry() && !checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
             long delayMillis = readLatencyCalculator.valueAtPercentile(end - start, 99);
             if (delayMillis > 0) {
                 ReadOptions retryOptions = options.copy();
@@ -1151,6 +1116,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
             return objectPath != null &&
                 objectPath.equals(readTask.objectPath) &&
+                // The merged request is charged to one strategy by the SDK response subscriber.
+                readTasks.get(0).options.throttleStrategy() == readTask.options.throttleStrategy() &&
                 dataSparsityRate <= this.maxMergeReadSparsityRate &&
                 // Don't allow merge read to end task.
                 readTask.end != RANGE_READ_TO_END &&

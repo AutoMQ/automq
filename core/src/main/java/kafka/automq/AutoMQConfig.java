@@ -168,13 +168,21 @@ public class AutoMQConfig {
         "For example, suppose this value is set to 100MB/s, and the normal read and write traffic is 80MB/s, then the available traffic for stream set object compaction is 20MB/s.";
     public static final long S3_NETWORK_BASELINE_BANDWIDTH = 1024 * 1024 * 1024; // 1GBps
 
+    public static final String S3_NETWORK_BURST_BANDWIDTH_CONFIG = "s3.network.burst.bandwidth";
+    public static final String S3_NETWORK_BURST_BANDWIDTH_DOC = "The peak network bandwidth in bytes per second. " +
+        "Minus one uses three times the baseline bandwidth. An explicit value must be at least the baseline bandwidth.";
+    public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG = "s3.network.max.burst.window.ms";
+    public static final String S3_NETWORK_MAX_BURST_WINDOW_MS_DOC = "The maximum duration in milliseconds that saved tokens can sustain " +
+        "at peak bandwidth. The duration is rounded down to whole refill windows. Savings capacity is the difference between peak and baseline bytes per window times the number of windows. " +
+        "Zero disables token savings. The savings pool starts empty.";
+
     public static final String S3_NETWORK_BANDWIDTH_MODE_CONFIG = "s3.network.bandwidth.mode";
     public static final String S3_NETWORK_BANDWIDTH_MODE_DOC = "The network bandwidth limiting mode. Valid values are separate and shared. " +
         "In separate mode, inbound and outbound traffic use independent bandwidth buckets. In shared mode, inbound and outbound traffic share one bandwidth bucket.";
 
     public static final String S3_NETWORK_REFILL_PERIOD_MS_CONFIG = "s3.network.refill.period.ms";
     public static final String S3_NETWORK_REFILL_PERIOD_MS_DOC = "The network bandwidth token refill period in milliseconds.";
-    public static final int S3_REFILL_PERIOD_MS = 10; // 10ms
+    public static final int S3_REFILL_PERIOD_MS = 100; // 100ms
 
     public static final String S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG = "s3.telemetry.metrics.exporter.uri";
     public static final String S3_TELEMETRY_METRICS_EXPORTER_URI_DOC = "The metrics exporter uri, format: $type://?$param1=$value1&$param2=$value2. " +
@@ -324,11 +332,13 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_CONFIG, INT, S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT, MEDIUM, AutoMQConfig.S3_MAX_STREAM_OBJECT_NUM_PER_COMMIT_DOC)
             .define(AutoMQConfig.S3_MOCK_ENABLE_CONFIG, BOOLEAN, false, LOW, AutoMQConfig.S3_MOCK_ENABLE_DOC)
             .define(AutoMQConfig.S3_OBJECT_DELETION_MINUTES_CONFIG, LONG, S3_OBJECT_DELETE_RETENTION_MINUTES, MEDIUM, AutoMQConfig.S3_OBJECT_DELETION_MINUTES_DOC)
-            .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
+            .define(AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_CONFIG, LONG, S3_NETWORK_BASELINE_BANDWIDTH, ConfigDef.Range.atLeast(1), MEDIUM, AutoMQConfig.S3_NETWORK_BASELINE_BANDWIDTH_DOC)
+            .define(S3_NETWORK_BURST_BANDWIDTH_CONFIG, LONG, -1L, ConfigDef.Range.atLeast(-1), MEDIUM, S3_NETWORK_BURST_BANDWIDTH_DOC)
+            .define(S3_NETWORK_MAX_BURST_WINDOW_MS_CONFIG, LONG, 60000L, ConfigDef.Range.atLeast(0), MEDIUM, S3_NETWORK_MAX_BURST_WINDOW_MS_DOC)
             .define(AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_CONFIG, STRING, NetworkBandwidthMode.SEPARATE.getName(),
                 ConfigDef.CaseInsensitiveValidString.in(NetworkBandwidthMode.SEPARATE.getName(), NetworkBandwidthMode.SHARED.getName()),
                 MEDIUM, AutoMQConfig.S3_NETWORK_BANDWIDTH_MODE_DOC)
-            .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, S3_REFILL_PERIOD_MS, MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
+            .define(AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_CONFIG, INT, S3_REFILL_PERIOD_MS, ConfigDef.Range.atLeast(1), MEDIUM, AutoMQConfig.S3_NETWORK_REFILL_PERIOD_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_CONFIG, STRING, "INFO", MEDIUM, AutoMQConfig.S3_TELEMETRY_METRICS_LEVEL_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_CONFIG, INT, S3_METRICS_EXPORTER_REPORT_INTERVAL_MS, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_REPORT_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_CONFIG, PASSWORD, null, HIGH, AutoMQConfig.S3_TELEMETRY_METRICS_EXPORTER_URI_DOC)

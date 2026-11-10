@@ -58,7 +58,9 @@ public class Config {
     // 1GBps/s
     private long networkBaselineBandwidth = 1024 * 1024 * 1024;
     private NetworkBandwidthMode networkBandwidthMode = NetworkBandwidthMode.SEPARATE;
-    private int refillPeriodMs = 10;
+    private long networkBurstBandwidth = -1;
+    private long networkMaxBurstWindowMs = 60000;
+    private int refillPeriodMs = 100;
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
     private boolean snapshotReadEnable = false;
@@ -177,6 +179,17 @@ public class Config {
         return networkBandwidthMode;
     }
 
+    /** Returns the peak bandwidth in bytes/second; minus one uses three times the baseline bandwidth. */
+    public long networkBurstBandwidth() {
+        return networkBurstBandwidth == -1 ? Math.multiplyExact(networkBaselineBandwidth, 3) : networkBurstBandwidth;
+    }
+
+    /** Returns the duration in milliseconds that a full savings pool can sustain peak bandwidth. */
+    public long networkMaxBurstWindowMs() {
+        return networkMaxBurstWindowMs;
+    }
+
+    /** Returns the network refill interval in milliseconds. */
     public int refillPeriodMs() {
         return refillPeriodMs;
     }
@@ -319,6 +332,19 @@ public class Config {
         return this;
     }
 
+    /** Sets the peak bandwidth in bytes/second; minus one uses three times the baseline bandwidth. */
+    public Config networkBurstBandwidth(long networkBurstBandwidth) {
+        this.networkBurstBandwidth = networkBurstBandwidth;
+        return this;
+    }
+
+    /** Sets the maximum peak-bandwidth duration in milliseconds funded by saved tokens; zero disables savings. */
+    public Config networkMaxBurstWindowMs(long networkMaxBurstWindowMs) {
+        this.networkMaxBurstWindowMs = networkMaxBurstWindowMs;
+        return this;
+    }
+
+    /** Sets the network refill interval in milliseconds. */
     public Config refillPeriodMs(int refillPeriodMs) {
         this.refillPeriodMs = refillPeriodMs;
         return this;

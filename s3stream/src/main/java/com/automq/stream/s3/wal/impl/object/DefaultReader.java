@@ -283,7 +283,8 @@ public class DefaultReader {
 
     private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
         return objectStorage.rangeRead(
-            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS).source(source),
+            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS)
+                .enableFastRetry(true).source(source),
             path, start, end);
     }
 

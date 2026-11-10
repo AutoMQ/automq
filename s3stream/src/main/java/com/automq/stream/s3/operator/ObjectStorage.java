@@ -207,6 +207,7 @@ public interface ObjectStorage {
         public static final WriteOptions DEFAULT = new WriteOptions();
         public static final short UNSET_BUCKET = (short) -2;
 
+
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private int allocType = ByteBufAlloc.DEFAULT;
@@ -338,10 +339,12 @@ public interface ObjectStorage {
     class ReadOptions {
         public static final short UNSET_BUCKET = (short) -2;
 
+
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+        private boolean enableFastRetry;
 
         /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
         public ReadOptions source(S3RequestSource source) {
@@ -357,6 +360,16 @@ public interface ObjectStorage {
         public ReadOptions throttleStrategy(ThrottleStrategy throttleStrategy) {
             this.throttleStrategy = throttleStrategy;
             return this;
+        }
+
+        /** Enables speculative retries for bounded GETs; disabled by default. */
+        public ReadOptions enableFastRetry(boolean enabled) {
+            this.enableFastRetry = enabled;
+            return this;
+        }
+
+        public boolean enableFastRetry() {
+            return enableFastRetry;
         }
 
         public ReadOptions bucket(short bucket) {
@@ -389,6 +402,7 @@ public interface ObjectStorage {
             copy.source = source;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
+            copy.enableFastRetry = enableFastRetry;
             return copy;
         }
     }

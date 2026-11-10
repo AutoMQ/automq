@@ -54,6 +54,8 @@ public class ConfigUtils {
             .streamSetObjectCompactionMaxObjectNum(s.s3StreamSetObjectCompactionMaxObjectNum())
             .mockEnable(s.s3MockEnable())
             .networkBaselineBandwidth(s.s3NetworkBaselineBandwidthProp())
+            .networkBurstBandwidth(s.s3NetworkBurstBandwidthProp())
+            .networkMaxBurstWindowMs(s.s3NetworkMaxBurstWindowMsProp())
             .networkBandwidthMode(NetworkBandwidthMode.parse(s.s3NetworkBandwidthModeProp()))
             .refillPeriodMs(s.s3RefillPeriodMsProp())
             .objectRetentionTimeInSecond(s.s3ObjectDeleteRetentionTimeInSecond());

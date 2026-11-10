@@ -27,6 +27,42 @@ public interface NetworkBandwidthLimiter {
 
     CompletableFuture<Void> consume(ThrottleStrategy throttleStrategy, long size);
 
+    /**
+     * Registers a complete request for proactive allocation of network quota. A size of -1 denotes an
+     * unknown read-to-end length, which acquires network quota on demand for each buffer.
+     */
+    default Handle register(ThrottleStrategy strategy, long totalBytes) {
+        if (totalBytes < -1) {
+            throw new IllegalArgumentException("totalBytes must be nonnegative or -1 for an unknown length");
+        }
+        return bytes -> consume(strategy, bytes);
+    }
+
+    /** Contributes a task's bytes/second budget until the returned reservation is closed. */
+    default RateReservation reserve(ThrottleStrategy strategy, double bytesPerSecond) {
+        return new RateReservation() {
+            @Override
+            public void burst() { }
+
+            @Override
+            public void close() { }
+        };
+    }
+
+    interface Handle extends AutoCloseable {
+        CompletableFuture<Void> acquire(long bytes);
+
+        @Override
+        default void close() { }
+    }
+
+    interface RateReservation extends AutoCloseable {
+        void burst();
+
+        @Override
+        void close();
+    }
+
     default void consumeBlocking(ThrottleStrategy throttleStrategy, long size)
         throws InterruptedException, ExecutionException {
         CompletableFuture<Void> future = consume(throttleStrategy, size);

@@ -24,6 +24,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.S3ObjectType;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.network.test.RecordTestNetworkBandwidthLimiter;
 import com.automq.stream.s3.operator.ObjectStorage.ReadOptions;
 
@@ -285,6 +286,16 @@ class AbstractObjectStorageTest {
             }).get();
     }
 
+    /** Copying read options preserves the caller's retry policy and the default remains opt-in. */
+    @Test
+    void testReadOptionsCopyFastRetry() {
+        assertFalse(new ReadOptions().enableFastRetry());
+        ReadOptions original = new ReadOptions().enableFastRetry(true);
+        assertTrue(original.copy().enableFastRetry());
+        assertFalse(original.copy().enableFastRetry(false).enableFastRetry());
+        assertTrue(original.enableFastRetry());
+    }
+
     private void prepareReadFastRetry() throws Exception {
         objectStorage = spy(new MemoryObjectStorage());
         Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
@@ -292,6 +303,58 @@ class AbstractObjectStorageTest {
         S3LatencyCalculator calculator = mock(S3LatencyCalculator.class);
         when(calculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(50L);
         field.set(objectStorage, calculator);
+    }
+
+    /** Background GETs with the same strategy merge; different strategies stay separate. */
+    @Test
+    void testBackgroundReadsMergeByStrategy() {
+        AbstractObjectStorage.MergedReadTask paced = new AbstractObjectStorage.MergedReadTask(
+            new AbstractObjectStorage.ReadTask(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION), "key", 0, 100, new CompletableFuture<>()), 0);
+        assertTrue(paced.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION), "key", 100, 200, new CompletableFuture<>())));
+        assertFalse(paced.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions(), "key", 100, 200, new CompletableFuture<>())));
+        AbstractObjectStorage.MergedReadTask ordinary = new AbstractObjectStorage.MergedReadTask(
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "key", 0, 100, new CompletableFuture<>()), 0);
+        assertFalse(ordinary.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION), "key", 100, 200, new CompletableFuture<>())));
+        assertTrue(ordinary.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions(), "key", 100, 200, new CompletableFuture<>())));
+    }
+
+    /** GET fast retry stays disabled unless explicitly enabled in ReadOptions. */
+    @Test
+    void testReadFastRetryDisabledByDefault() throws Exception {
+        prepareReadFastRetry();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        doReturn(original).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions().throttleStrategy(ThrottleStrategy.COMPACTION), "key", 0, 1024);
+        org.mockito.Mockito.verify(objectStorage, org.mockito.Mockito.after(200).times(1))
+            .doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
+        ByteBuf data = TestUtils.randomPooled(1024);
+        original.complete(data);
+        assertSame(data, result.get(1, TimeUnit.SECONDS));
+        data.release();
+    }
+
+    /** PUT fast retry remains controlled by its explicit option, including for background strategies. */
+    @Test
+    void testWriteFastRetryDisabledByOption() throws Exception {
+        objectStorage = spy(new MemoryObjectStorage());
+        Field field = AbstractObjectStorage.class.getDeclaredField("s3LatencyCalculator");
+        field.setAccessible(true);
+        S3LatencyCalculator calculator = mock(S3LatencyCalculator.class);
+        when(calculator.valueAtPercentile(anyLong(), anyLong())).thenReturn(50L);
+        field.set(objectStorage, calculator);
+        CompletableFuture<Void> original = new CompletableFuture<>();
+        doReturn(original).when(objectStorage).doWrite(any(), anyString(), any(ByteBuf.class));
+        ByteBuf data = TestUtils.randomPooled(1024);
+        CompletableFuture<?> result = objectStorage.write(new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.COMPACTION).enableFastRetry(false), "key", data);
+        org.mockito.Mockito.verify(objectStorage, org.mockito.Mockito.after(200).times(1))
+            .doWrite(any(), eq("key"), any(ByteBuf.class));
+        original.complete(null);
+        result.get(1, TimeUnit.SECONDS);
+        assertEquals(0, data.refCnt());
     }
 
     /** Given a stalled original read, the fast retry wins and the late original buffer is released. */
@@ -302,7 +365,7 @@ class AbstractObjectStorageTest {
         ByteBuf retryBuffer = TestUtils.randomPooled(1024);
         doReturn(original, CompletableFuture.completedFuture(retryBuffer))
             .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        ByteBuf result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024)
+        ByteBuf result = objectStorage.mergedRangeRead(new ReadOptions().enableFastRetry(true).throttleStrategy(ThrottleStrategy.COMPACTION), "key", 0, 1024)
             .get(1, TimeUnit.SECONDS);
         assertSame(retryBuffer, result);
         result.release();
@@ -319,7 +382,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
         doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions().enableFastRetry(true), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         ByteBuf originalBuffer = TestUtils.randomPooled(1024);
         original.complete(originalBuffer);
@@ -337,7 +400,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
         doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions().enableFastRetry(true), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         retry.completeExceptionally(new TimeoutException());
         assertFalse(result.isDone());
@@ -358,7 +421,7 @@ class AbstractObjectStorageTest {
         doReturn(Pair.of(RetryStrategy.RETRY, new TimeoutException()))
             .when(objectStorage).toRetryStrategyAndCause(any(), eq(S3Operation.GET_OBJECT));
         doReturn(50).when(objectStorage).retryDelay(eq(S3Operation.GET_OBJECT), anyInt());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions().enableFastRetry(true), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         original.completeExceptionally(new TimeoutException());
         ByteBuf retryBuffer = TestUtils.randomPooled(1024);
@@ -375,7 +438,7 @@ class AbstractObjectStorageTest {
         prepareReadFastRetry();
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         doReturn(original).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, -1);
+        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions().enableFastRetry(true), "key", 0, -1);
         Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
         field.setAccessible(true);
         verify((S3LatencyCalculator) field.get(objectStorage), times(0)).valueAtPercentile(anyLong(), anyLong());
@@ -393,7 +456,7 @@ class AbstractObjectStorageTest {
 
         // Configure write options: enable fast retry, disable normal retry
         ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
-            .enableFastRetry(true)
+            .throttleStrategy(ThrottleStrategy.COMPACTION).enableFastRetry(true)
             .retry(false);
 
         // Mock S3 latency calculator via reflection to force fast retry condition
@@ -601,8 +664,22 @@ class AbstractObjectStorageTest {
         buf.release();
     }
 
+    /** A merged GET must not charge one traffic group's bytes to another group's strategy. */
     @Test
-    void testReadToEndWithNetworkLimiter() throws InterruptedException {
+    void testMergeKeepsThrottleStrategiesSeparate() {
+        AbstractObjectStorage.ReadTask tail = new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.TAIL), "key", 0, 100, new CompletableFuture<>());
+        AbstractObjectStorage.MergedReadTask merged = new AbstractObjectStorage.MergedReadTask(tail, 0);
+        assertFalse(merged.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.CATCH_UP), "key", 100, 200, new CompletableFuture<>())));
+        assertTrue(merged.tryMerge(new AbstractObjectStorage.ReadTask(
+            new ReadOptions().throttleStrategy(ThrottleStrategy.TAIL), "key", 100, 200, new CompletableFuture<>())));
+        assertEquals(200, merged.end);
+    }
+
+    /** The abstract layer neither precharges read-to-end requests nor bypass-charges their results. */
+    @Test
+    void testReadToEndDoesNotChargeInAbstractLayer() {
         int objectSize = 4096;
         objectStorage = new MemoryObjectStorage(false);
         MemoryObjectStorage memoryObjectStorage = (MemoryObjectStorage) objectStorage;
@@ -612,12 +689,10 @@ class AbstractObjectStorageTest {
         objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
         objectStorage = spy(objectStorage);
 
-        // check read to end range read will increase the inboundWidthLimiter
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
 
-        cf2.join();
-        Thread.sleep(100); // wait for async reacquire token
-        assertEquals(objectSize, networkInboundBandwidthLimiter.getConsumed());
+        cf2.join().release();
+        assertEquals(0, networkInboundBandwidthLimiter.getConsumed());
     }
 
     @Test

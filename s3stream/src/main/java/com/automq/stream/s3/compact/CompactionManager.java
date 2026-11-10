@@ -31,6 +31,9 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metadata.StreamOffsetRange;
 import com.automq.stream.s3.metrics.TimerUtil;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
@@ -49,7 +52,6 @@ import org.apache.commons.lang3.tuple.ImmutablePair;
 import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -70,15 +72,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
-import io.github.bucket4j.Bucket;
 import io.netty.util.concurrent.DefaultThreadFactory;
 
 import static com.automq.stream.s3.metadata.ObjectUtils.NOOP_OBJECT_ID;
 
 public class CompactionManager {
     private static final int MIN_COMPACTION_DELAY_MS = 10000;
-    // Max refill rate for Bucket: 1 token per nanosecond
-    private static final int MAX_THROTTLE_BYTES_PER_SEC = 1000000000;
     private final Logger logger;
     private final Logger s3ObjectLogger;
     private final ObjectManager objectManager;
@@ -86,7 +85,6 @@ public class CompactionManager {
     private final ObjectStorage objectStorage;
     private final CompactionAnalyzer compactionAnalyzer;
     private final ScheduledExecutorService compactionScheduledExecutor;
-    private final ScheduledExecutorService bucketCallbackScheduledExecutor;
     private final ScheduledExecutorService utilityScheduledExecutor;
     private final ExecutorService compactThreadPool;
     private final ExecutorService forceSplitThreadPool;
@@ -102,7 +100,8 @@ public class CompactionManager {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile CompletableFuture<Void> forceSplitCf = null;
     private volatile CompletableFuture<Void> compactionCf = null;
-    private Bucket compactionBucket = null;
+    private NetworkBandwidthLimiter.RateReservation readBudget;
+    private NetworkBandwidthLimiter.RateReservation writeBudget;
     private boolean hasRemainingObjects = false;
     private Map<Long, List<StreamDataBlock>> streamDataBlockMap = new HashMap<>();
     private long compactionDelayTime = 0L;
@@ -129,8 +128,6 @@ public class CompactionManager {
             maxStreamObjectNumPerCommit, new LogContext(String.format("[CompactionAnalyzer id=%d] ", config.nodeId())));
         this.compactionScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("schedule-compact-executor-%d", true), logger, true, false);
-        this.bucketCallbackScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
-            ThreadUtils.createThreadFactory("s3-data-block-reader-bucket-cb-%d", true), logger, true, false);
         this.utilityScheduledExecutor = Threads.newSingleThreadScheduledExecutor(
             ThreadUtils.createThreadFactory("compaction-utility-executor-%d", true), logger, true, false);
         this.compactThreadPool = Executors.newFixedThreadPool(1, new DefaultThreadFactory("object-compaction-manager"));
@@ -204,6 +201,7 @@ public class CompactionManager {
             return;
         }
         logger.info("Shutting down compaction manager");
+        closeBudgets();
         synchronized (this) {
             if (forceSplitCf != null) {
                 // prevent block-waiting for force splitting objects
@@ -215,7 +213,6 @@ public class CompactionManager {
             }
         }
         shutdownAndAwaitTermination(this.compactionScheduledExecutor, 10, TimeUnit.SECONDS);
-        shutdownAndAwaitTermination(this.bucketCallbackScheduledExecutor, 10, TimeUnit.SECONDS);
         shutdownAndAwaitTermination(this.utilityScheduledExecutor, 10, TimeUnit.SECONDS);
         this.uploader.shutdown();
         cleanUp();
@@ -306,23 +303,34 @@ public class CompactionManager {
         // throttle compaction read to half of compaction interval because of write overhead
         int expectCompleteTime = Math.max(compactionInterval - 1, 1) /* ahead 1min*/;
         long expectReadBytesPerSec = Math.max(expectCompleteTime * 60L, totalSize / expectCompleteTime / 60);
-        if (expectReadBytesPerSec < MAX_THROTTLE_BYTES_PER_SEC) {
-            compactionBucket = Bucket.builder().addLimit(limit -> limit
-                .capacity(expectReadBytesPerSec)
-                .refillIntervally(expectReadBytesPerSec, Duration.ofSeconds(1))).build();
-            logger.info("Throttle compaction read to {} bytes/s, expect to complete in no less than {}min",
-                expectReadBytesPerSec, expectCompleteTime);
-        } else {
-            logger.warn("Compaction throttle rate {} bytes/s exceeds bucket refill limit, there will be no throttle for compaction this time", expectReadBytesPerSec);
-            compactionBucket = null;
+        reserveBudgets(expectReadBytesPerSec);
+        try {
+            if (!objectsToForceSplit.isEmpty()) {
+                forceSplitObjects(streamMetadataList, objectsToForceSplit);
+            }
+            compactObjects(streamMetadataList, objectsToCompact);
+        } finally {
+            closeBudgets();
         }
+    }
 
-        if (!objectsToForceSplit.isEmpty()) {
-            // split stream set objects to separated stream objects
-            forceSplitObjects(streamMetadataList, objectsToForceSplit);
+    private synchronized void reserveBudgets(double rate) {
+        readBudget = GlobalNetworkBandwidthLimiters.instance().inbound().reserve(ThrottleStrategy.COMPACTION, rate);
+        writeBudget = GlobalNetworkBandwidthLimiters.instance().outbound().reserve(ThrottleStrategy.COMPACTION, rate);
+        if (!running.get()) {
+            closeBudgets();
         }
-        // compact stream set objects
-        compactObjects(streamMetadataList, objectsToCompact);
+    }
+
+    private synchronized void closeBudgets() {
+        if (readBudget != null) {
+            readBudget.close();
+            readBudget = null;
+        }
+        if (writeBudget != null) {
+            writeBudget.close();
+            writeBudget = null;
+        }
     }
 
     void forceSplitObjects(List<StreamMetadata> streamMetadataList, List<S3ObjectMetadata> objectsToForceSplit) {
@@ -514,7 +522,7 @@ public class CompactionManager {
             objectManager.prepareObject(batchGroup.size(), TimeUnit.MINUTES.toMillis(CompactionConstants.S3_OBJECT_TTL_MINUTES))
                 .thenComposeAsync(objectId -> {
                     List<StreamDataBlock> blocksToRead = batchGroup.stream().flatMap(p -> p.getLeft().stream()).collect(Collectors.toList());
-                    DataBlockReader reader = new DataBlockReader(objectMetadata, objectStorage, compactionBucket, bucketCallbackScheduledExecutor);
+                    DataBlockReader reader = new DataBlockReader(objectMetadata, objectStorage);
                     // batch read
                     reader.readBlocks(blocksToRead, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
 
@@ -746,7 +754,7 @@ public class CompactionManager {
             for (Map.Entry<Long, List<StreamDataBlock>> streamDataBlocEntry : compactionPlan.streamDataBlocksMap().entrySet()) {
                 S3ObjectMetadata metadata = s3ObjectMetadataMap.get(streamDataBlocEntry.getKey());
                 List<StreamDataBlock> streamDataBlocks = streamDataBlocEntry.getValue();
-                DataBlockReader reader = new DataBlockReader(metadata, objectStorage, compactionBucket, bucketCallbackScheduledExecutor);
+                DataBlockReader reader = new DataBlockReader(metadata, objectStorage);
                 reader.readBlocks(streamDataBlocks, Math.min(CompactionConstants.S3_OBJECT_MAX_READ_BATCH, networkBandwidth));
             }
             List<CompletableFuture<StreamObject>> streamObjectCfList = new ArrayList<>();

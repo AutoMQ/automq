@@ -22,6 +22,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.utils.FutureUtil;
 
 import org.apache.commons.lang3.StringUtils;
@@ -51,7 +52,6 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
@@ -61,7 +61,6 @@ import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
 import software.amazon.awssdk.checksums.DefaultChecksumAlgorithm;
 import software.amazon.awssdk.checksums.SdkChecksum;
-import software.amazon.awssdk.core.async.AsyncRequestBody;
 import software.amazon.awssdk.core.async.AsyncResponseTransformer;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
 import software.amazon.awssdk.core.exception.ApiCallAttemptTimeoutException;
@@ -183,7 +182,13 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     // used for test only
     AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
         ChecksumAlgorithm checksumAlgorithm) {
-        super(BucketURI.parse("0@s3://b"), NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP, 50, 0, true, false, false, "test");
+        this(s3Client, controlS3Client, bucket, checksumAlgorithm, NetworkBandwidthLimiter.NOOP, NetworkBandwidthLimiter.NOOP);
+    }
+
+    // used for test only
+    AwsObjectStorage(S3AsyncClient s3Client, S3AsyncClient controlS3Client, String bucket,
+        ChecksumAlgorithm checksumAlgorithm, NetworkBandwidthLimiter inboundLimiter, NetworkBandwidthLimiter outboundLimiter) {
+        super(BucketURI.parse("0@s3://b"), inboundLimiter, outboundLimiter, 50, 0, true, false, false, "test");
         this.bucket = bucket;
         this.writeS3Client = s3Client;
         this.readS3Client = s3Client;
@@ -257,33 +262,19 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.checksumMode(ChecksumMode.ENABLED);
         }
 
-        CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
-        readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
-            .thenAccept(responsePublisher -> {
-                // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
-                CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
-                responsePublisher.subscribe(bytes -> {
-                    // the aws client will copy DefaultHttpContent to heap ByteBuffer
-                    buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
-                }).whenComplete((rst, ex) -> {
-                    if (ex != null) {
-                        buf.release();
-                        cf.completeExceptionally(ex);
-                    } else {
-                        cf.complete(buf);
-                    }
-                });
-            })
-            .exceptionally(ex -> {
-                cf.completeExceptionally(ex);
-                return null;
-            });
-        return cf;
+        long size = end == RANGE_READ_TO_END ? -1 : end - start;
+        return requestLimiter(networkInboundBandwidthLimiter, options.throttleStrategy(), size)
+            .thenCompose(limiter -> readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
+                .thenCompose(responsePublisher -> {
+                    ThrottledAsyncResponseSubscriber subscriber = new ThrottledAsyncResponseSubscriber(limiter);
+                    responsePublisher.subscribe(subscriber);
+                    return subscriber.result();
+                }).whenComplete((rst, ex) -> limiter.close()));
     }
 
     @Override
     CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data) {
-        // Compute checksum before handing unsafe ByteBuffers to the SDK. A timed-out attempt may still be writing
+        // Compute checksum before handing shared ByteBuffer views to the SDK. A timed-out attempt may still be writing
         // after a later retry completes and the caller releases/reuses the ByteBuf; the stale attempt would then read
         // dirty bytes. A fixed request checksum makes the service reject that corrupted body instead of persisting it.
         PutObjectRequest.Builder builder = PutObjectRequest.builder().bucket(bucket).key(path);
@@ -298,8 +289,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         PutObjectRequest request = builder.build();
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(data.nioBuffers());
-        return writeS3Client.putObject(request, body).thenApply(rst -> null);
+        return uploadBody(options, data).thenCompose(body -> writeS3Client.putObject(request, body)
+            .whenComplete((rst, ex) -> body.close())).thenApply(rst -> null);
     }
 
     @Override
@@ -320,7 +311,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<ObjectStorageCompletedPart> doUploadPart(WriteOptions options, String path, String uploadId,
         int partNumber, ByteBuf part) {
-        // Same dirty-retry protection as doWrite.
+        // Same fixed-checksum protection as doWrite, covering the entire part across all chunks.
         UploadPartRequest.Builder builder = UploadPartRequest.builder()
             .bucket(bucket)
             .key(path)
@@ -333,9 +324,23 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             builder.contentMD5(contentMd5(part));
         }
 
-        AsyncRequestBody body = AsyncRequestBody.fromByteBuffersUnsafe(part.nioBuffers());
-        return writeS3Client.uploadPart(builder.build(), body)
+        return uploadBody(options, part).thenCompose(body -> writeS3Client.uploadPart(builder.build(), body)
+            .whenComplete((rst, ex) -> body.close()))
             .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.eTag(), checksumValue(resp)));
+    }
+
+    private CompletableFuture<ThrottledAsyncRequestBody> uploadBody(WriteOptions options, ByteBuf data) {
+        // Keep the source alive while waiting for the synthetic one-byte admission grant.
+        ByteBuf retained = data.retainedSlice();
+        return requestLimiter(networkOutboundBandwidthLimiter, options.throttleStrategy(), retained.readableBytes())
+            .thenApply(limiter -> new ThrottledAsyncRequestBody(retained, limiter))
+            .whenComplete((body, ex) -> retained.release());
+    }
+
+    private CompletableFuture<AsyncByteLimiter> requestLimiter(NetworkBandwidthLimiter network,
+        ThrottleStrategy strategy, long bytes) {
+        RequestLimiter limiter = new RequestLimiter(network, strategy, bytes);
+        return limiter.start.thenApply(nil -> limiter);
     }
 
     @Override
@@ -858,7 +863,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
                 }
                 builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
-                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "1")))
                     .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout))
                     .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
             }
@@ -866,7 +871,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         }
 
         /**
-         * Creates a builder with Netty, CRT health defaults of 32 MiB/s and two seconds, and a 10 Gbps transfer target.
+         * Creates a builder with Netty, CRT health defaults of 1 B/s and two seconds, and a 10 Gbps transfer target.
          */
         public static Builder builder() {
             return new Builder();
@@ -877,7 +882,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          */
         public static final class Builder {
             private String sdkImplementation = "netty";
-            private long crtMinimumThroughputBps = 32L * 1024 * 1024;
+            private long crtMinimumThroughputBps = 1;
             private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
             private double crtTargetThroughputGbps = 10.0;
             private int maxConcurrency = -1;
@@ -1031,4 +1036,36 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
         }
     }
+    /** Each SDK subscription owns one whole-request allocation, including a one-byte start grant. */
+    private static final class RequestLimiter implements AsyncByteLimiter {
+        private final NetworkBandwidthLimiter network;
+        private final ThrottleStrategy strategy;
+        private final long bytes;
+        private final NetworkBandwidthLimiter.Handle handle;
+        private final CompletableFuture<Void> start;
+
+        RequestLimiter(NetworkBandwidthLimiter network, ThrottleStrategy strategy, long bytes) {
+            this.network = network;
+            this.strategy = strategy;
+            this.bytes = bytes;
+            handle = network.register(strategy, bytes < 0 ? -1 : Math.addExact(bytes, 1));
+            start = handle.acquire(1);
+        }
+
+        @Override
+        public CompletableFuture<Void> acquire(int size) {
+            return start.thenCompose(nil -> handle.acquire(size));
+        }
+
+        @Override
+        public AsyncByteLimiter fork() {
+            return new RequestLimiter(network, strategy, bytes);
+        }
+
+        @Override
+        public void close() {
+            handle.close();
+        }
+    }
+
 }

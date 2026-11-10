@@ -20,13 +20,15 @@
 package com.automq.stream.s3;
 
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.network.NetworkBandwidthLimiter;
+import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.CommitStreamSetObjectRequest;
 import com.automq.stream.s3.objects.ObjectAttributes;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.objects.ObjectStreamRange;
 import com.automq.stream.s3.objects.StreamObject;
 import com.automq.stream.s3.operator.ObjectStorage;
-import com.automq.stream.utils.AsyncRateLimiter;
 import com.automq.stream.utils.FutureUtil;
 
 import org.slf4j.Logger;
@@ -57,7 +59,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
     private final CompletableFuture<CommitStreamSetObjectRequest> uploadCf = new CompletableFuture<>();
     private final ExecutorService executor;
     private final double rate;
-    private final AsyncRateLimiter limiter;
+    private NetworkBandwidthLimiter.RateReservation rateReservation;
     private long startTimestamp;
     private long uploadTimestamp;
     private long commitTimestamp;
@@ -77,7 +79,6 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
         this.objectStorage = objectStorage;
         this.executor = executor;
         this.rate = rate;
-        this.limiter = new AsyncRateLimiter(rate);
     }
 
     public static Builder builder() {
@@ -122,19 +123,24 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
 
         synchronized (this) {
             if (!this.burst) {
-                this.limiter.burst();
+                if (rateReservation != null) {
+                    rateReservation.burst();
+                }
                 this.burst = true;
             }
         }
     }
 
-    private CompletableFuture<Void> acquireLimiter(long size) {
-        return limiter.acquire(Math.toIntExact(size));
-    }
-
     @Override
-    public CompletableFuture<CommitStreamSetObjectRequest> upload() {
-        prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor);
+    public synchronized CompletableFuture<CommitStreamSetObjectRequest> upload() {
+        rateReservation = GlobalNetworkBandwidthLimiters.instance().outbound()
+            .reserve(ThrottleStrategy.WAL_UPLOAD, burst ? Double.POSITIVE_INFINITY : rate);
+        uploadCf.whenComplete((rst, ex) -> rateReservation.close());
+        prepareCf.thenAcceptAsync(objectId -> FutureUtil.exec(() -> upload0(objectId), uploadCf, LOGGER, "upload"), executor)
+            .exceptionally(ex -> {
+                uploadCf.completeExceptionally(ex);
+                return null;
+            });
         return uploadCf;
     }
 
@@ -148,7 +154,8 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             ssoWriter = ObjectWriter.noop(objectId);
         } else {
             streamSetObjectId = objectId++;
-            ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize);
+            ssoWriter = ObjectWriter.writer(streamSetObjectId, objectStorage, objectBlockSize, objectPartSize,
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
         }
 
         List<CompletableFuture<Void>> streamObjectCfList = new LinkedList<>();
@@ -163,26 +170,23 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
             }));
         }
 
-        List<CompletableFuture<Void>> streamSetObjectCfList = new LinkedList<>();
         List<Long> streamSetIds = new ArrayList<>(streamSetObjectMap.keySet());
         Collections.sort(streamSetIds);
         for (Long streamId : streamSetIds) {
             List<StreamRecordBatch> streamRecords = streamSetObjectMap.get(streamId);
-            long streamSize = streamSize(streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
             long endOffset = streamRecords.get(streamRecords.size() - 1).getLastOffset();
-            streamSetObjectCfList.add(acquireLimiter(streamSize).thenAccept(nil -> ssoWriter.write(streamId, streamRecords)));
+            ssoWriter.write(streamId, streamRecords);
             request.addStreamRange(new ObjectStreamRange(streamId, -1L, startOffset, endOffset));
         }
 
         request.setObjectId(streamSetObjectId);
         request.setOrderId(streamSetObjectId);
 
-        CompletableFuture<Void> streamSetObjectCf = CompletableFuture.allOf(streamSetObjectCfList.toArray(new CompletableFuture[0]))
-            .thenCompose(nil -> ssoWriter.close().thenAccept(nil2 -> {
-                request.setObjectSize(ssoWriter.size());
-                request.setAttributes(ObjectAttributes.builder().bucket(ssoWriter.bucketId()).build().attributes());
-            }));
+        CompletableFuture<Void> streamSetObjectCf = ssoWriter.close().thenAccept(nil -> {
+            request.setObjectSize(ssoWriter.size());
+            request.setAttributes(ObjectAttributes.builder().bucket(ssoWriter.bucketId()).build().attributes());
+        });
         List<CompletableFuture<?>> allCf = new LinkedList<>(streamObjectCfList);
         allCf.add(streamSetObjectCf);
         CompletableFuture.allOf(allCf.toArray(new CompletableFuture[0])).thenAccept(nil -> {
@@ -217,14 +221,14 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
                     streamObjectsSize
                 );
                 s3ObjectLogger.info("[UPLOAD_WAL] {}", request);
-            }).whenComplete((nil, ex) -> limiter.close());
+            });
         });
     }
 
     private CompletableFuture<StreamObject> writeStreamObject(long objectId, List<StreamRecordBatch> streamRecords) {
-        long streamSize = streamSize(streamRecords);
-        return acquireLimiter(streamSize).thenComposeAsync(nil -> {
-            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize);
+        return CompletableFuture.supplyAsync(() -> {
+            ObjectWriter streamObjectWriter = ObjectWriter.writer(objectId, objectStorage, objectBlockSize, objectPartSize,
+                new ObjectStorage.WriteOptions().throttleStrategy(ThrottleStrategy.WAL_UPLOAD));
             long streamId = streamRecords.get(0).getStreamId();
             streamObjectWriter.write(streamId, streamRecords);
             long startOffset = streamRecords.get(0).getBaseOffset();
@@ -239,7 +243,7 @@ public class DefaultUploadWriteAheadLogTask implements UploadWriteAheadLogTask {
                 streamObject.setAttributes(ObjectAttributes.builder().bucket(streamObjectWriter.bucketId()).build().attributes());
                 return streamObject;
             });
-        }, executor);
+        }, executor).thenCompose(future -> future);
     }
 
     static long streamSize(List<StreamRecordBatch> streamRecords) {

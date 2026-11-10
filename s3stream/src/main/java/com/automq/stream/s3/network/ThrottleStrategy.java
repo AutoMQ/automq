@@ -21,10 +21,11 @@ package com.automq.stream.s3.network;
 
 public enum ThrottleStrategy {
     BYPASS(0, "bypass"),
-    COMPACTION(1, "compaction"),
-    TAIL(2, "tail"),
-    CATCH_UP(3, "catchup"),
-    ICEBERG_WRITE(4, "iceberg_write");
+    WAL_UPLOAD(2, "wal_upload"),
+    COMPACTION(3, "compaction"),
+    TAIL(4, "tail"),
+    CATCH_UP(5, "catchup"),
+    ICEBERG_WRITE(6, "iceberg_write");
 
     private final int priority;
     private final String name;
