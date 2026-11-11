@@ -23,6 +23,7 @@ import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.tools.automq.perf.ConsumerService;
 import org.apache.kafka.tools.automq.perf.PerfConfig;
 import org.apache.kafka.tools.automq.perf.ProducerService;
+import org.apache.kafka.tools.automq.perf.SampleRecords;
 import org.apache.kafka.tools.automq.perf.Stats;
 import org.apache.kafka.tools.automq.perf.StatsCollector;
 import org.apache.kafka.tools.automq.perf.StatsCollector.Result;
@@ -76,6 +77,7 @@ public class PerfCommand implements AutoCloseable {
     private static final Logger LOGGER = LoggerFactory.getLogger(PerfCommand.class);
 
     private final PerfConfig config;
+    private final List<List<SampleRecords.Entry>> sampleAssignments;
     private final TopicService topicService;
     private final ProducerService producerService;
     private final ConsumerService consumerService;
@@ -96,14 +98,16 @@ public class PerfCommand implements AutoCloseable {
         }
     }
 
-    private PerfCommand(PerfConfig config) {
+    private PerfCommand(PerfConfig config) throws IOException {
         this.config = config;
+        this.sampleAssignments = config.sampleFile == null ? null : SampleRecords.read(Path.of(config.sampleFile), config.sampleMaxBytes)
+            .assign(config.producersPerTopic, config.sampleTimingFile == null ? null : Path.of(config.sampleTimingFile), config.sampleCycleNanos);
         this.topicService = new TopicService(config.bootstrapServer(), config.adminConfig());
         this.producerService = new ProducerService();
         this.consumerService = new ConsumerService(config.bootstrapServer(), config.adminConfig());
     }
 
-    private void run() {
+    private void run() throws InterruptedException {
         LOGGER.info("Starting perf test with config: {}", jsonStringify(config));
         TimerUtil timer = new TimerUtil();
 
@@ -155,16 +159,24 @@ public class PerfCommand implements AutoCloseable {
                 waitTopicsReady(consumerService.consumerCount() > 0);
                 LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
             }
-            Function<String, List<byte[]>> payloads = payloads(config, topics);
-            producerService.start(payloads, config.sendRate);
+            if (sampleAssignments == null) {
+                Function<String, List<byte[]>> payloads = payloads(config, topics);
+                producerService.start(payloads, config.sendRate);
+            } else {
+                awaitSampleStart();
+                producerService.startSample(sampleAssignments, config.sendRate, config.sampleCycleNanos, config.sampleSpeed);
+                LOGGER.info("Sample replay started; timed={}, speed={}", config.sampleTimingFile != null, config.sampleSpeed);
+            }
             preparing = false;
 
             if (config.warmupDurationMinutes > 0) {
                 LOGGER.info("Warming up for {} minutes...", config.warmupDurationMinutes);
                 long warmupStart = System.nanoTime();
                 long warmupMiddle = warmupStart + TimeUnit.MINUTES.toNanos(config.warmupDurationMinutes) / 2;
-                producerService.adjustRate(warmupStart, ProducerService.MIN_RATE);
-                producerService.adjustRate(warmupMiddle, config.sendRate);
+                if (config.sampleTimingFile == null) {
+                    producerService.adjustRate(warmupStart, ProducerService.MIN_RATE);
+                    producerService.adjustRate(warmupMiddle, config.sendRate);
+                }
                 collectStats(Duration.ofMinutes(config.warmupDurationMinutes));
             }
         }
@@ -206,6 +218,22 @@ public class PerfCommand implements AutoCloseable {
         LOGGER.info("Saving results to {}", saveResult(result));
 
         running = false;
+    }
+
+    private void awaitSampleStart() throws InterruptedException {
+        if (config.sampleStartTimeMs == 0) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (config.sampleStartTimeMs <= now || config.sampleStartTimeMs - now > TimeUnit.DAYS.toMillis(1)) {
+            throw new IllegalArgumentException("Sample start time must be in the next 24 hours after topic/client setup finishes");
+        }
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(config.sampleStartTimeMs - now);
+        LOGGER.info("Waiting for shared sample start at epoch millisecond {}", config.sampleStartTimeMs);
+        long remaining;
+        while ((remaining = deadline - System.nanoTime()) > 0) {
+            TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.SECONDS.toNanos(1)));
+        }
     }
 
     private String jsonStringify(Object obj) {
@@ -336,7 +364,10 @@ public class PerfCommand implements AutoCloseable {
 
     private Result collectStats(StopCondition condition) {
         long intervalNanos = TimeUnit.SECONDS.toNanos(config.reportingIntervalSeconds);
-        return printAndCollectStats(stats, condition, intervalNanos, config);
+        return printAndCollectStats(stats, (start, now) -> {
+            producerService.checkReplayFailure();
+            return condition.shouldStop(start, now);
+        }, intervalNanos, config);
     }
 
     private String saveResult(Result result) {
