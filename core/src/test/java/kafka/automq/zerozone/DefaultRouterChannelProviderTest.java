@@ -19,9 +19,12 @@
 
 package kafka.automq.zerozone;
 
+import com.automq.stream.s3.cache.RouterWALReadCache;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
+import com.automq.stream.s3.operator.AwsObjectStorage;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
+import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
@@ -29,6 +32,8 @@ import com.automq.stream.utils.IdURI;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.mockito.MockedConstruction;
 
 import java.util.ArrayList;
@@ -36,17 +41,20 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 
 /**
  * Verifies the configuration passed to router WALs without starting storage or background writers.
  */
 @Tag("S3Unit")
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class DefaultRouterChannelProviderTest {
     /**
      * Explicit URI settings reach both the local writer and remote readers, including the shard layout.
@@ -136,6 +144,177 @@ public class DefaultRouterChannelProviderTest {
             assertEquals(1, configs.get(2).version());
             assertEquals(0, configs.get(3).version());
             provider.close();
+        }
+    }
+
+    /** The RouterWAL override reaches shared S3 clients, while other clients keep the default. */
+    @Test
+    public void testReadMergeIntervalScope() {
+        String property = "automq.router.wal.read.merge.interval.ms";
+        String previous = System.getProperty(property);
+        List<Integer> intervals = new ArrayList<>();
+        BucketURI bucket = BucketURI.parse("7@s3://router?region=us-west-2");
+        try (MockedConstruction<AwsObjectStorage> storages = mockConstruction(AwsObjectStorage.class,
+            (storage, context) -> intervals.add((Integer) context.arguments().get(7)))) {
+            System.setProperty(property, "20");
+            DefaultRouterChannelProvider provider = new DefaultRouterChannelProvider(42, 123, List.of(bucket), "cluster");
+            assertSame(provider.objectStorage(bucket), provider.objectStorage(bucket));
+            ObjectStorageFactory.instance().builder(bucket).build();
+            assertEquals(List.of(20, 5), intervals);
+            assertEquals(2, storages.constructed().size());
+            provider.close();
+        } finally {
+            if (previous == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previous);
+            }
+        }
+    }
+
+    /** Invalid or nonpositive values fail during provider initialization. */
+    @Test
+    public void testInvalidReadMergeInterval() {
+        String property = "automq.router.wal.read.merge.interval.ms";
+        String previous = System.getProperty(property);
+        try {
+            for (String value : List.of("", "0", "-1", "+1", "1.5", "2147483648")) {
+                System.setProperty(property, value);
+                assertThrows(IllegalArgumentException.class,
+                    () -> new DefaultRouterChannelProvider(42, 123, List.of(), "cluster"));
+            }
+        } finally {
+            if (previous == null) {
+                System.clearProperty(property);
+            } else {
+                System.setProperty(property, previous);
+            }
+        }
+    }
+
+    /** An absent cache setting preserves the uncached path for local and remote WAL readers. */
+    @Test
+    public void testReadCacheDisabledByDefault() {
+        String property = "automq.router.wal.read.cache.size.bytes";
+        String previous = System.clearProperty(property);
+        BucketURI bucket = BucketURI.parse("0@s3://router");
+        try (MockedConstruction<RouterWALReadCache> caches = mockConstruction(RouterWALReadCache.class);
+            MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
+                (wal, context) -> assertNull(context.arguments().get(4)))) {
+            DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, List.of(bucket), "cluster"));
+            doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket);
+            try {
+                provider.channel();
+                provider.readOnlyChannel(43);
+                assertEquals(2, wals.constructed().size());
+                assertEquals(0, caches.constructed().size());
+            } finally {
+                provider.close();
+            }
+        } finally {
+            restoreProperty(property, previous);
+        }
+    }
+
+    /** All buckets and reader channels share one budget, and provider shutdown closes it once. */
+    @Test
+    public void testSharedReadCacheLifecycle() {
+        String property = "automq.router.wal.read.cache.size.bytes";
+        String previous = System.getProperty(property);
+        List<BucketURI> buckets = List.of(BucketURI.parse("0@s3://a"), BucketURI.parse("1@s3://b"));
+        long budget = 1024 * 1024 * 1024L;
+        try (MockedConstruction<RouterWALReadCache> caches = mockConstruction(RouterWALReadCache.class,
+            (cache, context) -> assertEquals(budget, context.arguments().get(0)));
+            MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
+                (wal, context) -> assertSame(caches.constructed().get(0), context.arguments().get(4)))) {
+            System.setProperty(property, Long.toString(budget));
+            DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, buckets, "cluster"));
+            buckets.forEach(bucket -> doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket));
+            try {
+                provider.channel();
+                provider.readOnlyChannel(43);
+                provider.readOnlyChannel(44);
+                assertEquals(1, caches.constructed().size());
+                assertEquals(6, wals.constructed().size());
+            } finally {
+                provider.close();
+            }
+            verify(caches.constructed().get(0)).close();
+        } finally {
+            restoreProperty(property, previous);
+        }
+    }
+
+    /** Progressive delivery is an independent opt-in on the shared cache, with strict configuration validation. */
+    @Test
+    public void testProgressiveReadCacheSetting() {
+        String sizeProperty = "automq.router.wal.read.cache.size.bytes";
+        String progressProperty = "automq.router.wal.read.cache.progressive.enabled";
+        String previousSize = System.getProperty(sizeProperty);
+        String previousProgress = System.getProperty(progressProperty);
+        System.setProperty(sizeProperty, Long.toString(RouterWALReadCache.BLOCK_SIZE));
+        try {
+            for (boolean enabled : new boolean[] {false, true}) {
+                if (enabled) {
+                    System.setProperty(progressProperty, "true");
+                } else {
+                    System.clearProperty(progressProperty);
+                }
+                try (MockedConstruction<RouterWALReadCache> caches = mockConstruction(RouterWALReadCache.class,
+                    (cache, context) -> assertEquals(enabled, context.arguments().get(1)))) {
+                    DefaultRouterChannelProvider provider = new DefaultRouterChannelProvider(42, 123, List.of(), "cluster");
+                    provider.close();
+                    assertEquals(1, caches.constructed().size());
+                }
+            }
+            System.setProperty(progressProperty, "yes");
+            assertThrows(IllegalArgumentException.class,
+                () -> new DefaultRouterChannelProvider(42, 123, List.of(), "cluster"));
+        } finally {
+            restoreProperty(sizeProperty, previousSize);
+            restoreProperty(progressProperty, previousProgress);
+        }
+    }
+
+    /** Malformed budgets or budgets smaller than a block fail before any storage is opened. */
+    @Test
+    public void testInvalidReadCacheSize() {
+        String property = "automq.router.wal.read.cache.size.bytes";
+        String previous = System.getProperty(property);
+        try {
+            for (String value : List.of("", "-1", "+1", "1.5", "4194304", "8388607", "9223372036854775808")) {
+                System.setProperty(property, value);
+                assertThrows(IllegalArgumentException.class,
+                    () -> new DefaultRouterChannelProvider(42, 123, List.of(), "cluster"));
+            }
+        } finally {
+            restoreProperty(property, previous);
+        }
+    }
+
+    /** The minimum enabled budget is exactly one 8 MiB block. */
+    @Test
+    public void testMinimumReadCacheSize() {
+        String property = "automq.router.wal.read.cache.size.bytes";
+        String previous = System.getProperty(property);
+        try {
+            System.setProperty(property, "8388608");
+            DefaultRouterChannelProvider provider = new DefaultRouterChannelProvider(42, 123, List.of(), "cluster");
+            try {
+                assertEquals(8 * 1024 * 1024, RouterWALReadCache.BLOCK_SIZE);
+            } finally {
+                provider.close();
+            }
+        } finally {
+            restoreProperty(property, previous);
+        }
+    }
+
+    private static void restoreProperty(String property, String previous) {
+        if (previous == null) {
+            System.clearProperty(property);
+        } else {
+            System.setProperty(property, previous);
         }
     }
 

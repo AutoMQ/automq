@@ -23,6 +23,7 @@ import com.automq.stream.s3.Constants;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.wal.common.RecordHeader;
+import com.automq.stream.s3.wal.util.WALUtil;
 
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -141,6 +142,21 @@ public class ObjectUtils {
 
     public static long ceilAlignOffset(long offset) {
         return (offset + DATA_FILE_ALIGN_SIZE - 1) / DATA_FILE_ALIGN_SIZE * DATA_FILE_ALIGN_SIZE;
+    }
+
+    /** Checks a complete WAL record's identity, size and stored header/body CRCs before early delivery. */
+    public static boolean isValidRecordBuf(ByteBuf data, long expectedOffset) {
+        if (data.readableBytes() < RECORD_HEADER_SIZE) {
+            return false;
+        }
+        ByteBuf headerBuf = data.slice(data.readerIndex(), RECORD_HEADER_SIZE);
+        RecordHeader header = new RecordHeader(headerBuf);
+        int bodyLength = data.readableBytes() - RECORD_HEADER_SIZE;
+        return header.getMagicCode() == RecordHeader.RECORD_HEADER_DATA_MAGIC_CODE
+            && header.getRecordBodyOffset() == expectedOffset + RECORD_HEADER_SIZE
+            && header.getRecordBodyLength() == bodyLength
+            && header.getRecordHeaderCRC() == WALUtil.crc32(headerBuf, RecordHeader.RECORD_HEADER_WITHOUT_CRC_SIZE)
+            && header.getRecordBodyCRC() == WALUtil.crc32(data.slice(data.readerIndex() + RECORD_HEADER_SIZE, bodyLength));
     }
 
     public static StreamRecordBatch decodeRecordBuf(ByteBuf dataBuffer) {

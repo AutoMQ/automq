@@ -27,6 +27,7 @@ import com.automq.stream.s3.network.ThrottleStrategy;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 import io.netty.buffer.ByteBuf;
 
@@ -448,6 +449,21 @@ public interface ObjectStorage {
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+        private Supplier<ReadProgressListener> progressListener;
+
+        /**
+         * Opts immutable reads into progress notifications when the transport supports them. Each physical
+         * attempt creates a separate listener. The returned read future still waits for the full response.
+         */
+        public ReadOptions progressListener(Supplier<ReadProgressListener> progressListener) {
+            this.progressListener = progressListener;
+            return this;
+        }
+
+        /** Returns the optional per-attempt listener factory, shared by copies of these options. */
+        public Supplier<ReadProgressListener> progressListener() {
+            return progressListener;
+        }
 
         /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
         public ReadOptions source(S3RequestSource source) {
@@ -493,6 +509,7 @@ public interface ObjectStorage {
             ReadOptions copy = new ReadOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.source = source;
+            copy.progressListener = progressListener;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
             return copy;

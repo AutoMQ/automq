@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.cache.RouterWALReadCache;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
@@ -39,6 +40,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.Optional;
 import java.util.Queue;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
@@ -64,6 +66,7 @@ public class DefaultReader {
     }
 
     private final ObjectStorage objectStorage;
+    private final RouterWALReadCache readCache;
     private final String nodePrefix;
     private final boolean shardedFirst;
     private final S3RequestSource source;
@@ -82,17 +85,23 @@ public class DefaultReader {
     private final EventLoop eventLoop;
 
     public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time) {
-        this(objectStorage, clusterId, nodeId, type, time, false, S3RequestSource.UNCLASSIFIED);
+        this(objectStorage, clusterId, nodeId, type, time, false, S3RequestSource.UNCLASSIFIED, null);
     }
 
-    /** Creates a dual-layout reader that prefers the configured write layout and falls back only on not-found. */
+    /** Creates a dual-layout reader that probes the configured write layout and falls back only on not-found. */
     public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time) {
-        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1, config.source());
+        this(objectStorage, config, time, null);
+    }
+
+    /** Creates a reader that reuses cached RouterWAL ranges from either layout before probing storage. */
+    public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time, RouterWALReadCache readCache) {
+        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1, config.source(), readCache);
     }
 
     private DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
-        boolean shardedFirst, S3RequestSource source) {
+        boolean shardedFirst, S3RequestSource source, RouterWALReadCache readCache) {
         this.objectStorage = objectStorage;
+        this.readCache = readCache;
         this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
         this.shardedFirst = shardedFirst;
         this.source = source;
@@ -273,18 +282,29 @@ public class DefaultReader {
         String legacyPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
         String preferredPath = shardedFirst ? shardedPath : legacyPath;
         String fallbackPath = shardedFirst ? legacyPath : shardedPath;
-        return rangeRead(preferredPath, start, end).exceptionallyCompose(ex -> {
+        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId())
+            .throttleStrategy(ThrottleStrategy.BYPASS).source(source);
+        if (readCache != null) {
+            // A missing-layout probe must not evict a completed block for the same object in the other layout.
+            Optional<CompletableFuture<ByteBuf>> cached = readCache.readIfPresent(objectStorage, options, preferredPath, start, end)
+                .or(() -> readCache.readIfPresent(objectStorage, options, fallbackPath, start, end));
+            if (cached.isPresent()) {
+                return cached.get();
+            }
+        }
+        return rangeRead(options, preferredPath, start, end, objectStartOffset).exceptionallyCompose(ex -> {
             if (FutureUtil.cause(ex) instanceof ObjectNotExistException) {
-                return rangeRead(fallbackPath, start, end);
+                return rangeRead(options, fallbackPath, start, end, objectStartOffset);
             }
             return CompletableFuture.failedFuture(ex);
         });
     }
 
-    private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
-        return objectStorage.rangeRead(
-            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS).source(source),
-            path, start, end);
+    private CompletableFuture<ByteBuf> rangeRead(ObjectStorage.ReadOptions options, String path, long start, long end,
+        long objectStartOffset) {
+        return readCache == null ? objectStorage.rangeRead(options.copy(), path, start, end)
+            : readCache.read(objectStorage, options, path, start, end,
+                buf -> ObjectUtils.isValidRecordBuf(buf, start + objectStartOffset - WALObjectHeader.WAL_HEADER_SIZE_V1));
     }
 
     private CompletableFuture<Void> rebuildIndexMap0() {

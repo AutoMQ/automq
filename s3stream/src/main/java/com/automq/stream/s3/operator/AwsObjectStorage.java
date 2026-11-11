@@ -21,6 +21,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.utils.FutureUtil;
 
@@ -90,6 +91,7 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
@@ -140,7 +142,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     public AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
         NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
         boolean readWriteIsolate, boolean checkMode, String threadPrefix) {
-        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode, threadPrefix);
+        this(bucketURI, tagging, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate,
+            checkMode, threadPrefix, DEFAULT_READ_MERGE_INTERVAL_MS);
+    }
+
+    private AwsObjectStorage(BucketURI bucketURI, Map<String, String> tagging,
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter, NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        boolean readWriteIsolate, boolean checkMode, String threadPrefix, int readMergeIntervalMs) {
+        super(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate, checkMode,
+            threadPrefix, readMergeIntervalMs);
         this.bucket = bucketURI.bucket();
         this.tagging = tagging(tagging);
         List<AwsCredentialsProvider> credentialsProviders = credentialsProviders();
@@ -264,15 +274,30 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
             .thenAccept(responsePublisher -> {
+                // A response checksum/trailer must finish validating before any bytes can escape.
+                ReadProgressListener progress = options.progressListener() != null
+                    && options.source() == S3RequestSource.ROUTER_WAL
+                    && !requiresCompleteResponse(responsePublisher.response()) ? options.progressListener().get() : null;
                 // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
                 CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
                 responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
                     buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                    if (progress != null) {
+                        progress.onProgress(buf.asReadOnly());
+                    }
                 }).whenComplete((rst, ex) -> {
                     if (ex != null) {
-                        buf.release();
-                        cf.completeExceptionally(ex);
+                        try {
+                            if (progress != null) {
+                                progress.onFailure();
+                            }
+                        } catch (RuntimeException callbackError) {
+                            ex.addSuppressed(callbackError);
+                        } finally {
+                            buf.release();
+                            cf.completeExceptionally(ex);
+                        }
                     } else {
                         cf.complete(buf);
                     }
@@ -283,6 +308,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 return null;
             });
         return cf;
+    }
+
+    private static boolean requiresCompleteResponse(GetObjectResponse response) {
+        return response.sdkHttpResponse() == null || response.sdkHttpResponse().headers().keySet().stream().anyMatch(name -> {
+            String header = name.toLowerCase(Locale.ROOT);
+            return header.startsWith("x-amz-checksum-") || header.equals("content-md5")
+                || header.equals("x-amz-trailer") || header.equals("trailer");
+        });
     }
 
     @Override
@@ -1053,6 +1086,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
         private String threadPrefix = "";
+        private int readMergeIntervalMs = DEFAULT_READ_MERGE_INTERVAL_MS;
 
         public Builder bucket(BucketURI bucketURI) {
             this.bucketURI = bucketURI;
@@ -1089,8 +1123,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             return this;
         }
 
+        /** Sets the fixed delay between read merge passes, in milliseconds. */
+        public Builder readMergeIntervalMs(int readMergeIntervalMs) {
+            this.readMergeIntervalMs = readMergeIntervalMs;
+            return this;
+        }
+
         public AwsObjectStorage build() {
-            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate, checkS3ApiModel, threadPrefix);
+            return new AwsObjectStorage(bucketURI, tagging, inboundLimiter, outboundLimiter, readWriteIsolate,
+                checkS3ApiModel, threadPrefix, readMergeIntervalMs);
         }
     }
 }

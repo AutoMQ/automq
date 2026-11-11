@@ -68,6 +68,7 @@ import software.amazon.awssdk.services.s3.model.S3Exception;
 @SuppressWarnings("this-escape")
 public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final AtomicInteger INDEX = new AtomicInteger(-1);
+    public static final int DEFAULT_READ_MERGE_INTERVAL_MS = 5;
     private static final int DEFAULT_CONCURRENCY_PER_CORE = 25;
     private static final int MIN_CONCURRENCY = 50;
     private static final int MAX_CONCURRENCY = 1000;
@@ -146,6 +147,24 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         boolean checkS3ApiMode,
         boolean manualMergeRead,
         String threadPrefix) {
+        this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, maxObjectStorageConcurrency,
+            currentIndex, readWriteIsolate, checkS3ApiMode, manualMergeRead, threadPrefix, DEFAULT_READ_MERGE_INTERVAL_MS);
+    }
+
+    protected AbstractObjectStorage(
+        BucketURI bucketURI,
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter,
+        NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        int maxObjectStorageConcurrency,
+        int currentIndex,
+        boolean readWriteIsolate,
+        boolean checkS3ApiMode,
+        boolean manualMergeRead,
+        String threadPrefix,
+        int readMergeIntervalMs) {
+        if (readMergeIntervalMs <= 0) {
+            throw new IllegalArgumentException("readMergeIntervalMs must be positive");
+        }
         this.threadPrefix = threadPrefix;
         this.logger = new LogContext(String.format("[ObjectStorage-%s-%s] ", threadPrefix, currentIndex)).logger(AbstractObjectStorage.class);
         this.bucketURI = bucketURI;
@@ -170,7 +189,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         readFastRetryManager = new FastRetryManager(prefix + "s3-read-");
 
         if (!manualMergeRead) {
-            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 5, 5, TimeUnit.MILLISECONDS);
+            scheduler.scheduleWithFixedDelay(this::tryMergeRead, readMergeIntervalMs, readMergeIntervalMs, TimeUnit.MILLISECONDS);
         }
         ObjectStorageMetrics.registerInflightReadQuota(currentIndex, inflightReadLimiter::availablePermits);
         ObjectStorageMetrics.registerInflightWriteQuota(currentIndex, inflightWriteLimiter::availablePermits);
@@ -192,8 +211,19 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         boolean readWriteIsolate,
         boolean checkS3ApiMode,
         String threadPrefix) {
+        this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, readWriteIsolate,
+            checkS3ApiMode, threadPrefix, DEFAULT_READ_MERGE_INTERVAL_MS);
+    }
+
+    protected AbstractObjectStorage(BucketURI bucketURI,
+        NetworkBandwidthLimiter networkInboundBandwidthLimiter,
+        NetworkBandwidthLimiter networkOutboundBandwidthLimiter,
+        boolean readWriteIsolate,
+        boolean checkS3ApiMode,
+        String threadPrefix,
+        int readMergeIntervalMs) {
         this(bucketURI, networkInboundBandwidthLimiter, networkOutboundBandwidthLimiter, getMaxObjectStorageConcurrency(),
-            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false, threadPrefix);
+            INDEX.incrementAndGet(), readWriteIsolate, checkS3ApiMode, false, threadPrefix, readMergeIntervalMs);
     }
 
     @Override
@@ -784,7 +814,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     /**
-     * Get adjacent read tasks and merge them into one read task which read range is not exceed {@link MergedReadTask#MAX_MERGE_READ_SIZE} (4MB).
+     * Merge compatible reads only when their combined range is at most 4 MiB. An individual read can be larger.
      */
     private void tryMergeRead0() {
         List<AbstractObjectStorage.MergedReadTask> mergedReadTasks = new ArrayList<>();
@@ -1114,7 +1144,55 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     break;
                 }
             }
+            if (readTasks.stream().anyMatch(task -> task.options.progressListener() != null)) {
+                options.progressListener(this::newProgressListener);
+            }
             return options;
+        }
+
+        private ReadProgressListener newProgressListener() {
+            List<ReadTask> tasks = new ArrayList<>();
+            List<ReadProgressListener> listeners = new ArrayList<>();
+            for (ReadTask task : readTasks) {
+                if (task.options.progressListener() != null) {
+                    tasks.add(task);
+                    listeners.add(task.options.progressListener().get());
+                }
+            }
+            return new ReadProgressListener() {
+                @Override
+                public void onProgress(ByteBuf prefix) {
+                    for (int i = 0; i < tasks.size(); i++) {
+                        ReadTask task = tasks.get(i);
+                        long offset = task.start - start;
+                        if (offset >= prefix.readableBytes()) {
+                            continue;
+                        }
+                        long requested = task.end == RANGE_READ_TO_END ? Long.MAX_VALUE : task.end - task.start;
+                        int length = (int) Math.min(prefix.readableBytes() - offset, requested);
+                        listeners.get(i).onProgress(prefix.slice(prefix.readerIndex() + (int) offset, length).asReadOnly());
+                    }
+                }
+
+                @Override
+                public void onFailure() {
+                    RuntimeException failure = null;
+                    for (ReadProgressListener listener : listeners) {
+                        try {
+                            listener.onFailure();
+                        } catch (RuntimeException ex) {
+                            if (failure == null) {
+                                failure = ex;
+                            } else if (failure != ex) {
+                                failure.addSuppressed(ex);
+                            }
+                        }
+                    }
+                    if (failure != null) {
+                        throw failure;
+                    }
+                }
+            };
         }
 
         boolean tryMerge(AbstractObjectStorage.ReadTask readTask) {
@@ -1186,20 +1264,34 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (ex != null) {
                 readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
             } else {
-                ArrayList<ByteBuf> sliceByteBufList = new ArrayList<>();
-                for (AbstractObjectStorage.ReadTask readTask : readTasks) {
-                    int sliceStart = (int) (readTask.start - mergeReadStart);
-                    if (readTask.end == RANGE_READ_TO_END) {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes() - sliceStart));
-                    } else {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
+                List<ByteBuf> slices = new ArrayList<>(readTasks.size());
+                try {
+                    for (AbstractObjectStorage.ReadTask readTask : readTasks) {
+                        ByteBuf slice = null;
+                        try {
+                            int sliceStart = Math.toIntExact(readTask.start - mergeReadStart);
+                            if (sliceStart < 0 || sliceStart >= rst.readableBytes()) {
+                                throw new IndexOutOfBoundsException("Range starts outside S3 response: " + readTask.start);
+                            }
+                            int available = rst.readableBytes() - sliceStart;
+                            // S3 truncates finite ranges at EOF, including cache read-ahead fills.
+                            int length = readTask.end == RANGE_READ_TO_END ? available
+                                : (int) Math.min(readTask.end - readTask.start, available);
+                            slice = rst.retainedSlice(rst.readerIndex() + sliceStart, length);
+                        } catch (Throwable error) {
+                            readTask.cf.completeExceptionally(error);
+                        }
+                        slices.add(slice);
+                    }
+                } finally {
+                    rst.release();
+                }
+                for (int i = 0; i < readTasks.size(); i++) {
+                    ByteBuf slice = slices.get(i);
+                    if (slice != null && !readTasks.get(i).cf.complete(slice)) {
+                        slice.release();
                     }
                 }
-                rst.release();
-                for (int i = 0; i < readTasks.size(); i++) {
-                    readTasks.get(i).cf.complete(sliceByteBufList.get(i));
-                }
-
             }
         }
     }
