@@ -162,7 +162,7 @@ public final class SampleRecords {
                     throw new IOException("Invalid timing row " + (i + 2), e);
                 }
             }
-            if (reader.readLine() != null) {
+            if (reader.read() != -1) {
                 throw new IOException("Timing CSV has more rows than the sample");
             }
         }
