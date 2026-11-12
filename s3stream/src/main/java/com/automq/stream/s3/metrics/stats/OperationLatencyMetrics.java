@@ -22,6 +22,7 @@ package com.automq.stream.s3.metrics.stats;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.metrics.operations.S3Stage;
 import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
@@ -73,6 +74,16 @@ public final class OperationLatencyMetrics {
         return OPERATION_LATENCY.histogram(metricsLevel, Attributes.builder()
             .putAll(operationAttributes(operation.getType().getName(), operation.getName(), status, sizeLabelName))
             .put("source", source.name())
+            .build());
+    }
+
+    /** Registers one GET histogram per source, purpose, status, and size band. */
+    public static DeltaHistogram readRequest(MetricsLevel metricsLevel, String status,
+        String sizeLabelName, S3RequestSource source, S3ReadPurpose readPurpose) {
+        return OPERATION_LATENCY.histogram(metricsLevel, Attributes.builder()
+            .putAll(operationAttributes(S3Operation.GET_OBJECT.getType().getName(), S3Operation.GET_OBJECT.getName(), status, sizeLabelName))
+            .put("source", source.name())
+            .put("read_purpose", readPurpose.name())
             .build());
     }
 
