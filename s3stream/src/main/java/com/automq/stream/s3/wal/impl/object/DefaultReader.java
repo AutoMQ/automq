@@ -69,6 +69,7 @@ public class DefaultReader {
     private final String nodePrefix;
     private final boolean shardedFirst;
     private final S3RequestSource source;
+    private final ObjectWALReadCache readCache;
     private final Time time;
 
     private final Queue<SingleReadTask> singleReadTasks = new ConcurrentLinkedQueue<>();
@@ -83,23 +84,20 @@ public class DefaultReader {
 
     private final EventLoop eventLoop;
 
-    public DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time) {
-        this(objectStorage, clusterId, nodeId, type, time, false, S3RequestSource.UNCLASSIFIED);
-    }
-
     /** Creates a dual-layout reader that prefers the configured write layout and falls back only on not-found. */
     public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time) {
-        this(objectStorage, config.clusterId(), config.nodeId(), config.type(), time, config.version() == 1, config.source());
+        this(objectStorage, config, time, null);
     }
 
-    private DefaultReader(ObjectStorage objectStorage, String clusterId, int nodeId, String type, Time time,
-        boolean shardedFirst, S3RequestSource source) {
+    /** Creates a reader using a provider-owned consumable object cache for finite record reads. */
+    public DefaultReader(ObjectStorage objectStorage, ObjectWALConfig config, Time time, ObjectWALReadCache readCache) {
         this.objectStorage = objectStorage;
-        this.nodePrefix = ObjectUtils.nodePrefix(clusterId, nodeId, type);
-        this.shardedFirst = shardedFirst;
-        this.source = source;
+        this.nodePrefix = ObjectUtils.nodePrefix(config.clusterId(), config.nodeId(), config.type());
+        this.shardedFirst = config.version() == 1;
+        this.source = config.source();
+        this.readCache = readCache;
         this.time = time;
-        this.eventLoop = EVENT_LOOPS[Math.abs(nodeId % EVENT_LOOPS.length)];
+        this.eventLoop = EVENT_LOOPS[Math.abs(config.nodeId() % EVENT_LOOPS.length)];
     }
 
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
@@ -137,11 +135,17 @@ public class DefaultReader {
                     if (ex != null) {
                         readTask.cf.completeExceptionally(ex);
                     } else {
-                        readTask.cf.complete(ObjectUtils.decodeRecordBuf(buf.slice()));
-                        buf.release();
+                        StreamRecordBatch record = ObjectUtils.decodeRecordBuf(buf.slice());
+                        if (!readTask.cf.complete(record)) {
+                            record.release();
+                        }
                     }
                 } catch (Throwable e) {
                     readTask.cf.completeExceptionally(e);
+                } finally {
+                    if (buf != null) {
+                        buf.release();
+                    }
                 }
             }, eventLoop);
         }
@@ -289,10 +293,12 @@ public class DefaultReader {
     }
 
     private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, S3ReadPurpose readPurpose) {
-        return objectStorage.rangeRead(
-            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS)
-                .source(source).readPurpose(readPurpose),
-            path, start, end);
+        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId())
+            .throttleStrategy(ThrottleStrategy.BYPASS).source(source).readPurpose(readPurpose);
+        if (readCache != null && end != ObjectStorage.RANGE_READ_TO_END) {
+            return readCache.read(objectStorage, options, path, start, end);
+        }
+        return objectStorage.rangeRead(options, path, start, end);
     }
 
     private CompletableFuture<Void> rebuildIndexMap0() {
