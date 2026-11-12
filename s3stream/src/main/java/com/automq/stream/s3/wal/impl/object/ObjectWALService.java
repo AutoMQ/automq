@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.cache.RouterWALReadCache;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -66,6 +67,12 @@ public class ObjectWALService implements WriteAheadLog {
      */
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config,
         boolean closeObjectStorageOnShutdown) {
+        this(time, objectStorage, config, closeObjectStorageOnShutdown, null);
+    }
+
+    /** Creates a WAL with an optional shared read cache whose lifecycle remains owned by its provider. */
+    public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config,
+        boolean closeObjectStorageOnShutdown, RouterWALReadCache readCache) {
         this.objectStorage = objectStorage;
         this.config = config;
         this.closeObjectStorageOnShutdown = closeObjectStorageOnShutdown;
@@ -74,7 +81,7 @@ public class ObjectWALService implements WriteAheadLog {
         } else {
             this.writer = new NoopWriter();
         }
-        this.reader = new DefaultReader(objectStorage, config, time);
+        this.reader = new DefaultReader(objectStorage, config, time, readCache);
     }
 
     @Override

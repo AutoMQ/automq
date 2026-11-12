@@ -24,8 +24,10 @@ import org.apache.kafka.controller.stream.RouterChannelEpoch;
 import org.apache.kafka.image.MetadataDelta;
 import org.apache.kafka.image.MetadataImage;
 
+import com.automq.stream.s3.cache.RouterWALReadCache;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.GlobalNetworkBandwidthLimiters;
+import com.automq.stream.s3.operator.AbstractObjectStorage;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
@@ -49,6 +51,9 @@ import io.netty.buffer.Unpooled;
 public class DefaultRouterChannelProvider implements RouterChannelProvider {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultRouterChannelProvider.class);
     public static final String WAL_TYPE = "rc";
+    private static final String READ_MERGE_INTERVAL_PROPERTY = "automq.router.wal.read.merge.interval.ms";
+    private static final String READ_CACHE_SIZE_PROPERTY = "automq.router.wal.read.cache.size.bytes";
+    private static final String READ_CACHE_PROGRESSIVE_PROPERTY = "automq.router.wal.read.cache.progressive.enabled";
     private final int nodeId;
     private final long nodeEpoch;
     private final List<BucketURI> buckets;
@@ -56,6 +61,8 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     private final Map<Short, ObjectStorage> objectStorages = new ConcurrentHashMap<>();
     private final Map<Integer, RouterChannel> routerChannels = new ConcurrentHashMap<>();
     private final String clusterId;
+    private final int readMergeIntervalMs;
+    private final RouterWALReadCache readCache;
 
     private final List<EpochListener> epochListeners = new CopyOnWriteArrayList<>();
     private volatile RouterChannelEpoch epoch = new RouterChannelEpoch(-3L, -2L, 0, 0);
@@ -69,6 +76,42 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         this.nodeEpoch = nodeEpoch;
         this.buckets = List.copyOf(buckets);
         this.clusterId = clusterId;
+        String interval = System.getProperty(READ_MERGE_INTERVAL_PROPERTY,
+            Integer.toString(AbstractObjectStorage.DEFAULT_READ_MERGE_INTERVAL_MS));
+        try {
+            if (!interval.matches("[0-9]+")) {
+                throw new NumberFormatException();
+            }
+            readMergeIntervalMs = Integer.parseInt(interval);
+            if (readMergeIntervalMs <= 0) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(READ_MERGE_INTERVAL_PROPERTY + " must be a positive integer: " + interval, e);
+        }
+        LOGGER.info("RouterWAL read merge interval: {} ms", readMergeIntervalMs);
+        String cacheSize = System.getProperty(READ_CACHE_SIZE_PROPERTY, "0");
+        long cacheBytes;
+        try {
+            if (!cacheSize.matches("[0-9]+")) {
+                throw new NumberFormatException();
+            }
+            cacheBytes = Long.parseLong(cacheSize);
+            if (cacheBytes != 0 && cacheBytes < RouterWALReadCache.BLOCK_SIZE) {
+                throw new NumberFormatException();
+            }
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(READ_CACHE_SIZE_PROPERTY + " must be 0 (disabled) or at least "
+                + RouterWALReadCache.BLOCK_SIZE + " bytes: " + cacheSize, e);
+        }
+        String progressiveValue = System.getProperty(READ_CACHE_PROGRESSIVE_PROPERTY, "false");
+        if (!progressiveValue.equals("true") && !progressiveValue.equals("false")) {
+            throw new IllegalArgumentException(READ_CACHE_PROGRESSIVE_PROPERTY + " must be true or false: " + progressiveValue);
+        }
+        boolean progressive = Boolean.parseBoolean(progressiveValue);
+        readCache = cacheBytes == 0 ? null : new RouterWALReadCache(cacheBytes, progressive);
+        LOGGER.info("RouterWAL read cache budget: {} bytes, block size: {} bytes, progressive: {}",
+            cacheBytes, RouterWALReadCache.BLOCK_SIZE, progressive);
     }
 
     @Override
@@ -112,7 +155,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
             }
             ObjectWALConfig config = builder.build();
             ObjectStorage storage = objectStorage(bucket);
-            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
+            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config, false, readCache);
             try {
                 wal.start();
                 return wal;
@@ -139,6 +182,9 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
             FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
         }
         routerChannels.forEach((nodeId, channel) -> FutureUtil.suppress(() -> channel.close().get(), LOGGER));
+        if (readCache != null) {
+            readCache.close();
+        }
         objectStorages.values().forEach(storage -> FutureUtil.suppress(storage::close, LOGGER));
     }
 
@@ -176,6 +222,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     synchronized ObjectStorage objectStorage(BucketURI bucket) {
         return objectStorages.computeIfAbsent(bucket.bucketId(), id -> ObjectStorageFactory.instance().builder(bucket)
             .readWriteIsolate(true)
+            .readMergeIntervalMs(readMergeIntervalMs)
             .inboundLimiter(GlobalNetworkBandwidthLimiters.instance().inbound())
             .outboundLimiter(GlobalNetworkBandwidthLimiters.instance().outbound())
             .build());

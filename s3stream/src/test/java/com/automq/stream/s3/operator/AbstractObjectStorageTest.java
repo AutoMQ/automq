@@ -45,6 +45,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -166,6 +167,36 @@ class AbstractObjectStorageTest {
         ), 2000, data.slice(2000, 4096 - 2000), null);
         assertEquals(data.slice(3000, 4096 - 3000), readToEndCf.get());
         assertEquals(data.slice(2000, 4096 - 2000), readRangeCf.get());
+    }
+
+    /** Short S3 responses finish valid ranges and release failed or cancelled siblings without leaking. */
+    @Test
+    void testHandleReadCompletedAtEof() throws Exception {
+        ByteBuf data = Unpooled.buffer(10, 10).writeZero(2).writeLong(42);
+        data.readerIndex(2);
+        CompletableFuture<ByteBuf> truncated = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> beyondEof = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> cancelled = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> complete = new CompletableFuture<>();
+        cancelled.cancel(false);
+        AbstractObjectStorage.MergedReadTask.handleReadCompleted(List.of(
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "key", 100, 116, truncated),
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "key", 108, 116, beyondEof),
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "key", 100, 104, cancelled),
+            new AbstractObjectStorage.ReadTask(new ReadOptions(), "key", 100, 108, complete)
+        ), 100, data, null);
+        ByteBuf left = truncated.get();
+        ByteBuf right = complete.get();
+        try {
+            assertEquals(8, left.readableBytes());
+            assertEquals(42, left.getLong(0));
+            assertEquals(left, right);
+            assertTrue(assertThrows(ExecutionException.class, beyondEof::get).getCause() instanceof IndexOutOfBoundsException);
+        } finally {
+            left.release();
+            right.release();
+        }
+        assertEquals(0, data.refCnt());
     }
 
     @Test

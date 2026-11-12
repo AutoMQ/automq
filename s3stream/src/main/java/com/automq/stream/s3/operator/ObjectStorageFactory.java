@@ -51,6 +51,7 @@ public class ObjectStorageFactory {
                     .readWriteIsolate(builder.readWriteIsolate)
                     .checkS3ApiModel(builder.checkS3ApiModel)
                     .threadPrefix(builder.threadPrefix)
+                    .readMergeIntervalMs(builder.readMergeIntervalMs)
                     .build())
             .registerProtocolHandler("mem", builder -> new MemoryObjectStorage(builder.bucket.bucketId()))
             .registerProtocolHandler("file", builder ->
@@ -97,6 +98,7 @@ public class ObjectStorageFactory {
         private boolean readWriteIsolate;
         private boolean checkS3ApiModel = false;
         private String threadPrefix = "";
+        private int readMergeIntervalMs = AbstractObjectStorage.DEFAULT_READ_MERGE_INTERVAL_MS;
         private final Map<String, Object> extensions = new HashMap<>();
 
         Builder bucket(BucketURI bucketURI) {
@@ -175,6 +177,12 @@ public class ObjectStorageFactory {
 
         public String threadPrefix() {
             return threadPrefix;
+        }
+
+        /** Sets the fixed delay between read merge passes, in milliseconds, for S3 storage. */
+        public Builder readMergeIntervalMs(int readMergeIntervalMs) {
+            this.readMergeIntervalMs = readMergeIntervalMs;
+            return this;
         }
 
         public Builder extension(String key, Object value) {
