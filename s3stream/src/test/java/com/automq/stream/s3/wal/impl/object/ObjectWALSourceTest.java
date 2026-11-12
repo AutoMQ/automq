@@ -21,6 +21,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
@@ -80,7 +81,10 @@ class ObjectWALSourceTest {
             verify(storage, never()).writer(any(), anyString());
             DefaultReader reader = new DefaultReader(storage,
                 config(source, 1 - version).withOpenMode(OpenMode.READ_ONLY).build(), Time.SYSTEM);
-            StreamRecordBatch read = reader.get(result.recordOffset(), readPurpose).get(5, TimeUnit.SECONDS);
+            CompletableFuture<StreamRecordBatch> pending = S3ReadPurposeContext.withPurpose(readPurpose,
+                () -> reader.get(result.recordOffset()));
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
+            StreamRecordBatch read = pending.get(5, TimeUnit.SECONDS);
             try {
                 assertEquals(1, read.getCount());
             } finally {

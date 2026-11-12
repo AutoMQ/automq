@@ -40,6 +40,7 @@ import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.s3.ConfirmWAL;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.utils.threads.EventLoop;
 
 import org.junit.jupiter.api.Tag;
@@ -66,7 +67,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
@@ -235,7 +235,7 @@ public class RouterInV2Test {
         })) {
             ByteBuf block = ZoneRouterPackWriter.encodeDataBlock(List.of(produceRequest()));
             ByteBuf secondBlock = ZoneRouterPackWriter.encodeDataBlock(List.of(produceRequest()));
-            when(fixture.channel.get(any(), eq(S3ReadPurpose.ROUTER_PRODUCE))).thenReturn(CompletableFuture.completedFuture(block),
+            when(fixture.channel.get(any())).thenReturn(CompletableFuture.completedFuture(block),
                 CompletableFuture.completedFuture(secondBlock));
             assertTrue(fixture.router.handleZoneRouterRequest(remoteRequest(2)).isDone());
             assertEquals(1, fixture.manager.epochInflight(1).get());
@@ -304,8 +304,12 @@ public class RouterInV2Test {
     @Test
     public void testRemoteReadFailureReleasesEpoch() {
         try (Fixture fixture = new Fixture(args -> respond(args, Errors.NONE))) {
-            when(fixture.channel.get(any(), eq(S3ReadPurpose.ROUTER_PRODUCE))).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("missing")));
+            when(fixture.channel.get(any())).thenAnswer(invocation -> {
+                assertEquals(S3ReadPurpose.ROUTER_PRODUCE, S3ReadPurposeContext.current());
+                return CompletableFuture.failedFuture(new IllegalStateException("missing"));
+            });
             assertTrue(fixture.router.handleZoneRouterRequest(remoteRequest()).isCompletedExceptionally());
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
             assertEquals(0, fixture.manager.epochInflight(1).get());
         }
     }
@@ -333,13 +337,21 @@ public class RouterInV2Test {
             ZeroZoneThreadLocalContext.writeContext().detach().trackAppend(append);
             respond(args, Errors.NONE);
         })) {
-            when(fixture.channel.get(any(), eq(S3ReadPurpose.ROUTER_PRODUCE))).thenReturn(read).thenThrow(new IllegalStateException("read setup failed"));
+            AtomicInteger reads = new AtomicInteger();
+            when(fixture.channel.get(any())).thenAnswer(invocation -> {
+                assertEquals(S3ReadPurpose.ROUTER_PRODUCE, S3ReadPurposeContext.current());
+                if (reads.getAndIncrement() == 0) {
+                    return read;
+                }
+                throw new IllegalStateException("read setup failed");
+            });
             ByteBuf encoded = new RouterRecordV2(1, List.of(offset().byteBuf(), offset().byteBuf())).encode();
             byte[] bytes = new byte[encoded.readableBytes()];
             encoded.readBytes(bytes);
             encoded.release();
             var response = fixture.router.handleZoneRouterRequest(
                 new AutomqZoneRouterRequestData().setRouteEpoch(1).setMetadata(bytes));
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
             assertFalse(response.isDone());
             assertEquals(1, fixture.manager.epochInflight(1).get());
             read.complete(ZoneRouterPackWriter.encodeDataBlock(List.of(produceRequest())));

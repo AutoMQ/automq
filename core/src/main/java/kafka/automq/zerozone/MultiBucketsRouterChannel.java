@@ -22,7 +22,6 @@ package kafka.automq.zerozone;
 import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.StreamRecordBatchCodec;
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -295,11 +294,6 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<ByteBuf> get(ByteBuf offset) {
-        return get(offset, S3ReadPurpose.OTHER);
-    }
-
-    @Override
-    public CompletableFuture<ByteBuf> get(ByteBuf offset, S3ReadPurpose readPurpose) {
         if (closed) {
             return CompletableFuture.failedFuture(new IllegalStateException("Router channel is closed"));
         }
@@ -315,7 +309,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         if (channel == null) {
             return CompletableFuture.failedFuture(new IllegalArgumentException("Unknown router channel bucket ID"));
         }
-        return channel.get(DefaultRecordOffset.of(ChannelOffset.of(offset).walRecordOffset()), readPurpose)
+        return channel.get(DefaultRecordOffset.of(ChannelOffset.of(offset).walRecordOffset()))
             .thenApply(record -> {
                 ByteBuf payload = record.getPayload().retainedSlice();
                 record.release();
@@ -489,8 +483,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             }
         }
 
-        CompletableFuture<StreamRecordBatch> get(RecordOffset offset, S3ReadPurpose readPurpose) {
-            return wal.get(offset, readPurpose);
+        CompletableFuture<StreamRecordBatch> get(RecordOffset offset) {
+            return wal.get(offset);
         }
 
         CompletableFuture<Void> trim(RecordOffset offset) {

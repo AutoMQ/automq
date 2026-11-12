@@ -21,6 +21,7 @@ package kafka.automq.zerozone;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
@@ -58,7 +59,6 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -391,10 +391,13 @@ public class MultiBucketsRouterChannelTest {
         assertEquals(2, writer.id);
         writer.succeed(0, 1);
         StreamRecordBatch record = StreamRecordBatch.of(1, 0, 0, 1, Unpooled.wrappedBuffer(new byte[] {42}), DefaultByteBufSupplier.INSTANCE);
-        when(fixture.wals.get((short) 0).mock.get(any(RecordOffset.class), eq(readPurpose)))
-            .thenReturn(CompletableFuture.completedFuture(record));
+        when(fixture.wals.get((short) 0).mock.get(any(RecordOffset.class))).thenAnswer(invocation -> {
+            assertEquals(readPurpose, S3ReadPurposeContext.current());
+            return CompletableFuture.completedFuture(record);
+        });
         ByteBuf offset = ChannelOffset.of((short) 0, (short) 1, 42, 1, DefaultRecordOffset.of(1, 1, 1).buffer()).byteBuf();
-        ByteBuf payload = fixture.router.get(offset, readPurpose).join();
+        ByteBuf payload = S3ReadPurposeContext.withPurpose(readPurpose, () -> fixture.router.get(offset)).join();
+        assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
         assertEquals(42, payload.readByte());
         payload.release();
         ByteBuf unknown = ChannelOffset.of((short) 9, (short) 1, 42, 1, DefaultRecordOffset.of(1, 1, 1).buffer()).byteBuf();
@@ -413,7 +416,7 @@ public class MultiBucketsRouterChannelTest {
             .get(5, TimeUnit.SECONDS);
         assertEquals(1, payload.readByte());
         payload.release();
-        verify(wal.mock, never()).get(any(RecordOffset.class), any(S3ReadPurpose.class));
+        verify(wal.mock, never()).get(any(RecordOffset.class));
         fixture.close();
     }
 

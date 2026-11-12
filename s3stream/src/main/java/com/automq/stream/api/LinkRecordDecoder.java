@@ -20,7 +20,6 @@
 package com.automq.stream.api;
 
 import com.automq.stream.s3.ByteBufSupplier;
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import java.util.concurrent.CompletableFuture;
@@ -42,11 +41,6 @@ public interface LinkRecordDecoder {
      * future rather than thrown synchronously.
      */
     CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc);
-
-    /** Decodes with metric-only read attribution, retaining the ownership contract of {@link #decode(StreamRecordBatch, ByteBufSupplier)}. */
-    default CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc, S3ReadPurpose readPurpose) {
-        return decode(src, alloc);
-    }
 
 
     class Noop implements LinkRecordDecoder {

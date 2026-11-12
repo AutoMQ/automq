@@ -24,7 +24,6 @@ import org.apache.kafka.common.record.MutableRecordBatch;
 import org.apache.kafka.common.record.RecordBatch;
 
 import com.automq.stream.s3.ByteBufSupplier;
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.slf4j.Logger;
@@ -49,16 +48,11 @@ public class DefaultLinkRecordDecoder implements com.automq.stream.api.LinkRecor
 
     @Override
     public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc) {
-        return decode(src, alloc, S3ReadPurpose.OTHER);
-    }
-
-    @Override
-    public CompletableFuture<StreamRecordBatch> decode(StreamRecordBatch src, ByteBufSupplier alloc, S3ReadPurpose readPurpose) {
         try {
             LinkRecord linkRecord = LinkRecord.decode(src.getPayload());
             ChannelOffset channelOffset = linkRecord.channelOffset();
             RouterChannel routerChannel = channelProvider.readOnlyChannel(channelOffset.channelOwnerNodeId());
-            return routerChannel.get(channelOffset.byteBuf(), readPurpose).thenApply(buf -> {
+            return routerChannel.get(channelOffset.byteBuf()).thenApply(buf -> {
                 try (ZoneRouterProduceRequest req = ZoneRouterPackReader.decodeDataBlock(buf).get(0)) {
                     MemoryRecords records = (MemoryRecords) (req.data().topicData().iterator().next()
                         .partitionData().iterator().next()

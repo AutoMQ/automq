@@ -21,6 +21,7 @@ package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -102,13 +103,9 @@ public class DefaultReader {
     }
 
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
-        return get(recordOffset, S3ReadPurpose.OTHER);
-    }
-
-    /** Reads one record while retaining its initiating purpose through queuing and layout fallback. */
-    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset, S3ReadPurpose readPurpose) {
         DefaultRecordOffset offset = recordOffset instanceof DefaultRecordOffset ? (DefaultRecordOffset) recordOffset : DefaultRecordOffset.of(recordOffset.buffer());
-        SingleReadTask readTask = new SingleReadTask(offset.epoch(), offset.offset(), offset.size(), readPurpose);
+        // Capture before enqueueing; the event loop must not read another caller's thread-local context.
+        SingleReadTask readTask = new SingleReadTask(offset.epoch(), offset.offset(), offset.size(), S3ReadPurposeContext.current());
         singleReadTasks.add(readTask);
         eventLoop.execute(this::doRunSingleGet);
         return readTask.cf;

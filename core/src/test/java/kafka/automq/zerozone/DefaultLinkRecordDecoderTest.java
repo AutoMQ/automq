@@ -25,6 +25,7 @@ import org.apache.kafka.common.record.SimpleRecord;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.junit.jupiter.api.Tag;
@@ -42,7 +43,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -57,11 +57,13 @@ public class DefaultLinkRecordDecoderTest {
         RouterChannel channel = mock(RouterChannel.class);
         when(provider.readOnlyChannel(1)).thenReturn(channel);
         RuntimeException failure = new IllegalStateException("missing RouterChannel object");
-        if (synchronousFailure) {
-            when(channel.get(any(), eq(readPurpose))).thenThrow(failure);
-        } else {
-            when(channel.get(any(), eq(readPurpose))).thenReturn(CompletableFuture.failedFuture(failure));
-        }
+        when(channel.get(any())).thenAnswer(invocation -> {
+            assertEquals(readPurpose, S3ReadPurposeContext.current());
+            if (synchronousFailure) {
+                throw failure;
+            }
+            return CompletableFuture.failedFuture(failure);
+        });
         ChannelOffset offset = ChannelOffset.of((short) 0, (short) 0, 1, 1, Unpooled.EMPTY_BUFFER);
         ByteBuf link = LinkRecord.encode(offset, MemoryRecords.withRecords(Compression.NONE, new SimpleRecord(new byte[] {1})));
         StreamRecordBatch src = StreamRecordBatch.of(42, 0, 0, -1, link, DefaultByteBufSupplier.INSTANCE);
@@ -69,13 +71,10 @@ public class DefaultLinkRecordDecoderTest {
         ByteBuf encoded = src.encoded();
         try {
             DefaultLinkRecordDecoder decoder = new DefaultLinkRecordDecoder(provider);
-            CompletionException exception = assertThrows(CompletionException.class, () -> {
-                if (readPurpose == S3ReadPurpose.OTHER) {
-                    decoder.decode(src, DefaultByteBufSupplier.INSTANCE).join();
-                } else {
-                    decoder.decode(src, DefaultByteBufSupplier.INSTANCE, readPurpose).join();
-                }
-            });
+            CompletableFuture<StreamRecordBatch> read = S3ReadPurposeContext.withPurpose(readPurpose,
+                () -> decoder.decode(src, DefaultByteBufSupplier.INSTANCE));
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
+            CompletionException exception = assertThrows(CompletionException.class, read::join);
             assertSame(failure, exception.getCause());
             assertEquals(1, encoded.refCnt());
         } finally {

@@ -19,8 +19,6 @@
 
 package kafka.automq.zerozone;
 
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
-
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -30,11 +28,6 @@ public interface RouterChannel {
     CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data);
 
     CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
-
-    /** Reads a payload with metric-only purpose attribution; implementations may ignore the attribution. */
-    default CompletableFuture<ByteBuf> get(ByteBuf channelOffset, S3ReadPurpose readPurpose) {
-        return get(channelOffset);
-    }
 
     void nextEpoch(long epoch);
 

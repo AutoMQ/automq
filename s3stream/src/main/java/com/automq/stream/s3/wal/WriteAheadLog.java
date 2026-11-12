@@ -19,7 +19,6 @@
 
 package com.automq.stream.s3.wal;
 
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.common.WALMetadata;
@@ -60,11 +59,6 @@ public interface WriteAheadLog {
     CompletableFuture<AppendResult> append(TraceContext context, StreamRecordBatch streamRecordBatch) throws OverCapacityException;
 
     CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset);
-
-    /** Reads one record with metric-only purpose attribution; non-S3 implementations may ignore it. */
-    default CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset, S3ReadPurpose readPurpose) {
-        return get(recordOffset);
-    }
 
     CompletableFuture<List<StreamRecordBatch>> get(RecordOffset startOffset, RecordOffset endOffset);
 
