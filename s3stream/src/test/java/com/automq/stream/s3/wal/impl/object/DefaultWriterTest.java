@@ -25,7 +25,10 @@ import com.automq.stream.s3.metrics.MetricsConfig;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.wal.OpenMode;
+import com.automq.stream.s3.wal.ReservationService;
+import com.automq.stream.s3.wal.State;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
+import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
 import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +44,10 @@ import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -51,15 +57,18 @@ import io.opentelemetry.api.metrics.Meter;
 import io.opentelemetry.api.metrics.ObservableLongMeasurement;
 
 import static com.automq.stream.s3.wal.common.RecordHeader.RECORD_HEADER_SIZE;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class DefaultWriterTest {
@@ -88,6 +97,173 @@ public class DefaultWriterTest {
         objectStorage.triggerAll();
         writer.close();
         objectStorage.close();
+    }
+
+    /** A completed later bulk bypasses a slow earlier PUT only when callback ordering is disabled. */
+    @Test
+    public void testUnorderedBulkCallbacks() throws Exception {
+        checkBulkCallbackOrdering(false);
+    }
+
+    /** Default ordered callbacks and the durability watermark wait for an earlier PUT. */
+    @Test
+    public void testOrderedBulkCallbacks() throws Exception {
+        checkBulkCallbackOrdering(true);
+    }
+
+    /** Losing the reservation fails an unordered append without advancing the confirmed prefix. */
+    @Test
+    public void testUnorderedCallbackChecksReservation() throws Exception {
+        writer.close();
+        ReservationService reservation = mock(ReservationService.class);
+        when(reservation.verify(100, 1000, false)).thenReturn(
+            CompletableFuture.completedFuture(true)).thenReturn(CompletableFuture.completedFuture(false));
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withNodeId(100).withEpoch(1000).withManualMode(true).withOrder(false)
+            .withReservationService(reservation).build());
+        writer.start();
+        CompletableFuture<?> append = writer.append(StreamRecordBatch.of(1, 0, 0, 1,
+            generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+        CompletableFuture<Void> flushed = writer.flush();
+        assertThrows(ExecutionException.class, () -> append.get(5, TimeUnit.SECONDS));
+        assertThrows(ExecutionException.class, () -> flushed.get(5, TimeUnit.SECONDS));
+        assertEquals(0, ((DefaultRecordOffset) writer.confirmOffset()).offset());
+        assertTrue(writer.fenced);
+    }
+
+    /** A delayed lease check does not block another in-flight bulk's callback; close drains both. */
+    @Test
+    public void testUnorderedDelayedReservationAndClose() throws Exception {
+        writer.close();
+        LinkedBlockingQueue<CompletableFuture<Boolean>> checks = new LinkedBlockingQueue<>();
+        AtomicInteger count = new AtomicInteger();
+        ReservationService reservation = mock(ReservationService.class);
+        when(reservation.verify(100, 1000, false)).thenAnswer(invocation -> {
+            if (count.getAndIncrement() == 0) {
+                return CompletableFuture.completedFuture(true);
+            }
+            CompletableFuture<Boolean> check = new CompletableFuture<>();
+            checks.add(check);
+            return check;
+        });
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withNodeId(100).withEpoch(1000).withManualMode(true).withOrder(false)
+            .withMaxInflightUploadCount(1).withReservationService(reservation).build());
+        writer.start();
+        CompletableFuture<?> first = writer.append(StreamRecordBatch.of(1, 0, 0, 1,
+            generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+        writer.flush();
+        CompletableFuture<Boolean> firstCheck = checks.poll(5, TimeUnit.SECONDS);
+        assertNotNull(firstCheck);
+        try {
+            CompletableFuture<?> second = writer.append(StreamRecordBatch.of(2, 0, 0, 1,
+                generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+            CompletableFuture<Void> flushed = writer.flush();
+            CompletableFuture<Boolean> secondCheck = checks.poll(5, TimeUnit.SECONDS);
+            assertNotNull(secondCheck);
+            secondCheck.complete(true);
+            second.get(5, TimeUnit.SECONDS);
+            assertFalse(first.isDone());
+            assertFalse(flushed.isDone());
+            assertEquals(0, ((DefaultRecordOffset) writer.confirmOffset()).offset());
+            CompletableFuture<Void> closing = CompletableFuture.runAsync(writer::close);
+            Field state = DefaultWriter.class.getDeclaredField("state");
+            state.setAccessible(true);
+            await().atMost(5, TimeUnit.SECONDS).until(() -> state.get(writer) == State.CLOSING);
+            assertFalse(closing.isDone());
+            firstCheck.complete(true);
+            first.get(5, TimeUnit.SECONDS);
+            flushed.get(5, TimeUnit.SECONDS);
+            closing.get(5, TimeUnit.SECONDS);
+            assertEquals(2L * ObjectUtils.DATA_FILE_ALIGN_SIZE,
+                ((DefaultRecordOffset) writer.confirmOffset()).offset());
+        } finally {
+            firstCheck.complete(true);
+            checks.forEach(check -> check.complete(true));
+        }
+    }
+
+    /** A synchronous storage failure fails the unordered append and permits writer shutdown. */
+    @Test
+    public void testUnorderedSynchronousUploadFailure() throws Exception {
+        writer.close();
+        objectStorage = new MockObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> write(WriteOptions options, String path, ByteBuf data) {
+                data.release();
+                throw new IllegalStateException("storage write failed");
+            }
+        };
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withNodeId(100).withEpoch(1000).withManualMode(true).withOrder(false).build());
+        writer.start();
+        CompletableFuture<?> append = writer.append(StreamRecordBatch.of(1, 0, 0, 1,
+            generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+        CompletableFuture<Void> flushed = writer.flush();
+        assertThrows(ExecutionException.class, () -> append.get(5, TimeUnit.SECONDS));
+        assertThrows(ExecutionException.class, () -> flushed.get(5, TimeUnit.SECONDS));
+        assertTrue(writer.fenced);
+        writer.close();
+    }
+
+    private void checkBulkCallbackOrdering(boolean order) throws Exception {
+        writer.close();
+        LinkedBlockingQueue<Runnable> writes = new LinkedBlockingQueue<>();
+        objectStorage = new MockObjectStorage() {
+            @Override
+            public CompletableFuture<WriteResult> write(WriteOptions options, String path, ByteBuf data) {
+                CompletableFuture<WriteResult> future = new CompletableFuture<>();
+                writes.add(() -> {
+                    if (future.isDone()) {
+                        return;
+                    }
+                    super.write(options, path, data).whenComplete((result, error) -> {
+                        if (error == null) {
+                            future.complete(result);
+                        } else {
+                            future.completeExceptionally(error);
+                        }
+                    });
+                });
+                return future;
+            }
+        };
+        writer = new DefaultWriter(Time.SYSTEM, objectStorage, ObjectWALConfig.builder()
+            .withNodeId(100).withEpoch(1000).withManualMode(true).withOrder(order).build());
+        writer.start();
+        CompletableFuture<?> first = writer.append(StreamRecordBatch.of(1, 0, 0, 1,
+            generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+        CompletableFuture<Void> firstFlush = writer.flush();
+        Runnable firstWrite = writes.poll(5, TimeUnit.SECONDS);
+        assertNotNull(firstWrite);
+        CompletableFuture<?> second = writer.append(StreamRecordBatch.of(2, 0, 0, 1,
+            generateByteBuf(16), DefaultByteBufSupplier.INSTANCE));
+        CompletableFuture<Void> allFlushed = writer.flush();
+        Runnable secondWrite = writes.poll(5, TimeUnit.SECONDS);
+        assertNotNull(secondWrite);
+        try {
+            secondWrite.run();
+            if (!order) {
+                second.get(5, TimeUnit.SECONDS);
+            }
+            assertFalse(first.isDone());
+            assertFalse(firstFlush.isDone());
+            assertFalse(allFlushed.isDone());
+            assertEquals(0, ((DefaultRecordOffset) writer.confirmOffset()).offset());
+            firstWrite.run();
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+            allFlushed.get(5, TimeUnit.SECONDS);
+            assertEquals(2L * ObjectUtils.DATA_FILE_ALIGN_SIZE,
+                ((DefaultRecordOffset) writer.confirmOffset()).offset());
+        } finally {
+            if (!first.isDone()) {
+                firstWrite.run();
+            }
+            if (!second.isDone()) {
+                secondWrite.run();
+            }
+        }
     }
 
     private ByteBuf generateByteBuf(int size) {

@@ -74,6 +74,7 @@ public class DefaultRouterChannelProviderTest {
         assertEquals("test-secret", IdURI.parse(writer.uri()).extensionString("secretKey"));
         assertFalse(writer.toString().contains("test-secret"));
         assertEquals(1, writer.version());
+        assertFalse(writer.order());
 
         ObjectWALConfig reader = configs.get(1);
         assertEquals(OpenMode.READ_ONLY, reader.openMode());
