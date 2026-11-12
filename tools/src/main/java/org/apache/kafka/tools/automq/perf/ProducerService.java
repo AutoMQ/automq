@@ -39,6 +39,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +53,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -78,9 +82,11 @@ public class ProducerService implements AutoCloseable {
      */
     private final NavigableMap<Long, Double> rateMap = new TreeMap<>();
     private double defaultRate = MIN_RATE;
-    private UniformRateLimiter rateLimiter = new UniformRateLimiter(defaultRate);
+    private volatile UniformRateLimiter rateLimiter = new UniformRateLimiter(defaultRate);
 
     private volatile boolean closed = false;
+    private final AtomicReference<Throwable> replayFailure = new AtomicReference<>();
+    private final AtomicLong replayStretchedNanos = new AtomicLong();
 
     /**
      * Create producers for the given topics.
@@ -104,15 +110,19 @@ public class ProducerService implements AutoCloseable {
     }
 
     private Producer createProducer(Topic topic, ProducersConfig config, ProducerCallback callback) {
+        KafkaProducer<Object, byte[]> kafkaProducer = new KafkaProducer<>(producerProperties(config));
+        return new Producer(kafkaProducer, topic, callback, config.sendTimeHeader, config.sampleReplay);
+    }
+
+    static Properties producerProperties(ProducersConfig config) {
         Properties properties = new Properties();
         properties.putAll(config.properties);
         properties.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.bootstrapServer);
-        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        properties.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG,
+            config.sampleReplay ? ByteArraySerializer.class.getName() : StringSerializer.class.getName());
         properties.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class.getName());
-        properties.put(ProducerConfig.PARTITIONER_IGNORE_KEYS_CONFIG, true);
-
-        KafkaProducer<String, byte[]> kafkaProducer = new KafkaProducer<>(properties);
-        return new Producer(kafkaProducer, topic, callback);
+        properties.putIfAbsent(ProducerConfig.PARTITIONER_IGNORE_KEYS_CONFIG, !config.sampleReplay);
+        return properties;
     }
 
     /**
@@ -144,6 +154,75 @@ public class ProducerService implements AutoCloseable {
             int from = i;
             int to = Math.min(i + batchSize, producers.size());
             executor.submit(() -> start(producers.subList(from, to), payloads));
+        }
+    }
+
+    /**
+     * Replay validated sample assignments with one dispatch thread per producer.
+     * A zero cycle uses the existing aggregate rate limiter and warmup ramp. A positive
+     * cycle replays supplied per-producer offsets independently, without a rate ramp.
+     * Each topic receives the complete corpus. The caller retains ownership of the shared arrays.
+     */
+    public void startSample(List<List<SampleRecords.Entry>> assignments, double rate, long cycleNanos, double speed) {
+        if (cycleNanos == 0) {
+            adjustRate(rate);
+            adjustRateExecutor.scheduleWithFixedDelay(this::adjustRate, 0, ADJUST_RATE_INTERVAL_SECONDS, TimeUnit.SECONDS);
+        }
+        long start = System.nanoTime();
+        for (int i = 0; i < producers.size(); i++) {
+            Producer producer = producers.get(i);
+            List<SampleRecords.Entry> entries = assignments.get(i % assignments.size());
+            executor.submit(() -> {
+                try {
+                    replay(producer, entries, cycleNanos, speed, start);
+                } catch (Throwable e) {
+                    replayFailure.compareAndSet(null, e);
+                }
+            });
+        }
+    }
+
+    private void replay(Producer producer, List<SampleRecords.Entry> entries, long cycleNanos, double speed, long start) {
+        ReplaySchedule schedule = cycleNanos == 0 ? null : new ReplaySchedule(entries, cycleNanos, speed, start);
+        int index = 0;
+        long stretchedNanos = 0;
+        try {
+            while (!closed && !Thread.currentThread().isInterrupted()) {
+                long deadline = schedule == null ? rateLimiter.acquire() : schedule.deadline();
+                if (!awaitReplay(deadline)) {
+                    return;
+                }
+                SampleRecords.Entry entry = schedule == null ? entries.get(index) : schedule.current();
+                long dispatchedAt = System.nanoTime();
+                producer.sendAsync(entry.key, entry.value, null);
+                if (schedule != null) {
+                    stretchedNanos += schedule.advance(dispatchedAt);
+                }
+                if (++index == entries.size()) {
+                    index = 0;
+                }
+            }
+        } finally {
+            replayStretchedNanos.addAndGet(stretchedNanos);
+        }
+    }
+
+    private boolean awaitReplay(long deadline) {
+        while (!closed && !Thread.currentThread().isInterrupted()) {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) {
+                return true;
+            }
+            LockSupport.parkNanos(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(100)));
+        }
+        return false;
+    }
+
+    /** Propagate background replay failures to the controlling command rather than reporting a silent idle test. */
+    public void checkReplayFailure() {
+        Throwable failure = replayFailure.get();
+        if (failure != null) {
+            throw new IllegalStateException("Sample replay failed", failure);
         }
     }
 
@@ -234,6 +313,9 @@ public class ProducerService implements AutoCloseable {
             executor.shutdownNow();
         }
         producers.forEach(Producer::close);
+        if (replayStretchedNanos.get() > 0) {
+            LOGGER.info("Timed replay schedule stretch summed across producers: {} ms", replayStretchedNanos.get() / 1_000_000.0);
+        }
     }
 
     @FunctionalInterface
@@ -252,15 +334,24 @@ public class ProducerService implements AutoCloseable {
         final String bootstrapServer;
         final int producersPerTopic;
         final Properties properties;
+        final boolean sampleReplay;
+        final boolean sendTimeHeader;
 
         public ProducersConfig(String bootstrapServer, int producersPerTopic, Properties properties) {
+            this(bootstrapServer, producersPerTopic, properties, false, true);
+        }
+
+        /** Configure sampled binary keys and optional benchmark headers without changing synthetic-mode defaults. */
+        public ProducersConfig(String bootstrapServer, int producersPerTopic, Properties properties, boolean sampleReplay, boolean sendTimeHeader) {
             this.bootstrapServer = bootstrapServer;
             this.producersPerTopic = producersPerTopic;
             this.properties = properties;
+            this.sampleReplay = sampleReplay;
+            this.sendTimeHeader = sendTimeHeader;
         }
     }
 
-    private static class Producer implements AutoCloseable {
+    static class Producer implements AutoCloseable {
 
         private static final String[] PRESET_KEYS = new String[16384];
 
@@ -274,12 +365,16 @@ public class ProducerService implements AutoCloseable {
         }
 
         private final Random random = ThreadLocalRandom.current();
-        private final KafkaProducer<String, byte[]> producer;
+        private final org.apache.kafka.clients.producer.Producer<Object, byte[]> producer;
+        private final boolean sendTimeHeader;
+        private final boolean binaryKeys;
         private final Topic topic;
         private final ProducerCallback callback;
 
-        public Producer(KafkaProducer<String, byte[]> producer, Topic topic, ProducerCallback callback) {
+        Producer(org.apache.kafka.clients.producer.Producer<Object, byte[]> producer, Topic topic, ProducerCallback callback, boolean sendTimeHeader, boolean binaryKeys) {
             this.producer = producer;
+            this.sendTimeHeader = sendTimeHeader;
+            this.binaryKeys = binaryKeys;
             this.topic = topic;
             this.callback = callback;
         }
@@ -301,7 +396,7 @@ public class ProducerService implements AutoCloseable {
          */
         public List<CompletableFuture<Void>> probe() {
             return IntStream.range(0, topic.partitions)
-                .mapToObj(i -> sendAsync("probe", new byte[] {1}, i))
+                .mapToObj(i -> sendAsync(binaryKeys ? "probe".getBytes(StandardCharsets.UTF_8) : "probe", new byte[] {1}, i))
                 .collect(Collectors.toList());
         }
 
@@ -313,13 +408,13 @@ public class ProducerService implements AutoCloseable {
          * @param partition the partition to send the message to, optional
          * @return a future that completes when the message is sent
          */
-        private CompletableFuture<Void> sendAsync(String key, byte[] payload, Integer partition) {
+        CompletableFuture<Void> sendAsync(Object key, byte[] payload, Integer partition) {
             long sendTimeNanos = StatsCollector.currentNanos();
-            List<Header> headers = List.of(
+            List<Header> headers = sendTimeHeader ? List.of(
                 new RecordHeader(HEADER_KEY_SEND_TIME_NANOS, Longs.toByteArray(sendTimeNanos))
-            );
-            ProducerRecord<String, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
-            int size = payload.length;
+            ) : Collections.emptyList();
+            ProducerRecord<Object, byte[]> record = new ProducerRecord<>(topic.name, partition, key, payload, headers);
+            int size = payload == null ? 0 : payload.length;
             CompletableFuture<Void> future = new CompletableFuture<>();
             try {
                 producer.send(record, (metadata, exception) -> {

@@ -87,4 +87,4 @@ jobs:
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2.9.0
       - name: Unit Test
-        run: ./gradlew --build-cache metadata:S3UnitTest core:S3UnitTest s3stream:test
+        run: ./gradlew --build-cache metadata:S3UnitTest core:S3UnitTest s3stream:test tools:S3UnitTest
