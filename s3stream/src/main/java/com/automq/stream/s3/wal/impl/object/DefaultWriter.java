@@ -53,8 +53,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -114,7 +116,7 @@ public class DefaultWriter implements Writer {
     private volatile State state = State.NOT_STARTED;
 
     private Bulk activeBulk = null;
-    private Bulk lastInActiveBulk = null;
+    private final Set<Bulk> uncompletedBulks = ConcurrentHashMap.newKeySet();
     private long lastBulkForceUploadNanos;
     private final long batchNanos;
     private final boolean manualMode;
@@ -211,14 +213,12 @@ public class DefaultWriter implements Writer {
         if (monitorTask != null) {
             monitorTask.cancel(false);
         }
-        uploadActiveBulk();
-        if (lastInActiveBulk != null) {
-            try {
-                lastInActiveBulk.completeCf.get();
-            } catch (Throwable ex) {
-                LOGGER.error("Failed to flush records when close.", ex);
-            }
+        try {
+            flush().get();
+        } catch (Throwable ex) {
+            LOGGER.error("Failed to flush records when close.", ex);
         }
+        FutureUtil.suppress(() -> callbackCf.join(), LOGGER);
         FutureUtil.suppress(() -> callbackExecutor.shutdownGracefully().join(), LOGGER);
         state = State.CLOSED;
         if (unflushedBytesGauge != null) {
@@ -328,9 +328,9 @@ public class DefaultWriter implements Writer {
             if (activeBulk == null) {
                 return;
             }
+            uncompletedBulks.add(activeBulk);
             waitingUploadBulks.add(activeBulk);
             nextOffset.set(ObjectUtils.ceilAlignOffset(nextOffset.get() + activeBulk.size));
-            lastInActiveBulk = activeBulk;
             activeBulk = null;
         } finally {
             lock.writeLock().unlock();
@@ -343,7 +343,13 @@ public class DefaultWriter implements Writer {
         uploadActiveBulk();
         lock.writeLock().lock();
         try {
-            return lastInActiveBulk == null ? CompletableFuture.completedFuture(null) : lastInActiveBulk.completeCf;
+            return CompletableFuture.allOf(uncompletedBulks.stream().map(bulk -> bulk.completeCf).toArray(CompletableFuture[]::new))
+                .thenComposeAsync(ignored -> callbackCf, callbackExecutor)
+                .thenRun(() -> {
+                    if (fenced) {
+                        throw new CompletionException(new WALFencedException());
+                    }
+                });
         } finally {
             lock.writeLock().unlock();
         }
@@ -414,22 +420,49 @@ public class DefaultWriter implements Writer {
             String path = config.version() == 1
                 ? ObjectUtils.genShardedObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset)
                 : ObjectUtils.genObjectPathV1(nodePrefix, config.epoch(), firstOffset, endOffset);
-            FutureUtil.propagate(objectStorage.write(writeOptions, path, objectBuffer), bulk.uploadCf);
+            CompletableFuture<ObjectStorage.WriteResult> upload = objectStorage.write(writeOptions, path, objectBuffer);
             long finalLastRecordOffset = lastRecordOffset;
-            bulk.uploadCf.whenCompleteAsync((rst, ex) -> {
+            upload.whenCompleteAsync((rst, ex) -> {
                 if (ex != null) {
                     fenced = true;
                     LOGGER.error("S3WAL upload {} fail", path, ex);
+                    bulk.uploadCf.completeExceptionally(ex);
                 } else {
                     StorageOperationStats.getInstance().appendWALWriteStats.record(time.nanoseconds() - startTime);
                     lastRecordOffset2object.put(finalLastRecordOffset, new WALObject(rst.bucket(), path, config.epoch(), firstOffset, endOffset, objectLength));
                     objectDataBytes.addAndGet(objectLength);
+                    bulk.uploadCf.complete(rst);
                 }
-                callback();
+                callback(bulk);
             }, callbackExecutor);
         } catch (Throwable ex) {
-            bulk.uploadCf.completeExceptionally(ex);
+            callbackExecutor.execute(() -> {
+                fenced = true;
+                bulk.uploadCf.completeExceptionally(ex);
+                callback(bulk);
+            });
         }
+    }
+
+    private CompletableFuture<Boolean> verifyReservation() {
+        return CompletableFuture.completedFuture(null)
+            .thenCompose(nil -> reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER))
+            .handle((valid, error) -> {
+                if (error != null || !Boolean.TRUE.equals(valid)) {
+                    LOGGER.warn("S3WAL reservation check failed. Make the WAL fenced", error);
+                    fenced = true;
+                }
+                return !fenced;
+            });
+    }
+
+    private void callback(Bulk bulk) {
+        if (!config.order()) {
+            verifyReservation().thenAcceptAsync(valid -> {
+                bulk.complete(fenced ? new WALFencedException() : null);
+            }, callbackExecutor);
+        }
+        callback();
     }
 
     private void callback() {
@@ -448,26 +481,24 @@ public class DefaultWriter implements Writer {
             }
             // The inflight uploading bulks count was decreased, then trigger the upload of Bulk in waitingUploadBulks
             tryUploadBulkInWaiting();
-            return reservationService.verify(config.nodeId(), config.epoch(), config.openMode() == OpenMode.FAILOVER)
-                .whenComplete((rst, ex) -> {
-                    if (ex != null) {
-                        LOGGER.error("Unexpected S3WAL lease check fail. Make the WAL fenced", ex);
-                        fenced = true;
-                    } else if (!rst) {
-                        LOGGER.warn("The S3WAL is fenced by another nodes. Fail the following append request");
-                        fenced = true;
-                    }
-                }).exceptionally(ex -> false)
+            // Unordered records complete independently; the contiguous watermark still waits for verification.
+            return (config.order() ? verifyReservation() : CompletableFuture.allOf(
+                completedBulks.stream().map(bulk -> bulk.completeCf).toArray(CompletableFuture[]::new))
+                .handle((ignored, error) -> !fenced))
                 .thenAcceptAsync(rst -> {
                     if (fenced) {
                         Throwable ex = new WALFencedException();
                         for (Bulk bulk : completedBulks) {
-                            bulk.complete(ex);
+                            if (config.order()) {
+                                bulk.complete(ex);
+                            }
                         }
                     } else {
                         for (Bulk bulk : completedBulks) {
                             flushedOffset.set(ObjectUtils.ceilAlignOffset(bulk.endOffset()));
-                            bulk.complete(null);
+                            if (config.order()) {
+                                bulk.complete(null);
+                            }
                         }
                     }
                 }, callbackExecutor);
@@ -665,11 +696,13 @@ public class DefaultWriter implements Writer {
                     );
                 }
             }
+            records.clear();
             if (ex == null) {
                 completeCf.complete(null);
             } else {
                 completeCf.completeExceptionally(ex);
             }
+            uncompletedBulks.remove(this);
         }
     }
 

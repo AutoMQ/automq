@@ -157,6 +157,35 @@ public class MultiBucketsRouterChannelTest {
         fixture.close();
     }
 
+    /** Out-of-order callbacks on one WAL preserve hint order and allow conservative epoch trimming. */
+    @Test
+    public void testUnorderedCallbacksWithinOneBucket() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?maxBytesInBatch=1");
+        try {
+            fixture.router.nextEpoch(5);
+            CompletableFuture<RouterChannel.AppendResult> first = fixture.append((short) 1);
+            Wal wal = fixture.nextFlush();
+            CompletableFuture<RouterChannel.AppendResult> second = fixture.append((short) 1);
+            fixture.nextFlush();
+            CompletableFuture<RouterChannel.AppendResult> independent = fixture.append((short) 2);
+            fixture.nextFlush();
+            wal.succeed(1, 20);
+            assertFalse(second.isDone());
+            wal.succeed(2, 30);
+            independent.get(5, TimeUnit.SECONDS);
+            assertFalse(first.isDone());
+            fixture.router.trim(5);
+            verify(wal.mock, never()).trim(any());
+            wal.succeed(0, 10);
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+            fixture.router.trim(5);
+            verify(wal.mock).trim(DefaultRecordOffset.of(1, 10, 1));
+        } finally {
+            fixture.close();
+        }
+    }
+
     /** An idle router trim persists its marker without requiring another append. */
     @Test
     public void testIdleTrimWithRealManualWAL() throws Exception {

@@ -29,6 +29,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Verifies migration defaults and rejects ambiguous object-key layouts before opening a WAL. */
 @Tag("S3Unit")
@@ -78,5 +79,6 @@ public class ObjectWALConfigTest {
 
     private static void assertDefaults(ObjectWALConfig config) {
         assertEquals(0, config.version());
+        assertTrue(config.order());
     }
 }
