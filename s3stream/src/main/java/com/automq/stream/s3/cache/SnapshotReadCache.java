@@ -9,6 +9,7 @@ import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
 import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.wrapper.DeltaHistogram;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -284,7 +285,7 @@ public class SnapshotReadCache {
                     if (walRecord.getCount() >= 0) {
                         cfList.add(CompletableFuture.completedFuture(walRecord));
                     } else {
-                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC)
+                        cfList.add(linkRecordDecoder.decode(walRecord, DECODE_LINK_INSTANT_ALLOC, S3ReadPurpose.SNAPSHOT_REPLAY)
                             .whenComplete((rst, ex) -> walRecord.release()));
                     }
                 }

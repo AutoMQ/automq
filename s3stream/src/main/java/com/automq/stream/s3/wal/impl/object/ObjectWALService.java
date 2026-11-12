@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.wal.impl.object;
 
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -120,6 +121,11 @@ public class ObjectWALService implements WriteAheadLog {
     @Override
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
         return reader.get(recordOffset);
+    }
+
+    @Override
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset, S3ReadPurpose readPurpose) {
+        return reader.get(recordOffset, readPurpose);
     }
 
     @Override

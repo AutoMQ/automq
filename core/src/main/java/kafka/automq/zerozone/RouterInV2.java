@@ -37,6 +37,7 @@ import org.apache.kafka.common.requests.ProduceResponse;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 import org.apache.kafka.common.utils.Time;
 
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.threads.EventLoop;
@@ -141,7 +142,7 @@ public class RouterInV2 implements NonBlockingLocalRouterHandler {
             subResponseList.add(partitionProduceRequest.responseCf);
             try {
                 OrderQueue orderQueue = orderQueue(partitionProduceRequest.channelOffset.orderHint());
-                partitionProduceRequest.unpackLinkCf = routerChannel.get(partitionProduceRequest.channelOffset.byteBuf())
+                partitionProduceRequest.unpackLinkCf = routerChannel.get(partitionProduceRequest.channelOffset.byteBuf(), S3ReadPurpose.ROUTER_PRODUCE)
                     .whenComplete((rst, ex) -> {
                         if (ex == null) {
                             size.addAndGet(rst.readableBytes());

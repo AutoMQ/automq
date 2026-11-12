@@ -20,6 +20,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -101,8 +102,13 @@ public class DefaultReader {
     }
 
     public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset) {
+        return get(recordOffset, S3ReadPurpose.OTHER);
+    }
+
+    /** Reads one record while retaining its initiating purpose through queuing and layout fallback. */
+    public CompletableFuture<StreamRecordBatch> get(RecordOffset recordOffset, S3ReadPurpose readPurpose) {
         DefaultRecordOffset offset = recordOffset instanceof DefaultRecordOffset ? (DefaultRecordOffset) recordOffset : DefaultRecordOffset.of(recordOffset.buffer());
-        SingleReadTask readTask = new SingleReadTask(offset.epoch(), offset.offset(), offset.size());
+        SingleReadTask readTask = new SingleReadTask(offset.epoch(), offset.offset(), offset.size(), readPurpose);
         singleReadTasks.add(readTask);
         eventLoop.execute(this::doRunSingleGet);
         return readTask.cf;
@@ -128,7 +134,7 @@ public class DefaultReader {
             long relativeStartOffset = readTask.offset - objectStartObject + WALObjectHeader.WAL_HEADER_SIZE_V1;
             rangeRead(readTask.epoch, objectStartObject,
                 relativeStartOffset,
-                relativeStartOffset + readTask.size
+                relativeStartOffset + readTask.size, readTask.readPurpose
             ).whenCompleteAsync((buf, ex) -> {
                 try {
                     if (ex != null) {
@@ -268,22 +274,27 @@ public class DefaultReader {
     }
 
     private CompletableFuture<ByteBuf> rangeRead(long epoch, long objectStartOffset, long start, long end) {
+        return rangeRead(epoch, objectStartOffset, start, end, S3ReadPurpose.OTHER);
+    }
+
+    private CompletableFuture<ByteBuf> rangeRead(long epoch, long objectStartOffset, long start, long end, S3ReadPurpose readPurpose) {
         String shardedPath = ObjectUtils.genShardedObjectPathV1(nodePrefix, epoch, objectStartOffset,
             objectStartOffset + DATA_FILE_ALIGN_SIZE);
         String legacyPath = genObjectPathV1(nodePrefix, epoch, objectStartOffset);
         String preferredPath = shardedFirst ? shardedPath : legacyPath;
         String fallbackPath = shardedFirst ? legacyPath : shardedPath;
-        return rangeRead(preferredPath, start, end).exceptionallyCompose(ex -> {
+        return rangeRead(preferredPath, start, end, readPurpose).exceptionallyCompose(ex -> {
             if (FutureUtil.cause(ex) instanceof ObjectNotExistException) {
-                return rangeRead(fallbackPath, start, end);
+                return rangeRead(fallbackPath, start, end, readPurpose);
             }
             return CompletableFuture.failedFuture(ex);
         });
     }
 
-    private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end) {
+    private CompletableFuture<ByteBuf> rangeRead(String path, long start, long end, S3ReadPurpose readPurpose) {
         return objectStorage.rangeRead(
-            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS).source(source),
+            new ObjectStorage.ReadOptions().bucket(objectStorage.bucketId()).throttleStrategy(ThrottleStrategy.BYPASS)
+                .source(source).readPurpose(readPurpose),
             path, start, end);
     }
 
@@ -308,12 +319,14 @@ public class DefaultReader {
         final long epoch;
         final long offset;
         final int size;
+        final S3ReadPurpose readPurpose;
         final CompletableFuture<StreamRecordBatch> cf;
 
-        public SingleReadTask(long epoch, long offset, int size) {
+        public SingleReadTask(long epoch, long offset, int size, S3ReadPurpose readPurpose) {
             this.epoch = epoch;
             this.offset = offset;
             this.size = size;
+            this.readPurpose = readPurpose;
             this.cf = new CompletableFuture<>();
         }
     }

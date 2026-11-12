@@ -21,6 +21,7 @@ package kafka.automq.zerozone;
 
 import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -164,10 +165,19 @@ public class ObjectRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<ByteBuf> get(ByteBuf channelOffset) {
-        return startCf.thenCompose(nil -> get0(channelOffset));
+        return get(channelOffset, S3ReadPurpose.OTHER);
+    }
+
+    @Override
+    public CompletableFuture<ByteBuf> get(ByteBuf channelOffset, S3ReadPurpose readPurpose) {
+        return startCf.thenCompose(nil -> get0(channelOffset, readPurpose));
     }
 
     CompletableFuture<ByteBuf> get0(ByteBuf channelOffset) {
+        return get0(channelOffset, S3ReadPurpose.OTHER);
+    }
+
+    private CompletableFuture<ByteBuf> get0(ByteBuf channelOffset, S3ReadPurpose readPurpose) {
         CachedData cachedData = cache.getIfPresent(channelOffset);
         if (cachedData != null) {
             ByteBuf buf = cachedData.take();
@@ -177,7 +187,7 @@ public class ObjectRouterChannel implements RouterChannel {
                 return CompletableFuture.completedFuture(buf);
             }
         }
-        return wal.get(DefaultRecordOffset.of(ChannelOffset.of(channelOffset).walRecordOffset())).thenApply(streamRecordBatch -> {
+        return wal.get(DefaultRecordOffset.of(ChannelOffset.of(channelOffset).walRecordOffset()), readPurpose).thenApply(streamRecordBatch -> {
             ByteBuf payload = streamRecordBatch.getPayload().retainedSlice();
             streamRecordBatch.release();
             return payload;

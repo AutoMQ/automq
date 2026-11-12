@@ -20,6 +20,7 @@
 package com.automq.stream.s3.wal.impl.object;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
@@ -61,10 +62,11 @@ import static org.mockito.Mockito.verify;
 @Tag("S3Unit")
 @Timeout(10)
 class ObjectWALSourceTest {
-    /** Both WALs use direct PUT and retain ownership on remote reads and both migration fallback layouts. */
+    /** Both WALs retain ownership, and RouterWAL retains read purpose across asynchronous reads and layout fallback. */
     @ParameterizedTest
-    @CsvSource({"ROUTER_WAL,0", "ROUTER_WAL,1", "DELTA_WAL,0", "DELTA_WAL,1"})
-    void appendAndFallbackRead(S3RequestSource source, int version) throws Exception {
+    @CsvSource({"ROUTER_WAL,0,ROUTER_PRODUCE", "ROUTER_WAL,1,ROUTER_PRODUCE",
+        "ROUTER_WAL,0,SNAPSHOT_REPLAY", "ROUTER_WAL,1,SNAPSHOT_REPLAY", "DELTA_WAL,0,OTHER", "DELTA_WAL,1,OTHER"})
+    void appendAndFallbackRead(S3RequestSource source, int version, S3ReadPurpose readPurpose) throws Exception {
         MemoryObjectStorage storage = spy(new MemoryObjectStorage());
         ObjectWALConfig config = config(source, version).build();
         ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
@@ -78,13 +80,14 @@ class ObjectWALSourceTest {
             verify(storage, never()).writer(any(), anyString());
             DefaultReader reader = new DefaultReader(storage,
                 config(source, 1 - version).withOpenMode(OpenMode.READ_ONLY).build(), Time.SYSTEM);
-            StreamRecordBatch read = reader.get(result.recordOffset()).get(5, TimeUnit.SECONDS);
+            StreamRecordBatch read = reader.get(result.recordOffset(), readPurpose).get(5, TimeUnit.SECONDS);
             try {
                 assertEquals(1, read.getCount());
             } finally {
                 read.release();
             }
-            verify(storage, times(2)).rangeRead(argThat(o -> o.source() == source), anyString(), anyLong(), anyLong());
+            verify(storage, times(2)).rangeRead(argThat(o -> o.source() == source && o.readPurpose() == readPurpose),
+                anyString(), anyLong(), anyLong());
         } finally {
             wal.shutdownGracefully();
             storage.close();
