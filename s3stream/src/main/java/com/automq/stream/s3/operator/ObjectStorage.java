@@ -21,6 +21,7 @@ package com.automq.stream.s3.operator;
 
 import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.ThrottleStrategy;
 
@@ -340,8 +341,20 @@ public interface ObjectStorage {
 
         private ThrottleStrategy throttleStrategy = ThrottleStrategy.BYPASS;
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
+        private S3ReadPurpose readPurpose = S3ReadPurpose.OTHER;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+
+        /** Sets metric-only read purpose; it does not affect eligibility for merging. */
+        public ReadOptions readPurpose(S3ReadPurpose readPurpose) {
+            this.readPurpose = Objects.requireNonNull(readPurpose, "readPurpose");
+            return this;
+        }
+
+        /** Returns the initiating purpose carried through asynchronous reads and retries. */
+        public S3ReadPurpose readPurpose() {
+            return readPurpose;
+        }
 
         /** Sets the bounded metric source; it does not change storage behavior or object metadata. */
         public ReadOptions source(S3RequestSource source) {
@@ -387,6 +400,7 @@ public interface ObjectStorage {
             ReadOptions copy = new ReadOptions();
             copy.throttleStrategy = throttleStrategy;
             copy.source = source;
+            copy.readPurpose = readPurpose;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
             return copy;

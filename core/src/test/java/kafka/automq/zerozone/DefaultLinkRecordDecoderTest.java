@@ -24,12 +24,14 @@ import org.apache.kafka.common.record.MemoryRecords;
 import org.apache.kafka.common.record.SimpleRecord;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -47,27 +49,32 @@ import static org.mockito.Mockito.when;
 /** Verifies caller ownership and error preservation when a link cannot be decoded. */
 @Tag("S3Unit")
 public class DefaultLinkRecordDecoderTest {
-    /** Synchronous and asynchronous channel failures preserve the input for the caller to release exactly once. */
+    /** Replay and default recovery reads retain their purpose and caller ownership on synchronous or asynchronous failure. */
     @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    public void testChannelFailurePreservesSourceOwnership(boolean synchronousFailure) {
+    @CsvSource({"false,OTHER", "true,OTHER", "false,SNAPSHOT_REPLAY", "true,SNAPSHOT_REPLAY"})
+    public void testChannelFailurePreservesSourceOwnership(boolean synchronousFailure, S3ReadPurpose readPurpose) {
         RouterChannelProvider provider = mock(RouterChannelProvider.class);
         RouterChannel channel = mock(RouterChannel.class);
         when(provider.readOnlyChannel(1)).thenReturn(channel);
         RuntimeException failure = new IllegalStateException("missing RouterChannel object");
-        if (synchronousFailure) {
-            when(channel.get(any())).thenThrow(failure);
-        } else {
-            when(channel.get(any())).thenReturn(CompletableFuture.failedFuture(failure));
-        }
+        when(channel.get(any())).thenAnswer(invocation -> {
+            assertEquals(readPurpose, S3ReadPurposeContext.current());
+            if (synchronousFailure) {
+                throw failure;
+            }
+            return CompletableFuture.failedFuture(failure);
+        });
         ChannelOffset offset = ChannelOffset.of((short) 0, (short) 0, 1, 1, Unpooled.EMPTY_BUFFER);
         ByteBuf link = LinkRecord.encode(offset, MemoryRecords.withRecords(Compression.NONE, new SimpleRecord(new byte[] {1})));
         StreamRecordBatch src = StreamRecordBatch.of(42, 0, 0, -1, link, DefaultByteBufSupplier.INSTANCE);
         offset.byteBuf().release();
         ByteBuf encoded = src.encoded();
         try {
-            CompletionException exception = assertThrows(CompletionException.class, () ->
-                new DefaultLinkRecordDecoder(provider).decode(src, DefaultByteBufSupplier.INSTANCE).join());
+            DefaultLinkRecordDecoder decoder = new DefaultLinkRecordDecoder(provider);
+            CompletableFuture<StreamRecordBatch> read = S3ReadPurposeContext.withPurpose(readPurpose,
+                () -> decoder.decode(src, DefaultByteBufSupplier.INSTANCE));
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
+            CompletionException exception = assertThrows(CompletionException.class, read::join);
             assertSame(failure, exception.getCause());
             assertEquals(1, encoded.refCnt());
         } finally {

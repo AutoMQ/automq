@@ -21,6 +21,8 @@ package kafka.automq.zerozone;
 
 import com.automq.stream.RecyclingByteBufSeqAlloc;
 import com.automq.stream.s3.ByteBufAlloc;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
 import com.automq.stream.s3.wal.RecordOffset;
@@ -164,7 +166,9 @@ public class ObjectRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<ByteBuf> get(ByteBuf channelOffset) {
-        return startCf.thenCompose(nil -> get0(channelOffset));
+        // Startup may complete on another thread after the caller's context scope has ended.
+        S3ReadPurpose readPurpose = S3ReadPurposeContext.current();
+        return startCf.thenCompose(nil -> S3ReadPurposeContext.withPurpose(readPurpose, () -> get0(channelOffset)));
     }
 
     CompletableFuture<ByteBuf> get0(ByteBuf channelOffset) {
