@@ -271,6 +271,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         readLock.lock();
         try {
             if (result != null) {
+                // Unordered WAL callbacks may leave this below the epoch's maximum offset.
+                // This only retains extra objects until a later trim; all epoch appends finish before trimming.
                 epochState.lastCallbackRecordOffset = result.recordOffset();
             }
             epochState.inflightAppend.decrementAndGet();

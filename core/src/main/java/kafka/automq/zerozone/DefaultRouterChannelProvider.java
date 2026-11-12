@@ -105,7 +105,8 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
                 .withOpenMode(bucketReadOnly ? OpenMode.READ_ONLY : OpenMode.READ_WRITE)
                 .withType(WAL_TYPE)
                 .withSource(S3RequestSource.ROUTER_WAL)
-                .withManualMode(true);
+                .withManualMode(true)
+                .withOrder(false);
             if (!bucketReadOnly) {
                 builder.withEpoch(nodeEpoch);
             }
