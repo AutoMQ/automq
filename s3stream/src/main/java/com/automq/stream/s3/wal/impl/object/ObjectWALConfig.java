@@ -44,6 +44,7 @@ public class ObjectWALConfig {
     private final String type;
     private final S3RequestSource source;
     private final boolean manualMode;
+    private final boolean order;
     private final int version;
 
     public static Builder builder() {
@@ -69,6 +70,7 @@ public class ObjectWALConfig {
         this.type = type;
         this.source = S3RequestSource.UNCLASSIFIED;
         this.manualMode = false;
+        this.order = true;
         this.version = 0;
     }
 
@@ -88,6 +90,7 @@ public class ObjectWALConfig {
         this.type = builder.type;
         this.source = builder.source;
         this.manualMode = builder.manualMode;
+        this.order = builder.order;
         this.version = builder.version;
     }
 
@@ -99,6 +102,11 @@ public class ObjectWALConfig {
     /** Returns whether callers control batching through explicit flushes instead of size or timer triggers. */
     public boolean manualMode() {
         return manualMode;
+    }
+
+    /** Returns whether append callbacks follow bulk submission order. */
+    public boolean order() {
+        return order;
     }
 
     public String uri() {
@@ -172,6 +180,7 @@ public class ObjectWALConfig {
             ", openMode=" + openMode +
             ", bucketId=" + bucketId +
             ", type='" + type + '\'' +
+            ", order=" + order +
             ", version=" + version +
             '}';
     }
@@ -192,9 +201,21 @@ public class ObjectWALConfig {
         private String type = "";
         private S3RequestSource source = S3RequestSource.UNCLASSIFIED;
         private boolean manualMode;
+        private boolean order = true;
         private int version;
 
         private Builder() {
+        }
+
+        /**
+         * Controls callback ordering across bulks (enabled by default). With ordering disabled, callers
+         * must enforce any required record ordering and read acknowledged records by their returned offsets.
+         * Recovery and confirmOffset expose only the contiguous prefix, so recovery after a crash can omit
+         * acknowledged records beyond an unfinished earlier bulk. Flush still waits for all preceding bulks.
+         */
+        public Builder withOrder(boolean order) {
+            this.order = order;
+            return this;
         }
 
         public Builder withURI(IdURI uri) {
