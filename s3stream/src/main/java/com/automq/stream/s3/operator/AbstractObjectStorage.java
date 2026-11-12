@@ -22,6 +22,7 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
@@ -864,7 +865,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 path, start, end, dataSize, timerUtil.elapsedAs(TimeUnit.MILLISECONDS));
         }
         ObjectStorageMetrics.recordDownloadSize(dataSize);
-        ObjectStorageMetrics.recordGetObject(options.source(), dataSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+        ObjectStorageMetrics.recordGetObject(options.source(), options.readPurpose(), dataSize, true, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
     }
 
     private CompletableFuture<ByteBuf> doFastRetryRead(ReadOptions options, String path, long start, long end,
@@ -885,7 +886,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                     throw e;
                 }
             } else if (!finalCf.isDone()) {
-                ObjectStorageMetrics.recordGetObject(options.source(), end - start, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+                ObjectStorageMetrics.recordGetObject(options.source(), options.readPurpose(), end - start, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             }
         });
     }
@@ -925,7 +926,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 logger.warn("GetObject for object {} [{}, {}) fail, retry in {}ms", path, start, end, delay, cause);
                 scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), delay, TimeUnit.MILLISECONDS);
             }
-            ObjectStorageMetrics.recordGetObject(options.source(), size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
+            ObjectStorageMetrics.recordGetObject(options.source(), options.readPurpose(), size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
         });
         return readCf;
@@ -1111,7 +1112,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             for (ReadTask task : readTasks) {
                 if (task.options.source() != options.source()) {
                     options.source(S3RequestSource.MIXED);
-                    break;
+                }
+                if (task.options.readPurpose() != options.readPurpose()) {
+                    options.readPurpose(S3ReadPurpose.MIXED);
                 }
             }
             return options;

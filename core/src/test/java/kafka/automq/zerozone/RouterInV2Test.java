@@ -39,6 +39,8 @@ import com.automq.stream.Context;
 import com.automq.stream.api.AppendResult;
 import com.automq.stream.api.KVClient;
 import com.automq.stream.s3.ConfirmWAL;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.utils.threads.EventLoop;
 
 import org.junit.jupiter.api.Tag;
@@ -302,8 +304,12 @@ public class RouterInV2Test {
     @Test
     public void testRemoteReadFailureReleasesEpoch() {
         try (Fixture fixture = new Fixture(args -> respond(args, Errors.NONE))) {
-            when(fixture.channel.get(any())).thenReturn(CompletableFuture.failedFuture(new IllegalStateException("missing")));
+            when(fixture.channel.get(any())).thenAnswer(invocation -> {
+                assertEquals(S3ReadPurpose.ROUTER_PRODUCE, S3ReadPurposeContext.current());
+                return CompletableFuture.failedFuture(new IllegalStateException("missing"));
+            });
             assertTrue(fixture.router.handleZoneRouterRequest(remoteRequest()).isCompletedExceptionally());
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
             assertEquals(0, fixture.manager.epochInflight(1).get());
         }
     }
@@ -331,13 +337,21 @@ public class RouterInV2Test {
             ZeroZoneThreadLocalContext.writeContext().detach().trackAppend(append);
             respond(args, Errors.NONE);
         })) {
-            when(fixture.channel.get(any())).thenReturn(read).thenThrow(new IllegalStateException("read setup failed"));
+            AtomicInteger reads = new AtomicInteger();
+            when(fixture.channel.get(any())).thenAnswer(invocation -> {
+                assertEquals(S3ReadPurpose.ROUTER_PRODUCE, S3ReadPurposeContext.current());
+                if (reads.getAndIncrement() == 0) {
+                    return read;
+                }
+                throw new IllegalStateException("read setup failed");
+            });
             ByteBuf encoded = new RouterRecordV2(1, List.of(offset().byteBuf(), offset().byteBuf())).encode();
             byte[] bytes = new byte[encoded.readableBytes()];
             encoded.readBytes(bytes);
             encoded.release();
             var response = fixture.router.handleZoneRouterRequest(
                 new AutomqZoneRouterRequestData().setRouteEpoch(1).setMetadata(bytes));
+            assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
             assertFalse(response.isDone());
             assertEquals(1, fixture.manager.epochInflight(1).get());
             read.complete(ZoneRouterPackWriter.encodeDataBlock(List.of(produceRequest())));
