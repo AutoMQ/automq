@@ -597,7 +597,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
                                       Configuration configuration) {
-        initializeFipsRuntime();
         if (fipsModeEnabled() && !"netty".equals(configuration.sdkImplementation())) {
             throw new IllegalArgumentException("FIPS mode requires the Netty JDK S3 HTTP implementation");
         }
@@ -650,18 +649,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
-    }
-
-    private static void initializeFipsRuntime() {
-        if (!fipsModeEnabled()) {
-            return;
-        }
-        try {
-            Class<?> runtime = Class.forName("org.apache.kafka.common.security.fips.FipsRuntime");
-            runtime.getMethod("initialize").invoke(null);
-        } catch (ReflectiveOperationException e) {
-            throw new IllegalStateException("Unable to initialize AutoMQ FIPS runtime", e);
-        }
     }
 
     protected ClientOverrideConfiguration clientOverrideConfiguration(Configuration configuration) {
@@ -929,7 +916,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
          */
         public static Configuration fromBucketURI(BucketURI uri) {
-            String implementation = uri.extensionString("sdkImpl", "crt-http");
+            String implementation = uri.extensionString("sdkImpl", fipsModeEnabled() ? "netty" : "crt-http");
             if (!"netty".equals(implementation) && !"crt".equals(implementation) && !"crt-http".equals(implementation)) {
                 throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
             }
