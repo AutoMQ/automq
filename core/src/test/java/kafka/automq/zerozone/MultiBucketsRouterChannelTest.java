@@ -20,6 +20,8 @@
 package kafka.automq.zerozone;
 
 import com.automq.stream.s3.DefaultByteBufSupplier;
+import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
+import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
@@ -32,6 +34,8 @@ import com.automq.stream.utils.Time;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -377,18 +381,23 @@ public class MultiBucketsRouterChannelTest {
         fixture.close();
     }
 
-    /** Read-only buckets remain readable but never receive writes. */
-    @Test
-    public void testReadRoutingAndReadOnlyBuckets() throws Exception {
+    /** Read-only buckets retain each caller's read purpose but never receive writes. */
+    @ParameterizedTest
+    @EnumSource(value = S3ReadPurpose.class, names = {"OTHER", "ROUTER_PRODUCE", "SNAPSHOT_REPLAY"})
+    public void testReadRoutingAndReadOnlyBuckets(S3ReadPurpose readPurpose) throws Exception {
         Fixture fixture = new Fixture("0@s3://a?mode=r&maxBytesInBatch=1", "1@s3://b?mode=r", "2@s3://c");
         fixture.append((short) 1);
         Wal writer = fixture.nextFlush();
         assertEquals(2, writer.id);
         writer.succeed(0, 1);
         StreamRecordBatch record = StreamRecordBatch.of(1, 0, 0, 1, Unpooled.wrappedBuffer(new byte[] {42}), DefaultByteBufSupplier.INSTANCE);
-        when(fixture.wals.get((short) 0).mock.get(any(RecordOffset.class))).thenReturn(CompletableFuture.completedFuture(record));
+        when(fixture.wals.get((short) 0).mock.get(any(RecordOffset.class))).thenAnswer(invocation -> {
+            assertEquals(readPurpose, S3ReadPurposeContext.current());
+            return CompletableFuture.completedFuture(record);
+        });
         ByteBuf offset = ChannelOffset.of((short) 0, (short) 1, 42, 1, DefaultRecordOffset.of(1, 1, 1).buffer()).byteBuf();
-        ByteBuf payload = fixture.router.get(offset).join();
+        ByteBuf payload = S3ReadPurposeContext.withPurpose(readPurpose, () -> fixture.router.get(offset)).join();
+        assertEquals(S3ReadPurpose.OTHER, S3ReadPurposeContext.current());
         assertEquals(42, payload.readByte());
         payload.release();
         ByteBuf unknown = ChannelOffset.of((short) 9, (short) 1, 42, 1, DefaultRecordOffset.of(1, 1, 1).buffer()).byteBuf();
