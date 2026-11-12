@@ -113,6 +113,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private static final int DELETE_OBJECT_ERROR_LOG_SAMPLE_LIMIT = 10;
     public static final String PATH_STYLE_KEY = "pathStyle";
     public static final String CHECKSUM_ALGORITHM_KEY = "checksumAlgorithm";
+    private static final long DEFAULT_MINIMUM_THROUGHPUT_BPS = 1L * 1024 * 1024;
     // LIST, DELETE, and multipart control requests move little data on the HTTP connection and may wait on S3 processing.
     private static final long CONTROL_MINIMUM_THROUGHPUT_BPS = 1;
     private static final Duration CONTROL_MINIMUM_THROUGHPUT_TIMEOUT = Duration.ofSeconds(30);
@@ -858,7 +859,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                     throw new IllegalArgumentException("crtMinimumThroughputTimeoutSeconds must be at least 2");
                 }
                 builder.crtTargetThroughputGbps(Double.parseDouble(uri.extensionString("crtTargetThroughputInGbps", "10")))
-                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps", "33554432")))
+                    .crtMinimumThroughputBps(Long.parseLong(uri.extensionString("crtMinimumThroughputInBps",
+                        String.valueOf(DEFAULT_MINIMUM_THROUGHPUT_BPS))))
                     .crtMinimumThroughputTimeout(Duration.ofSeconds(healthTimeout))
                     .crtMaxNativeMemoryBytes(Long.parseLong(uri.extensionString("crtMaxNativeMemoryLimitInBytes", "-1")));
             }
@@ -877,7 +879,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          */
         public static final class Builder {
             private String sdkImplementation = "netty";
-            private long crtMinimumThroughputBps = 32L * 1024 * 1024;
+            private long crtMinimumThroughputBps = DEFAULT_MINIMUM_THROUGHPUT_BPS;
             private Duration crtMinimumThroughputTimeout = Duration.ofSeconds(2);
             private double crtTargetThroughputGbps = 10.0;
             private int maxConcurrency = -1;
