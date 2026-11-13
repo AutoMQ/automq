@@ -198,8 +198,8 @@ public class RouterOutV2Test {
         );
 
         routerOut.handleProduceAppendProxy(produceArgs(entries, response -> {
-            callbackCount.incrementAndGet();
             result.set(response);
+            callbackCount.incrementAndGet();
         }, (short) -1));
 
         assertNull(directChannelOffset.get());

@@ -31,8 +31,10 @@ import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorageFactory;
 import com.automq.stream.s3.wal.OpenMode;
 import com.automq.stream.s3.wal.impl.object.ObjectWALConfig;
+import com.automq.stream.s3.wal.impl.object.ObjectWALReadCache;
 import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.FutureUtil;
+import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Time;
 
 import org.slf4j.Logger;
@@ -56,6 +58,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
     private final Map<Short, ObjectStorage> objectStorages = new ConcurrentHashMap<>();
     private final Map<Integer, RouterChannel> routerChannels = new ConcurrentHashMap<>();
     private final String clusterId;
+    private final ObjectWALReadCache readCache;
 
     private final List<EpochListener> epochListeners = new CopyOnWriteArrayList<>();
     private volatile RouterChannelEpoch epoch = new RouterChannelEpoch(-3L, -2L, 0, 0);
@@ -69,6 +72,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
         this.nodeEpoch = nodeEpoch;
         this.buckets = List.copyOf(buckets);
         this.clusterId = clusterId;
+        this.readCache = new ObjectWALReadCache(Systems.HEAP_MEMORY_SIZE);
     }
 
     @Override
@@ -112,7 +116,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
             }
             ObjectWALConfig config = builder.build();
             ObjectStorage storage = objectStorage(bucket);
-            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config);
+            ObjectWALService wal = new ObjectWALService(Time.SYSTEM, storage, config, false, readCache);
             try {
                 wal.start();
                 return wal;
@@ -135,6 +139,7 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
 
     @Override
     public void close() {
+        readCache.close();
         if (routerChannel != null) {
             FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
         }

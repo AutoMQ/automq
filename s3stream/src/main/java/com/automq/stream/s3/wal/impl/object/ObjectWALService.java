@@ -53,19 +53,20 @@ public class ObjectWALService implements WriteAheadLog {
     protected final DefaultReader reader;
 
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config) {
-        this(time, objectStorage, config, false);
+        this(time, objectStorage, config, false, null);
     }
 
     /**
-     * Creates a WAL with an optional shutdown-owned object storage.
+     * Creates a WAL with explicit storage ownership and an optional provider-owned read cache.
      *
      * @param time the time source
      * @param objectStorage the storage used by this WAL
      * @param config the WAL configuration
      * @param closeObjectStorageOnShutdown whether this WAL owns storage shutdown
+     * @param readCache shared read cache, or null to retain range reads; this WAL never closes it
      */
     public ObjectWALService(Time time, ObjectStorage objectStorage, ObjectWALConfig config,
-        boolean closeObjectStorageOnShutdown) {
+        boolean closeObjectStorageOnShutdown, ObjectWALReadCache readCache) {
         this.objectStorage = objectStorage;
         this.config = config;
         this.closeObjectStorageOnShutdown = closeObjectStorageOnShutdown;
@@ -74,7 +75,7 @@ public class ObjectWALService implements WriteAheadLog {
         } else {
             this.writer = new NoopWriter();
         }
-        this.reader = new DefaultReader(objectStorage, config, time);
+        this.reader = new DefaultReader(objectStorage, config, time, readCache);
     }
 
     @Override
