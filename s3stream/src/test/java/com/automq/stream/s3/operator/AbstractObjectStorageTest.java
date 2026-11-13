@@ -38,14 +38,19 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
+import static com.automq.stream.s3.operator.ObjectStorageTestUtils.spyStorage;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -57,9 +62,9 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.anyLong;
 import static org.mockito.Mockito.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -82,40 +87,6 @@ class AbstractObjectStorageTest {
     }
 
     @Test
-    public void testMergeTask() {
-        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 3000, S3ObjectType.STREAM);
-        AbstractObjectStorage.MergedReadTask mergedReadTask = new AbstractObjectStorage.MergedReadTask(
-            new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0);
-        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 1024, 2048, new CompletableFuture<>()));
-        assertTrue(ret);
-        assertEquals(0, mergedReadTask.dataSparsityRate);
-        assertEquals(0, mergedReadTask.start);
-        assertEquals(2048, mergedReadTask.end);
-        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2049, 3000, new CompletableFuture<>()));
-        assertFalse(ret);
-        assertEquals(0, mergedReadTask.dataSparsityRate);
-        assertEquals(0, mergedReadTask.start);
-        assertEquals(2048, mergedReadTask.end);
-    }
-
-    @Test
-    public void testMergeTask2() {
-        S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 4096, S3ObjectType.STREAM);
-        AbstractObjectStorage.MergedReadTask mergedReadTask = new AbstractObjectStorage.MergedReadTask(
-            new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, 1024, new CompletableFuture<>()), 0.5f);
-        boolean ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2048, 4096, new CompletableFuture<>()));
-        assertTrue(ret);
-        assertEquals(0.25, mergedReadTask.dataSparsityRate, 0.01);
-        assertEquals(0, mergedReadTask.start);
-        assertEquals(4096, mergedReadTask.end);
-        ret = mergedReadTask.tryMerge(new AbstractObjectStorage.ReadTask(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 1024, 1536, new CompletableFuture<>()));
-        assertTrue(ret);
-        assertEquals(0.125, mergedReadTask.dataSparsityRate, 0.01);
-        assertEquals(0, mergedReadTask.start);
-        assertEquals(4096, mergedReadTask.end);
-    }
-
-    @Test
     void testMergeRead() throws ExecutionException, InterruptedException {
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 33554944, S3ObjectType.STREAM);
         S3ObjectMetadata s3ObjectMetadata2 = new S3ObjectMetadata(2, 3072, S3ObjectType.STREAM);
@@ -123,7 +94,7 @@ class AbstractObjectStorageTest {
         objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata1.key(), TestUtils.random((int) s3ObjectMetadata1.objectSize())).get();
         objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata2.key(), TestUtils.random((int) s3ObjectMetadata2.objectSize())).get();
 
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
         // obj0_0_1024 obj_1_1024_2048 obj_0_16776192_16777216 obj_0_2048_4096 obj_0_16777216_16778240
         CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 0, 1024);
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata2.key(), 1024, 3072);
@@ -131,12 +102,12 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> cf4 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 2048, 4096);
         CompletableFuture<ByteBuf> cf5 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 33554432, 33554944);
 
-        objectStorage.tryMergeRead();
+        objectStorage.readAccumulator.flush().join();
 
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(0L), eq(4096L));
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata2.key()), eq(1024L), eq(3072L));
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(31457280L), eq(31461376L));
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(33554432L), eq(33554944L));
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(0L), eq(4096L));
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata2.key()), eq(1024L), eq(3072L));
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(31457280L), eq(31461376L));
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata1.key()), eq(33554432L), eq(33554944L));
 
         ByteBuf buf = cf1.get();
         assertEquals(1024, buf.readableBytes());
@@ -160,12 +131,248 @@ class AbstractObjectStorageTest {
         ByteBuf data = TestUtils.random(4096);
         CompletableFuture<ByteBuf> readToEndCf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> readRangeCf = new CompletableFuture<>();
-        AbstractObjectStorage.MergedReadTask.handleReadCompleted(List.of(
-            new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 3000, -1, readToEndCf),
-            new AbstractObjectStorage.ReadTask(new ReadOptions(), "fake", 2000, 4096, readRangeCf)
+        ReadRequestAccumulator.MergedReadTask.handleReadCompleted(List.of(
+            new ReadRequestAccumulator.ReadTask(new ReadOptions(), "fake", 3000, -1, readToEndCf),
+            new ReadRequestAccumulator.ReadTask(new ReadOptions(), "fake", 2000, 4096, readRangeCf)
         ), 2000, data.slice(2000, 4096 - 2000), null);
         assertEquals(data.slice(3000, 4096 - 3000), readToEndCf.get());
         assertEquals(data.slice(2000, 4096 - 2000), readRangeCf.get());
+        readToEndCf.get().release();
+        readRangeCf.get().release();
+    }
+
+    /** Given an outstanding physical GET, a covered range shares its response without another storage GET. */
+    @Test
+    void testInflightReadReuse() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> parent = objectStorage.rangeRead(new ReadOptions(), "key", 100, 200);
+        objectStorage.readAccumulator.flush().join();
+        awaitReadDispatch();
+        CompletableFuture<ByteBuf> child = objectStorage.rangeRead(new ReadOptions(), "key", 120, 140);
+        objectStorage.readAccumulator.flush().join();
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("key"), eq(100L), eq(200L));
+        ByteBuf data = Unpooled.buffer(100).writeZero(100);
+        physical.complete(data);
+        assertEquals(100, parent.get().readableBytes());
+        assertEquals(20, child.get().readableBytes());
+        parent.get().release();
+        child.get().release();
+        // Caller delivery may precede the queued full-GET cleanup.
+        await().untilAsserted(() -> assertEquals(0, data.refCnt()));
+    }
+
+    /** Given early progress, children return before the physical GET releases its concurrency permit. */
+    @Test
+    void testProgressKeepsPhysicalReadPermitUntilCompletion() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        AtomicReference<ReadProgressListener> progress = new AtomicReference<>();
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doAnswer(invocation -> {
+            progress.set(invocation.getArgument(4));
+            return physical;
+        }).when(objectStorage).doRangeRead(any(), eq("first"), anyLong(), anyLong(), any());
+        CompletableFuture<ByteBuf> parent = objectStorage.rangeRead(new ReadOptions(), "first", 0, 100);
+        objectStorage.readAccumulator.flush().join();
+        awaitReadDispatch();
+        CompletableFuture<ByteBuf> child = objectStorage.rangeRead(new ReadOptions(), "first", 10, 20);
+        ReadRequestAccumulator.EVENT_LOOP.submit(() -> { }).join();
+        ByteBuf prefix = Unpooled.buffer(20).writeZero(20);
+        progress.get().onChange(List.of(prefix), prefix.readableBytes());
+        child.get(1, TimeUnit.SECONDS).release();
+        assertFalse(parent.isDone());
+        CompletableFuture<ByteBuf> late = objectStorage.rangeRead(new ReadOptions(), "first", 5, 15);
+        ReadRequestAccumulator.EVENT_LOOP.submit(() -> { }).join();
+        assertFalse(late.isDone());
+        progress.get().onChange(List.of(prefix), prefix.readableBytes());
+        late.get(1, TimeUnit.SECONDS).release();
+        Field limiter = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
+        limiter.setAccessible(true);
+        java.util.concurrent.Semaphore permits = (java.util.concurrent.Semaphore) limiter.get(objectStorage);
+        assertEquals(0, permits.availablePermits());
+        prefix.release();
+        physical.complete(Unpooled.buffer(100).writeZero(100));
+        parent.get(1, TimeUnit.SECONDS).release();
+        await().untilAsserted(() -> assertEquals(1, permits.availablePermits()));
+        await().untilAsserted(() -> assertEquals(0, prefix.refCnt()));
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("first"), eq(0L), eq(100L), any());
+    }
+
+    /** Given exhausted read quota, the storage reader returns immediately and resumes queued GETs in order. */
+    @Test
+    void testAsyncStorageReaderWaitsForQuotaWithoutBlockingCaller() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        CompletableFuture<ByteBuf> firstPhysical = new CompletableFuture<>();
+        doReturn(firstPhysical).when(objectStorage).doRangeRead(any(), eq("first"), anyLong(), anyLong());
+        doAnswer(invocation -> CompletableFuture.completedFuture(Unpooled.buffer(10).writeZero(10)))
+            .when(objectStorage).doRangeRead(any(), eq("second"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> first = objectStorage.rangeRead0(new ReadOptions(), "first", 0, 10);
+        verify(objectStorage, timeout(1000)).doRangeRead(any(), eq("first"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> second = objectStorage.rangeRead0(new ReadOptions(), "second", 0, 10);
+        assertFalse(second.isDone());
+        ReadRequestAccumulator.EVENT_LOOP.submit(() -> { }).get(1, TimeUnit.SECONDS);
+        verify(objectStorage, times(0)).doRangeRead(any(), eq("second"), anyLong(), anyLong());
+        firstPhysical.complete(Unpooled.buffer(10).writeZero(10));
+        first.get(1, TimeUnit.SECONDS).release();
+        second.get(1, TimeUnit.SECONDS).release();
+    }
+
+    /** Given a quota waiter and an unstarted read, close fails both without launching extra GETs or leaking quota. */
+    @Test
+    void testCloseSettlesQueuedStorageReads() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        CompletableFuture<ByteBuf> firstPhysical = new CompletableFuture<>();
+        doReturn(firstPhysical).when(objectStorage).doRangeRead(any(), eq("first"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> first = objectStorage.rangeRead0(new ReadOptions(), "first", 0, 10);
+        verify(objectStorage, timeout(1000)).doRangeRead(any(), eq("first"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> second = objectStorage.rangeRead0(new ReadOptions(), "second", 0, 10);
+        Field pending = AbstractObjectStorage.class.getDeclaredField("pendingReads");
+        pending.setAccessible(true);
+        java.util.Set<?> queued = (java.util.Set<?>) pending.get(objectStorage);
+        await().until(() -> !queued.contains(second));
+        CompletableFuture<ByteBuf> third = objectStorage.rangeRead0(new ReadOptions(), "third", 0, 10);
+        objectStorage.close();
+        assertTrue(third.isCompletedExceptionally());
+        await().until(second::isCompletedExceptionally);
+        firstPhysical.complete(Unpooled.buffer(10).writeZero(10));
+        first.get(1, TimeUnit.SECONDS).release();
+        verify(objectStorage, times(0)).doRangeRead(any(), eq("second"), anyLong(), anyLong());
+        verify(objectStorage, times(0)).doRangeRead(any(), eq("third"), anyLong(), anyLong());
+        Field limiter = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
+        limiter.setAccessible(true);
+        java.util.concurrent.Semaphore permits = (java.util.concurrent.Semaphore) limiter.get(objectStorage);
+        assertEquals(1, permits.availablePermits());
+    }
+
+    /** Given cancellation after a GET starts, its physical completion still releases the quota and unused response. */
+    @Test
+    void testCancelledStorageReadReleasesLateResponse() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 10);
+        awaitReadDispatch();
+        assertTrue(result.cancel(false));
+        ByteBuf response = Unpooled.buffer(10).writeZero(10);
+        physical.complete(response);
+        await().untilAsserted(() -> assertEquals(0, response.refCnt()));
+        Field limiter = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
+        limiter.setAccessible(true);
+        assertEquals(1, ((java.util.concurrent.Semaphore) limiter.get(objectStorage)).availablePermits());
+    }
+
+    /** Given quota-one dispatch blocks on its second GET, the first GET's retry must run independently. */
+    @Test
+    void testBlockedDispatchDoesNotBlockStorageRetry() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        Field field = AbstractObjectStorage.class.getDeclaredField("readExecutor");
+        field.setAccessible(true);
+        ExecutorService batches = (ExecutorService) field.get(objectStorage);
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        batches.execute(() -> {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        AtomicInteger firstAttempts = new AtomicInteger();
+        doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
+        doAnswer(invocation -> {
+            long start = invocation.getArgument(2);
+            if (start == 0 && firstAttempts.getAndIncrement() == 0) {
+                return CompletableFuture.failedFuture(new TimeoutException("retry first GET"));
+            }
+            return CompletableFuture.completedFuture(Unpooled.buffer(10).writeZero(10));
+        }).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> first = objectStorage.rangeRead(new ReadOptions(), "key", 0, 10);
+        CompletableFuture<ByteBuf> second = objectStorage.rangeRead(new ReadOptions(), "key", 1024 * 1024, 1024 * 1024 + 10);
+        release.countDown();
+        first.get(2, TimeUnit.SECONDS).release();
+        second.get(2, TimeUnit.SECONDS).release();
+        verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(10L));
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("key"), eq(1024L * 1024), eq(1024L * 1024 + 10));
+    }
+
+    /** Given storage closes before the physical GET returns, late response completion still releases its buffer. */
+    @Test
+    void testLateResponseAfterCloseReleasesBuffer() {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> caller = objectStorage.rangeRead(new ReadOptions(), "key", 0, 100);
+        objectStorage.readAccumulator.flush().join();
+        awaitReadDispatch();
+        objectStorage.close();
+        assertTrue(caller.isCompletedExceptionally());
+        ByteBuf response = Unpooled.buffer(100).writeZero(100);
+        physical.complete(response);
+        await().untilAsserted(() -> assertEquals(0, response.refCnt()));
+    }
+
+    /** Given a prepared response queued behind a blocked callback, close delivers it despite executor shutdown. */
+    @Test
+    void testQueuedResponseDuringCloseReleasesBuffer() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        java.util.concurrent.Executor callbacks = ReadRequestAccumulator.CALLBACK_EXECUTOR;
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        callbacks.execute(() -> {
+            entered.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> caller = objectStorage.rangeRead(new ReadOptions(), "key", 0, 100);
+        caller.whenComplete((data, error) -> objectStorage.close());
+        objectStorage.readAccumulator.flush().join();
+        awaitReadDispatch();
+        ByteBuf response = Unpooled.buffer(100).writeZero(100);
+        try {
+            physical.complete(response);
+            assertFalse(caller.isDone());
+            CompletableFuture<Void> closed = CompletableFuture.runAsync(objectStorage::close);
+            Field closing = AbstractObjectStorage.class.getDeclaredField("closed");
+            closing.setAccessible(true);
+            await().until(() -> closing.getBoolean(objectStorage));
+            release.countDown();
+            closed.get(2, TimeUnit.SECONDS);
+            assertEquals(100, caller.join().readableBytes());
+            caller.join().release();
+            assertEquals(0, response.refCnt());
+            verify(objectStorage, times(1)).doClose();
+        } finally {
+            release.countDown();
+        }
+    }
+
+    private void awaitReadDispatch() {
+        try {
+            Field field = AbstractObjectStorage.class.getDeclaredField("readExecutor");
+            field.setAccessible(true);
+            ExecutorService executor = (ExecutorService) field.get(objectStorage);
+            CompletableFuture.runAsync(() -> { }, executor).join();
+            ReadRequestAccumulator.EVENT_LOOP.submit(() -> { }).join();
+        } catch (ReflectiveOperationException ex) {
+            throw new AssertionError(ex);
+        }
     }
 
     @Test
@@ -173,7 +380,7 @@ class AbstractObjectStorageTest {
         objectStorage = new MemoryObjectStorage(false);
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 100, S3ObjectType.STREAM);
         objectStorage.write(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata1.key(), TestUtils.random((int) s3ObjectMetadata1.objectSize())).get();
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
         objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata1.key(), 0, 100)
             .thenCompose(buf -> {
                 assertEquals(1, buf.refCnt());
@@ -183,7 +390,7 @@ class AbstractObjectStorageTest {
     }
 
     private void prepareReadFastRetry() throws Exception {
-        objectStorage = spy(new MemoryObjectStorage());
+        objectStorage = spyStorage(new MemoryObjectStorage());
         Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
         field.setAccessible(true);
         S3LatencyCalculator calculator = mock(S3LatencyCalculator.class);
@@ -199,7 +406,7 @@ class AbstractObjectStorageTest {
         ByteBuf retryBuffer = TestUtils.randomPooled(1024);
         doReturn(original, CompletableFuture.completedFuture(retryBuffer))
             .when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        ByteBuf result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024)
+        ByteBuf result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 1024)
             .get(1, TimeUnit.SECONDS);
         assertSame(retryBuffer, result);
         result.release();
@@ -209,6 +416,52 @@ class AbstractObjectStorageTest {
         verify(objectStorage, times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
     }
 
+    /** Given a fallback progress observer throws, the completed response remains owned by the caller. */
+    @Test
+    void testDefaultProgressListenerFailureDoesNotFailRead() {
+        objectStorage = spyStorage(objectStorage);
+        ByteBuf response = Unpooled.buffer(10).writeZero(10);
+        doReturn(CompletableFuture.completedFuture(response))
+            .when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        ByteBuf result = objectStorage.doRangeRead(new ReadOptions(), "key", 0, 10, (chunks, size) -> {
+            throw new IllegalStateException("observer failed");
+        }).join();
+        assertSame(response, result);
+        assertEquals(1, result.refCnt());
+        result.release();
+    }
+
+    /** Given ordinary and speculative retries, every physical GET receives the same progress listener. */
+    @Test
+    void testProgressListenerSurvivesNormalAndFastRetries() throws Exception {
+        prepareReadFastRetry();
+        List<ReadProgressListener> listeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+        AtomicInteger attempts = new AtomicInteger();
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ByteBuf> stalled = new CompletableFuture<>();
+        ByteBuf result = Unpooled.buffer(1024).writeZero(1024);
+        doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
+        doAnswer(invocation -> {
+            listeners.add(invocation.getArgument(4));
+            int attempt = attempts.getAndIncrement();
+            if (attempt == 0) {
+                return original;
+            }
+            return attempt == 1 ? stalled : CompletableFuture.completedFuture(result);
+        }).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong(), any());
+        ReadProgressListener listener = (chunks, size) -> { };
+        CompletableFuture<ByteBuf> read = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 1024, listener);
+        await().untilAsserted(() -> assertEquals(2, listeners.size()));
+        original.completeExceptionally(new TimeoutException("ordinary retry"));
+        assertSame(result, read.get(2, TimeUnit.SECONDS));
+        assertEquals(3, listeners.size());
+        listeners.forEach(actual -> assertSame(listener, actual));
+        result.release();
+        ByteBuf late = Unpooled.buffer(1024).writeZero(1024);
+        stalled.complete(late);
+        assertEquals(0, late.refCnt());
+    }
+
     /** Given both reads in flight, the original wins and the late retry buffer is released. */
     @Test
     void testReadOriginalWinsAfterFastRetryStarts() throws Exception {
@@ -216,7 +469,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
         doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         ByteBuf originalBuffer = TestUtils.randomPooled(1024);
         original.complete(originalBuffer);
@@ -234,7 +487,7 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retry = new CompletableFuture<>();
         doReturn(original, retry).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         retry.completeExceptionally(new TimeoutException());
         assertFalse(result.isDone());
@@ -255,7 +508,7 @@ class AbstractObjectStorageTest {
         doReturn(Pair.of(RetryStrategy.RETRY, new TimeoutException()))
             .when(objectStorage).toRetryStrategyAndCause(any(), eq(S3Operation.GET_OBJECT));
         doReturn(50).when(objectStorage).retryDelay(eq(S3Operation.GET_OBJECT), anyInt());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, 1024);
+        CompletableFuture<ByteBuf> result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, 1024);
         verify(objectStorage, timeout(1000).times(2)).doRangeRead(any(), eq("key"), eq(0L), eq(1024L));
         original.completeExceptionally(new TimeoutException());
         ByteBuf retryBuffer = TestUtils.randomPooled(1024);
@@ -272,7 +525,7 @@ class AbstractObjectStorageTest {
         prepareReadFastRetry();
         CompletableFuture<ByteBuf> original = new CompletableFuture<>();
         doReturn(original).when(objectStorage).doRangeRead(any(), anyString(), anyLong(), anyLong());
-        CompletableFuture<ByteBuf> result = objectStorage.mergedRangeRead(new ReadOptions(), "key", 0, -1);
+        CompletableFuture<ByteBuf> result = objectStorage.rangeRead0(new ReadOptions(), "key", 0, -1);
         Field field = AbstractObjectStorage.class.getDeclaredField("readLatencyCalculator");
         field.setAccessible(true);
         verify((S3LatencyCalculator) field.get(objectStorage), times(0)).valueAtPercentile(anyLong(), anyLong());
@@ -286,7 +539,7 @@ class AbstractObjectStorageTest {
     void testFastRetry() throws Throwable {
         // Initialize memory storage and spy to track method calls
         objectStorage = new MemoryObjectStorage();
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
 
         // Configure write options: enable fast retry, disable normal retry
         ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
@@ -328,7 +581,7 @@ class AbstractObjectStorageTest {
     @Test
     void testWriteRetryTimeout() throws Throwable {
         // Setup storage with 100ms timeout (clearer time unit)
-        objectStorage = spy(new MemoryObjectStorage());
+        objectStorage = spyStorage(new MemoryObjectStorage());
         ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
             .retry(true)
             .timeout(1000L);
@@ -366,7 +619,7 @@ class AbstractObjectStorageTest {
     @Test
     void testWritePermit() throws Exception {
         final int maxConcurrency = 5;
-        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+        objectStorage = spyStorage(new MemoryObjectStorage(maxConcurrency));
 
         ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
             .enableFastRetry(false)
@@ -418,7 +671,7 @@ class AbstractObjectStorageTest {
     @Test
     void testWaitWritePermit() throws Exception {
         final int maxConcurrency = 1;
-        objectStorage = spy(new MemoryObjectStorage(maxConcurrency));
+        objectStorage = spyStorage(new MemoryObjectStorage(maxConcurrency));
 
         ObjectStorage.WriteOptions options = new ObjectStorage.WriteOptions()
             .enableFastRetry(false)
@@ -480,15 +733,15 @@ class AbstractObjectStorageTest {
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, 4096, S3ObjectType.STREAM);
 
         objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(4096));
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
 
         CompletableFuture<ByteBuf> cf1 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0L, 1024L);
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 2048L, -1L);
 
-        objectStorage.tryMergeRead();
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata.key()), eq(0L), eq(1024L));
-        objectStorage.tryMergeRead();
-        verify(objectStorage, timeout(1000L).times(1)).mergedRangeRead(any(), eq(s3ObjectMetadata.key()), eq(2048L), eq(-1L));
+        objectStorage.readAccumulator.flush().join();
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata.key()), eq(0L), eq(1024L));
+        objectStorage.readAccumulator.flush().join();
+        verify(objectStorage, timeout(1000L).times(1)).doRangeRead(any(), eq(s3ObjectMetadata.key()), eq(2048L), eq(-1L));
 
         ByteBuf buf = cf1.get();
         assertEquals(1024, buf.readableBytes());
@@ -507,7 +760,7 @@ class AbstractObjectStorageTest {
 
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM);
         objectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
 
         // check read to end range read will increase the inboundWidthLimiter
         CompletableFuture<ByteBuf> cf2 = objectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
@@ -524,14 +777,14 @@ class AbstractObjectStorageTest {
 
         S3ObjectMetadata s3ObjectMetadata = new S3ObjectMetadata(1, objectSize, S3ObjectType.STREAM);
         memoryObjectStorage.writer(ObjectStorage.WriteOptions.DEFAULT, s3ObjectMetadata.key()).write(TestUtils.random(objectSize));
-        memoryObjectStorage = spy(memoryObjectStorage);
+        memoryObjectStorage = spyStorage(memoryObjectStorage);
 
         // mock read fail can finish the return completeFuture
         when(memoryObjectStorage.doRangeRead(any(), anyString(), anyLong(), anyLong()))
             .thenReturn(CompletableFuture.failedFuture(new IllegalArgumentException("mock exception")));
 
         CompletableFuture<ByteBuf> cf4 = memoryObjectStorage.rangeRead(new ReadOptions().bucket((short) 0), s3ObjectMetadata.key(), 0, -1L);
-        memoryObjectStorage.tryMergeRead();
+        memoryObjectStorage.readAccumulator.flush().join();
 
         try {
             cf4.get();
@@ -550,7 +803,7 @@ class AbstractObjectStorageTest {
      */
     @Test
     void testListAndCopyRetryTransientFailures() throws Exception {
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
         doReturn(0).when(objectStorage).retryDelay(any(), anyInt());
         ObjectStorage.ObjectInfo object = new ObjectStorage.ObjectInfo(objectStorage.bucketId(), "prefix/key", 0, 1);
         doReturn(CompletableFuture.failedFuture(new IllegalStateException("LIST unavailable")),
@@ -571,7 +824,7 @@ class AbstractObjectStorageTest {
      */
     @Test
     void testListAndCopyDoNotRetryPermanentFailures() {
-        objectStorage = spy(objectStorage);
+        objectStorage = spyStorage(objectStorage);
         doReturn(CompletableFuture.failedFuture(new IllegalArgumentException("invalid LIST")))
             .when(objectStorage).doList(any());
         doReturn(CompletableFuture.failedFuture(new ObjectNotExistException("missing source")))

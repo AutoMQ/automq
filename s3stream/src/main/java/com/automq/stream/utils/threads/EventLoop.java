@@ -45,11 +45,22 @@ public class EventLoop extends Thread implements Executor, ReferenceCounted {
         }
     };
 
-    @SuppressWarnings("this-escape")
     public EventLoop(String name) {
+        this(name, Thread.currentThread().isDaemon());
+    }
+
+    /**
+     * Create and start an event loop with an explicit daemon lifecycle.
+     *
+     * @param name the worker thread name
+     * @param daemon whether the worker should allow the JVM to exit while it is running
+     */
+    @SuppressWarnings("this-escape")
+    public EventLoop(String name, boolean daemon) {
         super(name);
         this.logger = new LogContext("[" + name + "]").logger(EventLoop.class);
         this.tasks = new LinkedBlockingQueue<>();
+        setDaemon(daemon);
         start();
     }
 

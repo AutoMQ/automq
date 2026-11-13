@@ -22,11 +22,10 @@ package com.automq.stream.s3.operator;
 import com.automq.stream.s3.exceptions.ObjectNotExistException;
 import com.automq.stream.s3.metrics.TimerUtil;
 import com.automq.stream.s3.metrics.operations.S3Operation;
-import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
-import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.network.NetworkBandwidthLimiter;
 import com.automq.stream.s3.network.ThrottleStrategy;
 import com.automq.stream.s3.objects.ObjectAttributes;
+import com.automq.stream.s3.operator.ReadRequestAccumulator.ReadTask;
 import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.LogContext;
 import com.automq.stream.utils.ThreadUtils;
@@ -37,24 +36,22 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.slf4j.Logger;
 
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -80,16 +77,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     private static final long S3_LATENCY_MAX_MILLIS = Duration.ofSeconds(3).toMillis();
     private final String threadPrefix;
     final Logger logger;
-    private final float maxMergeReadSparsityRate;
     private final int currentIndex;
     private final Semaphore inflightReadLimiter;
     private final Semaphore inflightWriteLimiter;
-    private final List<AbstractObjectStorage.ReadTask> waitingReadTasks = new LinkedList<>();
+    final ReadRequestAccumulator readAccumulator;
+    private volatile boolean closed;
+    private final AtomicBoolean closeStarted = new AtomicBoolean();
     protected final NetworkBandwidthLimiter networkInboundBandwidthLimiter;
     protected final NetworkBandwidthLimiter networkOutboundBandwidthLimiter;
     protected final ExecutorService writeLimiterCallbackExecutor;
-    private final ExecutorService readCallbackExecutor;
     private final ExecutorService writeCallbackExecutor;
+    private final ExecutorService readExecutor;
+    private final Set<CompletableFuture<ByteBuf>> pendingReads = ConcurrentHashMap.newKeySet();
     final ScheduledExecutorService scheduler;
     private final FastRetryManager writeFastRetryManager;
     private final FastRetryManager readFastRetryManager;
@@ -151,7 +150,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         this.logger = new LogContext(String.format("[ObjectStorage-%s-%s] ", threadPrefix, currentIndex)).logger(AbstractObjectStorage.class);
         this.bucketURI = bucketURI;
         this.currentIndex = currentIndex;
-        this.maxMergeReadSparsityRate = Utils.getMaxMergeReadSparsityRate();
         this.inflightWriteLimiter = new Semaphore(maxObjectStorageConcurrency);
         this.inflightReadLimiter = readWriteIsolate ? new Semaphore(maxObjectStorageConcurrency) : inflightWriteLimiter;
         this.networkInboundBandwidthLimiter = networkInboundBandwidthLimiter != null ? networkInboundBandwidthLimiter : NetworkBandwidthLimiter.NOOP;
@@ -161,8 +159,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         String prefix = threadPrefix + "-" + currentIndex + "-";
         writeLimiterCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-write-limiter-cb-executor", true, logger);
-        readCallbackExecutor = Threads.newFixedThreadPool(1,
-            prefix + "s3-read-cb-executor", true, logger);
         writeCallbackExecutor = Threads.newFixedThreadPool(1,
             prefix + "s3-write-cb-executor", true, logger);
         scheduler = Threads.newSingleThreadScheduledExecutor(
@@ -170,9 +166,9 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         writeFastRetryManager = new FastRetryManager(prefix + "s3-write-");
         readFastRetryManager = new FastRetryManager(prefix + "s3-read-");
 
-        if (!manualMergeRead) {
-            scheduler.scheduleWithFixedDelay(this::tryMergeRead, 5, 5, TimeUnit.MILLISECONDS);
-        }
+        readExecutor = Executors.newSingleThreadExecutor(ThreadUtils.createThreadFactory(prefix + "s3-read-executor", true));
+        readAccumulator = new ReadRequestAccumulator(Utils.getMaxMergeReadSparsityRate(),
+            !manualMergeRead, this::rangeRead0, logger);
         ObjectStorageMetrics.registerInflightReadQuota(currentIndex, inflightReadLimiter::availablePermits);
         ObjectStorageMetrics.registerInflightWriteQuota(currentIndex, inflightWriteLimiter::availablePermits);
 
@@ -241,9 +237,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             if (ex != null) {
                 cf.completeExceptionally(ex);
             } else {
-                synchronized (waitingReadTasks) {
-                    waitingReadTasks.add(new AbstractObjectStorage.ReadTask(requestOptions, objectPath, start, end, cf));
-                }
+                readAccumulator.add(new ReadTask(requestOptions, objectPath, start, end, cf));
             }
         });
 
@@ -726,8 +720,18 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     @Override
     public void close() {
+        if (!closeStarted.compareAndSet(false, true)) {
+            return;
+        }
+        closed = true;
+        pendingReads.forEach(read -> {
+            if (pendingReads.remove(read)) {
+                read.completeExceptionally(new IllegalStateException("Object storage is closed"));
+            }
+        });
+        readAccumulator.close().join();
+        ThreadUtils.shutdownExecutor(readExecutor, 1, TimeUnit.SECONDS);
         ThreadUtils.shutdownExecutor(writeLimiterCallbackExecutor, 1, TimeUnit.SECONDS);
-        ThreadUtils.shutdownExecutor(readCallbackExecutor, 1, TimeUnit.SECONDS);
         ThreadUtils.shutdownExecutor(writeCallbackExecutor, 1, TimeUnit.SECONDS);
         ThreadUtils.shutdownExecutor(scheduler, 1, TimeUnit.SECONDS);
         writeFastRetryManager.close();
@@ -736,6 +740,22 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     abstract CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end);
+
+    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end,
+        ReadProgressListener listener) {
+        return doRangeRead(options, path, start, end).thenApply(data -> {
+            notifyReadProgress(listener, List.of(data), data.readableBytes());
+            return data;
+        });
+    }
+
+    final void notifyReadProgress(ReadProgressListener listener, List<ByteBuf> chunks, int readableBytes) {
+        try {
+            listener.onChange(chunks, readableBytes);
+        } catch (Throwable ex) {
+            logger.error("Read progress listener failed", ex);
+        }
+    }
 
     abstract CompletableFuture<Void> doWrite(WriteOptions options, String path, ByteBuf data);
 
@@ -776,79 +796,76 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         return maxOpt.isPresent() && maxOpt.get() == parts.size();
     }
 
-    void tryMergeRead() {
+    CompletableFuture<ByteBuf> rangeRead0(ReadOptions options, String path, long start, long end) {
+        return rangeRead0(options, path, start, end, (chunks, size) -> { });
+    }
+
+    /** Enqueue a physical read without blocking the caller on concurrency quota. */
+    CompletableFuture<ByteBuf> rangeRead0(ReadOptions options, String path, long start, long end,
+        ReadProgressListener listener) {
+        if (closed) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Object storage is closed"));
+        }
+        CompletableFuture<ByteBuf> result = new CompletableFuture<>();
+        ReadOptions requestOptions = options.copy();
+        pendingReads.add(result);
+        if (closed) {
+            pendingReads.remove(result);
+            result.completeExceptionally(new IllegalStateException("Object storage is closed"));
+            return result;
+        }
         try {
-            tryMergeRead0();
-        } catch (Throwable e) {
-            logger.error("[UNEXPECTED] tryMergeRead fail", e);
-        }
-    }
-
-    /**
-     * Get adjacent read tasks and merge them into one read task which read range is not exceed {@link MergedReadTask#MAX_MERGE_READ_SIZE} (4MB).
-     */
-    private void tryMergeRead0() {
-        List<AbstractObjectStorage.MergedReadTask> mergedReadTasks = new ArrayList<>();
-        synchronized (waitingReadTasks) {
-            if (waitingReadTasks.isEmpty()) {
-                return;
-            }
-            waitingReadTasks.sort(Comparator.comparing(ReadTask::objectPath).thenComparingLong(ReadTask::start));
-            int readPermit = availableReadPermit();
-            while (readPermit > 0 && !waitingReadTasks.isEmpty()) {
-                Iterator<AbstractObjectStorage.ReadTask> it = waitingReadTasks.iterator();
-                Map<String, AbstractObjectStorage.MergedReadTask> mergingReadTasks = new HashMap<>();
-                while (it.hasNext()) {
-                    AbstractObjectStorage.ReadTask readTask = it.next();
-                    String path = readTask.objectPath;
-                    AbstractObjectStorage.MergedReadTask mergedReadTask = mergingReadTasks.get(path);
-                    if (mergedReadTask == null) {
-                        if (readPermit > 0) {
-                            readPermit -= 1;
-                            mergedReadTask = new AbstractObjectStorage.MergedReadTask(readTask, maxMergeReadSparsityRate);
-                            mergingReadTasks.put(path, mergedReadTask);
-                            mergedReadTasks.add(mergedReadTask);
-                            it.remove();
-                        }
-                    } else {
-                        if (mergedReadTask.tryMerge(readTask)) {
-                            it.remove();
-                        }
-                    }
+            readExecutor.execute(() -> {
+                // Removing the pending entry claims startup against concurrent storage close.
+                if (!pendingReads.remove(result) || result.isDone()) {
+                    return;
                 }
-            }
-        }
-        mergedReadTasks.forEach(
-            mergedReadTask -> {
-                String path = mergedReadTask.objectPath;
-                if (logger.isDebugEnabled()) {
-                    logger.debug("merge read: {}, {}-{}, size: {}, sparsityRate: {}",
-                        path, mergedReadTask.start, mergedReadTask.end,
-                        mergedReadTask.end - mergedReadTask.start, mergedReadTask.dataSparsityRate);
+                try {
+                    rangeReadWithPermit(requestOptions, path, start, end, listener).whenComplete((data, error) -> {
+                        if (error != null) {
+                            result.completeExceptionally(error);
+                        } else if (!result.complete(data)) {
+                            data.release();
+                        }
+                    });
+                } catch (Throwable error) {
+                    result.completeExceptionally(error);
                 }
-                mergedRangeRead(mergedReadTask.options(), path, mergedReadTask.start, mergedReadTask.end)
-                    .whenComplete((rst, ex) -> FutureUtil.suppress(() -> mergedReadTask.handleReadCompleted(rst, ex), logger));
-            }
-        );
+            });
+        } catch (RejectedExecutionException rejected) {
+            pendingReads.remove(result);
+            result.completeExceptionally(rejected);
+        }
+        return result;
     }
 
-    private int availableReadPermit() {
-        return inflightReadLimiter.availablePermits();
-    }
-
-    CompletableFuture<ByteBuf> mergedRangeRead(ReadOptions options, String path, long start, long end) {
+    private CompletableFuture<ByteBuf> rangeReadWithPermit(ReadOptions options, String path, long start, long end,
+        ReadProgressListener listener) {
+        if (closed) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Object storage is closed"));
+        }
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
         if (retCf.isDone()) {
             return retCf;
         }
-        CompletableFuture<ByteBuf> readCf = mergedRangeRead0(options, path, start, end, cf);
+        if (closed) {
+            cf.completeExceptionally(new IllegalStateException("Object storage is closed"));
+            return retCf;
+        }
+        CompletableFuture<ByteBuf> readCf;
+        try {
+            readCf = rangeReadWithRetry(options, path, start, end, cf, listener);
+        } catch (Throwable ex) {
+            cf.completeExceptionally(ex);
+            return retCf;
+        }
         if (!checkS3ApiMode && end != RANGE_READ_TO_END && !readCf.isDone() && !cf.isDone()) {
             long delayMillis = readLatencyCalculator.valueAtPercentile(end - start, 99);
             if (delayMillis > 0) {
                 ReadOptions retryOptions = options.copy();
                 readFastRetryManager.schedule(new FastRetryReadTask(readCf, cf,
-                    () -> doFastRetryRead(retryOptions, path, start, end, cf),
+                    () -> doFastRetryRead(retryOptions, path, start, end, cf, listener),
                     (isUsefulRetry, apiCostMillis, limiterAwaitTimeMillis) -> logger.info(
                         "Fast retry: get object {} [{}, {}), useful {}, cost {}ms, delay {}ms, limiter await {}ms",
                         path, start, end, isUsefulRetry, apiCostMillis, delayMillis, limiterAwaitTimeMillis)), delayMillis);
@@ -869,11 +886,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     }
 
     private CompletableFuture<ByteBuf> doFastRetryRead(ReadOptions options, String path, long start, long end,
-        CompletableFuture<ByteBuf> finalCf) {
+        CompletableFuture<ByteBuf> finalCf, ReadProgressListener listener) {
         TimerUtil timerUtil = new TimerUtil();
         CompletableFuture<ByteBuf> cf;
         try {
-            cf = doRangeRead(options, path, start, end);
+            cf = doRangeRead(options, path, start, end, listener);
         } catch (Throwable e) {
             cf = CompletableFuture.failedFuture(e);
         }
@@ -891,14 +908,14 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         });
     }
 
-    private CompletableFuture<ByteBuf> mergedRangeRead0(ReadOptions options, String path, long start, long end,
-        CompletableFuture<ByteBuf> cf) {
+    private CompletableFuture<ByteBuf> rangeReadWithRetry(ReadOptions options, String path, long start, long end,
+        CompletableFuture<ByteBuf> cf, ReadProgressListener listener) {
         if (cf.isDone()) {
             return cf;
         }
         TimerUtil timerUtil = new TimerUtil();
         long size = end - start;
-        CompletableFuture<ByteBuf> readCf = doRangeRead(options, path, start, end);
+        CompletableFuture<ByteBuf> readCf = doRangeRead(options, path, start, end, listener);
         readCf.thenAccept(buf -> {
             boolean transferred = false;
             try {
@@ -924,7 +941,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             } else {
                 int delay = retryDelay(S3Operation.GET_OBJECT, options.retryCountGetAndAdd());
                 logger.warn("GetObject for object {} [{}, {}) fail, retry in {}ms", path, start, end, delay, cause);
-                scheduler.schedule(() -> mergedRangeRead0(options, path, start, end, cf), delay, TimeUnit.MILLISECONDS);
+                scheduler.schedule(() -> rangeReadWithRetry(options, path, start, end, cf, listener), delay, TimeUnit.MILLISECONDS);
             }
             ObjectStorageMetrics.recordGetObject(options.source(), options.readPurpose(), size, false, timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
             return null;
@@ -997,13 +1014,11 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             CompletableFuture<T> newCf = new CompletableFuture<>();
             cf.whenComplete((rst, ex) -> {
                 inflightReadLimiter.release();
-                readCallbackExecutor.execute(() -> {
-                    if (ex != null) {
-                        newCf.completeExceptionally(ex);
-                    } else {
-                        newCf.complete(rst);
-                    }
-                });
+                if (ex != null) {
+                    newCf.completeExceptionally(ex);
+                } else {
+                    newCf.complete(rst);
+                }
             });
             return newCf;
         } catch (InterruptedException e) {
@@ -1085,189 +1100,6 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
 
     protected DeleteObjectsAccumulator newDeleteObjectsAccumulator() {
         return new DeleteObjectsAccumulator(this::doDeleteObjects);
-    }
-
-    static class MergedReadTask {
-        static final int MAX_MERGE_READ_SIZE = 4 * 1024 * 1024;
-        final String objectPath;
-        final List<AbstractObjectStorage.ReadTask> readTasks = new ArrayList<>();
-        long start;
-        long end;
-        long uniqueDataSize;
-        float dataSparsityRate = 0f;
-        float maxMergeReadSparsityRate;
-
-        MergedReadTask(AbstractObjectStorage.ReadTask readTask, float maxMergeReadSparsityRate) {
-            this.objectPath = readTask.objectPath;
-            this.start = readTask.start;
-            this.end = readTask.end;
-            this.readTasks.add(readTask);
-            this.uniqueDataSize = readTask.end - readTask.start;
-            this.maxMergeReadSparsityRate = maxMergeReadSparsityRate;
-        }
-
-        // Preserve the existing first-task settings, but do not assign heterogeneous work to its first caller.
-        ReadOptions options() {
-            ReadOptions options = readTasks.get(0).options.copy();
-            for (ReadTask task : readTasks) {
-                if (task.options.source() != options.source()) {
-                    options.source(S3RequestSource.MIXED);
-                }
-                if (task.options.readPurpose() != options.readPurpose()) {
-                    options.readPurpose(S3ReadPurpose.MIXED);
-                }
-            }
-            return options;
-        }
-
-        boolean tryMerge(AbstractObjectStorage.ReadTask readTask) {
-            if (!canMerge(readTask)) {
-                return false;
-            }
-
-            long newStart = Math.min(start, readTask.start);
-            long newEnd = Math.max(end, readTask.end);
-            boolean merge = newEnd - newStart <= MAX_MERGE_READ_SIZE;
-            if (merge) {
-                // insert read task in order
-                int i = 0;
-                long overlap = 0L;
-                for (; i < readTasks.size(); i++) {
-                    AbstractObjectStorage.ReadTask task = readTasks.get(i);
-                    if (task.start >= readTask.start) {
-                        readTasks.add(i, readTask);
-                        // calculate data overlap
-                        AbstractObjectStorage.ReadTask prev = i > 0 ? readTasks.get(i - 1) : null;
-                        AbstractObjectStorage.ReadTask next = readTasks.get(i + 1);
-
-                        if (prev != null && readTask.start < prev.end) {
-                            overlap += prev.end - readTask.start;
-                        }
-                        if (readTask.end > next.start) {
-                            overlap += readTask.end - next.start;
-                        }
-                        break;
-                    }
-                }
-                if (i == readTasks.size()) {
-                    readTasks.add(readTask);
-                    AbstractObjectStorage.ReadTask prev = i >= 1 ? readTasks.get(i - 1) : null;
-                    if (prev != null && readTask.start < prev.end) {
-                        overlap += prev.end - readTask.start;
-                    }
-                }
-                long uniqueSize = readTask.end - readTask.start - overlap;
-                long tmpUniqueSize = uniqueDataSize + uniqueSize;
-                float tmpSparsityRate = 1 - (float) tmpUniqueSize / (newEnd - newStart);
-                if (tmpSparsityRate > maxMergeReadSparsityRate) {
-                    // remove read task
-                    readTasks.remove(i);
-                    return false;
-                }
-                uniqueDataSize = tmpUniqueSize;
-                dataSparsityRate = tmpSparsityRate;
-                start = newStart;
-                end = newEnd;
-            }
-            return merge;
-        }
-
-        private boolean canMerge(AbstractObjectStorage.ReadTask readTask) {
-            return objectPath != null &&
-                objectPath.equals(readTask.objectPath) &&
-                dataSparsityRate <= this.maxMergeReadSparsityRate &&
-                // Don't allow merge read to end task.
-                readTask.end != RANGE_READ_TO_END &&
-                end != RANGE_READ_TO_END;
-        }
-
-        void handleReadCompleted(ByteBuf rst, Throwable ex) {
-            handleReadCompleted(this.readTasks, this.start, rst, ex);
-        }
-
-        static void handleReadCompleted(List<ReadTask> readTasks, long mergeReadStart, ByteBuf rst, Throwable ex) {
-            if (ex != null) {
-                readTasks.forEach(readTask -> readTask.cf.completeExceptionally(ex));
-            } else {
-                ArrayList<ByteBuf> sliceByteBufList = new ArrayList<>();
-                for (AbstractObjectStorage.ReadTask readTask : readTasks) {
-                    int sliceStart = (int) (readTask.start - mergeReadStart);
-                    if (readTask.end == RANGE_READ_TO_END) {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, rst.readableBytes() - sliceStart));
-                    } else {
-                        sliceByteBufList.add(rst.retainedSlice(sliceStart, (int) (readTask.end - readTask.start)));
-                    }
-                }
-                rst.release();
-                for (int i = 0; i < readTasks.size(); i++) {
-                    readTasks.get(i).cf.complete(sliceByteBufList.get(i));
-                }
-
-            }
-        }
-    }
-
-    static final class ReadTask {
-        private final ReadOptions options;
-        private final String objectPath;
-        private final long start;
-        private final long end;
-        private final CompletableFuture<ByteBuf> cf;
-
-        ReadTask(ReadOptions options, String objectPath, long start, long end, CompletableFuture<ByteBuf> cf) {
-            this.options = options;
-            this.objectPath = objectPath;
-            this.start = start;
-            this.end = end;
-            this.cf = cf;
-        }
-
-        public ReadOptions options() {
-            return options;
-        }
-
-        public String objectPath() {
-            return objectPath;
-        }
-
-        public long start() {
-            return start;
-        }
-
-        public long end() {
-            return end;
-        }
-
-        public CompletableFuture<ByteBuf> cf() {
-            return cf;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (obj == this)
-                return true;
-            if (obj == null || obj.getClass() != this.getClass())
-                return false;
-            var that = (AbstractObjectStorage.ReadTask) obj;
-            return Objects.equals(this.objectPath, that.objectPath) &&
-                this.start == that.start &&
-                this.end == that.end &&
-                Objects.equals(this.cf, that.cf);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(objectPath, start, end, cf);
-        }
-
-        @Override
-        public String toString() {
-            return "ReadTask[" +
-                "s3ObjectMetadata=" + objectPath + ", " +
-                "start=" + start + ", " +
-                "end=" + end + ", " +
-                "cf=" + cf + ']';
-        }
     }
 
     /**
