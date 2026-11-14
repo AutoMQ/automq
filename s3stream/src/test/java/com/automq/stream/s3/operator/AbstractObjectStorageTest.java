@@ -358,6 +358,27 @@ class AbstractObjectStorageTest {
         await().untilAsserted(() -> assertEquals(0, response.refCnt()));
     }
 
+    /** A read continuation can initiate storage close without waiting on its own callback executor. */
+    @Test
+    void testCloseFromReadCallback() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<Void> closed = objectStorage.rangeRead(new ReadOptions(), "key", 0, 1)
+            .thenAccept(data -> {
+                data.release();
+                objectStorage.close();
+            });
+        objectStorage.readAccumulator.flush().join();
+        physical.complete(Unpooled.wrappedBuffer(new byte[] {1}));
+        closed.get(5, TimeUnit.SECONDS);
+        verify(objectStorage).doClose();
+        CompletableFuture<Void> nextCallback = new CompletableFuture<>();
+        ReadRequestAccumulator.CALLBACK_EXECUTOR.execute(() -> nextCallback.complete(null));
+        nextCallback.get(1, TimeUnit.SECONDS);
+    }
+
     /** Given a prepared response queued behind a blocked callback, close delivers it despite executor shutdown. */
     @Test
     void testQueuedResponseDuringCloseReleasesBuffer() throws Exception {
@@ -393,7 +414,7 @@ class AbstractObjectStorageTest {
             closed.get(2, TimeUnit.SECONDS);
             assertEquals(100, caller.join().readableBytes());
             caller.join().release();
-            assertEquals(0, response.refCnt());
+            await().untilAsserted(() -> assertEquals(0, response.refCnt()));
             verify(objectStorage, times(1)).doClose();
         } finally {
             release.countDown();

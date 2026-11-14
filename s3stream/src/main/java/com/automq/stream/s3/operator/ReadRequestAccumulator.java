@@ -61,6 +61,8 @@ final class ReadRequestAccumulator {
     static final EventLoop EVENT_LOOP = new EventLoop("s3-read-event-loop", true);
     static final Executor CALLBACK_EXECUTOR = Executors.newSingleThreadExecutor(
         ThreadUtils.createThreadFactory("s3-read-callback", true));
+    private static final Executor CLOSE_EXECUTOR = Executors.newCachedThreadPool(
+        ThreadUtils.createThreadFactory("s3-read-close", true));
     private final ScheduledExecutorService scheduler;
     private final LongSupplier nanoTime;
     private final ReadMergePlanner planner;
@@ -138,7 +140,8 @@ final class ReadRequestAccumulator {
     }
 
     /**
-     * Stop batching and deliver terminal results for this instance's waiting callers asynchronously.
+     * Stop batching and enqueue terminal results for this instance's waiting callers asynchronously.
+     * Completion does not wait for caller callbacks to run, so a callback may initiate storage close.
      * Repeated calls return the same future. Late physical responses are released when they arrive;
      * closing does not wait for those GETs or stop any of the shared executors.
      */
@@ -153,13 +156,14 @@ final class ReadRequestAccumulator {
             new ArrayList<>(pending.values()).forEach(PendingBatch::close);
             active.forEach(MergedReadTask::close);
         }).thenCompose(ignored -> EVENT_LOOP.submit(() -> { }))
+            // A read callback may synchronously wait for close; do not complete on its executor.
             .whenCompleteAsync((ignored, error) -> {
                 if (error == null) {
                     closeFuture.complete(null);
                 } else {
                     closeFuture.completeExceptionally(error);
                 }
-            }, completionDispatcher);
+            }, CLOSE_EXECUTOR);
         return closeFuture;
     }
 
@@ -261,6 +265,7 @@ final class ReadRequestAccumulator {
         private final Consumer<MergedReadTask> onComplete;
         private boolean finished;
         private boolean needSort = true;
+
         MergedReadTask(List<ReadTask> tasks, double sparsity, Reader reader, Logger logger,
             Executor completionDispatcher, Consumer<MergedReadTask> onComplete) {
             this.reader = reader;

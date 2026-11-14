@@ -371,9 +371,9 @@ class ReadRequestAccumulatorTest {
         accumulator.close().join();
     }
 
-    /** Given queued progress whose callback closes again, shutdown delivers it without waiting on its own close. */
+    /** Close finishes after enqueuing results, even while caller callbacks remain queued. */
     @Test
-    void closeDeliversQueuedProgressAndIgnoresLateNotifications() {
+    void closeDeliversQueuedProgressAndIgnoresLateNotifications() throws Exception {
         List<Runnable> queued = new ArrayList<>();
         doAnswer(invocation -> {
             queued.add(invocation.getArgument(0));
@@ -393,7 +393,7 @@ class ReadRequestAccumulatorTest {
         assertSame(closed, accumulator.close());
         awaitEventLoop();
         awaitEventLoop();
-        assertFalse(closed.isDone());
+        closed.get(2, TimeUnit.SECONDS);
         assertFalse(parent.cf.isDone());
         queued.forEach(Runnable::run);
         closed.join();
