@@ -44,6 +44,7 @@ import io.netty.buffer.Unpooled;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 
+import static com.automq.stream.s3.operator.ObjectStorageTestUtils.spyStorage;
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -56,7 +57,6 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -70,7 +70,7 @@ class ObjectStorageSourceTest {
 
     @BeforeEach
     void setUp() {
-        storage = spy(new MemoryObjectStorage(true));
+        storage = spyStorage(new MemoryObjectStorage(true));
     }
 
     @AfterEach
@@ -95,7 +95,7 @@ class ObjectStorageSourceTest {
             .when(storage).doRangeRead(any(), anyString(), anyLong(), anyLong());
         long gets = count("get_object", S3RequestSource.ROUTER_WAL, "success", S3ReadPurpose.SNAPSHOT_REPLAY);
         long failedGets = count("get_object", S3RequestSource.ROUTER_WAL, "failed", S3ReadPurpose.SNAPSHOT_REPLAY);
-        storage.mergedRangeRead(new ObjectStorage.ReadOptions().source(S3RequestSource.ROUTER_WAL)
+        storage.rangeRead0(new ObjectStorage.ReadOptions().source(S3RequestSource.ROUTER_WAL)
             .readPurpose(S3ReadPurpose.SNAPSHOT_REPLAY), "key", 0, 64)
             .get().release();
         await().untilAsserted(() -> assertEquals(failedGets + 1,
@@ -103,6 +103,28 @@ class ObjectStorageSourceTest {
         assertEquals(gets + 1, count("get_object", S3RequestSource.ROUTER_WAL, "success", S3ReadPurpose.SNAPSHOT_REPLAY));
         verify(storage, times(2)).doRangeRead(argThat(o -> o.source() == S3RequestSource.ROUTER_WAL
             && o.readPurpose() == S3ReadPurpose.SNAPSHOT_REPLAY), eq("key"), eq(0L), eq(64L));
+    }
+
+    /** A caller attaching after dispatch reuses data without changing the physical GET's initiating attribution. */
+    @Test
+    void lateInflightCallerKeepsDispatchAttribution() throws Exception {
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(storage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        long before = count("get_object", S3RequestSource.ROUTER_WAL, "success", S3ReadPurpose.ROUTER_PRODUCE);
+        CompletableFuture<ByteBuf> parent = storage.rangeRead(new ObjectStorage.ReadOptions()
+            .source(S3RequestSource.ROUTER_WAL).readPurpose(S3ReadPurpose.ROUTER_PRODUCE), "key", 0, 64);
+        storage.readAccumulator.flush().join();
+        CompletableFuture<ByteBuf> child = storage.rangeRead(new ObjectStorage.ReadOptions()
+            .source(S3RequestSource.ROUTER_WAL).readPurpose(S3ReadPurpose.SNAPSHOT_REPLAY), "key", 16, 32);
+        // Attachment is queued on the EventLoop while physical completion runs synchronously.
+        ReadRequestAccumulator.EVENT_LOOP.submit(() -> { }).join();
+        physical.complete(data());
+        parent.get().release();
+        child.get().release();
+        // Progressive delivery can complete callers before physical GET metrics are recorded.
+        await().untilAsserted(() -> assertEquals(before + 1,
+            count("get_object", S3RequestSource.ROUTER_WAL, "success", S3ReadPurpose.ROUTER_PRODUCE)));
+        verify(storage, times(1)).doRangeRead(any(), eq("key"), eq(0L), eq(64L));
     }
 
     /** Attribution differences never split or double-count a merge, and caller mutation cannot relabel queued reads. */
@@ -121,11 +143,14 @@ class ObjectStorageSourceTest {
         CompletableFuture<ByteBuf> right = storage.rangeRead(new ObjectStorage.ReadOptions().source(second)
             .readPurpose(secondPurpose), "key", 32, 64);
         options.source(S3RequestSource.MIXED).readPurpose(S3ReadPurpose.OTHER);
-        storage.tryMergeRead();
+        storage.readAccumulator.flush().join();
         left.get().release();
         right.get().release();
-        assertEquals(before + 1, count("get_object", expected, "success"));
-        assertEquals(purposeBefore + 1, count("get_object", expected, "success", expectedPurpose));
+        // Progressive delivery can complete callers before physical GET metrics are recorded.
+        await().untilAsserted(() -> {
+            assertEquals(before + 1, count("get_object", expected, "success"));
+            assertEquals(purposeBefore + 1, count("get_object", expected, "success", expectedPurpose));
+        });
         verify(storage).doRangeRead(argThat(o -> o.source() == expected && o.readPurpose() == expectedPurpose),
             eq("key"), eq(0L), eq(64L));
     }
@@ -139,7 +164,7 @@ class ObjectStorageSourceTest {
         CompletableFuture<ByteBuf> hedge = new CompletableFuture<>();
         doReturn(original, hedge).when(storage).doRangeRead(any(), anyString(), anyLong(), anyLong());
         long before = count("get_object", S3RequestSource.ROUTER_WAL, "success", S3ReadPurpose.ROUTER_PRODUCE);
-        CompletableFuture<ByteBuf> result = storage.mergedRangeRead(
+        CompletableFuture<ByteBuf> result = storage.rangeRead0(
             new ObjectStorage.ReadOptions().source(S3RequestSource.ROUTER_WAL).readPurpose(S3ReadPurpose.ROUTER_PRODUCE), "key", 0, 64);
         verify(storage, timeout(1000).times(2)).doRangeRead(argThat(o -> o.source() == S3RequestSource.ROUTER_WAL
             && o.readPurpose() == S3ReadPurpose.ROUTER_PRODUCE),

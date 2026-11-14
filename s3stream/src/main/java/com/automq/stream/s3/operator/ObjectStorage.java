@@ -450,6 +450,21 @@ public interface ObjectStorage {
         private S3ReadPurpose readPurpose = S3ReadPurpose.OTHER;
         private short bucket = UNSET_BUCKET;
         private int retryCount;
+        private boolean freshRead;
+
+        /**
+         * Requires an independent GET, bypassing batching and in-flight reuse for mutable objects.
+         * Defaults to false. Bandwidth limits, read permits and retries still apply.
+         */
+        public ReadOptions freshRead(boolean freshRead) {
+            this.freshRead = freshRead;
+            return this;
+        }
+
+        /** Returns whether this request must issue an independent GET. */
+        public boolean freshRead() {
+            return freshRead;
+        }
 
         /** Sets metric-only read purpose; it does not affect eligibility for merging. */
         public ReadOptions readPurpose(S3ReadPurpose readPurpose) {
@@ -507,6 +522,7 @@ public interface ObjectStorage {
             copy.throttleStrategy = throttleStrategy;
             copy.source = source;
             copy.readPurpose = readPurpose;
+            copy.freshRead = freshRead;
             copy.bucket = bucket;
             copy.retryCount = retryCount;
             return copy;
