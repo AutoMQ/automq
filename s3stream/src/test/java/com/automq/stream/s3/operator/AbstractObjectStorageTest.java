@@ -86,6 +86,43 @@ class AbstractObjectStorageTest {
         objectStorage.close();
     }
 
+    /** A fresh read bypasses manual batching and an older GET that has already delivered progress. */
+    @Test
+    void testFreshReadBypassesProgressiveInflightRead() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> original = new CompletableFuture<>();
+        CompletableFuture<ReadProgressListener> listener = new CompletableFuture<>();
+        AtomicInteger gets = new AtomicInteger();
+        doAnswer(invocation -> {
+            if (gets.incrementAndGet() == 1) {
+                listener.complete(invocation.getArgument(4));
+                return original;
+            }
+            return CompletableFuture.completedFuture(Unpooled.wrappedBuffer(new byte[] {2}));
+        }).when(objectStorage).doRangeRead(any(), eq("mutable"), eq(0L), eq(1L), any());
+
+        CompletableFuture<ByteBuf> first = objectStorage.rangeRead(new ReadOptions(), "mutable", 0, 1);
+        objectStorage.readAccumulator.flush().join();
+        ByteBuf oldData = Unpooled.wrappedBuffer(new byte[] {1});
+        try {
+            listener.get().onChange(List.of(oldData), 1);
+            ByteBuf firstResult = first.get();
+            assertEquals(1, firstResult.readByte());
+            firstResult.release();
+            assertFalse(original.isDone());
+
+            // No flush: the fresh request must start its own GET and observe the overwritten value.
+            ByteBuf fresh = objectStorage.rangeRead(new ReadOptions().freshRead(true), "mutable", 0, 1).get();
+            assertEquals(2, fresh.readByte());
+            fresh.release();
+            assertEquals(2, gets.get());
+        } finally {
+            original.complete(oldData);
+        }
+        await().untilAsserted(() -> assertEquals(0, oldData.refCnt()));
+    }
+
     @Test
     void testMergeRead() throws ExecutionException, InterruptedException {
         S3ObjectMetadata s3ObjectMetadata1 = new S3ObjectMetadata(1, 33554944, S3ObjectType.STREAM);

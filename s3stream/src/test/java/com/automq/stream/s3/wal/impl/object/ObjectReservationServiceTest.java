@@ -23,14 +23,23 @@ import com.automq.stream.s3.operator.MemoryObjectStorage;
 import com.automq.stream.s3.operator.ObjectStorage;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+@Tag("S3Unit")
 class ObjectReservationServiceTest {
     private ObjectReservationService reservationService;
     private ObjectStorage objectStorage;
@@ -39,6 +48,20 @@ class ObjectReservationServiceTest {
     public void setUp() {
         objectStorage = new MemoryObjectStorage();
         reservationService = new ObjectReservationService("cluster", objectStorage, (short) 0);
+    }
+
+    /** Ownership verification requests an independent GET instead of reusing an older reservation snapshot. */
+    @Test
+    void verifyRequiresFreshRead() {
+        ObjectStorage storage = mock(ObjectStorage.class);
+        ByteBuf reservation = Unpooled.buffer(ObjectReservationService.S3_RESERVATION_OBJECT_LENGTH);
+        reservation.writeInt(ObjectReservationService.S3_RESERVATION_OBJECT_MAGIC_CODE);
+        reservation.writeLong(1);
+        reservation.writeLong(2);
+        reservation.writeBoolean(false);
+        when(storage.rangeRead(argThat(ObjectStorage.ReadOptions::freshRead), anyString(), anyLong(), anyLong()))
+            .thenReturn(CompletableFuture.completedFuture(reservation));
+        assertTrue(new ObjectReservationService("cluster", storage, (short) 0).verify(1, 2, false).join());
     }
 
     @Test

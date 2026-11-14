@@ -101,13 +101,13 @@ final class ReadRequestAccumulator {
 
     /**
      * Enqueue a logical read; its result is delivered through {@link ReadTask#cf}.
-     * Reads arriving after close bypass batching and are handed to the storage reader.
+     * Fresh reads and reads arriving after close bypass batching and in-flight reuse.
      */
     public void add(ReadTask task) {
         Runnable bypass = () -> reader.read(task.options, task.objectPath, task.start, task.end, (chunks, size) -> { })
             .whenComplete((data, ex) -> completionDispatcher.execute(
                 () -> MergedReadTask.handleReadCompleted(List.of(task), task.start, data, ex)));
-        if (closeStarted.get()) {
+        if (task.options.freshRead() || closeStarted.get()) {
             bypass.run();
             return;
         }
