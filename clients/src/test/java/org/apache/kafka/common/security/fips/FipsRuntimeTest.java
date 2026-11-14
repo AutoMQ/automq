@@ -16,40 +16,28 @@
  */
 package org.apache.kafka.common.security.fips;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 class FipsRuntimeTest {
-    @AfterEach
-    void clearMode() {
-        System.clearProperty(FipsRuntime.MODE_PROPERTY);
-    }
-
     @Test
-    void disabledModeDoesNotInitializeProviders() {
-        System.clearProperty(FipsRuntime.MODE_PROPERTY);
-
+    void runtimeIsDisabledBeforeEnterpriseBootstrap() {
         assertFalse(FipsRuntime.enabled());
-        assertDoesNotThrow(FipsRuntime::initialize);
     }
 
     @Test
     void enabledModeRequiresFipsHost() {
         assumeFalse(hostFipsEnabled());
-        System.setProperty(FipsRuntime.MODE_PROPERTY, "enabled");
-
-        assertTrue(FipsRuntime.enabled());
         IllegalStateException error = assertThrows(IllegalStateException.class, FipsRuntime::initialize);
         assertTrue(error.getMessage().contains("fips_enabled=1"));
+        assertFalse(FipsRuntime.enabled());
     }
 
     private boolean hostFipsEnabled() {

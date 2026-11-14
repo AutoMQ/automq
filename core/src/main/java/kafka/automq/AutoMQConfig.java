@@ -53,6 +53,10 @@ import static org.apache.kafka.common.config.ConfigDef.Type.PASSWORD;
 import static org.apache.kafka.common.config.ConfigDef.Type.STRING;
 
 public class AutoMQConfig {
+    public static final String FIPS_ENABLED_CONFIG = "automq.fips.enabled";
+    public static final String FIPS_ENABLED_DOC = "Enable Enterprise FIPS startup validation and providers. "
+        + "Supported on the validated AWS and AWS S3 deployment matrix only. Requires restart.";
+
     private static final Logger LOGGER = LoggerFactory.getLogger(AutoMQConfig.class);
 
     public static final String ELASTIC_STREAM_ENABLE_CONFIG = "elasticstream.enable";
@@ -298,7 +302,8 @@ public class AutoMQConfig {
     // Deprecated config end
 
     public static void define(ConfigDef configDef) {
-        configDef.define(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, BOOLEAN, false, HIGH, AutoMQConfig.ELASTIC_STREAM_ENABLE_DOC)
+        configDef.define(FIPS_ENABLED_CONFIG, BOOLEAN, false, HIGH, FIPS_ENABLED_DOC)
+            .define(AutoMQConfig.ELASTIC_STREAM_ENABLE_CONFIG, BOOLEAN, false, HIGH, AutoMQConfig.ELASTIC_STREAM_ENABLE_DOC)
             .define(AutoMQConfig.ELASTIC_STREAM_ENDPOINT_CONFIG, STRING, "s3://", HIGH, AutoMQConfig.ELASTIC_STREAM_ENDPOINT_DOC)
             .define(AutoMQConfig.S3_DATA_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_DATA_BUCKETS_DOC)
             .define(AutoMQConfig.S3_OPS_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKETS_DOC)

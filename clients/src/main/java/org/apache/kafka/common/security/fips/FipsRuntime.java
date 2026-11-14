@@ -1,6 +1,7 @@
 package org.apache.kafka.common.security.fips;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.Provider;
@@ -8,17 +9,18 @@ import java.security.Security;
 
 /** Minimal runtime guard used by the FIPS distribution. */
 public final class FipsRuntime {
-    public static final String MODE_PROPERTY = "automq.fips.mode";
+    private static volatile boolean initialized;
 
     private FipsRuntime() {
     }
 
     public static boolean enabled() {
-        return "enabled".equalsIgnoreCase(System.getProperty(MODE_PROPERTY, "disabled"));
+        return initialized;
     }
 
+    /** Initializes the process providers after the Enterprise startup configuration enables FIPS. */
     public static synchronized void initialize() {
-        if (!enabled()) {
+        if (initialized) {
             return;
         }
         if (!isHostEnabled()) {
@@ -35,6 +37,7 @@ public final class FipsRuntime {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("BCFIPS provider is not available", e);
         }
+        initialized = true;
     }
 
     private static void addProvider(String className, String name, String... args) {
@@ -54,7 +57,7 @@ public final class FipsRuntime {
 
     private static boolean isHostEnabled() {
         try {
-            return "1".equals(Files.readString(Path.of("/proc/sys/crypto/fips_enabled")).trim());
+            return "1".equals(Files.readString(Path.of("/proc/sys/crypto/fips_enabled"), StandardCharsets.US_ASCII).trim());
         } catch (IOException | SecurityException e) {
             return false;
         }

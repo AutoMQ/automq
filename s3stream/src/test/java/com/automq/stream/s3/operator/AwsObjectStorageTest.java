@@ -642,7 +642,7 @@ public class AwsObjectStorageTest {
 
     @Test
     void testFipsModeUsesCrc32cInsteadOfContentMd5() throws Exception {
-        System.setProperty("automq.fips.mode", "enabled");
+        AwsObjectStorage.configureFipsMode(true);
         try {
             S3AsyncClient s3 = mock(S3AsyncClient.class);
             AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
@@ -660,7 +660,7 @@ public class AwsObjectStorageTest {
                 data.release();
             }
         } finally {
-            System.clearProperty("automq.fips.mode");
+            AwsObjectStorage.configureFipsMode(false);
         }
     }
 
@@ -710,6 +710,25 @@ public class AwsObjectStorageTest {
             data.release();
         }
     }
+
+    @Test
+    void testFipsModeUsesCrc32cForDeleteObjects() throws Exception {
+        AwsObjectStorage.configureFipsMode(true);
+        try {
+            S3AsyncClient s3 = mock(S3AsyncClient.class);
+            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
+            when(s3.deleteObjects(any(DeleteObjectsRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(DeleteObjectsResponse.builder().build()));
+            storage.doDeleteObjects(List.of("test-key")).get();
+            org.mockito.ArgumentCaptor<DeleteObjectsRequest> captor =
+                org.mockito.ArgumentCaptor.forClass(DeleteObjectsRequest.class);
+            verify(s3).deleteObjects(captor.capture());
+            Assertions.assertEquals(ChecksumAlgorithm.CRC32_C, captor.getValue().checksumAlgorithm());
+        } finally {
+            AwsObjectStorage.configureFipsMode(false);
+        }
+    }
+
 
     @Test
     void testCredentialsProviderChain() {
