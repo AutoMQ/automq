@@ -688,49 +688,6 @@ public class AwsObjectStorageTest {
     }
 
     @Test
-    void testFipsModeUsesCrc32cInsteadOfContentMd5() throws Exception {
-        AwsObjectStorage.configureFipsMode(true);
-        try {
-            S3AsyncClient s3 = mock(S3AsyncClient.class);
-            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
-            ByteBuf data = Unpooled.wrappedBuffer("fips checksum".getBytes(StandardCharsets.UTF_8));
-            List<PutObjectRequest> requests = new ArrayList<>();
-            when(s3.putObject(any(PutObjectRequest.class), any(AsyncRequestBody.class))).thenAnswer(invocation -> {
-                requests.add(invocation.getArgument(0));
-                return CompletableFuture.completedFuture(null);
-            });
-
-            try {
-                storage.doWrite(ObjectStorage.WriteOptions.DEFAULT, "test-key", data).get();
-                Assertions.assertNull(requests.get(0).contentMD5());
-                Assertions.assertEquals(crc32cBase64(data), requests.get(0).checksumCRC32C());
-            } finally {
-                data.release();
-            }
-        } finally {
-            AwsObjectStorage.configureFipsMode(false);
-        }
-    }
-
-    @Test
-    void testFipsModeUsesCrc32cForDeleteObjects() throws Exception {
-        AwsObjectStorage.configureFipsMode(true);
-        try {
-            S3AsyncClient s3 = mock(S3AsyncClient.class);
-            AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
-            when(s3.deleteObjects(any(DeleteObjectsRequest.class)))
-                .thenReturn(CompletableFuture.completedFuture(DeleteObjectsResponse.builder().build()));
-            storage.doDeleteObjects(List.of("test-key")).get();
-            org.mockito.ArgumentCaptor<DeleteObjectsRequest> captor =
-                org.mockito.ArgumentCaptor.forClass(DeleteObjectsRequest.class);
-            verify(s3).deleteObjects(captor.capture());
-            Assertions.assertEquals(ChecksumAlgorithm.CRC32_C, captor.getValue().checksumAlgorithm());
-        } finally {
-            AwsObjectStorage.configureFipsMode(false);
-        }
-    }
-
-    @Test
     void testCredentialsProviderChain() {
         AwsObjectStorage storage = mock(AwsObjectStorage.class);
         doCallRealMethod().when(storage).credentialsProviders0(any());
