@@ -205,8 +205,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             ? ChecksumAlgorithm.CRC32_C : checksumAlgorithm;
     }
 
+    private static volatile boolean fipsMode;
+
+    /** Configures the S3 transport policy at process bootstrap, before constructing any storage client. */
+    public static void configureFipsMode(boolean enabled) {
+        fipsMode = enabled;
+    }
+
     private static boolean fipsModeEnabled() {
-        return "enabled".equalsIgnoreCase(System.getProperty("automq.fips.mode", "disabled"));
+        return fipsMode;
     }
 
     public static Builder builder() {

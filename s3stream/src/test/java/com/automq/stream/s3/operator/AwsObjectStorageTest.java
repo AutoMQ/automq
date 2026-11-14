@@ -689,7 +689,7 @@ public class AwsObjectStorageTest {
 
     @Test
     void testFipsModeUsesCrc32cInsteadOfContentMd5() throws Exception {
-        System.setProperty("automq.fips.mode", "enabled");
+        AwsObjectStorage.configureFipsMode(true);
         try {
             S3AsyncClient s3 = mock(S3AsyncClient.class);
             AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
@@ -708,13 +708,13 @@ public class AwsObjectStorageTest {
                 data.release();
             }
         } finally {
-            System.clearProperty("automq.fips.mode");
+            AwsObjectStorage.configureFipsMode(false);
         }
     }
 
     @Test
     void testFipsModeUsesCrc32cForDeleteObjects() throws Exception {
-        System.setProperty("automq.fips.mode", "enabled");
+        AwsObjectStorage.configureFipsMode(true);
         try {
             S3AsyncClient s3 = mock(S3AsyncClient.class);
             AwsObjectStorage storage = new AwsObjectStorage(s3, "bucket");
@@ -726,7 +726,7 @@ public class AwsObjectStorageTest {
             verify(s3).deleteObjects(captor.capture());
             Assertions.assertEquals(ChecksumAlgorithm.CRC32_C, captor.getValue().checksumAlgorithm());
         } finally {
-            System.clearProperty("automq.fips.mode");
+            AwsObjectStorage.configureFipsMode(false);
         }
     }
 
