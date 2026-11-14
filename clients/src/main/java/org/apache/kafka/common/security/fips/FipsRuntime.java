@@ -4,12 +4,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import javax.net.ssl.SSLContext;
-
 import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.security.Provider;
+import java.security.SecureRandom;
 import java.security.Security;
+
+import javax.net.ssl.SSLContext;
 
 /** Minimal runtime guard used by the FIPS distribution. */
 public final class FipsRuntime {
