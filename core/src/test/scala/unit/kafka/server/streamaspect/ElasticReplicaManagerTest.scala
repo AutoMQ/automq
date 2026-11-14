@@ -1,9 +1,10 @@
 package unit.kafka.server.streamaspect
 
 import kafka.automq.AutoMQConfig
+import kafka.automq.zerozone.AcceptedProduceDrain
 import kafka.cluster.{BrokerEndPoint, Partition}
 import kafka.log.remote.RemoteLogManager
-import kafka.log.streamaspect.ElasticLogManager
+import kafka.log.streamaspect.{ElasticLogManager, ElasticUnifiedLog}
 import kafka.log.{LocalLog, LogLoader, LogManager, UnifiedLog}
 import kafka.server.QuotaFactory.QuotaManagers
 import kafka.server._
@@ -19,6 +20,7 @@ import org.apache.kafka.common.metrics.Metrics
 import org.apache.kafka.common.network.ListenerName
 import org.apache.kafka.common.protocol.Errors
 import org.apache.kafka.common.requests.FetchRequest
+import org.apache.kafka.common.record.MemoryRecords
 import org.apache.kafka.common.utils.{LogContext, Time}
 import org.apache.kafka.common.{DirectoryId, Node, TopicIdPartition, TopicPartition, Uuid}
 import org.apache.kafka.common.metadata.{PartitionRecord, RemoveTopicRecord, TopicRecord}
@@ -30,18 +32,18 @@ import org.apache.kafka.server.log.remote.storage.RemoteLogManagerConfig
 import org.apache.kafka.server.util.timer.MockTimer
 import org.apache.kafka.server.util.{MockScheduler, Scheduler}
 import org.apache.kafka.storage.internals.log._
-import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertTrue}
+import org.junit.jupiter.api.Assertions.{assertEquals, assertFalse, assertThrows, assertTrue}
 import org.junit.jupiter.api.{BeforeEach, Disabled, Tag, Test, Timeout}
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentMatchers
-import org.mockito.ArgumentMatchers.{any, anyString}
-import org.mockito.Mockito.{mock, when}
+import org.mockito.ArgumentMatchers.{any, anyInt, anyLong, anyString}
+import org.mockito.Mockito.{doReturn, doThrow, mock, spy, verify, when}
 
 import java.io.File
 import java.nio.file.Files
 import java.util.{Collections, Optional, Properties}
-import java.util.concurrent.{ConcurrentHashMap, CountDownLatch}
+import java.util.concurrent.{CompletableFuture, ConcurrentHashMap, CountDownLatch, Executors, TimeUnit, TimeoutException}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.{Map, Seq}
 import scala.compat.java8.OptionConverters.RichOptionForJava8
@@ -57,6 +59,147 @@ class ElasticReplicaManagerTest extends ReplicaManagerTest {
 
     override def execute(connectionId: String, task: Runnable): Unit = task.run()
   }
+
+  /** Given a durable append paused before delayed-Produce registration, shutdown must preserve its successful reply. */
+  @Test
+  def testAcceptedProduceRegistrationSurvivesConcurrentShutdown(): Unit = {
+    val rm = setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager]
+    val tp = new TopicPartition("accepted-produce-shutdown", 0)
+    when(rm.metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V6)
+    when(rm.metadataCache.metadataVersion()).thenReturn(org.apache.kafka.server.common.MetadataVersion.IBP_3_9_IV0)
+    when(rm.metadataCache.contains(tp)).thenReturn(true)
+    val partition = rm.createPartition(tp)
+    val checkpoints = new kafka.server.checkpoints.OffsetCheckpoints {
+      override def fetch(logDir: String, topicPartition: TopicPartition): Option[Long] = Some(0L)
+    }
+    val topicId = Uuid.randomUuid()
+    partition.makeLeader(new org.apache.kafka.common.message.LeaderAndIsrRequestData.LeaderAndIsrPartitionState()
+      .setTopicName(tp.topic()).setPartitionIndex(tp.partition()).setLeader(config.brokerId)
+      .setLeaderEpoch(0).setPartitionEpoch(0).setIsr(Collections.singletonList[Integer](config.brokerId))
+      .setReplicas(Collections.singletonList[Integer](config.brokerId)),
+      checkpoints, Some(topicId))
+    val accepted = new CountDownLatch(1)
+    val releaseRegistration = new CountDownLatch(1)
+    val response = new CompletableFuture[Errors]()
+    val executor = Executors.newFixedThreadPool(2)
+    try {
+      val append = executor.submit(new Runnable {
+        override def run(): Unit = rm.appendRecords(5000, (-1).toShort, true, AppendOrigin.CLIENT,
+          Map(tp -> TestUtils.singletonRecords(Array[Byte](1, 2, 3))),
+          result => response.complete(result(tp).error), recordValidationStatsCallback = _ => {
+            accepted.countDown()
+            assertTrue(releaseRegistration.await(5, TimeUnit.SECONDS))
+          })
+      })
+      assertTrue(accepted.await(5, TimeUnit.SECONDS), "Append must reach the registration boundary")
+      val closing = executor.submit(new Runnable {
+        override def run(): Unit = rm.awaitAllPartitionShutdown()
+      })
+      TestUtils.waitUntilTrue(() => rm.getPartition(tp) == HostedPartition.None || {
+        try { partition.checkClosed(); false } catch { case _: org.apache.kafka.common.errors.NotLeaderOrFollowerException => true }
+      }, "Shutdown must either stop Produce admission or unhost the old partition")
+      val hostedDuringRegistration = rm.getPartition(tp) == HostedPartition.Online(partition)
+      releaseRegistration.countDown()
+      append.get(5, TimeUnit.SECONDS)
+      closing.get(5, TimeUnit.SECONDS)
+      assertEquals(Errors.NONE, response.get(5, TimeUnit.SECONDS),
+        "An accepted append must complete normal acknowledgement eligibility before being unhosted")
+      assertTrue(hostedDuringRegistration, "The accepted registration must keep its exact partition hosted")
+    } finally {
+      releaseRegistration.countDown()
+      executor.shutdownNow()
+      rm.shutdown(checkpointHW = false)
+    }
+  }
+
+  /** Given failed drain persistence, keep the normal unhost/close path instead of claiming successful drain. */
+  @Test
+  def testFailedAcceptedProduceDrainRetainsNormalClose(): Unit = {
+    val rm = setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager]
+    val tp = new TopicPartition("failed-accepted-drain", 0)
+    val partition = rm.createPartition(tp)
+    val elastic = mock(classOf[ElasticUnifiedLog])
+    when(rm.metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V3)
+    partition.log = Some(elastic)
+    partition.leaderReplicaIdOpt = Some(config.brokerId)
+    doThrow(new IllegalStateException("injected durable callback failure")).when(elastic).drainAcceptedAppends()
+    try {
+      rm.awaitAllPartitionShutdown()
+      verify(elastic).drainAcceptedAppends()
+      verify(elastic).close()
+      assertEquals(HostedPartition.None, rm.getPartition(tp))
+    } finally rm.shutdown(checkpointHW = false)
+  }
+
+  /** Given late delayed-Produce registration, release the exact partition reservation only after registration. */
+  @Test
+  def testProduceRegistrationReservationSpansDelayedRegistration(): Unit = {
+    val rm = spy(setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager])
+    val tp = new TopicPartition("accepted-registration", 0)
+    val partition = mock(classOf[Partition])
+    val drain = new AcceptedProduceDrain()
+    val registered = new java.util.concurrent.atomic.AtomicBoolean()
+    when(rm.metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V3)
+    doReturn(partition).when(rm).getPartitionOrException(tp)
+    doReturn(Right(partition)).when(rm).getPartitionOrError(tp)
+    when(partition.beginProduceRegistration()).thenAnswer(_ => drain.begin())
+    org.mockito.Mockito.doAnswer(_ => { drain.finish(); null }).when(partition).finishProduceRegistration()
+    when(partition.appendRecordsToLeader(any(), any(), anyInt(), any(), any()))
+      .thenReturn(LogAppendInfo.UNKNOWN_LOG_APPEND_INFO)
+    when(partition.checkEnoughReplicasReachOffset(anyLong())).thenAnswer(_ => {
+      registered.set(true)
+      (true, Errors.NONE)
+    })
+    val paused = new CountDownLatch(1)
+    val release = new CountDownLatch(1)
+    val executor = Executors.newSingleThreadExecutor()
+    try {
+      val append = executor.submit(new Runnable {
+        override def run(): Unit = rm.appendRecords(5000, (-1).toShort, true, AppendOrigin.CLIENT,
+          Map(tp -> MemoryRecords.EMPTY), _ => (), recordValidationStatsCallback = _ => {
+            paused.countDown()
+            assertTrue(release.await(5, TimeUnit.SECONDS))
+          })
+      })
+      assertTrue(paused.await(5, TimeUnit.SECONDS))
+      drain.stop()
+      assertThrows(classOf[TimeoutException], () => drain.await(0))
+      assertFalse(registered.get())
+      release.countDown()
+      append.get(5, TimeUnit.SECONDS)
+      assertTrue(registered.get(), "Normal delayed-Produce eligibility must run before releasing the reservation")
+      drain.await(0)
+      verify(partition).finishProduceRegistration()
+    } finally {
+      release.countDown()
+      executor.shutdownNow()
+      rm.shutdown(checkpointHW = false)
+    }
+  }
+
+  /** Given a callback exception between append and registration, the reservation must still be returned. */
+  @Test
+  def testProduceRegistrationReservationReleasedOnCallbackFailure(): Unit = {
+    val rm = spy(setUpReplicaManagerWithMockedAddPartitionsToTxnManager(addPartitionsToTxnManager, List.empty)
+      .asInstanceOf[ElasticReplicaManager])
+    val tp = new TopicPartition("failed-registration", 0)
+    val partition = mock(classOf[Partition])
+    when(rm.metadataCache.autoMQVersion()).thenReturn(AutoMQVersion.V3)
+    doReturn(partition).when(rm).getPartitionOrException(tp)
+    when(partition.beginProduceRegistration()).thenReturn(true)
+    when(partition.appendRecordsToLeader(any(), any(), anyInt(), any(), any()))
+      .thenReturn(LogAppendInfo.UNKNOWN_LOG_APPEND_INFO)
+    try {
+      assertThrows(classOf[IllegalStateException], () => rm.appendRecords(5000, 1.toShort, true,
+        AppendOrigin.CLIENT, Map(tp -> MemoryRecords.EMPTY), _ => (),
+        recordValidationStatsCallback = _ => throw new IllegalStateException("injected validation callback failure")))
+      verify(partition).finishProduceRegistration()
+    } finally rm.shutdown(checkpointHW = false)
+  }
+
 
   /** Given a long poll on a snapshot replica, removing it must wake the fetch without advancing its timer. */
   @Test
