@@ -54,7 +54,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.handler.ssl.OpenSsl;
-import io.netty.handler.ssl.SslProvider;
 import software.amazon.awssdk.auth.credentials.AnonymousCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProviderChain;
@@ -153,10 +152,9 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
         ChecksumAlgorithm checksumAlgorithm = ChecksumAlgorithm.fromValue(checksumAlgorithmStr);
         if (checksumAlgorithm == null) {
-            checksumAlgorithm = fipsModeEnabled()
-                ? ChecksumAlgorithm.CRC32_C : ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
+            checksumAlgorithm = ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION;
         }
-        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
+        this.checksumAlgorithm = checksumAlgorithm;
 
         Configuration configuration = Configuration.fromBucketURI(bucketURI);
         Supplier<S3AsyncClient> clientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration);
@@ -196,24 +194,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.controlS3Client = controlS3Client;
         this.controlClientSupplier = () -> controlS3Client;
         this.tagging = null;
-        this.checksumAlgorithm = fipsChecksumOr(checksumAlgorithm);
+        this.checksumAlgorithm = checksumAlgorithm;
         this.usesCrt = false;
-    }
-
-    private static ChecksumAlgorithm fipsChecksumOr(ChecksumAlgorithm checksumAlgorithm) {
-        return fipsModeEnabled() && checksumAlgorithm == ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION
-            ? ChecksumAlgorithm.CRC32_C : checksumAlgorithm;
-    }
-
-    private static volatile boolean fipsMode;
-
-    /** Configures the S3 transport policy at process bootstrap, before constructing any storage client. */
-    public static void configureFipsMode(boolean enabled) {
-        fipsMode = enabled;
-    }
-
-    private static boolean fipsModeEnabled() {
-        return fipsMode;
     }
 
     public static Builder builder() {
@@ -403,13 +385,10 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 .build()
         ).toArray(ObjectIdentifier[]::new);
 
-        DeleteObjectsRequest.Builder deleteBuilder = DeleteObjectsRequest.builder()
+        DeleteObjectsRequest request = DeleteObjectsRequest.builder()
             .bucket(bucket)
-            .delete(Delete.builder().objects(toDeleteKeys).build());
-        if (fipsModeEnabled()) {
-            deleteBuilder.checksumAlgorithm(checksumAlgorithm);
-        }
-        DeleteObjectsRequest request = deleteBuilder.build();
+            .delete(Delete.builder().objects(toDeleteKeys).build())
+            .build();
 
         return retryOnThrottle(() -> {
             CompletableFuture<Void> cf = new CompletableFuture<>();
@@ -604,9 +583,6 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     protected S3AsyncClient newS3Client(BucketURI uri, List<AwsCredentialsProvider> credentialsProviders,
                                       Configuration configuration) {
-        if (fipsModeEnabled() && !"netty".equals(configuration.sdkImplementation())) {
-            throw new IllegalArgumentException("FIPS mode requires the Netty JDK S3 HTTP implementation");
-        }
         String endpoint = uri.endpoint();
         String region = uri.region();
         boolean forcePathStyle = uri.extensionBool(PATH_STYLE_KEY, false);
@@ -638,21 +614,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             if (!OpenSsl.isAvailable()) {
                 logger.warn("OpenSSL is not available, using JDK SSL provider, which may have performance issue.", OpenSsl.unavailabilityCause());
             }
-            NettyNioAsyncHttpClient.Builder httpBuilder = NettyNioAsyncHttpClient.builder()
+            builder.httpClientBuilder(NettyNioAsyncHttpClient.builder()
                 .maxConcurrency(configuration.maxConcurrency() == -1 ? maxConcurrency : configuration.maxConcurrency())
-                .connectionTimeout(configuration.connectionTimeout());
-            if (fipsModeEnabled()) {
-                httpBuilder.sslProvider(SslProvider.JDK);
-            }
-            builder.httpClientBuilder(httpBuilder);
+                .connectionTimeout(configuration.connectionTimeout()));
         }
         builder.serviceConfiguration(c -> c.pathStyleAccessEnabled(forcePathStyle));
         // Preserve precomputed upload checksums and MD5 for required operations such as DeleteObjects on COS.
         builder.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
-            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
-        if (!fipsModeEnabled()) {
-            builder.addPlugin(LegacyMd5Plugin.create());
-        }
+            .responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED)
+            .addPlugin(LegacyMd5Plugin.create());
         builder.credentialsProvider(newCredentialsProviderChain(credentialsProviders));
         builder.overrideConfiguration(clientOverrideConfiguration(configuration));
         return builder.build();
@@ -923,7 +893,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
          * Reads camel-case client options from a bucket URI without altering the URI or other buckets.
          */
         public static Configuration fromBucketURI(BucketURI uri) {
-            String implementation = uri.extensionString("sdkImpl", fipsModeEnabled() ? "netty" : "crt-http");
+            String implementation = uri.extensionString("sdkImpl", "crt-http");
             if (!"netty".equals(implementation) && !"crt".equals(implementation) && !"crt-http".equals(implementation)) {
                 throw new IllegalArgumentException("Unsupported sdkImpl: " + implementation);
             }

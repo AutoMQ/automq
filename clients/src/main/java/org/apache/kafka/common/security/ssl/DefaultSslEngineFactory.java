@@ -150,8 +150,8 @@ public class DefaultSslEngineFactory implements SslEngineFactory {
             this.enabledProtocols = null;
         }
 
-        String secureRandom = (String) configs.get(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG);
-        this.secureRandomImplementation = createSecureRandom(secureRandom, null);
+        this.secureRandomImplementation = createSecureRandom((String)
+                configs.get(SslConfigs.SSL_SECURE_RANDOM_IMPLEMENTATION_CONFIG));
 
         this.sslClientAuth = createSslClientAuth((String) configs.get(
                 BrokerSecurityConfigs.SSL_CLIENT_AUTH_CONFIG));
@@ -223,12 +223,12 @@ public class DefaultSslEngineFactory implements SslEngineFactory {
         return SslClientAuth.NONE;
     }
 
-    private static SecureRandom createSecureRandom(String key, String provider) {
+    private static SecureRandom createSecureRandom(String key) {
         if (key == null) {
             return null;
         }
         try {
-            return provider == null ? SecureRandom.getInstance(key) : SecureRandom.getInstance(key, provider);
+            return SecureRandom.getInstance(key);
         } catch (GeneralSecurityException e) {
             throw new KafkaException(e);
         }
