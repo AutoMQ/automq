@@ -4,6 +4,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import javax.net.ssl.SSLContext;
+
+import java.security.GeneralSecurityException;
+import java.security.SecureRandom;
 import java.security.Provider;
 import java.security.Security;
 
@@ -36,6 +40,13 @@ public final class FipsRuntime {
             }
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException("BCFIPS provider is not available", e);
+        }
+        try {
+            SSLContext context = SSLContext.getInstance("TLS", "BCJSSE");
+            context.init(null, null, SecureRandom.getInstance("DEFAULT", "BCFIPS"));
+            SSLContext.setDefault(context);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Unable to initialize the FIPS default TLS context", e);
         }
         initialized = true;
     }
