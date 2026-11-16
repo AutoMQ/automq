@@ -42,6 +42,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -258,7 +259,7 @@ class AbstractObjectStorageTest {
         second.get(1, TimeUnit.SECONDS).release();
     }
 
-    /** Given a quota waiter and an unstarted read, close fails both without launching extra GETs or leaking quota. */
+    /** Close fails active, quota-waiting and queued reads without extra GETs or leaked permits. */
     @Test
     void testCloseSettlesQueuedStorageReads() throws Exception {
         objectStorage.close();
@@ -268,16 +269,15 @@ class AbstractObjectStorageTest {
         CompletableFuture<ByteBuf> first = objectStorage.rangeRead0(new ReadOptions(), "first", 0, 10);
         verify(objectStorage, timeout(1000)).doRangeRead(any(), eq("first"), anyLong(), anyLong());
         CompletableFuture<ByteBuf> second = objectStorage.rangeRead0(new ReadOptions(), "second", 0, 10);
-        Field pending = AbstractObjectStorage.class.getDeclaredField("pendingReads");
-        pending.setAccessible(true);
-        java.util.Set<?> queued = (java.util.Set<?>) pending.get(objectStorage);
-        await().until(() -> !queued.contains(second));
+        verify(objectStorage, timeout(1000).times(2)).acquireReadPermit(any());
         CompletableFuture<ByteBuf> third = objectStorage.rangeRead0(new ReadOptions(), "third", 0, 10);
         objectStorage.close();
         assertTrue(third.isCompletedExceptionally());
         await().until(second::isCompletedExceptionally);
-        firstPhysical.complete(Unpooled.buffer(10).writeZero(10));
-        first.get(1, TimeUnit.SECONDS).release();
+        assertTrue(first.isCompletedExceptionally());
+        ByteBuf late = Unpooled.buffer(10).writeZero(10);
+        firstPhysical.complete(late);
+        await().untilAsserted(() -> assertEquals(0, late.refCnt()));
         verify(objectStorage, times(0)).doRangeRead(any(), eq("second"), anyLong(), anyLong());
         verify(objectStorage, times(0)).doRangeRead(any(), eq("third"), anyLong(), anyLong());
         Field limiter = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
@@ -355,6 +355,47 @@ class AbstractObjectStorageTest {
         assertTrue(caller.isCompletedExceptionally());
         ByteBuf response = Unpooled.buffer(100).writeZero(100);
         physical.complete(response);
+        await().untilAsserted(() -> assertEquals(0, response.refCnt()));
+    }
+
+    /** Closing storage terminates a fresh read awaiting retry and returns its concurrency permit. */
+    @Test
+    void testCloseFailsFreshReadWaitingForRetry() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(1));
+        doReturn(30000).when(objectStorage).retryDelay(any(), anyInt());
+        doReturn(CompletableFuture.failedFuture(new TimeoutException("retry pending")))
+            .when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> read = objectStorage.rangeRead(new ReadOptions().freshRead(true), "key", 0, 1);
+        ScheduledThreadPoolExecutor scheduler = (ScheduledThreadPoolExecutor) objectStorage.scheduler;
+        await().until(() -> scheduler.getQueue().stream().anyMatch(task ->
+            ((java.util.concurrent.Delayed) task).getDelay(TimeUnit.SECONDS) > 20));
+
+        objectStorage.close();
+        ExecutionException error = assertThrows(ExecutionException.class, () -> read.get(1, TimeUnit.SECONDS));
+        assertTrue(error.getCause() instanceof IllegalStateException);
+        Field limiter = AbstractObjectStorage.class.getDeclaredField("inflightReadLimiter");
+        limiter.setAccessible(true);
+        assertEquals(1, ((java.util.concurrent.Semaphore) limiter.get(objectStorage)).availablePermits());
+        verify(objectStorage, times(1)).doRangeRead(any(), eq("key"), eq(0L), eq(1L));
+    }
+
+    /** Closing a fresh read fails its caller immediately and releases a later successful response. */
+    @Test
+    void testCloseFailsFreshReadAndReleasesLateResponse() throws Exception {
+        objectStorage.close();
+        objectStorage = spyStorage(new MemoryObjectStorage(true));
+        CompletableFuture<ByteBuf> physical = new CompletableFuture<>();
+        doReturn(physical).when(objectStorage).doRangeRead(any(), eq("key"), anyLong(), anyLong());
+        CompletableFuture<ByteBuf> read = objectStorage.rangeRead(new ReadOptions().freshRead(true), "key", 0, 1);
+        verify(objectStorage, timeout(1000)).doRangeRead(any(), eq("key"), eq(0L), eq(1L));
+        objectStorage.close();
+        ByteBuf response = Unpooled.wrappedBuffer(new byte[] {1});
+        try {
+            assertThrows(ExecutionException.class, () -> read.get(1, TimeUnit.SECONDS));
+        } finally {
+            physical.complete(response);
+        }
         await().untilAsserted(() -> assertEquals(0, response.refCnt()));
     }
 

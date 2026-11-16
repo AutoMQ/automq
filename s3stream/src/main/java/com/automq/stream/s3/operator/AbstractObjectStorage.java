@@ -88,7 +88,7 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
     protected final ExecutorService writeLimiterCallbackExecutor;
     private final ExecutorService writeCallbackExecutor;
     private final ExecutorService readExecutor;
-    private final Set<CompletableFuture<ByteBuf>> pendingReads = ConcurrentHashMap.newKeySet();
+    private final Set<CompletableFuture<ByteBuf>> ongoingReads = ConcurrentHashMap.newKeySet();
     final ScheduledExecutorService scheduler;
     private final FastRetryManager writeFastRetryManager;
     private final FastRetryManager readFastRetryManager;
@@ -724,8 +724,8 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
             return;
         }
         closed = true;
-        pendingReads.forEach(read -> {
-            if (pendingReads.remove(read)) {
+        ongoingReads.forEach(read -> {
+            if (ongoingReads.remove(read)) {
                 read.completeExceptionally(new IllegalStateException("Object storage is closed"));
             }
         });
@@ -808,20 +808,19 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
         }
         CompletableFuture<ByteBuf> result = new CompletableFuture<>();
         ReadOptions requestOptions = options.copy();
-        pendingReads.add(result);
+        ongoingReads.add(result);
+        result.whenComplete((data, error) -> ongoingReads.remove(result));
         if (closed) {
-            pendingReads.remove(result);
             result.completeExceptionally(new IllegalStateException("Object storage is closed"));
             return result;
         }
         try {
             readExecutor.execute(() -> {
-                // Removing the pending entry claims startup against concurrent storage close.
-                if (!pendingReads.remove(result) || result.isDone()) {
+                if (result.isDone()) {
                     return;
                 }
                 try {
-                    rangeReadWithPermit(requestOptions, path, start, end, listener).whenComplete((data, error) -> {
+                    rangeReadWithPermit(requestOptions, path, start, end, listener, result).whenComplete((data, error) -> {
                         if (error != null) {
                             result.completeExceptionally(error);
                         } else if (!result.complete(data)) {
@@ -833,18 +832,26 @@ public abstract class AbstractObjectStorage implements ObjectStorage {
                 }
             });
         } catch (RejectedExecutionException rejected) {
-            pendingReads.remove(result);
             result.completeExceptionally(rejected);
         }
         return result;
     }
 
     private CompletableFuture<ByteBuf> rangeReadWithPermit(ReadOptions options, String path, long start, long end,
-        ReadProgressListener listener) {
+        ReadProgressListener listener, CompletableFuture<ByteBuf> result) {
         if (closed) {
             return CompletableFuture.failedFuture(new IllegalStateException("Object storage is closed"));
         }
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
+        // Ending the tracked request also stops retries and releases any acquired read permit.
+        result.whenComplete((data, error) -> {
+            if (error != null) {
+                cf.completeExceptionally(error);
+            }
+        });
+        if (cf.isDone()) {
+            return cf;
+        }
         CompletableFuture<ByteBuf> retCf = acquireReadPermit(cf);
         if (retCf.isDone()) {
             return retCf;
