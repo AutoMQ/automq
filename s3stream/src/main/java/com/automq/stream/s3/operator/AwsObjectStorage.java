@@ -75,7 +75,6 @@ import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 import software.amazon.awssdk.services.s3.S3CrtAsyncClientBuilder;
 import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
-import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.CompleteMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.CompletedMultipartUpload;
 import software.amazon.awssdk.services.s3.model.CompletedPart;
@@ -260,10 +259,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end,
         ReadProgressListener listener) {
         GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
-
-        if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
-            builder.checksumMode(ChecksumMode.ENABLED);
-        }
+        // Keep reads progressive; checksum validation waits for the complete response.
 
         CompletableFuture<ByteBuf> cf = new CompletableFuture<>();
         readS3Client.getObject(builder.build(), AsyncResponseTransformer.toPublisher())
