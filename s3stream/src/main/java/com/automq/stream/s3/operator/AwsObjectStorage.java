@@ -90,6 +90,7 @@ import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsResponse;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.NoSuchUploadException;
@@ -256,6 +257,12 @@ public class AwsObjectStorage extends AbstractObjectStorage {
 
     @Override
     CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end) {
+        return doRangeRead(options, path, start, end, (chunks, size) -> { });
+    }
+
+    @Override
+    CompletableFuture<ByteBuf> doRangeRead(ReadOptions options, String path, long start, long end,
+        ReadProgressListener listener) {
         GetObjectRequest.Builder builder = GetObjectRequest.builder().bucket(bucket).key(path).range(range(start, end));
 
         if (checksumAlgorithm != ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION) {
@@ -267,14 +274,24 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             .thenAccept(responsePublisher -> {
                 // Set maxNumComponents to Integer.MAX_VALUE to avoid #consolidateIfNeeded causing a GC issue.
                 CompositeByteBuf buf = Unpooled.compositeBuffer(Integer.MAX_VALUE);
+                List<ByteBuf> chunks = new ArrayList<>();
+                boolean progressive = !requiresCompleteResponse(responsePublisher.response());
                 responsePublisher.subscribe(bytes -> {
                     // the aws client will copy DefaultHttpContent to heap ByteBuffer
-                    buf.addComponent(true, Unpooled.wrappedBuffer(bytes));
+                    ByteBuf chunk = Unpooled.wrappedBuffer(bytes);
+                    buf.addComponent(true, chunk);
+                    chunks.add(chunk);
+                    if (progressive) {
+                        notifyReadProgress(listener, chunks, buf.readableBytes());
+                    }
                 }).whenComplete((rst, ex) -> {
                     if (ex != null) {
                         buf.release();
                         cf.completeExceptionally(ex);
                     } else {
+                        if (!progressive) {
+                            notifyReadProgress(listener, chunks, buf.readableBytes());
+                        }
                         cf.complete(buf);
                     }
                 });
@@ -284,6 +301,14 @@ public class AwsObjectStorage extends AbstractObjectStorage {
                 return null;
             });
         return cf;
+    }
+
+    private static boolean requiresCompleteResponse(GetObjectResponse response) {
+        return response.sdkHttpResponse() == null || response.sdkHttpResponse().headers().keySet().stream().anyMatch(name -> {
+            String header = name.toLowerCase(Locale.ROOT);
+            return header.startsWith("x-amz-checksum-") || header.equals("content-md5")
+                || header.equals("x-amz-trailer") || header.equals("trailer");
+        });
     }
 
     @Override

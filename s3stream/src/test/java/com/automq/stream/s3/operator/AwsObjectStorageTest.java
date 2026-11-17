@@ -59,6 +59,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
+import static com.automq.stream.s3.operator.ObjectStorageTestUtils.spyStorage;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -67,7 +68,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -421,7 +421,7 @@ public class AwsObjectStorageTest {
         S3AsyncClient s3 = mock(S3AsyncClient.class);
         when(s3.headObject(any(HeadObjectRequest.class)))
             .thenReturn(CompletableFuture.completedFuture(HeadObjectResponse.builder().build()));
-        AwsObjectStorage storage = spy(new AwsObjectStorage(s3, "bucket"));
+        AwsObjectStorage storage = spyStorage(new AwsObjectStorage(s3, "bucket"));
         doReturn(CompletableFuture.completedFuture(null)).when(storage)
             .doWrite(any(), anyString(), any(ByteBuf.class));
         doReturn(CompletableFuture.failedFuture(new RuntimeException("copy denied"))).when(storage)
