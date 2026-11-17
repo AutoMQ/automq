@@ -54,6 +54,7 @@ import software.amazon.awssdk.services.s3.model.UploadPartCopyResponse;
 import software.amazon.awssdk.services.s3.model.UploadPartRequest;
 import software.amazon.awssdk.services.s3.model.UploadPartResponse;
 
+import static com.automq.stream.s3.operator.ObjectStorageTestUtils.spyStorage;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -255,7 +256,7 @@ public class AwsObjectStorageTest {
     void testListRetriesTimedOutPagination() throws Exception {
         S3AsyncClient s3 = mock(S3AsyncClient.class);
         S3AsyncClient dataClient = mock(S3AsyncClient.class);
-        AwsObjectStorage storage = spy(new AwsObjectStorage(dataClient, s3, "bucket",
+        AwsObjectStorage storage = spyStorage(new AwsObjectStorage(dataClient, s3, "bucket",
             ChecksumAlgorithm.UNKNOWN_TO_SDK_VERSION));
         doReturn(0).when(storage).retryDelay(eq(S3Operation.LIST_OBJECTS), anyInt());
         List<String> tokens = new ArrayList<>();
