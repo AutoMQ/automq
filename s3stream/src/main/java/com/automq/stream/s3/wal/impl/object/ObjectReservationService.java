@@ -72,7 +72,8 @@ public class ObjectReservationService implements ReservationService {
 
     // Visible for testing
     protected CompletableFuture<Boolean> verify(long nodeId, ByteBuf target) {
-        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS).bucket(bucketId).source(source);
+        ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions().throttleStrategy(ThrottleStrategy.BYPASS)
+            .bucket(bucketId).source(source).freshRead(true);
         return objectStorage.rangeRead(options, path(nodeId), 0, S3_RESERVATION_OBJECT_LENGTH)
             .thenApply(bytes -> {
                 try {
