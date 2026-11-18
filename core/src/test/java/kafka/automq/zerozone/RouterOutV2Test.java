@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 import kafka.automq.utils.AsyncSender;
@@ -27,6 +28,8 @@ import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
 import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.protocol.Errors;
@@ -54,6 +57,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -64,6 +68,57 @@ public class RouterOutV2Test {
     private static final Node CURRENT_NODE = new Node(1, "localhost", 9092);
     private static final TopicPartition TOPIC_PARTITION = new TopicPartition("topic", 0);
     private static final TopicPartition REMOTE_TOPIC_PARTITION = new TopicPartition("topic", 1);
+
+    /** Given broker settings, defaults preserve the existing deadlines and invalid values fail validation. */
+    @Test
+    public void testRemoteLingerConfiguration() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+        String idleKey = AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_CONFIG;
+        String maxKey = AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_CONFIG;
+
+        Map<String, Object> defaults = configDef.parse(Map.of());
+        assertEquals(100, defaults.get(idleKey));
+        assertEquals(1000, defaults.get(maxKey));
+
+        Map<String, Object> configured = configDef.parse(Map.of(idleKey, "1000", maxKey, "10000"));
+        assertEquals(1000, configured.get(idleKey));
+        assertEquals(10000, configured.get(maxKey));
+        for (String key : List.of(idleKey, maxKey)) {
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "0")));
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "-1")));
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "1.5")));
+        }
+    }
+
+    /** Given configured linger values, batches use the idle and maximum deadlines in microseconds. */
+    @Test
+    public void testRouterCreatesBatchesWithConfiguredDeadlines() {
+        ManualNanoTime time = new ManualNanoTime();
+        RouterOutV2 defaultRouter = new RouterOutV2(CURRENT_NODE, null, null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time);
+        RouterOutV2.RequestBatch defaultBatch = defaultRouter.newRequestBatch(time);
+        assertEquals(100_000L, defaultBatch.remainingFlushDelayNanos());
+
+        RouterOutV2 router = new RouterOutV2(CURRENT_NODE, null, null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time, 1000, 10000);
+        RouterOutV2.RequestBatch batch = router.newRequestBatch(time);
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        assertEquals(1_000_000L, batch.remainingFlushDelayNanos());
+        for (int i = 1; i <= 11; i++) {
+            time.nowNanos = i * 900_000L;
+            assertTrue(batch.remainingFlushDelayNanos() > 0);
+            assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        }
+        assertEquals(100_000L, batch.remainingFlushDelayNanos());
+        time.nowNanos = 10_000_000L;
+        assertEquals(0L, batch.remainingFlushDelayNanos());
+
+        time.nowNanos = 0;
+        RouterOutV2 shortMaximum = new RouterOutV2(CURRENT_NODE, null, null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time, 1000, 100);
+        assertEquals(100_000L, shortMaximum.newRequestBatch(time).remainingFlushDelayNanos());
+    }
 
     /**
      * Given requests sharing one epoch, the batch size limit counts requests rather than distinct epochs.
