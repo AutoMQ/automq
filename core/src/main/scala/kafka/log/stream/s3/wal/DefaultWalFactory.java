@@ -74,7 +74,7 @@ public class DefaultWalFactory implements WalFactory {
                     walObjectStorage, walObjectStorage.bucketId(), S3RequestSource.DELTA_WAL);
                 configBuilder.withReservationService(reservationService);
                 // This factory creates a dedicated ObjectStorage, so the WAL owns its lifecycle.
-                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), true);
+                return new ObjectWALService(Time.SYSTEM, walObjectStorage, configBuilder.build(), true, null);
             default:
                 throw new IllegalArgumentException("Unsupported WAL protocol: " + uri.protocol());
         }
