@@ -237,6 +237,12 @@ public class AutoMQConfig {
     public static final String ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG = "automq.zonerouter.reader.cache.enabled";
     public static final String ZONE_ROUTER_READER_CACHE_ENABLED_DOC = "Whether RouterWAL readers cache whole objects across produce and replay reads. "
         + "When disabled, readers use uncached range reads. Changes require a broker restart.";
+    public static final String ZONE_ROUTER_REMOTE_IDLE_LINGER_US_CONFIG = "automq.zonerouter.remote.idle.linger.us";
+    public static final int ZONE_ROUTER_REMOTE_IDLE_LINGER_US_DEFAULT = 100;
+    public static final String ZONE_ROUTER_REMOTE_IDLE_LINGER_US_DOC = "Microseconds without a new append before sealing a remote router request batch. Changes require a broker restart.";
+    public static final String ZONE_ROUTER_REMOTE_MAX_LINGER_US_CONFIG = "automq.zonerouter.remote.max.linger.us";
+    public static final int ZONE_ROUTER_REMOTE_MAX_LINGER_US_DEFAULT = 1000;
+    public static final String ZONE_ROUTER_REMOTE_MAX_LINGER_US_DOC = "Maximum age in microseconds before sealing a remote router request batch. Changes require a broker restart.";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
         + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
@@ -343,6 +349,10 @@ public class AutoMQConfig {
             .define(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.ZONE_ROUTER_READER_CACHE_ENABLED_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_CONFIG, INT, AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_DEFAULT,
+                atLeast(1), MEDIUM, AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_CONFIG, INT, AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_DEFAULT,
+                atLeast(1), MEDIUM, AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG, STRING, LocalWriteMode.ROUTER_CHANNEL.configName(),
                 ConfigDef.CaseInsensitiveValidString.in(LocalWriteMode.configNames()), MEDIUM, AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_DOC)
             // Deprecated config start
