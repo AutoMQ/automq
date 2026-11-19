@@ -134,7 +134,7 @@ public class ObjectWALServiceTest {
     public void testShutdownClosesOwnedObjectStorageOnce() {
         TrackingObjectStorage storage = new TrackingObjectStorage();
         ObjectWALConfig config = ObjectWALConfig.builder().withOpenMode(OpenMode.FAILOVER).build();
-        ObjectWALService wal = new ObjectWALService(time, storage, config, true);
+        ObjectWALService wal = new ObjectWALService(time, storage, config, true, null);
 
         wal.shutdownGracefully();
         wal.shutdownGracefully();
