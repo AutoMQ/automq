@@ -27,6 +27,7 @@ import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
 import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
+import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
 import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.record.MemoryRecords;
@@ -43,8 +44,11 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -63,6 +67,42 @@ public class RouterOutV2Test {
     private static final Node CURRENT_NODE = new Node(1, "localhost", 9092);
     private static final TopicPartition TOPIC_PARTITION = new TopicPartition("topic", 0);
     private static final TopicPartition REMOTE_TOPIC_PARTITION = new TopicPartition("topic", 1);
+
+    /** Closing the router unregisters its listener from the shared channel. */
+    @Test
+    public void testCloseRemovesFlushListener() {
+        StubRouterChannel channel = new StubRouterChannel();
+        RouterOutV2 router = new RouterOutV2(CURRENT_NODE, channel,
+            (topic, partition, clientId) -> CURRENT_NODE, (epoch, offset, request) -> new CompletableFuture<>(),
+            LocalWriteMode.DIRECT, new StubAsyncSender(new CompletableFuture<>()), new MockTime());
+        assertTrue(channel.flushListener != null);
+        router.close();
+        router.close();
+        assertNull(channel.flushListener);
+    }
+
+    /** Explicit flush sends a partial remote batch immediately and an empty flush sends nothing. */
+    @Test
+    public void testRemoteFlushSendsPartialBatchOnce() {
+        StubAsyncSender sender = new StubAsyncSender(new CompletableFuture<>());
+        RouterOutV2 router = new RouterOutV2(CURRENT_NODE, new StubRouterChannel(),
+            (topic, partition, clientId) -> CURRENT_NODE, (epoch, offset, request) -> new CompletableFuture<>(),
+            LocalWriteMode.DIRECT, sender, new MockTime());
+        RouterOutV2.RemoteProxy proxy = router.new RemoteProxy(new Node(2, "remote", 9092));
+        RouterOutV2.ProxyRequest request = new RouterOutV2.ProxyRequest(TOPIC_PARTITION, 1,
+            Unpooled.wrappedBuffer(new byte[] {1}),
+            new ZoneRouterProduceRequest((short) 9, (short) 0, new ProduceRequestData()),
+            1, Long.MAX_VALUE);
+        // Keep the scheduler out until the explicit notification has sent the batch.
+        synchronized (proxy) {
+            proxy.send(request);
+            assertEquals(0, sender.sendCount.get());
+            proxy.flushBatch();
+            assertEquals(1, sender.sendCount.get());
+            proxy.flushBatch();
+            assertEquals(1, sender.sendCount.get());
+        }
+    }
 
     /**
      * Given requests sharing one epoch, the batch size limit counts requests rather than distinct epochs.
@@ -205,6 +245,7 @@ public class RouterOutV2Test {
         assertEquals(1, routerChannel.appendCount.get());
         assertEquals(0, callbackCount.get());
 
+        routerChannel.flushListener.run();
         directResponse.complete(successResponse());
         assertEquals(0, callbackCount.get());
 
@@ -300,7 +341,7 @@ public class RouterOutV2Test {
     }
 
     private static ProduceRequestArgs produceArgs(
-        java.util.function.Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> callback,
+        Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> callback,
         short acks
     ) {
         return produceArgs(Map.of(TOPIC_PARTITION, records()), callback, acks);
@@ -308,7 +349,7 @@ public class RouterOutV2Test {
 
     private static ProduceRequestArgs produceArgs(
         Map<TopicPartition, MemoryRecords> entries,
-        java.util.function.Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> callback,
+        Consumer<Map<TopicPartition, ProduceResponse.PartitionResponse>> callback,
         short acks
     ) {
         return ProduceRequestArgs.builder()
@@ -352,8 +393,8 @@ public class RouterOutV2Test {
         return new ClientResponse(null, null, "remote", 0, 0, false, null, null, response);
     }
 
-    private static void waitFor(java.util.function.BooleanSupplier condition) {
-        long deadlineNanos = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    private static void waitFor(BooleanSupplier condition) {
+        long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!condition.getAsBoolean() && System.nanoTime() < deadlineNanos) {
             Thread.onSpinWait();
         }
@@ -372,6 +413,13 @@ public class RouterOutV2Test {
         private final AtomicInteger appendCount = new AtomicInteger();
         private final ByteBuf offset = Unpooled.wrappedBuffer(new byte[] {1});
         private AppendResult lastAppendResult;
+        private Runnable flushListener;
+
+        @Override
+        public Handle addFlushListener(Runnable listener) {
+            this.flushListener = listener;
+            return () -> this.flushListener = null;
+        }
 
         @Override
         public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data) {
@@ -401,7 +449,7 @@ public class RouterOutV2Test {
 
     private static final class FailedAsyncSender implements AsyncSender {
         @Override
-        public <T extends AbstractRequest> CompletableFuture<org.apache.kafka.clients.ClientResponse> sendRequest(
+        public <T extends AbstractRequest> CompletableFuture<ClientResponse> sendRequest(
             Node node,
             AbstractRequest.Builder<T> requestBuilder
         ) {
@@ -419,6 +467,7 @@ public class RouterOutV2Test {
 
     private static final class StubAsyncSender implements AsyncSender {
         private final CompletableFuture<ClientResponse> response;
+        private final AtomicInteger sendCount = new AtomicInteger();
 
         private StubAsyncSender(CompletableFuture<ClientResponse> response) {
             this.response = response;
@@ -429,6 +478,7 @@ public class RouterOutV2Test {
             Node node,
             AbstractRequest.Builder<T> requestBuilder
         ) {
+            sendCount.incrementAndGet();
             return response;
         }
 
