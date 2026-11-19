@@ -210,7 +210,7 @@ public class RouterOutV2 {
     class RemoteProxy implements Proxy {
         private static final int MAX_INFLIGHT_SIZE = 64;
         private static final long IDLE_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
-        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(10);
+        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(30);
         private final Node node;
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
         private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
