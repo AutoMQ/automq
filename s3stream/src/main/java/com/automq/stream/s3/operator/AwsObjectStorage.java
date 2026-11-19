@@ -132,6 +132,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     private final S3AsyncClient writeS3Client;
     private final Supplier<S3AsyncClient> controlClientSupplier;
     private final boolean usesCrt;
+    private final boolean supportsRequestTimeouts;
     // Guarded by the monitor used by controlClient() and doClose().
     private S3AsyncClient controlS3Client;
     private boolean closed;
@@ -162,6 +163,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.writeS3Client = clientSupplier.get();
         this.readS3Client = readWriteIsolate ? clientSupplier.get() : writeS3Client;
         this.usesCrt = !"netty".equals(configuration.sdkImplementation());
+        this.supportsRequestTimeouts = !"crt".equals(configuration.sdkImplementation());
         if (usesCrt) {
             // CRT connection health is configured per client, not per request. Create this client on its first use.
             this.controlClientSupplier = () -> newS3Client(bucketURI, credentialsProviders, configuration.forControl());
@@ -197,6 +199,7 @@ public class AwsObjectStorage extends AbstractObjectStorage {
         this.tagging = null;
         this.checksumAlgorithm = checksumAlgorithm;
         this.usesCrt = false;
+        this.supportsRequestTimeouts = true;
     }
 
     public static Builder builder() {
@@ -377,15 +380,15 @@ public class AwsObjectStorage extends AbstractObjectStorage {
     @Override
     CompletableFuture<ObjectStorageCompletedPart> doUploadPartCopy(WriteOptions options, String sourcePath, String path,
         long start, long end, String uploadId, int partNumber) {
-        UploadPartCopyRequest request = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
-            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber)
-            .overrideConfiguration(
-                AwsRequestOverrideConfiguration.builder()
-                    .apiCallAttemptTimeout(Duration.ofMillis(options.apiCallAttemptTimeout()))
-                    .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build()
-            )
-            .build();
-        return writeControlClient().uploadPartCopy(request)
+        UploadPartCopyRequest.Builder builder = UploadPartCopyRequest.builder().sourceBucket(bucket).sourceKey(sourcePath)
+            .destinationBucket(bucket).destinationKey(path).copySourceRange(range(start, end)).uploadId(uploadId).partNumber(partNumber);
+        if (supportsRequestTimeouts) {
+            builder.overrideConfiguration(AwsRequestOverrideConfiguration.builder()
+                .apiCallAttemptTimeout(Duration.ofMillis(options.apiCallAttemptTimeout()))
+                .apiCallTimeout(Duration.ofMillis(options.apiCallAttemptTimeout())).build());
+        }
+        // Native S3 CRT uses connection timeout/health checks instead of Java SDK request deadlines.
+        return writeControlClient().uploadPartCopy(builder.build())
             .thenApply(resp -> new ObjectStorageCompletedPart(partNumber, resp.copyPartResult().eTag(), checksumValue(resp.copyPartResult())));
     }
 
@@ -478,7 +481,8 @@ public class AwsObjectStorage extends AbstractObjectStorage {
             || cause instanceof SdkClientException || cause instanceof TimeoutException) {
             return Pair.of(RetryStrategy.RETRY, cause);
         }
-        if (cause instanceof IllegalArgumentException || cause instanceof ObjectNotExistException) {
+        if (cause instanceof IllegalArgumentException || cause instanceof UnsupportedOperationException
+            || cause instanceof ObjectNotExistException) {
             return Pair.of(RetryStrategy.ABORT, cause);
         }
         if (cause instanceof NoSuchUploadException) {
