@@ -25,16 +25,21 @@ import org.apache.kafka.server.util.MockRandom;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Tag("S3Unit")
 public class LoadAwarePartitionLeaderSelectorTest {
 
     @AfterEach
@@ -156,6 +161,91 @@ public class LoadAwarePartitionLeaderSelectorTest {
         Assertions.assertEquals(7840, brokerLoads.get(3));
         Assertions.assertEquals(7120, brokerLoads.get(4));
         Assertions.assertEquals(6710, brokerLoads.get(5));
+    }
+
+    /**
+     * Given two brokers per rack, enabling cross-rack placement makes every eligible rack usable.
+     * Disabling it retains the single same-rack destination.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testCrossRackPlacement(boolean enabled) {
+        setUpCluster();
+        List<BrokerRegistration> brokers = multiRackBrokers();
+        LoadAwarePartitionLeaderSelector selector =
+            new LoadAwarePartitionLeaderSelector(new MockRandom(), brokers, brokers.get(5), enabled);
+        Set<Integer> selected = selectDestinations(selector, new TopicPartition("topic", 0), 2000);
+        Assertions.assertEquals(enabled ? Set.of(0, 1, 2, 3, 4) : Set.of(2), selected);
+    }
+
+    /**
+     * Given cross-rack placement, departing, excluded and unmeasured brokers are not weighted candidates.
+     */
+    @Test
+    public void testCrossRackEligibility() {
+        Map<Integer, Double> loads = setUpCluster();
+        loads.remove(4);
+        ClusterStats.getInstance().updateExcludedBrokers(Set.of(1));
+        List<BrokerRegistration> brokers = multiRackBrokers();
+        LoadAwarePartitionLeaderSelector selector =
+            new LoadAwarePartitionLeaderSelector(new MockRandom(), brokers, brokers.get(5), true);
+        Assertions.assertEquals(Set.of(0, 2, 3),
+            selectDestinations(selector, new TopicPartition("topic", 0), 2000));
+    }
+
+    /**
+     * Given missing broker or partition metrics, both modes retain the existing random fallback.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testCrossRackFallback(boolean enabled) {
+        List<BrokerRegistration> brokers = multiRackBrokers();
+        for (Map<Integer, Double> loads : List.of(Map.<Integer, Double>of(), setUpCluster())) {
+            ClusterStats.getInstance().updateBrokerLoads(loads);
+            ClusterStats.getInstance().updateExcludedBrokers(Set.of(1));
+            LoadAwarePartitionLeaderSelector selector =
+                new LoadAwarePartitionLeaderSelector(new MockRandom(), brokers, brokers.get(5), enabled);
+            Assertions.assertEquals(Set.of(0, 2, 3, 4),
+                selectDestinations(selector, new TopicPartition("missing-metrics", 0), 20));
+        }
+        ClusterStats.getInstance().updateBrokerLoads(null);
+        LoadAwarePartitionLeaderSelector selector =
+            new LoadAwarePartitionLeaderSelector(new MockRandom(), brokers, brokers.get(5), enabled);
+        // With unavailable broker metrics, preserve the legacy fallback's exclusion semantics.
+        Assertions.assertEquals(Set.of(0, 1, 2, 3, 4),
+            selectDestinations(selector, new TopicPartition("topic", 0), 20));
+    }
+
+    /**
+     * Given no eligible destinations, neither placement mode selects a departing or excluded broker.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    public void testNoEligibleDestination(boolean enabled) {
+        setUpCluster();
+        ClusterStats.getInstance().updateExcludedBrokers(Set.of(0, 1, 2, 3, 4));
+        List<BrokerRegistration> brokers = multiRackBrokers();
+        LoadAwarePartitionLeaderSelector selector =
+            new LoadAwarePartitionLeaderSelector(new MockRandom(), brokers, brokers.get(5), enabled);
+        Assertions.assertEquals(Optional.empty(), selector.select(new TopicPartition("topic", 0)));
+    }
+
+    private List<BrokerRegistration> multiRackBrokers() {
+        return List.of(
+            new BrokerRegistration.Builder().setId(0).setRack(Optional.of("rack-a")).build(),
+            new BrokerRegistration.Builder().setId(1).setRack(Optional.of("rack-c")).build(),
+            new BrokerRegistration.Builder().setId(2).setRack(Optional.of("rack-b")).build(),
+            new BrokerRegistration.Builder().setId(3).setRack(Optional.of("rack-a")).build(),
+            new BrokerRegistration.Builder().setId(4).setRack(Optional.of("rack-c")).build(),
+            new BrokerRegistration.Builder().setId(5).setRack(Optional.of("rack-b")).build());
+    }
+
+    private Set<Integer> selectDestinations(LoadAwarePartitionLeaderSelector selector, TopicPartition tp, int count) {
+        Set<Integer> selected = new HashSet<>();
+        for (int i = 0; i < count; i++) {
+            selected.add(selector.select(tp).orElseThrow());
+        }
+        return selected;
     }
 
     private Map<Integer, Double> setUpCluster() {

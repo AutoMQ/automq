@@ -19,6 +19,7 @@
 
 package org.apache.kafka.controller;
 
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.es.ElasticStreamSwitch;
 import org.apache.kafka.common.message.CreateTopicsRequestData;
@@ -28,10 +29,14 @@ import org.apache.kafka.common.message.CreateTopicsResponseData;
 import org.apache.kafka.common.message.CreateTopicsResponseData.CreatableTopicResult;
 import org.apache.kafka.common.metadata.BrokerRegistrationChangeRecord;
 import org.apache.kafka.common.metadata.PartitionChangeRecord;
+import org.apache.kafka.common.metadata.PartitionRecord;
 import org.apache.kafka.common.metadata.RegisterBrokerRecord;
+import org.apache.kafka.common.metadata.TopicRecord;
 import org.apache.kafka.common.protocol.ApiKeys;
 import org.apache.kafka.common.utils.LogContext;
 import org.apache.kafka.common.utils.MockTime;
+import org.apache.kafka.controller.es.LoadAwarePartitionLeaderSelector;
+import org.apache.kafka.metadata.BrokerRegistration;
 import org.apache.kafka.metadata.BrokerRegistrationInControlledShutdownChange;
 import org.apache.kafka.metadata.KafkaConfigSchema;
 import org.apache.kafka.metadata.PartitionRegistration;
@@ -47,10 +52,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.MockedConstruction;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -61,6 +71,9 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 @Timeout(40)
@@ -271,6 +284,57 @@ public class ElasticReplicationControlManagerTest {
         context.assertPartition(topicId, NO_LEADER, 1);
     }
 
+    /**
+     * Given an unset, disabled or enabled flag, only a paced controlled-shutdown batch passes the configured mode
+     * to the selector. Broker fencing must always retain the legacy placement policy.
+     */
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(booleans = {false, true})
+    public void testCrossRackModeIsLimitedToControlledShutdown(Boolean enabled) {
+        boolean originalSwitch = ElasticStreamSwitch.isEnabled();
+        ElasticStreamSwitch.setSwitch(true);
+        try {
+            ClusterControlManager cluster = mock(ClusterControlManager.class);
+            BrokerRegistration departing = new BrokerRegistration.Builder().setId(0).build();
+            when(cluster.brokerRegistrations()).thenReturn(Map.of(0, departing));
+            when(cluster.getActiveBrokers()).thenReturn(List.of(departing));
+            ConfigurationControlManager configuration = mock(ConfigurationControlManager.class);
+            when(configuration.getTopicConfig("topic", "min.insync.replicas"))
+                .thenReturn("1");
+            ReplicationControlManager.Builder builder = new ReplicationControlManager.Builder()
+                .setConfigurationControl(configuration)
+                .setClusterControl(cluster)
+                .setFeatureControl(new FeatureControlManager.Builder()
+                    .setMetadataVersion(MetadataVersion.IBP_3_3_IV3).build())
+                .setSnapshotRegistry(new org.apache.kafka.timeline.SnapshotRegistry(new org.apache.kafka.common.utils.LogContext()));
+            if (enabled != null) {
+                builder.setControlledShutdownCrossRackEnabled(enabled);
+            }
+            ReplicationControlManager manager = builder.build();
+            Uuid topicId = Uuid.randomUuid();
+            manager.replay(new TopicRecord().setTopicId(topicId).setName("topic"));
+            manager.replay(new PartitionRecord().setTopicId(topicId).setPartitionId(0)
+                .setReplicas(List.of(0)).setIsr(List.of(0)).setLeader(0));
+
+            List<Boolean> selectedModes = new ArrayList<>();
+            try (MockedConstruction<LoadAwarePartitionLeaderSelector> selectors = mockConstruction(
+                LoadAwarePartitionLeaderSelector.class, (selector, context) -> {
+                    selectedModes.add((Boolean) context.arguments().get(2));
+                    when(selector.select(new TopicPartition("topic", 0))).thenReturn(Optional.of(1));
+                })) {
+                manager.handleBrokerInControlledShutdown(0, 0, new ArrayList<>());
+                assertEquals(0, selectors.constructed().size());
+                when(cluster.inControlledShutdown(0)).thenReturn(true);
+                manager.maybeDrainControlledShutdownBroker(0, 100);
+                manager.handleBrokerFenced(0, new ArrayList<>());
+                assertEquals(List.of(Boolean.TRUE.equals(enabled), false), selectedModes);
+                assertEquals(2, selectors.constructed().size());
+            }
+        } finally {
+            ElasticStreamSwitch.setSwitch(originalSwitch);
+        }
+    }
     private static final class TestContext {
         private final SnapshotRegistry snapshotRegistry = new SnapshotRegistry(new LogContext());
         private final ClusterControlManager clusterControl;

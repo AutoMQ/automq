@@ -290,6 +290,7 @@ class ControllerServer(
           setDelegationTokenExpiryCheckIntervalMs(config.delegationTokenExpiryCheckIntervalMs).
           setEligibleLeaderReplicasEnabled(config.elrEnabled).
           setStreamClient(streamClient).
+          setControlledShutdownCrossRackEnabled(config.getBoolean(kafka.automq.AutoMQConfig.CONTROLLED_SHUTDOWN_CROSS_RACK_ENABLED_CONFIG)).
           setExtension(c => quorumControllerExtension(c)).
           setQuorumVoters(config.quorumVoters).
           setReplicaPlacer(replicaPlacer())
