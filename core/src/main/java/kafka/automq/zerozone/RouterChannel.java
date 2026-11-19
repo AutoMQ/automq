@@ -27,6 +27,24 @@ public interface RouterChannel {
 
     CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data);
 
+    /**
+     * Registers a removable listener invoked after all append callbacks of a flush return.
+     * Notifications are sending hints, not barriers for downstream future continuations.
+     * Implementations without flush notifications return a no-op handle.
+     *
+     * @return a non-null registration handle
+     */
+    default Handle addFlushListener(Runnable listener) {
+        return () -> { };
+    }
+
+    /** A flush-listener registration owned by its caller. */
+    interface Handle extends AutoCloseable {
+        /** Removes the listener idempotently; an invocation already in progress may finish. */
+        @Override
+        void close();
+    }
+
     CompletableFuture<ByteBuf> get(ByteBuf channelOffset);
 
     void nextEpoch(long epoch);

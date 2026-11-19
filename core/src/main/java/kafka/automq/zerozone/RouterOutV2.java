@@ -21,6 +21,7 @@ package kafka.automq.zerozone;
 
 import kafka.automq.interceptor.ProduceRequestArgs;
 
+import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
@@ -61,15 +62,17 @@ import io.netty.buffer.Unpooled;
 public class RouterOutV2 {
     private static final Logger LOGGER = LoggerFactory.getLogger(RouterOutV2.class);
 
+
     private final Node currentNode;
     private final RouterChannel routerChannel;
-    private final Map<Node, Proxy> proxies = new ConcurrentHashMap<>();
+    private final Map<Node, RemoteProxy> proxies = new ConcurrentHashMap<>();
 
     private final LocalProxy localProxy;
     private final LocalWriteMode localWriteMode;
     private final GetRouterOutNode mapping;
     private final AsyncSender asyncSender;
     private final Time time;
+    private final RouterChannel.Handle flushListenerHandle;
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, LocalWriteMode localWriteMode, AsyncSender asyncSender,
@@ -81,6 +84,12 @@ public class RouterOutV2 {
         this.localWriteMode = localWriteMode;
         this.asyncSender = asyncSender;
         this.time = time;
+        flushListenerHandle = routerChannel.addFlushListener(() -> proxies.values().forEach(RemoteProxy::flushBatch));
+    }
+
+    /** Unregisters this router's flush listener from the shared channel. */
+    public void close() {
+        flushListenerHandle.close();
     }
 
     public void handleProduceAppendProxy(ProduceRequestArgs args) {
@@ -199,8 +208,8 @@ public class RouterOutV2 {
      */
     class RemoteProxy implements Proxy {
         private static final int MAX_INFLIGHT_SIZE = 64;
-        private static final long IDLE_LINGER_NANOS = TimeUnit.MICROSECONDS.toNanos(100);
-        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
+        private static final long IDLE_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
+        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(30);
         private final Node node;
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
         private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
@@ -225,6 +234,14 @@ public class RouterOutV2 {
                     requestBatch = null;
                     trySendRequestBatch();
                 }
+            }
+        }
+
+        synchronized void flushBatch() {
+            if (requestBatch != null) {
+                requestBatchQueue.add(requestBatch);
+                requestBatch = null;
+                trySendRequestBatch();
             }
         }
 
@@ -260,7 +277,9 @@ public class RouterOutV2 {
                 }
                 requestBatchQueue.poll();
                 List<CompletableFuture<Void>> futures = new ArrayList<>();
-                waitingSend.getRequests().forEach((epoch, requests) -> futures.add(batchSend(epoch, requests)));
+                for (Map.Entry<Long, List<ProxyRequest>> entry : waitingSend.getRequests().entrySet()) {
+                    futures.add(batchSend(entry.getKey(), entry.getValue()));
+                }
                 CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
                     .whenComplete((nil, ex) -> {
                         synchronized (RemoteProxy.this) {
@@ -281,7 +300,8 @@ public class RouterOutV2 {
                     .setVersion((short) 1)
                     .setRouteEpoch(epoch)
             );
-            return asyncSender.sendRequest(node, builder).thenAccept(clientResponse -> {
+            CompletableFuture<ClientResponse> response = asyncSender.sendRequest(node, builder);
+            return response.thenAccept(clientResponse -> {
                 if (!clientResponse.hasResponse()) {
                     LOGGER.error("[ROUTER_OUT],[NO_RESPONSE],node={},response={}", node, clientResponse);
                     // Make the producer retry send.
