@@ -25,6 +25,7 @@ import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.MemoryObjectStorage;
+import com.automq.stream.s3.wal.AppendResult;
 import com.automq.stream.s3.wal.RecordOffset;
 import com.automq.stream.s3.wal.exception.OverCapacityException;
 import com.automq.stream.s3.wal.impl.DefaultRecordOffset;
@@ -38,12 +39,14 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,6 +73,94 @@ import static org.mockito.Mockito.when;
 /** Protects batching, routing, completion order, trimming and buffer ownership across buckets. */
 @Tag("S3Unit")
 public class MultiBucketsRouterChannelTest {
+    /** Closing a registration removes only that registration and remains safe after channel shutdown. */
+    @Test
+    public void testFlushListenerHandle() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?maxBytesInBatch=1");
+        AtomicInteger notifications = new AtomicInteger();
+        Runnable listener = notifications::incrementAndGet;
+        RouterChannel.Handle first = fixture.router.addFlushListener(listener);
+        RouterChannel.Handle second = fixture.router.addFlushListener(listener);
+        first.close();
+        first.close();
+        fixture.append((short) 1);
+        fixture.nextFlush().succeed(0, 1);
+        awaitEventLoop(fixture.router);
+        assertEquals(1, notifications.get());
+        fixture.close();
+        second.close();
+        second.close();
+    }
+
+    /** A flush notifies once after every append continuation returns, and isolates listener failures. */
+    @Test
+    public void testFlushListenerRunsAfterAppendCallbacks() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?maxBytesInBatch=100&batchInterval=60000");
+        AtomicInteger completed = new AtomicInteger();
+        AtomicInteger notifications = new AtomicInteger();
+        fixture.router.addFlushListener(() -> {
+            throw new IllegalStateException("listener failure");
+        });
+        fixture.router.addFlushListener(() -> {
+            assertEquals(2, completed.get());
+            notifications.incrementAndGet();
+        });
+        fixture.append((short) 1).thenRun(completed::incrementAndGet);
+        fixture.append((short) 2).thenRun(completed::incrementAndGet);
+        Wal wal = fixture.nextFlush();
+        wal.succeed(1, 2);
+        awaitEventLoop(fixture.router);
+        assertEquals(0, notifications.get());
+        assertEquals(0, completed.get());
+        wal.succeed(0, 1);
+        awaitEventLoop(fixture.router);
+        assertEquals(1, notifications.get());
+        fixture.router.flushBatch();
+        awaitEventLoop(fixture.router);
+        assertEquals(1, notifications.get());
+        fixture.close();
+    }
+
+    /** A blocked continuation delays the listener, while WAL callback threads remain free. */
+    @Test
+    public void testFlushListenerWaitsForRunningCallback() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?maxBytesInBatch=100&batchInterval=60000");
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger notifications = new AtomicInteger();
+        fixture.router.addFlushListener(notifications::incrementAndGet);
+        CompletableFuture<RouterChannel.AppendResult> append = fixture.append((short) 1);
+        CompletableFuture<Void> continuation = append.thenRun(() -> {
+            entered.countDown();
+            try {
+                assertTrue(release.await(5, TimeUnit.SECONDS));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError(error);
+            }
+        });
+        fixture.append((short) 2);
+        Wal wal = fixture.nextFlush();
+        CompletableFuture<Void> first = CompletableFuture.runAsync(() -> {
+            wal.succeed(0, 1);
+            wal.succeed(1, 2);
+        });
+        try {
+            assertTrue(entered.await(5, TimeUnit.SECONDS));
+            first.get(5, TimeUnit.SECONDS);
+            ByteBuf cached = fixture.router.get(append.get(5, TimeUnit.SECONDS).channelOffset()).get(5, TimeUnit.SECONDS);
+            assertEquals(1, cached.readByte());
+            cached.release();
+            assertEquals(0, notifications.get());
+        } finally {
+            release.countDown();
+            first.get(5, TimeUnit.SECONDS);
+            continuation.get(5, TimeUnit.SECONDS);
+            fixture.close();
+        }
+        assertEquals(1, notifications.get());
+    }
+
     /** Given two small appends, size flushing submits the whole batch to one bucket. */
     @Test
     public void testSizeBatchUsesOneBucketAndFirstBucketOptions() throws Exception {
@@ -122,15 +213,19 @@ public class MultiBucketsRouterChannelTest {
         Wal b = fixture.nextFlush();
         assertNotEquals(a.id, b.id);
         b.succeed(0, 2);
+        awaitEventLoop(fixture.router);
         assertFalse(second.isDone());
         CompletableFuture<RouterChannel.AppendResult> independent = fixture.append((short) 8);
         Wal c = fixture.nextFlush();
         c.succeed(c.appends.size() - 1, 3);
+        awaitEventLoop(fixture.router);
         assertTrue(independent.isDone());
         fixture.router.trim(5);
+        awaitEventLoop(fixture.router);
         verify(b.mock, never()).trim(any());
         fixture.router.nextEpoch(8);
         a.appends.get(0).completeExceptionally(new IllegalStateException("upload failed"));
+        awaitEventLoop(fixture.router);
         assertTrue(first.isCompletedExceptionally());
         assertTrue(second.isDone());
         assertEquals(5, second.join().epoch());
@@ -149,10 +244,12 @@ public class MultiBucketsRouterChannelTest {
         Wal wal = fixture.nextFlush();
         fixture.router.nextEpoch(6);
         fixture.router.trim(5);
+        awaitEventLoop(fixture.router);
         verify(fixture.wals.get((short) 0).mock, never()).trim(any());
         fixture.router.nextEpoch(7);
         wal.succeed(0, 10);
         fixture.router.trim(5);
+        awaitEventLoop(fixture.router);
         verify(wal.mock, never()).trim(any());
         wal.succeed(1, 20);
         assertEquals(5, first.join().epoch());
@@ -174,16 +271,19 @@ public class MultiBucketsRouterChannelTest {
             CompletableFuture<RouterChannel.AppendResult> independent = fixture.append((short) 2);
             fixture.nextFlush();
             wal.succeed(1, 20);
+            awaitEventLoop(fixture.router);
             assertFalse(second.isDone());
             wal.succeed(2, 30);
             independent.get(5, TimeUnit.SECONDS);
             assertFalse(first.isDone());
             fixture.router.trim(5);
+            awaitEventLoop(fixture.router);
             verify(wal.mock, never()).trim(any());
             wal.succeed(0, 10);
             first.get(5, TimeUnit.SECONDS);
             second.get(5, TimeUnit.SECONDS);
             fixture.router.trim(5);
+            awaitEventLoop(fixture.router);
             verify(wal.mock).trim(DefaultRecordOffset.of(1, 10, 1));
         } finally {
             fixture.close();
@@ -257,7 +357,7 @@ public class MultiBucketsRouterChannelTest {
         }
     }
 
-    /** A batch holds the Router write lock until its append and flush calls have been submitted. */
+    /** A batch submits all WAL operations before the event loop advances to the next epoch. */
     @Test
     public void testConcurrentFlushSubmissionOrder() throws Exception {
         ObjectWALService wal = mock(ObjectWALService.class);
@@ -274,7 +374,7 @@ public class MultiBucketsRouterChannelTest {
             }
             submittedOffsets.add(record.getBaseOffset());
             record.release();
-            com.automq.stream.s3.wal.AppendResult result = mock(com.automq.stream.s3.wal.AppendResult.class);
+            AppendResult result = mock(AppendResult.class);
             when(result.recordOffset()).thenReturn(DefaultRecordOffset.of(1, index, 1));
             return CompletableFuture.completedFuture(result);
         });
@@ -289,7 +389,8 @@ public class MultiBucketsRouterChannelTest {
             CompletableFuture<Void> firstFlush = CompletableFuture.runAsync(router::flushBatch);
             assertTrue(firstAppendEntered.await(5, TimeUnit.SECONDS));
 
-            CompletableFuture<Void> nextEpoch = CompletableFuture.runAsync(() -> router.nextEpoch(6));
+            router.nextEpoch(6);
+            Future<?> nextEpoch = router.eventLoop.submit(() -> { });
             assertFalse(nextEpoch.isDone());
             releaseFirstAppend.countDown();
             firstFlush.get(5, TimeUnit.SECONDS);
@@ -298,9 +399,9 @@ public class MultiBucketsRouterChannelTest {
             CompletableFuture<RouterChannel.AppendResult> second = router.append(42, (short) 2,
                 Unpooled.buffer().writeByte(2));
             router.flushBatch();
-            assertEquals(List.of(1L, 2L), submittedOffsets);
             assertEquals(5, first.get(5, TimeUnit.SECONDS).epoch());
             assertEquals(6, second.get(5, TimeUnit.SECONDS).epoch());
+            assertEquals(List.of(1L, 2L), submittedOffsets);
         } finally {
             releaseFirstAppend.countDown();
             router.close().get(5, TimeUnit.SECONDS);
@@ -326,6 +427,7 @@ public class MultiBucketsRouterChannelTest {
                 Unpooled.buffer().writeByte(2));
             router.flushBatch();
             first.get(5, TimeUnit.SECONDS);
+            second.handle((result, error) -> null).get(5, TimeUnit.SECONDS);
             assertTrue(second.isCompletedExceptionally());
         } finally {
             router.close().get(5, TimeUnit.SECONDS);
@@ -390,6 +492,7 @@ public class MultiBucketsRouterChannelTest {
         Wal writer = fixture.nextFlush();
         assertEquals(2, writer.id);
         writer.succeed(0, 1);
+        awaitEventLoop(fixture.router);
         StreamRecordBatch record = StreamRecordBatch.of(1, 0, 0, 1, Unpooled.wrappedBuffer(new byte[] {42}), DefaultByteBufSupplier.INSTANCE);
         when(fixture.wals.get((short) 0).mock.get(any(RecordOffset.class))).thenAnswer(invocation -> {
             assertEquals(readPurpose, S3ReadPurposeContext.current());
@@ -434,6 +537,24 @@ public class MultiBucketsRouterChannelTest {
         ByteBuf data = Unpooled.buffer().writeByte(1);
         assertTrue(fixture.router.append(42, (short) 1, data).isCompletedExceptionally());
         assertEquals(0, data.refCnt());
+    }
+
+    /** Close waits for the WAL callback before shutting down storage and the event loop. */
+    @Test
+    public void testCloseWaitsForWalCallback() throws Exception {
+        Fixture fixture = new Fixture("0@s3://a?maxBytesInBatch=1");
+        CompletableFuture<RouterChannel.AppendResult> append = fixture.append((short) 1);
+        Wal wal = fixture.nextFlush();
+        CompletableFuture<Void> close = fixture.router.close();
+        awaitEventLoop(fixture.router);
+        assertFalse(close.isDone());
+        verify(wal.mock, never()).shutdownGracefully();
+        wal.succeed(0, 1);
+        close.get(5, TimeUnit.SECONDS);
+        assertTrue(append.isDone());
+        fixture.router.eventLoop.join(5000);
+        assertFalse(fixture.router.eventLoop.isAlive());
+        verify(wal.mock).shutdownGracefully();
     }
 
     /** Bad routing options fail before any storage is opened. */
@@ -518,6 +639,7 @@ public class MultiBucketsRouterChannelTest {
         CompletableFuture<RouterChannel.AppendResult> second = fixture.append(Short.MIN_VALUE);
         Wal b = fixture.nextFlush();
         b.succeed(0, 20);
+        awaitEventLoop(fixture.router);
         assertFalse(second.isDone());
         a.succeed(0, 10);
         first.get(5, TimeUnit.SECONDS);
@@ -536,11 +658,16 @@ public class MultiBucketsRouterChannelTest {
         CompletableFuture<RouterChannel.AppendResult> second = fixture.append(secondHint);
         Wal b = fixture.nextFlush();
         b.succeed(0, 20);
+        awaitEventLoop(fixture.router);
         assertFalse(second.isDone());
         a.succeed(0, 10);
         assertEquals(firstHint, ChannelOffset.of(first.get(5, TimeUnit.SECONDS).channelOffset()).orderHint());
         assertEquals(secondHint, ChannelOffset.of(second.get(5, TimeUnit.SECONDS).channelOffset()).orderHint());
         fixture.close();
+    }
+
+    private static void awaitEventLoop(MultiBucketsRouterChannel router) throws Exception {
+        router.eventLoop.submit(() -> { }).get(5, TimeUnit.SECONDS);
     }
 
     private static ObjectWALService idleWal() {
@@ -556,7 +683,7 @@ public class MultiBucketsRouterChannelTest {
 
         Fixture(String... uris) {
             router = new MultiBucketsRouterChannel(42,
-                java.util.Arrays.stream(uris).map(BucketURI::parse).toList(), false,
+                Arrays.stream(uris).map(BucketURI::parse).toList(), false,
                 (bucket, readOnly) -> {
                     Wal wal = new Wal(bucket.bucketId());
                     when(wal.mock.flush()).thenAnswer(invocation -> {
@@ -587,7 +714,7 @@ public class MultiBucketsRouterChannelTest {
     private static class Wal {
         final short id;
         final ObjectWALService mock = mock(ObjectWALService.class);
-        final List<CompletableFuture<com.automq.stream.s3.wal.AppendResult>> appends = new ArrayList<>();
+        final List<CompletableFuture<AppendResult>> appends = new ArrayList<>();
 
         Wal(short id) {
             this.id = id;
@@ -595,7 +722,7 @@ public class MultiBucketsRouterChannelTest {
                 when(mock.append(any(), any())).thenAnswer(invocation -> {
                     StreamRecordBatch record = invocation.getArgument(1);
                     record.release();
-                    CompletableFuture<com.automq.stream.s3.wal.AppendResult> future = new CompletableFuture<>();
+                    CompletableFuture<AppendResult> future = new CompletableFuture<>();
                     appends.add(future);
                     return future;
                 });
@@ -605,7 +732,7 @@ public class MultiBucketsRouterChannelTest {
         }
 
         void succeed(int index, long offset) {
-            com.automq.stream.s3.wal.AppendResult result = mock(com.automq.stream.s3.wal.AppendResult.class);
+            AppendResult result = mock(AppendResult.class);
             when(result.recordOffset()).thenReturn(DefaultRecordOffset.of(1, offset, 1));
             appends.get(index).complete(result);
         }

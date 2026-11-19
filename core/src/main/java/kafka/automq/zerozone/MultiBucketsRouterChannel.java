@@ -34,6 +34,7 @@ import com.automq.stream.s3.wal.impl.object.ObjectWALService;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.ThreadUtils;
 import com.automq.stream.utils.Threads;
+import com.automq.stream.utils.threads.EventLoop;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
@@ -46,6 +47,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -57,17 +59,16 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.BiFunction;
 
 import io.netty.buffer.ByteBuf;
 
 /**
- * Batches router traffic across object WAL buckets. The first bucket sets batch size and interval.
- * Each batch chooses a writable bucket by in-flight request counts and explicitly flushes it.
- * Completion order is preserved by fixed queues indexed by order hint.
+ * Batches router traffic and distributes writes across writable object WAL buckets while preserving
+ * completion order for each order hint. The first bucket configures the batch size and interval.
  */
 public class MultiBucketsRouterChannel implements RouterChannel {
     private static final Logger LOGGER = LoggerFactory.getLogger(MultiBucketsRouterChannel.class);
@@ -82,6 +83,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     private static final long CACHE_EXPIRE_SECONDS = 10;
     private static final long MIN_BATCH_INTERVAL_NANOS = TimeUnit.MILLISECONDS.toNanos(10);
     private static final long CACHE_MAX_WEIGHT = cacheMaxWeight(Systems.HEAP_MEMORY_SIZE);
+
+    private final List<Runnable> flushListeners = new ArrayList<>();
 
     private final int nodeId;
     private final boolean readOnly;
@@ -109,9 +112,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
     private long lastBatchForceFlushNanos;
 
     private long channelEpoch = 0L;
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private final ReentrantReadWriteLock.WriteLock writeLock = lock.writeLock();
-    private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
+    final EventLoop eventLoop;
 
     private LingerBatch lingerBatch;
     private volatile boolean closed;
@@ -156,6 +157,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             allChannels.forEach(Channel::close);
             throw error;
         }
+        eventLoop = new EventLoop("router-channel-" + nodeId, true);
     }
 
     private static void validateBuckets(List<BucketURI> buckets, boolean readOnly) {
@@ -186,52 +188,89 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
     @Override
     public CompletableFuture<AppendResult> append(int targetNodeId, short orderHint, ByteBuf data) {
-        Request request;
-        AppendTask task;
-        writeLock.lock();
-        try {
-            if (closed || readOnly) {
-                data.release();
-                return CompletableFuture.failedFuture(new IllegalStateException("Router channel is closed or read-only"));
-            }
-            long size = (long) data.readableBytes() + StreamRecordBatchCodec.HEADER_SIZE
-                + RecordHeader.RECORD_HEADER_SIZE;
-            StreamRecordBatch record =
-                StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data, ALLOC);
-            record.retain();
-            request = new Request(orderHint, targetNodeId, record, size);
-            task = new AppendTask(request);
-            appendQueue(orderHint).offer(task);
-            outstanding.add(request);
-            if (lingerBatch == null) {
-                lingerBatch = new LingerBatch();
-            }
-            lingerBatch.add(request);
-        } finally {
-            writeLock.unlock();
+        CompletableFuture<AppendResult> cf = new CompletableFuture<>();
+        if (closed || readOnly) {
+            data.release();
+            cf.completeExceptionally(new IllegalStateException("Router channel is closed or read-only"));
+            return cf;
         }
-        return task.finalOrderedCf.whenComplete((result, error) -> {
-            readLock.lock();
-            try {
-                if (result != null && !closed && targetNodeId != nodeId) {
-                    cache.put(result.channelOffset().slice(), new CachedData(request.record.getPayload()));
-                } else {
-                    request.record.release();
+        try {
+            eventLoop.execute(() -> {
+                try {
+                    append(targetNodeId, orderHint, data, cf);
+                } catch (Throwable error) {
+                    cf.completeExceptionally(error);
                 }
-            } finally {
-                readLock.unlock();
+            });
+        } catch (IllegalStateException error) {
+            data.release();
+            cf.completeExceptionally(error);
+        }
+        // Callers only attach continuations; this future also tracks completion for close.
+        return cf;
+    }
+
+    private void append(int targetNodeId, short orderHint, ByteBuf data, CompletableFuture<AppendResult> cf) {
+        if (closed) {
+            data.release();
+            cf.completeExceptionally(new IllegalStateException("Router channel is closed"));
+            return;
+        }
+        long size = (long) data.readableBytes() + StreamRecordBatchCodec.HEADER_SIZE
+            + RecordHeader.RECORD_HEADER_SIZE;
+        StreamRecordBatch record =
+            StreamRecordBatch.of(targetNodeId, 0, mockOffset.incrementAndGet(), 1, data, ALLOC);
+        record.retain();
+        Request request = new Request(orderHint, targetNodeId, record, size);
+        AppendTask task = new AppendTask(request, cf);
+        appendQueue(orderHint).offer(task);
+        outstanding.add(request);
+        if (lingerBatch == null) {
+            lingerBatch = new LingerBatch();
+        }
+        lingerBatch.add(request);
+    }
+
+    @Override
+    public Handle addFlushListener(Runnable listener) {
+        Objects.requireNonNull(listener);
+        AtomicBoolean removed = new AtomicBoolean();
+        Runnable registration = () -> {
+            if (!removed.get()) {
+                listener.run();
             }
-        });
+        };
+        eventLoop.execute(() -> flushListeners.add(registration));
+        return () -> {
+            if (removed.compareAndSet(false, true)) {
+                try {
+                    eventLoop.execute(() -> flushListeners.remove(registration));
+                } catch (IllegalStateException error) {
+                    if (!closed) {
+                        throw error;
+                    }
+                }
+            }
+        };
+    }
+
+    private void notifyFlushListeners() {
+        for (Runnable listener : flushListeners) {
+            try {
+                listener.run();
+            } catch (Exception error) {
+                LOGGER.warn("Router flush listener failed", error);
+            }
+        }
     }
 
     void flushBatch() {
-        writeLock.lock();
-        try {
-            if (lingerBatch != null) {
-                lingerBatch.flush();
-            }
-        } finally {
-            writeLock.unlock();
+        eventLoop.execute(this::flushBatchOnEventLoop);
+    }
+
+    private void flushBatchOnEventLoop() {
+        if (lingerBatch != null) {
+            lingerBatch.flush();
         }
     }
 
@@ -239,26 +278,33 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         if (requests.isEmpty()) {
             return;
         }
-        writeLock.lock();
-        try {
-            nextChannel();
-            Channel channel = writingChannel;
-            long batchEpoch = channelEpoch;
-            EpochState epochState = channel.channelEpoch2LastRecordOffset.computeIfAbsent(batchEpoch,
-                ignored -> new EpochState());
-            epochState.inflightAppend.addAndGet(requests.size());
-            for (Request request : requests) {
-                channel.append(request.record).whenComplete((result, error) ->
-                    completeAppend(channel, epochState, batchEpoch, request, result, error));
-            }
-            channel.flush();
-        } finally {
-            writeLock.unlock();
+        nextChannel();
+        Channel channel = writingChannel;
+        long batchEpoch = channelEpoch;
+        EpochState epochState = channel.channelEpoch2LastRecordOffset.computeIfAbsent(batchEpoch,
+            ignored -> new EpochState());
+        epochState.inflightAppend.addAndGet(requests.size());
+        List<CompletableFuture<com.automq.stream.s3.wal.AppendResult>> appends = new ArrayList<>(requests.size());
+        for (Request request : requests) {
+            appends.add(channel.append(request.record));
         }
+        // Wait only for this router batch, then process all results in one event-loop task.
+        CompletableFuture.allOf(appends.toArray(new CompletableFuture<?>[0])).whenComplete((ignored, batchError) -> {
+            eventLoop.execute(() -> {
+                for (int i = 0; i < requests.size(); i++) {
+                    Request request = requests.get(i);
+                    appends.get(i).whenComplete((result, error) ->
+                        completeAppend(channel, epochState, batchEpoch, request, result, error));
+                }
+                notifyFlushListeners();
+            });
+        });
+        channel.flush();
     }
 
     private void completeAppend(Channel channel, EpochState epochState, long batchEpoch, Request request,
         com.automq.stream.s3.wal.AppendResult result, Throwable error) {
+        channel.inflightRequests.decrement();
         if (error != null) {
             request.cf.completeExceptionally(error);
         } else {
@@ -267,28 +313,25 @@ public class MultiBucketsRouterChannel implements RouterChannel {
                 ChannelOffset.of(channel.channelId, request.orderHint, nodeId, request.targetNodeId,
                     offset.buffer()).byteBuf()));
         }
-        Queue<AppendTask> queue = appendQueue(request.orderHint);
-        readLock.lock();
-        try {
-            if (result != null) {
-                // Unordered WAL callbacks may leave this below the epoch's maximum offset.
-                // This only retains extra objects until a later trim; all epoch appends finish before trimming.
-                epochState.lastCallbackRecordOffset = result.recordOffset();
-            }
-            epochState.inflightAppend.decrementAndGet();
-        } finally {
-            readLock.unlock();
+        if (result != null) {
+            // Unordered WAL callbacks may leave this below the epoch's maximum offset.
+            // This only retains extra objects until a later trim; all epoch appends finish before trimming.
+            epochState.lastCallbackRecordOffset = result.recordOffset();
         }
-        synchronized (queue) {
-            for (;;) {
-                AppendTask task = queue.peek();
-                if (task == null || !task.channelAppendCf.isDone()) {
-                    break;
-                }
-                queue.poll();
-                task.complete();
-                outstanding.remove(task.request);
+        epochState.inflightAppend.decrementAndGet();
+        completeOrderedAppends(request.orderHint);
+    }
+
+    private void completeOrderedAppends(short orderHint) {
+        Queue<AppendTask> queue = appendQueue(orderHint);
+        for (;;) {
+            AppendTask task = queue.peek();
+            if (task == null || !task.channelAppendCf.isDone()) {
+                break;
             }
+            queue.poll();
+            task.complete();
+            outstanding.remove(task.request);
         }
     }
 
@@ -319,21 +362,17 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
     @Override
     public void nextEpoch(long nextEpoch) {
-        writeLock.lock();
-        try {
+        eventLoop.execute(() -> {
             if (nextEpoch > channelEpoch) {
                 channelEpoch = nextEpoch;
                 channelEpochQueue.add(nextEpoch);
             }
-        } finally {
-            writeLock.unlock();
-        }
+        });
     }
 
     @Override
     public void trim(long epoch) {
-        writeLock.lock();
-        try {
+        eventLoop.execute(() -> {
             Map<Channel, RecordOffset> trimOffsets = new HashMap<>();
             L1:
             for (;;) {
@@ -356,29 +395,34 @@ public class MultiBucketsRouterChannel implements RouterChannel {
                 }
             }
             trimOffsets.forEach(Channel::trim);
-        } finally {
-            writeLock.unlock();
-        }
+        });
     }
 
     @Override
     public synchronized CompletableFuture<Void> close() {
         if (closeFuture == null) {
-            CompletableFuture<Void> drained;
-            writeLock.lock();
-            try {
+            closeFuture = new CompletableFuture<>();
+            eventLoop.execute(() -> {
                 closed = true;
                 cache.invalidateAll();
                 cache.cleanUp();
-                flushBatch();
-                drained = CompletableFuture.allOf(
+                flushBatchOnEventLoop();
+                CompletableFuture<Void> drained = CompletableFuture.allOf(
                     outstanding.stream().map(request -> request.task.finalOrderedCf).toArray(CompletableFuture[]::new))
                     .handle((ignored, error) -> null);
-            } finally {
-                writeLock.unlock();
-            }
-            closeFuture = drained.thenCompose(ignored -> CompletableFuture.allOf(
-                allChannels.stream().map(Channel::close).toArray(CompletableFuture[]::new)));
+                drained.thenCompose(ignored -> CompletableFuture.allOf(
+                    allChannels.stream().map(Channel::close).toArray(CompletableFuture[]::new)))
+                    .whenComplete((ignored, error) -> eventLoop.execute(() ->
+                        eventLoop.shutdownGracefully().whenComplete((nil, shutdownError) -> {
+                            if (error != null) {
+                                closeFuture.completeExceptionally(error);
+                            } else if (shutdownError != null) {
+                                closeFuture.completeExceptionally(shutdownError);
+                            } else {
+                                closeFuture.complete(null);
+                            }
+                        })));
+            });
         }
         return closeFuture;
     }
@@ -430,13 +474,17 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             // Keep the planned schedule even if a size-triggered flush cancels this timer.
             lastBatchForceFlushNanos = startNanos + delayNanos;
             timer = SCHEDULER.schedule(() -> {
-                writeLock.lock();
                 try {
-                    if (lingerBatch == this) {
-                        flush();
+                    eventLoop.execute(() -> {
+                        if (lingerBatch == this) {
+                            flush();
+                        }
+                    });
+                } catch (IllegalStateException error) {
+                    // A timer already running when close cancels it may race with loop shutdown.
+                    if (!closed) {
+                        throw error;
                     }
-                } finally {
-                    writeLock.unlock();
                 }
             }, delayNanos, TimeUnit.NANOSECONDS);
         }
@@ -474,11 +522,8 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         CompletableFuture<com.automq.stream.s3.wal.AppendResult> append(StreamRecordBatch record) {
             inflightRequests.increment();
             try {
-                return wal.append(TraceContext.DEFAULT, record).whenComplete((result, error) -> {
-                    inflightRequests.decrement();
-                });
+                return wal.append(TraceContext.DEFAULT, record);
             } catch (OverCapacityException error) {
-                inflightRequests.decrement();
                 return CompletableFuture.failedFuture(error);
             }
         }
@@ -505,12 +550,13 @@ public class MultiBucketsRouterChannel implements RouterChannel {
         RecordOffset lastCallbackRecordOffset;
     }
 
-    private static class AppendTask {
+    private class AppendTask {
         final Request request;
         final CompletableFuture<AppendResult> channelAppendCf;
-        final CompletableFuture<AppendResult> finalOrderedCf = new CompletableFuture<>();
+        final CompletableFuture<AppendResult> finalOrderedCf;
 
-        AppendTask(Request request) {
+        AppendTask(Request request, CompletableFuture<AppendResult> cf) {
+            this.finalOrderedCf = cf;
             this.request = request;
             this.channelAppendCf = request.cf;
             request.task = this;
@@ -518,6 +564,16 @@ public class MultiBucketsRouterChannel implements RouterChannel {
 
         void complete() {
             channelAppendCf.whenComplete((result, error) -> {
+                try {
+                    if (result != null && !closed && request.targetNodeId != nodeId) {
+                        cache.put(result.channelOffset().slice(), new CachedData(request.record.getPayload()));
+                    } else {
+                        request.record.release();
+                    }
+                } catch (Throwable cacheError) {
+                    finalOrderedCf.completeExceptionally(cacheError);
+                    return;
+                }
                 if (error == null) {
                     finalOrderedCf.complete(result);
                 } else {
