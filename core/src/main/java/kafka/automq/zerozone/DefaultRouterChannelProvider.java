@@ -65,14 +65,15 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
 
     /**
      * Creates a provider whose local writer and remote readers share per-bucket storage clients.
+     * The startup-only readerCacheEnabled flag controls whole-object caching for all readers.
      * Bucket IDs must remain stable while offsets referencing them are retained.
      */
-    public DefaultRouterChannelProvider(int nodeId, long nodeEpoch, List<BucketURI> buckets, String clusterId) {
+    public DefaultRouterChannelProvider(int nodeId, long nodeEpoch, List<BucketURI> buckets, String clusterId, boolean readerCacheEnabled) {
         this.nodeId = nodeId;
         this.nodeEpoch = nodeEpoch;
         this.buckets = List.copyOf(buckets);
         this.clusterId = clusterId;
-        this.readCache = new ObjectWALReadCache(Systems.HEAP_MEMORY_SIZE);
+        this.readCache = readerCacheEnabled ? new ObjectWALReadCache(Systems.HEAP_MEMORY_SIZE) : null;
     }
 
     @Override
@@ -139,7 +140,9 @@ public class DefaultRouterChannelProvider implements RouterChannelProvider {
 
     @Override
     public void close() {
-        readCache.close();
+        if (readCache != null) {
+            readCache.close();
+        }
         if (routerChannel != null) {
             FutureUtil.suppress(() -> routerChannel.close().get(), LOGGER);
         }

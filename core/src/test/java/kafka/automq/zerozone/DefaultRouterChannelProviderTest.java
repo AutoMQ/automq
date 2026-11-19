@@ -19,6 +19,11 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.AutoMQConfig;
+
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
+
 import com.automq.stream.s3.metrics.operations.S3RequestSource;
 import com.automq.stream.s3.operator.BucketURI;
 import com.automq.stream.s3.operator.ObjectStorage;
@@ -30,10 +35,13 @@ import com.automq.stream.utils.IdURI;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.MockedConstruction;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
 import io.netty.buffer.ByteBuf;
@@ -41,6 +49,8 @@ import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.doReturn;
@@ -106,7 +116,7 @@ public class DefaultRouterChannelProviderTest {
     @Test
     public void testDuplicateTuningOptionFailsBeforeOpeningStorage() {
         DefaultRouterChannelProvider provider = new DefaultRouterChannelProvider(42, 123,
-            List.of(BucketURI.parse("7@s3://router?batchInterval=100&batchInterval=200")), "cluster");
+            List.of(BucketURI.parse("7@s3://router?batchInterval=100&batchInterval=200")), "cluster", true);
         try (MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class)) {
             assertThrows(IllegalArgumentException.class, provider::channel);
             assertEquals(0, wals.constructed().size());
@@ -114,11 +124,12 @@ public class DefaultRouterChannelProviderTest {
     }
 
     /** Every bucket gets a writer and remote reader, and URI options are retained for each writer. */
-    @Test
-    public void testMultipleBuckets() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testMultipleBuckets(boolean enabled) {
         List<BucketURI> buckets = List.of(BucketURI.parse("0@s3://a?batchInterval=100&version=1"),
             BucketURI.parse("1@s3://b?batchInterval=200&mode=r&version=0"));
-        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, buckets, "cluster"));
+        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, buckets, "cluster", enabled));
         buckets.forEach(bucket -> doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket));
         List<ObjectWALConfig> configs = new ArrayList<>();
         List<ObjectWALReadCache> caches = new ArrayList<>();
@@ -132,7 +143,14 @@ public class DefaultRouterChannelProviderTest {
             provider.channel();
             provider.readOnlyChannel(43);
             assertEquals(4, wals.constructed().size());
-            caches.forEach(cache -> assertSame(caches.get(0), cache));
+            caches.forEach(cache -> {
+                if (enabled) {
+                    assertNotNull(cache);
+                    assertSame(caches.get(0), cache);
+                } else {
+                    assertNull(cache);
+                }
+            });
             configs.forEach(config -> assertEquals(S3RequestSource.ROUTER_WAL, config.source()));
             assertEquals(100, configs.get(0).batchInterval());
             assertEquals(200, configs.get(1).batchInterval());
@@ -148,6 +166,9 @@ public class DefaultRouterChannelProviderTest {
             assertEquals(1, configs.get(2).version());
             assertEquals(0, configs.get(3).version());
             provider.close();
+            if (!enabled) {
+                return;
+            }
             ObjectStorage storage = mock(ObjectStorage.class);
             ObjectStorage.ReadOptions options = new ObjectStorage.ReadOptions();
             when(storage.rangeRead(options, "closed", 0, 1))
@@ -159,8 +180,20 @@ public class DefaultRouterChannelProviderTest {
         }
     }
 
+    /** The cache defaults to disabled, accepts explicit enabling, and rejects invalid boolean settings. */
+    @Test
+    public void testReaderCacheConfiguration() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+        String key = AutoMQConfig.ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG;
+        assertEquals(false, configDef.parse(Map.of()).get(key));
+        assertEquals(true, configDef.parse(Map.of(key, "true")).get(key));
+        assertEquals(false, configDef.parse(Map.of(key, "false")).get(key));
+        assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "invalid")));
+    }
+
     private static List<ObjectWALConfig> channelConfigs(BucketURI bucket) {
-        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, List.of(bucket), "cluster"));
+        DefaultRouterChannelProvider provider = spy(new DefaultRouterChannelProvider(42, 123, List.of(bucket), "cluster", true));
         doReturn(mock(ObjectStorage.class)).when(provider).objectStorage(bucket);
         List<ObjectWALConfig> configs = new ArrayList<>();
         try (MockedConstruction<ObjectWALService> wals = mockConstruction(ObjectWALService.class,
