@@ -195,13 +195,7 @@ public class MultiBucketsRouterChannel implements RouterChannel {
             return cf;
         }
         try {
-            eventLoop.execute(() -> {
-                try {
-                    append(targetNodeId, orderHint, data, cf);
-                } catch (Throwable error) {
-                    cf.completeExceptionally(error);
-                }
-            });
+            eventLoop.execute(() -> append(targetNodeId, orderHint, data, cf));
         } catch (IllegalStateException error) {
             data.release();
             cf.completeExceptionally(error);
