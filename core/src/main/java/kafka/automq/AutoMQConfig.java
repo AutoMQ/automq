@@ -234,6 +234,9 @@ public class AutoMQConfig {
         + " Use mode=r to keep a bucket readable without sending new writes to it. All buckets with mode=rw participate in writes. The first bucket sets maxBytesInBatch and batchInterval (milliseconds) for router batching."
         + " The mode option controls bucket write eligibility independently of the WAL layout version."
         + WAL_VERSION_DOC;
+    public static final String ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG = "automq.zonerouter.reader.cache.enabled";
+    public static final String ZONE_ROUTER_READER_CACHE_ENABLED_DOC = "Whether RouterWAL readers cache whole objects across produce and replay reads. "
+        + "When disabled, readers use uncached range reads. Changes require a broker restart.";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG = "automq.zonerouter.local.write.mode";
     public static final String ZONE_ROUTER_LOCAL_WRITE_MODE_DOC = "The persistence path for ZeroZone writes whose target Partition is on the current Broker. "
         + "In router_channel mode, local records are written to RouterChannel before the Partition stores a LinkRecord. "
@@ -339,6 +342,7 @@ public class AutoMQConfig {
             .define(AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_CONFIG, LONG, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DEFAULT, between(0, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_MAX), MEDIUM, AutoMQConfig.RETRY_STORM_BACKOFF_MAX_DELAY_MS_DOC)
             .define(AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_CONFIG, BOOLEAN, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DEFAULT, MEDIUM, AutoMQConfig.KAFKA_GO_METADATA_COMPATIBILITY_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_CHANNELS_CONFIG, ConfigDef.Type.STRING, null, ConfigDef.Importance.HIGH, AutoMQConfig.ZONE_ROUTER_CHANNELS_DOC)
+            .define(AutoMQConfig.ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.ZONE_ROUTER_READER_CACHE_ENABLED_DOC)
             .define(AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG, STRING, LocalWriteMode.ROUTER_CHANNEL.configName(),
                 ConfigDef.CaseInsensitiveValidString.in(LocalWriteMode.configNames()), MEDIUM, AutoMQConfig.ZONE_ROUTER_LOCAL_WRITE_MODE_DOC)
             // Deprecated config start
@@ -370,6 +374,7 @@ public class AutoMQConfig {
     @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
     private Optional<List<BucketURI>> zoneRouterChannels;
     private LocalWriteMode zoneRouterLocalWriteMode;
+    private boolean zoneRouterReaderCacheEnabled;
 
     public AutoMQConfig setup(KafkaConfig config) {
         dataBuckets = genDataBuckets(config);
@@ -378,6 +383,7 @@ public class AutoMQConfig {
         metricsExporterURI = genMetricsExporterURI(config);
         baseLabels = parseBaseLabels(config);
         zoneRouterChannels = genZoneRouterChannels(config);
+        zoneRouterReaderCacheEnabled = config.getBoolean(ZONE_ROUTER_READER_CACHE_ENABLED_CONFIG);
         zoneRouterLocalWriteMode = LocalWriteMode.fromName(config.getString(ZONE_ROUTER_LOCAL_WRITE_MODE_CONFIG));
         return this;
     }
@@ -415,6 +421,13 @@ public class AutoMQConfig {
      */
     public LocalWriteMode zoneRouterLocalWriteMode() {
         return zoneRouterLocalWriteMode;
+    }
+
+    /**
+     * Returns whether RouterWAL readers share a whole-object cache, fixed at broker startup.
+     */
+    public boolean zoneRouterReaderCacheEnabled() {
+        return zoneRouterReaderCacheEnabled;
     }
 
     private static List<BucketURI> genDataBuckets(KafkaConfig config) {

@@ -908,7 +908,8 @@ class BrokerServer(
     if (config.automq.zoneRouterChannels().isEmpty) {
       return null
     }
-    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, config.automq.zoneRouterChannels.get, dataPlaneRequestProcessor.clusterId)
+    new DefaultRouterChannelProvider(config.nodeId, config.automq.nodeEpoch, config.automq.zoneRouterChannels.get,
+      dataPlaneRequestProcessor.clusterId, config.automq.zoneRouterReaderCacheEnabled)
   }
 
   protected def newConfirmWALProvider(): ConfirmWALProvider = {
