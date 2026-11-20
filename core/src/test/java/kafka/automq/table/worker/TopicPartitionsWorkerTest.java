@@ -31,7 +31,14 @@ import kafka.cluster.Partition;
 
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.record.MemoryRecords;
+import org.apache.kafka.common.record.Record;
+import org.apache.kafka.common.record.RecordBatch;
+import org.apache.kafka.common.record.Records;
+import org.apache.kafka.common.utils.AbstractIterator;
+import org.apache.kafka.common.utils.BufferSupplier;
+import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
+import org.apache.kafka.storage.internals.log.FetchIsolation;
 
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.threads.EventLoop;
@@ -49,6 +56,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -429,6 +437,58 @@ public class TopicPartitionsWorkerTest {
             assertEquals(List.of(new OffsetBound(p1, 110L, 200L), new OffsetBound(p2, 30L, 50L)), task.offsetBounds());
             assertFalse(task.hasMoreData());
         }
+    }
+
+    @Test
+    public void testPartitionWriteTaskClosesIteratorAfterPartialRead() throws Exception {
+        Partition partition = partition(1, 1);
+        Writer writer = mock(Writer.class);
+        when(writer.dirtyBytes()).thenReturn(0L);
+        when(writer.targetFileSize()).thenReturn(1024);
+
+        Records rawRecords = mock(Records.class);
+        RecordBatch batch = mock(RecordBatch.class);
+        CloseableIterator<Record> batchRecords = mock(CloseableIterator.class);
+        Record firstRecord = mock(Record.class);
+        Record endRecord = mock(Record.class);
+        when(firstRecord.offset()).thenReturn(0L);
+        when(firstRecord.sizeInBytes()).thenReturn(1);
+        when(endRecord.offset()).thenReturn(1L);
+        when(batch.streamingIterator(any(BufferSupplier.class))).thenReturn(batchRecords);
+        when(batchRecords.hasNext()).thenReturn(true);
+        when(batchRecords.next()).thenReturn(firstRecord, endRecord);
+        doReturn(singleBatch(batch)).when(rawRecords).batchIterator();
+
+        FetchDataInfo fetchDataInfo = new FetchDataInfo(null, rawRecords, false, Optional.empty());
+        when(partition.log().get().readAsync(eq(0L), anyInt(), eq(FetchIsolation.TXN_COMMITTED), eq(true)))
+            .thenReturn(CompletableFuture.completedFuture(fetchDataInfo));
+        when(partition.log().get().highWatermark()).thenReturn(1L);
+
+        EventLoops.EventLoopRef eventLoopRef = new EventLoops.EventLoopRef(new EventLoops.EventLoopWrapper(eventLoop));
+        try {
+            PartitionWriteTaskContext ctx = new PartitionWriteTaskContext(writer, eventLoopRef, flushExecutor, config, 0);
+            new PartitionWriteTask(partition, 0, 1, ctx).run().get();
+        } finally {
+            eventLoopRef.release();
+        }
+
+        verify(writer).write(1, firstRecord);
+        verify(writer).setEndOffset(1, 1L);
+        verify(batchRecords, times(1)).close();
+    }
+
+    private AbstractIterator<RecordBatch> singleBatch(RecordBatch batch) {
+        return new AbstractIterator<>() {
+            private boolean returned;
+
+            @Override
+            protected RecordBatch makeNext() {
+                if (returned)
+                    return allDone();
+                returned = true;
+                return batch;
+            }
+        };
     }
 
     private static void assertWriter(MemoryWriter writer, long start, long end) {
