@@ -205,6 +205,17 @@ public class DefaultRecordBatch extends AbstractRecordBatch implements MutableRe
         return buffer.getShort(PRODUCER_EPOCH_OFFSET);
     }
 
+    public void clearTransactionalFlag() {
+        if (!isTransactional()) {
+            return;
+        }
+        if (isControlBatch()) {
+            throw new IllegalArgumentException("Cannot downgrade a control batch");
+        }
+        buffer.putShort(ATTRIBUTES_OFFSET, (short) (buffer.getShort(ATTRIBUTES_OFFSET) & ~TRANSACTIONAL_FLAG_MASK));
+        ByteUtils.writeUnsignedInt(buffer, CRC_OFFSET, computeChecksum());
+    }
+
     @Override
     public int baseSequence() {
         return buffer.getInt(BASE_SEQUENCE_OFFSET);

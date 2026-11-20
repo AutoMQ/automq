@@ -22,8 +22,10 @@ package kafka.automq.interceptor;
 import kafka.network.RequestChannel;
 
 import org.apache.kafka.common.Node;
+import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.message.AutomqZoneRouterRequestData;
 import org.apache.kafka.common.message.MetadataResponseData;
+import org.apache.kafka.common.protocol.Errors;
 import org.apache.kafka.common.requests.FetchRequest;
 import org.apache.kafka.common.requests.s3.AutomqZoneRouterResponse;
 
@@ -36,6 +38,14 @@ public interface TrafficInterceptor {
     void close();
 
     void handleProduceRequest(ProduceRequestArgs args);
+
+    default Optional<Errors> transactionMarkerAppendResult(TopicPartition partition) {
+        return Optional.empty();
+    }
+
+    default Optional<Errors> transactionMarkerAppendResult(TopicPartition partition, long producerId, short producerEpoch) {
+        return transactionMarkerAppendResult(partition);
+    }
 
     CompletableFuture<AutomqZoneRouterResponse> handleZoneRouterRequest(AutomqZoneRouterRequestData request);
 
