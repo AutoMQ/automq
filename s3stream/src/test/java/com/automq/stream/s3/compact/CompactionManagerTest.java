@@ -809,6 +809,7 @@ public class CompactionManagerTest extends CompactionTestBase {
             DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(objectId,
                 s3WALObjectMetadataMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), objectStorage);
             reader.readBlocks(entry.getValue());
+            awaitBlockReads(entry.getValue());
         }
 
         Map<Long, S3ObjectMetadata> compactedObjectMap = new HashMap<>();
@@ -835,6 +836,7 @@ public class CompactionManagerTest extends CompactionTestBase {
             DataBlockReader reader = new DataBlockReader(new S3ObjectMetadata(objectId,
                 compactedObjectMap.get(objectId).objectSize(), S3ObjectType.STREAM_SET), objectStorage);
             reader.readBlocks(entry.getValue());
+            awaitBlockReads(entry.getValue());
         }
         List<StreamDataBlock> expectedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(streamDataBlocks);
         List<StreamDataBlock> compactedStreamDataBlocks = CompactionUtils.sortStreamRangePositions(compactedStreamDataBlocksMap);
@@ -871,5 +873,10 @@ public class CompactionManagerTest extends CompactionTestBase {
             }
         }
         return true;
+    }
+
+    private void awaitBlockReads(List<StreamDataBlock> blocks) {
+        CompletableFuture.allOf(blocks.stream().map(StreamDataBlock::getDataCf).toArray(CompletableFuture[]::new))
+            .orTimeout(10, TimeUnit.SECONDS).join();
     }
 }

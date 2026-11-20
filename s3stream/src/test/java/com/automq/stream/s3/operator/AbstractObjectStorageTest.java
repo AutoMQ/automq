@@ -352,7 +352,7 @@ class AbstractObjectStorageTest {
         objectStorage.readAccumulator.flush().join();
         awaitReadDispatch();
         objectStorage.close();
-        assertTrue(caller.isCompletedExceptionally());
+        await().untilAsserted(() -> assertTrue(caller.isCompletedExceptionally()));
         ByteBuf response = Unpooled.buffer(100).writeZero(100);
         physical.complete(response);
         await().untilAsserted(() -> assertEquals(0, response.refCnt()));
