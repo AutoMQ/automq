@@ -112,30 +112,31 @@ class PartitionWriteTask {
             TimerUtil timer = new TimerUtil();
 
             long writeSize = 0;
-            RecordsIterator it = new RecordsIterator(startOffset, rst, bufferSupplier);
             long nextOffset = startOffset;
-            while (it.hasNext()) {
-                Record record = it.next();
-                long recordOffset = record.offset();
-                if (recordOffset >= startOffset && recordOffset < endOffset) {
-                    ctx.writer.write(partition.partitionId(), record);
-                    writeSize += record.sizeInBytes();
-                    nextOffset = recordOffset + 1;
-                } else if (recordOffset >= endOffset) {
-                    nextOffset = endOffset;
+            try (RecordsIterator it = new RecordsIterator(startOffset, rst, bufferSupplier)) {
+                while (it.hasNext()) {
+                    Record record = it.next();
+                    long recordOffset = record.offset();
+                    if (recordOffset >= startOffset && recordOffset < endOffset) {
+                        ctx.writer.write(partition.partitionId(), record);
+                        writeSize += record.sizeInBytes();
+                        nextOffset = recordOffset + 1;
+                    } else if (recordOffset >= endOffset) {
+                        nextOffset = endOffset;
+                        // Abort transactions might occupy the offsets
+                        ctx.writer.setEndOffset(partition.partitionId(), nextOffset);
+                        break;
+                    }
+                }
+                if (!it.hasNext()) {
+                    nextOffset = Math.min(endOffset, it.nextOffset());
                     // Abort transactions might occupy the offsets
                     ctx.writer.setEndOffset(partition.partitionId(), nextOffset);
-                    break;
                 }
-            }
-            if (!it.hasNext()) {
-                nextOffset = Math.min(endOffset, it.nextOffset());
-                // Abort transactions might occupy the offsets
-                ctx.writer.setEndOffset(partition.partitionId(), nextOffset);
-            }
 
-            if (ctx.writer.dirtyBytes() >= ctx.writer.targetFileSize()) {
-                ctx.lastFlushCf = ctx.writer.flush(FlushMode.FLUSH, ctx.flushExecutors, ctx.eventLoop);
+                if (ctx.writer.dirtyBytes() >= ctx.writer.targetFileSize()) {
+                    ctx.lastFlushCf = ctx.writer.flush(FlushMode.FLUSH, ctx.flushExecutors, ctx.eventLoop);
+                }
             }
             if (nextOffset != startOffset && nextOffset < endOffset) {
                 // launch next round read until read to the end.

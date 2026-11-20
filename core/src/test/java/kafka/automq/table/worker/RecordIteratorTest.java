@@ -31,7 +31,9 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
+import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
 
 import com.automq.stream.utils.MockTime;
@@ -48,6 +50,13 @@ import java.util.Optional;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class RecordIteratorTest {
@@ -86,6 +95,44 @@ public class RecordIteratorTest {
         }
         Assertions.assertFalse(it.hasNext());
         Assertions.assertEquals(11, it.nextOffset());
+    }
+
+    @Test
+    public void testCloseClosesCurrentBatchIterator() {
+        Records rawRecords = mock(Records.class);
+        RecordBatch batch = mock(RecordBatch.class);
+        CloseableIterator<Record> batchRecords = mock(CloseableIterator.class);
+        Record record = mock(Record.class);
+        when(record.offset()).thenReturn(0L);
+        when(batch.hasProducerId()).thenReturn(false);
+        when(batch.isControlBatch()).thenReturn(false);
+        when(batch.streamingIterator(any())).thenReturn(batchRecords);
+        when(batchRecords.hasNext()).thenReturn(true);
+        when(batchRecords.next()).thenReturn(record);
+        doReturn(singleBatch(batch)).when(rawRecords).batchIterator();
+
+        RecordsIterator it = new RecordsIterator(0,
+            new FetchDataInfo(null, rawRecords, false, Optional.empty()), BufferSupplier.NO_CACHING);
+
+        Assertions.assertTrue(it.hasNext());
+        it.close();
+        it.close();
+
+        verify(batchRecords, times(1)).close();
+    }
+
+    private AbstractIterator<RecordBatch> singleBatch(RecordBatch batch) {
+        return new AbstractIterator<>() {
+            private boolean returned;
+
+            @Override
+            protected RecordBatch makeNext() {
+                if (returned)
+                    return allDone();
+                returned = true;
+                return batch;
+            }
+        };
     }
 
     private Records newTranscactionalRecords(ControlRecordType controlRecordType, long baseOffset, int numRecords) {

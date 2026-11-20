@@ -39,7 +39,7 @@ import java.util.Set;
 /**
  * ref. {@link CompletedFetch}
  */
-public class RecordsIterator extends AbstractIterator<Record> {
+public class RecordsIterator extends AbstractIterator<Record> implements CloseableIterator<Record> {
     private final Set<Long> abortedProducerIds = new HashSet<>();
     private final PriorityQueue<FetchResponseData.AbortedTransaction> abortedTransactions;
     private final BufferSupplier bufferSupplier;
@@ -60,6 +60,14 @@ public class RecordsIterator extends AbstractIterator<Record> {
     }
 
     @Override
+    public void close() {
+        if (records != null) {
+            records.close();
+            records = null;
+        }
+    }
+
+    @Override
     protected Record makeNext() {
         if (records != null && records.hasNext()) {
             Record record = records.next();
@@ -69,8 +77,7 @@ public class RecordsIterator extends AbstractIterator<Record> {
 
         while (batches.hasNext()) {
             if (records != null) {
-                records.close();
-                records = null;
+                close();
             }
             RecordBatch currentBatch = batches.next();
             if (currentBatch.hasProducerId()) {
@@ -90,9 +97,7 @@ public class RecordsIterator extends AbstractIterator<Record> {
             records = currentBatch.streamingIterator(bufferSupplier);
             return makeNext();
         }
-        if (records != null) {
-            records.close();
-        }
+        close();
         return allDone();
     }
 
