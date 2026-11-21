@@ -19,6 +19,7 @@
 
 package kafka.automq.table;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.table.events.AvroCodec;
 import kafka.automq.table.events.Envelope;
 import kafka.automq.table.events.Event;
@@ -53,6 +54,7 @@ public class Channel {
     private static final Logger LOGGER = LoggerFactory.getLogger(Channel.class);
     private static final String CONTROL_TOPIC = "__automq_table_control";
     private static final String DATA_TOPIC = "__automq_table_data";
+    private static final long DEFAULT_PRODUCER_BUFFER_MEMORY = 32 * 1024 * 1024L;
     private final Properties clientBaseConfigs;
     private final KafkaProducer<byte[], byte[]> producer;
     private volatile int dataTopicPartitionNums = -1;
@@ -63,6 +65,9 @@ public class Channel {
         props.putAll(clientBaseConfigs);
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, ByteArraySerializer.class);
+        int maxRequestSize = kafkaConfig.getInt(AutoMQConfig.TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_CONFIG);
+        props.put(ProducerConfig.MAX_REQUEST_SIZE_CONFIG, maxRequestSize);
+        props.putIfAbsent(ProducerConfig.BUFFER_MEMORY_CONFIG, Math.max(DEFAULT_PRODUCER_BUFFER_MEMORY, maxRequestSize));
         producer = new KafkaProducer<>(props);
     }
 

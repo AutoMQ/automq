@@ -227,6 +227,11 @@ public class AutoMQConfig {
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG = "automq.table.topic.schema.registry.url";
     private static final String TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC = "The schema registry url for table topic";
     public static final String TABLE_TOPIC_SCHEMA_REGISTRY_CONFIG_PREFIX = "automq.table.topic.schema.registry.config.";
+    public static final String TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_CONFIG = "automq.table.topic.producer.max.request.size";
+    private static final int TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_DEFAULT = 20 * 1024 * 1024;
+    private static final String TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_DOC =
+        "The internal Table Topic producer's maximum request size in bytes. Changes require a broker restart. "
+            + "The internal topics' max.message.bytes setting applies independently.";
 
     public static final String ZONE_ROUTER_CHANNELS_CONFIG = "automq.zonerouter.channels";
     public static final String ZONE_ROUTER_CHANNELS_DOC = "The object storage buckets used by the cross zone router. Separate multiple bucket URIs with commas and use unique, stable bucket IDs."
@@ -372,7 +377,9 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_CONFIG, BOOLEAN, false, MEDIUM, AutoMQConfig.S3_TELEMETRY_EXPORTER_OTLP_COMPRESSION_ENABLE_DOC)
             .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_CONFIG, STRING, "localhost", MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_HOST_DOC)
             .define(AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_CONFIG, INT, 9090, MEDIUM, AutoMQConfig.S3_METRICS_EXPORTER_PROM_PORT_DOC)
-            .define(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, STRING, null, MEDIUM, AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC);
+            .define(AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_CONFIG, STRING, null, MEDIUM, AutoMQConfig.TABLE_TOPIC_SCHEMA_REGISTRY_URL_DOC)
+            .define(TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_CONFIG, INT, TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_DEFAULT,
+                atLeast(1), MEDIUM, TABLE_TOPIC_PRODUCER_MAX_REQUEST_SIZE_DOC);
     }
 
     private final long nodeEpoch = System.currentTimeMillis();
