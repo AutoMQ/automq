@@ -16,31 +16,10 @@
 import re
 import sys
 from setuptools import find_packages, setup
-from setuptools.command.test import test as TestCommand
 
 version = ''
 with open('kafkatest/__init__.py', 'r') as fd:
     version = re.search(r'^__version__\s*=\s*[\'"]([^\'"]*)[\'"]', fd.read(), re.MULTILINE).group(1)
-
-
-class PyTest(TestCommand):
-    user_options = [('pytest-args=', 'a', "Arguments to pass to py.test")]
-
-    def initialize_options(self):
-        TestCommand.initialize_options(self)
-        self.pytest_args = []
-
-    def finalize_options(self):
-        TestCommand.finalize_options(self)
-        self.test_args = []
-        self.test_suite = True
-
-    def run_tests(self):
-        # import here, cause outside the eggs aren't loaded
-        import pytest
-        print(self.pytest_args)
-        errno = pytest.main(self.pytest_args)
-        sys.exit(errno)
 
 # Note: when changing the version of ducktape, also revise tests/docker/Dockerfile
 setup(name="kafkatest",
@@ -52,7 +31,5 @@ setup(name="kafkatest",
       packages=find_packages(),
       include_package_data=True,
       install_requires=["ducktape<0.9", "requests==2.31.0"],
-      tests_require=["pytest", "mock"],
-      cmdclass={'test': PyTest},
       zip_safe=False
       )
