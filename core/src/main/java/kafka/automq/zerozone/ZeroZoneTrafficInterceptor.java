@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.interceptor.ClientIdKey;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
@@ -132,7 +133,9 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
         this.committedEpochManager = new CommittedEpochManager(nodeId);
         this.routerInV2 = new RouterInV2(routerChannelProvider, kafkaApis, kafkaConfig.rack().get(), time, committedEpochManager);
         this.routerOutV2 = new RouterOutV2(currentNode, routerChannelProvider.channel(), mapping::getRouteOutNode,
-            routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time);
+            routerInV2, kafkaConfig.automq().zoneRouterLocalWriteMode(), asyncSender, time,
+            kafkaConfig.getInt(AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_CONFIG),
+            kafkaConfig.getInt(AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_CONFIG));
         this.routerChannelProvider.addEpochListener(committedEpochManager);
         DefaultReplayer replayer = new DefaultReplayer();
 
