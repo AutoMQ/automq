@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
 
@@ -26,6 +27,8 @@ import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.common.Node;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.compress.Compression;
+import org.apache.kafka.common.config.ConfigDef;
+import org.apache.kafka.common.config.ConfigException;
 import org.apache.kafka.common.message.AutomqZoneRouterResponseData;
 import org.apache.kafka.common.message.ProduceRequestData;
 import org.apache.kafka.common.message.ProduceResponseData;
@@ -57,6 +60,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -102,6 +106,71 @@ public class RouterOutV2Test {
             proxy.flushBatch();
             assertEquals(1, sender.sendCount.get());
         }
+    }
+
+    /** Given broker settings, defaults preserve the existing deadlines and invalid values fail validation. */
+    @Test
+    public void testRemoteLingerConfiguration() {
+        ConfigDef configDef = new ConfigDef();
+        AutoMQConfig.define(configDef);
+        String idleKey = AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_CONFIG;
+        String maxKey = AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_CONFIG;
+
+        Map<String, Object> defaults = configDef.parse(Map.of());
+        assertEquals(1000, defaults.get(idleKey));
+        assertEquals(30000, defaults.get(maxKey));
+
+        Map<String, Object> configured = configDef.parse(Map.of(idleKey, "2000", maxKey, "10000"));
+        assertEquals(2000, configured.get(idleKey));
+        assertEquals(10000, configured.get(maxKey));
+        for (String key : List.of(idleKey, maxKey)) {
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "0")));
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "-1")));
+            assertThrows(ConfigException.class, () -> configDef.parse(Map.of(key, "1.5")));
+        }
+    }
+
+    /** Given configured linger values, batches use the idle and maximum deadlines in microseconds. */
+    @Test
+    public void testRouterCreatesBatchesWithConfiguredDeadlines() {
+        ManualNanoTime time = new ManualNanoTime();
+        RouterOutV2 defaultRouter = new RouterOutV2(CURRENT_NODE, new StubRouterChannel(), null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time);
+        RouterOutV2.RequestBatch defaultBatch = defaultRouter.newRequestBatch(time);
+        assertEquals(1_000_000L, defaultBatch.remainingFlushDelayNanos());
+        assertFalse(defaultBatch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        for (int i = 1; i <= 33; i++) {
+            time.nowNanos = i * 900_000L;
+            assertTrue(defaultBatch.remainingFlushDelayNanos() > 0);
+            assertFalse(defaultBatch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        }
+        assertEquals(300_000L, defaultBatch.remainingFlushDelayNanos());
+        time.nowNanos = 30_000_000L;
+        assertEquals(0L, defaultBatch.remainingFlushDelayNanos());
+
+        time.nowNanos = 0;
+        RouterOutV2 router = new RouterOutV2(CURRENT_NODE, new StubRouterChannel(), null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time, 1000, 10000);
+        RouterOutV2.RequestBatch batch = router.newRequestBatch(time);
+        assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        assertEquals(1_000_000L, batch.remainingFlushDelayNanos());
+        for (int i = 1; i <= 11; i++) {
+            time.nowNanos = i * 900_000L;
+            assertTrue(batch.remainingFlushDelayNanos() > 0);
+            assertFalse(batch.add(new RouterOutV2.ProxyRequest(null, 1, null, null, 0, 0)));
+        }
+        assertEquals(100_000L, batch.remainingFlushDelayNanos());
+        time.nowNanos = 10_000_000L;
+        assertEquals(0L, batch.remainingFlushDelayNanos());
+
+        time.nowNanos = 0;
+        RouterOutV2 longerIdle = new RouterOutV2(CURRENT_NODE, new StubRouterChannel(), null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time, 2000, 10000);
+        assertEquals(2_000_000L, longerIdle.newRequestBatch(time).remainingFlushDelayNanos());
+
+        RouterOutV2 shortMaximum = new RouterOutV2(CURRENT_NODE, new StubRouterChannel(), null, null,
+            LocalWriteMode.ROUTER_CHANNEL, null, time, 1000, 100);
+        assertEquals(100_000L, shortMaximum.newRequestBatch(time).remainingFlushDelayNanos());
     }
 
     /**

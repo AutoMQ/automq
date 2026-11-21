@@ -197,6 +197,7 @@ class ObjectStorageSourceTest {
         verify(storage, timeout(1000).times(2)).doWrite(argThat(o -> o.source() == S3RequestSource.DELTA_WAL), eq("key"), any());
         if (failureBeforeSuccess) {
             hedge.completeExceptionally(new TimeoutException());
+            await().untilAsserted(() -> assertEquals(failed + 1, count("put_object", S3RequestSource.DELTA_WAL, "failed")));
             assertFalse(result.isDone());
         }
         original.complete(null);
