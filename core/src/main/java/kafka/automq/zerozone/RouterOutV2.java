@@ -19,6 +19,7 @@
 
 package kafka.automq.zerozone;
 
+import kafka.automq.AutoMQConfig;
 import kafka.automq.interceptor.ProduceRequestArgs;
 
 import org.apache.kafka.clients.ClientResponse;
@@ -73,10 +74,26 @@ public class RouterOutV2 {
     private final AsyncSender asyncSender;
     private final Time time;
     private final RouterChannel.Handle flushListenerHandle;
+    private final long remoteIdleLingerNanos;
+    private final long remoteMaxLingerNanos;
 
     public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
         NonBlockingLocalRouterHandler localRouterHandler, LocalWriteMode localWriteMode, AsyncSender asyncSender,
         Time time) {
+        this(currentNode, routerChannel, mapping, localRouterHandler, localWriteMode, asyncSender, time,
+            AutoMQConfig.ZONE_ROUTER_REMOTE_IDLE_LINGER_US_DEFAULT, AutoMQConfig.ZONE_ROUTER_REMOTE_MAX_LINGER_US_DEFAULT);
+    }
+
+    /**
+     * Creates a router with the supplied remote-batch idle and maximum linger values, in microseconds.
+     * Both values must be positive and are fixed for the lifetime of this router.
+     */
+    public RouterOutV2(Node currentNode, RouterChannel routerChannel, GetRouterOutNode mapping,
+        NonBlockingLocalRouterHandler localRouterHandler, LocalWriteMode localWriteMode, AsyncSender asyncSender,
+        Time time, int remoteIdleLingerUs, int remoteMaxLingerUs) {
+        if (remoteIdleLingerUs <= 0 || remoteMaxLingerUs <= 0) {
+            throw new IllegalArgumentException("Remote router linger values must be positive");
+        }
         this.currentNode = currentNode;
         this.routerChannel = routerChannel;
         this.mapping = mapping;
@@ -84,12 +101,18 @@ public class RouterOutV2 {
         this.localWriteMode = localWriteMode;
         this.asyncSender = asyncSender;
         this.time = time;
+        this.remoteIdleLingerNanos = TimeUnit.MICROSECONDS.toNanos(remoteIdleLingerUs);
+        this.remoteMaxLingerNanos = TimeUnit.MICROSECONDS.toNanos(remoteMaxLingerUs);
         flushListenerHandle = routerChannel.addFlushListener(() -> proxies.values().forEach(RemoteProxy::flushBatch));
     }
 
     /** Unregisters this router's flush listener from the shared channel. */
     public void close() {
         flushListenerHandle.close();
+    }
+
+    RequestBatch newRequestBatch(Time batchTime) {
+        return new RequestBatch(batchTime, remoteIdleLingerNanos, remoteMaxLingerNanos, 8192);
     }
 
     public void handleProduceAppendProxy(ProduceRequestArgs args) {
@@ -208,8 +231,6 @@ public class RouterOutV2 {
      */
     class RemoteProxy implements Proxy {
         private static final int MAX_INFLIGHT_SIZE = 64;
-        private static final long IDLE_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(1);
-        private static final long MAX_LINGER_NANOS = TimeUnit.MILLISECONDS.toNanos(30);
         private final Node node;
         private final Semaphore inflightLimiter = new Semaphore(MAX_INFLIGHT_SIZE);
         private final Queue<RequestBatch> requestBatchQueue = new ConcurrentLinkedQueue<>();
@@ -226,8 +247,8 @@ public class RouterOutV2 {
             ZeroZoneMetricsManager.recordRouterOutBytes(node.id(), request.recordSize);
             synchronized (this) {
                 if (requestBatch == null) {
-                    requestBatch = new RequestBatch(Time.SYSTEM, IDLE_LINGER_NANOS, MAX_LINGER_NANOS, 8192);
-                    scheduleBatchTimer(requestBatch, IDLE_LINGER_NANOS);
+                    requestBatch = newRequestBatch(Time.SYSTEM);
+                    scheduleBatchTimer(requestBatch, Math.min(remoteIdleLingerNanos, remoteMaxLingerNanos));
                 }
                 if (requestBatch.add(request)) {
                     requestBatchQueue.add(requestBatch);
