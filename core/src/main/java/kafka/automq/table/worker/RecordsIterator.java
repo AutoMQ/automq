@@ -37,9 +37,10 @@ import java.util.PriorityQueue;
 import java.util.Set;
 
 /**
- * ref. {@link CompletedFetch}
+ * Iterates over fetched records, skipping aborted transactions and control batches as in {@link CompletedFetch}.
+ * The caller must close this iterator before releasing the fetched records or the buffer supplier.
  */
-public class RecordsIterator extends AbstractIterator<Record> {
+public class RecordsIterator extends AbstractIterator<Record> implements CloseableIterator<Record> {
     private final Set<Long> abortedProducerIds = new HashSet<>();
     private final PriorityQueue<FetchResponseData.AbortedTransaction> abortedTransactions;
     private final BufferSupplier bufferSupplier;
@@ -59,6 +60,15 @@ public class RecordsIterator extends AbstractIterator<Record> {
         return nextOffset;
     }
 
+    /**
+     * Ends iteration and closes the active batch, leaving the next offset available.
+     */
+    @Override
+    public void close() {
+        allDone();
+        closeCurrentBatch();
+    }
+
     @Override
     protected Record makeNext() {
         if (records != null && records.hasNext()) {
@@ -67,11 +77,8 @@ public class RecordsIterator extends AbstractIterator<Record> {
             return record;
         }
 
+        closeCurrentBatch();
         while (batches.hasNext()) {
-            if (records != null) {
-                records.close();
-                records = null;
-            }
             RecordBatch currentBatch = batches.next();
             if (currentBatch.hasProducerId()) {
                 consumeAbortedTransactionsUpTo(currentBatch.lastOffset());
@@ -90,10 +97,15 @@ public class RecordsIterator extends AbstractIterator<Record> {
             records = currentBatch.streamingIterator(bufferSupplier);
             return makeNext();
         }
-        if (records != null) {
-            records.close();
-        }
         return allDone();
+    }
+
+    private void closeCurrentBatch() {
+        if (records != null) {
+            CloseableIterator<Record> current = records;
+            records = null;
+            current.close();
+        }
     }
 
     private void consumeAbortedTransactionsUpTo(long offset) {
