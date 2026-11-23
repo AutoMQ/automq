@@ -31,7 +31,9 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.Records;
 import org.apache.kafka.common.record.SimpleRecord;
 import org.apache.kafka.common.record.TimestampType;
+import org.apache.kafka.common.utils.AbstractIterator;
 import org.apache.kafka.common.utils.BufferSupplier;
+import org.apache.kafka.common.utils.CloseableIterator;
 import org.apache.kafka.storage.internals.log.FetchDataInfo;
 
 import com.automq.stream.utils.MockTime;
@@ -48,6 +50,12 @@ import java.util.Optional;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
+
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class RecordIteratorTest {
@@ -86,6 +94,31 @@ public class RecordIteratorTest {
         }
         Assertions.assertFalse(it.hasNext());
         Assertions.assertEquals(11, it.nextOffset());
+    }
+
+    /**
+     * Exhausting a batch and then closing its owner closes the batch stream exactly once.
+     */
+    @Test
+    public void testExhaustedBatchIsClosedOnlyOnce() {
+        MemoryRecords compressed = MemoryRecords.withRecords(Compression.zstd().build(), new SimpleRecord(new byte[] {1}));
+        RecordBatch compressedBatch = compressed.batchIterator().next();
+        try (CloseableIterator<Record> stream = spy(compressedBatch.streamingIterator(BufferSupplier.NO_CACHING))) {
+            RecordBatch batch = spy(compressedBatch);
+            doReturn(stream).when(batch).streamingIterator(BufferSupplier.NO_CACHING);
+            AbstractIterator<?> batches = mock(AbstractIterator.class);
+            when(batches.hasNext()).thenReturn(true, false);
+            doReturn(batch).when(batches).next();
+            Records records = mock(Records.class);
+            doReturn(batches).when(records).batchIterator();
+
+            try (RecordsIterator iterator = new RecordsIterator(0, new FetchDataInfo(null, records), BufferSupplier.NO_CACHING)) {
+                Assertions.assertEquals(0L, iterator.next().offset());
+                Assertions.assertFalse(iterator.hasNext());
+            }
+
+            verify(stream).close();
+        }
     }
 
     private Records newTranscactionalRecords(ControlRecordType controlRecordType, long baseOffset, int numRecords) {
