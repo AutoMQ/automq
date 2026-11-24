@@ -21,8 +21,10 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.Arrays;
 
 import io.netty.buffer.ByteBuf;
@@ -169,6 +171,55 @@ public class FileCacheTest {
         assertTrue(verify(fileCache.get(cacheId, 3333L + 1500, 500).get(), (byte) 5));
         assertTrue(verify(fileCache.get(cacheId, 3333L + 2000, 500).get(), (byte) 6));
         assertTrue(verify(fileCache.get(cacheId, 3333L + 2500, 500).get(), (byte) 7));
+    }
+
+    /** Successful reads refresh the default and explicitly selected LRU order. */
+    @Test
+    public void testLruReadRefresh(@TempDir Path directory) throws IOException {
+        verifyReadEviction(new FileCache(directory.resolve("default").toString(), 2 * 1024, 1024), false);
+        verifyReadEviction(new FileCache(directory.resolve("lru").toString(), 2 * 1024, 1024,
+            FileCache.EvictionPolicy.LRU), false);
+    }
+
+    /** FIFO evicts the oldest admission even when it has recently been read. */
+    @Test
+    public void testFifoReadDoesNotRefresh(@TempDir Path directory) throws IOException {
+        verifyReadEviction(new FileCache(directory.resolve("fifo").toString(), 2 * 1024, 1024,
+            FileCache.EvictionPolicy.FIFO), true);
+    }
+
+    private void verifyReadEviction(FileCache cache, boolean fifo) {
+        putAndRelease(cache, 1, 10, 1024);
+        putAndRelease(cache, 2, 20, 1024);
+        cache.get(1, 10, 1024).orElseThrow().release();
+        putAndRelease(cache, 3, 30, 1024);
+        assertTrue(cache.get(fifo ? 1 : 2, fifo ? 10 : 20, 1024).isEmpty());
+        cache.get(fifo ? 2 : 1, fifo ? 20 : 10, 1024).orElseThrow().release();
+        cache.get(3, 30, 1024).orElseThrow().release();
+    }
+
+    /** Rewriting or extending an existing FIFO entry preserves its original admission order. */
+    @Test
+    public void testFifoUpdateDoesNotRefresh(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("fifo-update").toString(), 3 * 1024, 1024,
+            FileCache.EvictionPolicy.FIFO);
+        putAndRelease(cache, 1, 10, 512);
+        putAndRelease(cache, 2, 20, 1024);
+        putAndRelease(cache, 1, 10, 512);
+        putAndRelease(cache, 1, 522, 1024);
+        putAndRelease(cache, 3, 30, 1024);
+        assertTrue(cache.get(1, 10, 1536).isEmpty());
+        cache.get(2, 20, 1024).orElseThrow().release();
+        cache.get(3, 30, 1024).orElseThrow().release();
+    }
+
+    private void putAndRelease(FileCache cache, long cacheId, long position, int length) {
+        ByteBuf data = genBuf((byte) cacheId, length);
+        try {
+            cache.put(cacheId, position, data);
+        } finally {
+            data.release();
+        }
     }
 
     ByteBuf genBuf(byte data, int length) {

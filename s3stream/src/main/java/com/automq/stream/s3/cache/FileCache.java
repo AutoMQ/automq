@@ -35,12 +35,18 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 /**
- * Disk-backed byte-range cache with in-memory block allocation and LRU eviction.
+ * Disk-backed byte-range cache with in-memory block allocation and configurable eviction.
  * Contiguous data is indexed by cache ID and position, independently of its location in the backing file.
  * Reads and writes copy data synchronously under the cache lock; mapped-file access is delegated to
  * {@link MappedFileStorage}. The backing file is recreated on construction and is not durable cache state.
  */
 public class FileCache {
+    /** Eviction order for cached byte-range entries. */
+    public enum EvictionPolicy {
+        LRU,
+        FIFO
+    }
+
     private static final int BLOCK_SIZE = 4 * 1024;
     public static final FileCache NOOP;
 
@@ -59,9 +65,9 @@ public class FileCache {
      */
     private final BitSet freeBlocks;
     /**
-     * The LRU cache which contains the cache blocks. Used for eviction.
+     * The ordered cache entries used for eviction.
      */
-    private final LRUCache<Key, Blocks> lru = new LRUCache<>();
+    private final LRUCache<Key, Blocks> evictionCache;
     /**
      * The map of cacheId to cache blocks.
      * Its value is a {@link NavigableMap} which is used to store the cache blocks in the order of the position.
@@ -95,6 +101,15 @@ public class FileCache {
      * @throws IOException if the backing file cannot be created or mapped
      */
     public FileCache(String path, int size, int blockSize) throws IOException {
+        this(path, size, blockSize, EvictionPolicy.LRU);
+    }
+
+    /**
+     * Creates a cache with the specified eviction order. FIFO preserves initial admission order
+     * across reads and updates; LRU refreshes entries when they are read or updated.
+     */
+    public FileCache(String path, int size, int blockSize, EvictionPolicy policy) throws IOException {
+        this.evictionCache = new LRUCache<>(Objects.requireNonNull(policy) == EvictionPolicy.LRU);
         this.blockSize = blockSize;
         size = align(size);
         this.maxSize = size;
@@ -116,6 +131,11 @@ public class FileCache {
         this(path, size, BLOCK_SIZE);
     }
 
+    /** Creates a cache using 4 KiB blocks and the specified eviction order. */
+    public FileCache(String path, int size, EvictionPolicy policy) throws IOException {
+        this(path, size, BLOCK_SIZE, policy);
+    }
+
     /**
      * Allocates an identifier for an independent byte-range namespace within this cache.
      */
@@ -125,7 +145,7 @@ public class FileCache {
 
     /**
      * Copies readable bytes into the namespace at the given logical position without consuming the source.
-     * May evict least recently used entries; admission is skipped if allocation cannot succeed.
+     * May evict entries according to the configured policy; admission is skipped if allocation cannot succeed.
      */
     public void put(long cacheId, long position, ByteBuf data) {
         writeLock.lock();
@@ -166,7 +186,7 @@ public class FileCache {
                 blocks = new Blocks(blocks.indexes, newDataLength);
             }
             cache.put(cacheStartPosition, blocks);
-            lru.put(new Key(cacheId, cacheStartPosition), blocks);
+            evictionCache.put(new Key(cacheId, cacheStartPosition), blocks);
 
             // write data to cache
             int positionDelta = (int) (position - cacheStartPosition);
@@ -211,7 +231,7 @@ public class FileCache {
             if (entry.getKey() + entry.getValue().dataLength < position + length) {
                 return Optional.empty();
             }
-            lru.touchIfExist(new Key(cacheId, cacheStartPosition));
+            evictionCache.touchIfExist(new Key(cacheId, cacheStartPosition));
             long nextPosition = position;
             int remaining = length;
             for (int i = 0; i < blocks.indexes.length; i++) {
@@ -248,9 +268,9 @@ public class FileCache {
         int requiredBlockCount = align(size) / blockSize;
         int[] indexes = new int[requiredBlockCount];
         int acquiringBlockIndex = 0;
-        // evict the least recently used cache blocks until the free blocks are enough
+        // evict cache entries in policy order until the free blocks are enough
         while (freeBlockCount + acquiringBlockIndex < requiredBlockCount) {
-            Map.Entry<Key, Blocks> entry = lru.pop();
+            Map.Entry<Key, Blocks> entry = evictionCache.pop();
             if (entry == null) {
                 break;
             }

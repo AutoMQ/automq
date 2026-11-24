@@ -29,7 +29,11 @@ public class LRUCache<K, V> {
     protected final Set<Map.Entry<K, V>> cacheEntrySet;
 
     public LRUCache() {
-        cache = new LinkedHashMap<>(16, .75f, true);
+        this(true);
+    }
+
+    LRUCache(boolean accessOrder) {
+        cache = new LinkedHashMap<>(16, .75f, accessOrder);
         cacheEntrySet = cache.entrySet();
     }
 
