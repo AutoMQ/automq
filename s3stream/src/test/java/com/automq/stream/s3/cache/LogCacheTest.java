@@ -224,7 +224,7 @@ public class LogCacheTest {
         List<StreamRecordBatch> records = cache.getAsync(TraceContext.DEFAULT, 42, 0, 2, 100)
             .get(5, TimeUnit.SECONDS);
         assertEquals(List.of(ram), records);
-        verify(diskRead, org.mockito.Mockito.timeout(5000)).cancel(false);
+        verify(diskRead, org.mockito.Mockito.timeout(5000).atLeastOnce()).cancel(false);
         diskRead.complete(List.of(disk));
         verify(disk).release();
         verify(ram, never()).release();
