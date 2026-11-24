@@ -173,6 +173,54 @@ public class FileCacheTest {
         assertTrue(verify(fileCache.get(cacheId, 3333L + 2500, 500).get(), (byte) 7));
     }
 
+    /**
+     * Uses one allocator and LRU across mappings, retaining a touched entry and reusing evicted blocks.
+     */
+    @Test
+    public void testGlobalEvictionAcrossMappings(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("cache").toString(), 48, 8, 10);
+        long position = (long) Integer.MAX_VALUE + 100;
+        byte[] firstData = new byte[24];
+        byte[] secondData = new byte[16];
+        byte[] thirdData = new byte[16];
+        Arrays.fill(firstData, (byte) 1);
+        Arrays.fill(secondData, (byte) 2);
+        Arrays.fill(thirdData, (byte) 3);
+        ByteBuf first = Unpooled.wrappedBuffer(firstData);
+        ByteBuf second = Unpooled.wrappedBuffer(secondData);
+        ByteBuf third = Unpooled.wrappedBuffer(thirdData);
+        try {
+            cache.put(1, position, first);
+            cache.put(2, position + 100, second);
+            assertCached(cache, 1, position, firstData);
+            cache.put(3, position + 200, third);
+
+            assertTrue(cache.get(2, position + 100, secondData.length).isEmpty());
+            assertCached(cache, 1, position, firstData);
+            assertCached(cache, 3, position + 200, thirdData);
+            assertArrayEquals(new int[] {3, 4}, cache.cacheMap.get(3L).get(position + 200).indexes);
+            assertEquals(1, cache.freeBlockCount);
+            assertEquals(0, first.readerIndex());
+            assertEquals(0, second.readerIndex());
+            assertEquals(0, third.readerIndex());
+        } finally {
+            first.release();
+            second.release();
+            third.release();
+        }
+    }
+
+    private void assertCached(FileCache cache, long cacheId, long position, byte[] expected) {
+        ByteBuf result = cache.get(cacheId, position, expected.length).orElseThrow();
+        try {
+            byte[] actual = new byte[result.readableBytes()];
+            result.readBytes(actual);
+            assertArrayEquals(expected, actual);
+        } finally {
+            result.release();
+        }
+    }
+
     /** Successful reads refresh the default and explicitly selected LRU order. */
     @Test
     public void testLruReadRefresh(@TempDir Path directory) throws IOException {

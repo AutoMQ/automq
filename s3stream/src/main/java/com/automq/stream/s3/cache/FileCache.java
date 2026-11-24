@@ -39,6 +39,7 @@ import io.netty.buffer.Unpooled;
  * Contiguous data is indexed by cache ID and position, independently of its location in the backing file.
  * Reads and writes copy data synchronously under the cache lock; mapped-file access is delegated to
  * {@link MappedFileStorage}. The backing file is recreated on construction and is not durable cache state.
+ * Capacity and offsets use long byte counts; allocation block indexes remain int-sized.
  */
 public class FileCache {
     /** Eviction order for cached byte-range entries. */
@@ -58,7 +59,7 @@ public class FileCache {
         }
     }
 
-    private final int maxSize;
+    private final long maxSize;
     private final int blockSize;
     /**
      * The index of free blocks in the cache.
@@ -100,24 +101,32 @@ public class FileCache {
      * @param blockSize allocation block size in bytes
      * @throws IOException if the backing file cannot be created or mapped
      */
-    public FileCache(String path, int size, int blockSize) throws IOException {
-        this(path, size, blockSize, EvictionPolicy.LRU);
+    public FileCache(String path, long size, int blockSize) throws IOException {
+        this(path, size, blockSize, MappedFileStorage.DEFAULT_MAPPING_REGION_SIZE_BYTES);
+    }
+
+    FileCache(String path, long size, int blockSize, int mappingSize) throws IOException {
+        this(path, size, blockSize, mappingSize, EvictionPolicy.LRU);
     }
 
     /**
      * Creates a cache with the specified eviction order. FIFO preserves initial admission order
      * across reads and updates; LRU refreshes entries when they are read or updated.
      */
-    public FileCache(String path, int size, int blockSize, EvictionPolicy policy) throws IOException {
+    public FileCache(String path, long size, int blockSize, EvictionPolicy policy) throws IOException {
+        this(path, size, blockSize, MappedFileStorage.DEFAULT_MAPPING_REGION_SIZE_BYTES, policy);
+    }
+
+    FileCache(String path, long size, int blockSize, int mappingSize, EvictionPolicy policy) throws IOException {
         this.evictionCache = new LRUCache<>(Objects.requireNonNull(policy) == EvictionPolicy.LRU);
         this.blockSize = blockSize;
         size = align(size);
         this.maxSize = size;
-        int blockCount = size / blockSize;
+        int blockCount = Math.toIntExact(size / blockSize);
         this.freeBlocks = new BitSet(blockCount);
         this.freeBlocks.set(0, blockCount, true);
         this.freeBlockCount = blockCount;
-        this.storage = new MappedFileStorage(path, size);
+        this.storage = new MappedFileStorage(path, size, mappingSize);
     }
 
     /**
@@ -127,12 +136,12 @@ public class FileCache {
      * @param size requested capacity in bytes; zero disables storage
      * @throws IOException if the backing file cannot be created or mapped
      */
-    public FileCache(String path, int size) throws IOException {
+    public FileCache(String path, long size) throws IOException {
         this(path, size, BLOCK_SIZE);
     }
 
     /** Creates a cache using 4 KiB blocks and the specified eviction order. */
-    public FileCache(String path, int size, EvictionPolicy policy) throws IOException {
+    public FileCache(String path, long size, EvictionPolicy policy) throws IOException {
         this(path, size, BLOCK_SIZE, policy);
     }
 
@@ -146,6 +155,10 @@ public class FileCache {
     /**
      * Copies readable bytes into the namespace at the given logical position without consuming the source.
      * May evict entries according to the configured policy; admission is skipped if allocation cannot succeed.
+     *
+     * @param cacheId identifier of the independent byte-range namespace
+     * @param position starting logical byte position within that namespace
+     * @param data source buffer; its contents and reader/writer indexes are unchanged
      */
     public void put(long cacheId, long position, ByteBuf data) {
         writeLock.lock();
@@ -170,8 +183,8 @@ public class FileCache {
                 cacheEndPosition = Math.max(pos2block.getKey() + blocks.dataLength, position + dataLength);
             }
             // ensure the capacity, if the capacity change then update the cache index
-            int moreCapacity = (int) (cacheEndPosition - (cacheStartPosition + blocks.indexes.length * (long) blockSize));
-            int newDataLength = (int) (cacheEndPosition - cacheStartPosition);
+            long moreCapacity = cacheEndPosition - (cacheStartPosition + blocks.indexes.length * (long) blockSize);
+            long newDataLength = cacheEndPosition - cacheStartPosition;
             if (moreCapacity > 0) {
                 // need to extend the capacity, acquire free blocks
                 int[] indexes = ensureCapacity(cacheStartPosition, moreCapacity);
@@ -189,17 +202,18 @@ public class FileCache {
             evictionCache.put(new Key(cacheId, cacheStartPosition), blocks);
 
             // write data to cache
-            int positionDelta = (int) (position - cacheStartPosition);
+            long positionDelta = position - cacheStartPosition;
             int written = 0;
             ByteBuffer[] nioBuffers = data.nioBuffers();
             int[] indexes = blocks.indexes;
             for (ByteBuffer nioBuffer : nioBuffers) {
                 ByteBuf buf = Unpooled.wrappedBuffer(nioBuffer);
                 while (buf.readableBytes() > 0) {
-                    int writePosition = positionDelta + written;
-                    int index = indexes[writePosition / blockSize];
-                    int length = Math.min(buf.readableBytes(), blockSize - writePosition % blockSize);
-                    storage.write((long) index * blockSize + writePosition % blockSize,
+                    long writePosition = positionDelta + written;
+                    int index = indexes[Math.toIntExact(writePosition / blockSize)];
+                    int blockOffset = Math.toIntExact(writePosition % blockSize);
+                    int length = Math.min(buf.readableBytes(), blockSize - blockOffset);
+                    storage.write((long) index * blockSize + blockOffset,
                         buf.slice(buf.readerIndex(), length).nioBuffer());
                     buf.skipBytes(length);
                     written += length;
@@ -213,6 +227,11 @@ public class FileCache {
     /**
      * Copies a fully cached range into a new buffer, or returns empty on a miss.
      * The caller owns and must release the returned buffer.
+     *
+     * @param cacheId identifier of the independent byte-range namespace
+     * @param position starting logical byte position within that namespace
+     * @param length number of bytes to read, nonnegative
+     * @return a caller-owned copy of the requested range, or empty if the range is not fully cached
      */
     public Optional<ByteBuf> get(long cacheId, long position, int length) {
         ByteBuf buf = Unpooled.buffer(length);
@@ -241,7 +260,10 @@ public class FileCache {
                 }
                 long cacheBlockStartPosition = cacheBlockEndPosition - blockSize;
                 int readSize = (int) Math.min(remaining, cacheBlockEndPosition - nextPosition);
-                buf.writeBytes(storage.read((long) blocks.indexes[i] * blockSize + nextPosition - cacheBlockStartPosition, readSize));
+                int writerIndex = buf.writerIndex();
+                storage.read((long) blocks.indexes[i] * blockSize + nextPosition - cacheBlockStartPosition,
+                    buf.internalNioBuffer(writerIndex, readSize));
+                buf.writerIndex(writerIndex + readSize);
                 remaining -= readSize;
                 nextPosition += readSize;
                 if (remaining <= 0) {
@@ -261,11 +283,11 @@ public class FileCache {
      * @param size               size of data
      * @return the indexes of cache blocks
      */
-    private int[] ensureCapacity(long cacheStartPosition, int size) {
+    private int[] ensureCapacity(long cacheStartPosition, long size) {
         if (size > this.maxSize) {
             return null;
         }
-        int requiredBlockCount = align(size) / blockSize;
+        int requiredBlockCount = Math.toIntExact(align(size) / blockSize);
         int[] indexes = new int[requiredBlockCount];
         int acquiringBlockIndex = 0;
         // evict cache entries in policy order until the free blocks are enough
@@ -313,8 +335,8 @@ public class FileCache {
         return indexes;
     }
 
-    private int align(int size) {
-        return size % blockSize == 0 ? size : size + blockSize - size % blockSize;
+    private long align(long size) {
+        return size % blockSize == 0 ? size : Math.addExact(size, blockSize - size % blockSize);
     }
 
     static class Key implements Comparable<Key> {
@@ -368,9 +390,9 @@ public class FileCache {
         /**
          * The length of data
          */
-        int dataLength;
+        long dataLength;
 
-        public Blocks(int[] indexes, int dataLength) {
+        public Blocks(int[] indexes, long dataLength) {
             this.indexes = indexes;
             this.dataLength = dataLength;
         }
