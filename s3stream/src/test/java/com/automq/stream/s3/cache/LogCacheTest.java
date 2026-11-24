@@ -27,24 +27,56 @@ import com.automq.stream.s3.model.StreamRecordBatch;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class LogCacheTest {
+
+    /** Supplying a backend enables spilling without delaying record release or replacing the free listener. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testOptionalDiskSpill(boolean enabled) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        StreamRecordBatch record = sizedRecord(42, 0, 1);
+        CompletableFuture<Boolean> pendingWrite = new CompletableFuture<>();
+        when(diskCache.put(record)).thenReturn(pendingWrite);
+        CompletableFuture<LogCacheBlock> notification = new CompletableFuture<>();
+        LogCache cache = enabled
+            ? new LogCache(0, 1024, 10000, notification::complete, diskCache)
+            : new LogCache(0, 1024, 10000, notification::complete);
+        assertTrue(cache.put(record));
+        LogCacheBlock block = cache.archiveCurrentBlock();
+        cache.markFree(block).get(5, TimeUnit.SECONDS);
+
+        assertSame(block, notification.get(5, TimeUnit.SECONDS));
+        verify(record).release();
+        assertTrue(block.records().isEmpty());
+        assertFalse(pendingWrite.isDone());
+        if (enabled) {
+            verify(diskCache).put(record);
+        } else {
+            verifyNoInteractions(diskCache);
+        }
+    }
 
     /**
      * Each stream may reach the upload limit independently; the next record stays owned by the caller for retry.

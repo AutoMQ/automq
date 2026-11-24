@@ -85,6 +85,7 @@ public class LogCache {
     private final AtomicLong size = new AtomicLong();
     private final AtomicLong evictableSize = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
+    private final AsyncStreamRecordBatchDiskCache diskCache;
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -94,16 +95,47 @@ public class LogCache {
 
     public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
         Consumer<LogCacheBlock> blockFreeListener) {
+        this(capacity, cacheBlockMaxSize, maxCacheBlockStreamCount, blockFreeListener, null);
+    }
+
+    /**
+     * A non-null backend enqueues capacity-evicted batches before the supplied listener and RAM release,
+     * without waiting for disk writes. A null backend disables spilling. Stream clearing does not spill.
+     * The caller owns and closes the backend; reads still use RAM only.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
+        Consumer<LogCacheBlock> blockFreeListener, AsyncStreamRecordBatchDiskCache diskCache) {
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
-        this.blockFreeListener = blockFreeListener;
+        this.diskCache = diskCache;
+        if (diskCache == null) {
+            this.blockFreeListener = blockFreeListener;
+        } else {
+            Consumer<LogCacheBlock> diskSpillListener = this::spillToDisk;
+            this.blockFreeListener = diskSpillListener.andThen(blockFreeListener);
+        }
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize) {
         this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
+    }
+
+    /**
+     * Enables capacity-eviction spilling when a backend is supplied. The caller owns its lifecycle.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, AsyncStreamRecordBatchDiskCache diskCache) {
+        this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER, diskCache);
+    }
+
+    /**
+     * Invokes the listener for capacity-evicted blocks before releasing their records.
+     * The listener must not wait for disk I/O; stream clearing does not invoke it.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, Consumer<LogCacheBlock> blockFreeListener) {
+        this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, blockFreeListener);
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
@@ -343,9 +375,24 @@ public class LogCache {
             writeLock.unlock();
         }
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
-            blockFreeListener.accept(b);
-            b.free();
+            try {
+                blockFreeListener.accept(b);
+            } finally {
+                b.free();
+            }
         }));
+    }
+
+    private void spillToDisk(LogCacheBlock block) {
+        for (List<StreamRecordBatch> records : block.records().values()) {
+            for (StreamRecordBatch record : records) {
+                try {
+                    diskCache.put(record);
+                } catch (RuntimeException e) {
+                    LOGGER.warn("Failed to enqueue an evicted batch for disk caching", e);
+                }
+            }
+        }
     }
 
     private void tryMerge() {
