@@ -18,12 +18,12 @@
  */
 package kafka.log.streamaspect;
 
-import kafka.log.streamaspect.cache.FileCache;
 import kafka.utils.TestUtils;
 
 import org.apache.kafka.storage.internals.log.TimestampOffset;
 
 import com.automq.stream.api.Stream;
+import com.automq.stream.s3.cache.FileCache;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;

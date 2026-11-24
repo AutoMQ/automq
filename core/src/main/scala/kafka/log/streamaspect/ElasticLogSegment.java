@@ -20,7 +20,6 @@
 package kafka.log.streamaspect;
 
 import kafka.cluster.PartitionSnapshot;
-import kafka.log.streamaspect.cache.FileCache;
 
 import org.apache.kafka.common.InvalidRecordException;
 import org.apache.kafka.common.errors.CorruptRecordException;
@@ -52,6 +51,7 @@ import org.apache.kafka.storage.internals.log.TransactionIndex;
 import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 
 import com.automq.stream.api.ReadOptions;
+import com.automq.stream.s3.cache.FileCache;
 import com.automq.stream.s3.context.FetchContext;
 
 import org.slf4j.event.Level;

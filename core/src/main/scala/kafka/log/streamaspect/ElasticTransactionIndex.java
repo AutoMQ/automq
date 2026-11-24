@@ -18,8 +18,6 @@
  */
 package kafka.log.streamaspect;
 
-import kafka.log.streamaspect.cache.FileCache;
-
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.utils.PrimitiveRef;
 import org.apache.kafka.storage.internals.log.AbortedTxn;
@@ -28,6 +26,7 @@ import org.apache.kafka.storage.internals.log.TxnIndexSearchResult;
 
 import com.automq.stream.api.FetchResult;
 import com.automq.stream.api.RecordBatchWithContext;
+import com.automq.stream.s3.cache.FileCache;
 
 import java.io.File;
 import java.io.IOException;

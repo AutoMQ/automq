@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package kafka.log.streamaspect.cache;
+package com.automq.stream.s3.cache;
 
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
@@ -37,6 +37,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("S3Unit")
 public class FileCacheTest {
 
+    /**
+     * Verifies partial reads, LRU eviction and reuse of freed allocation blocks.
+     */
     @Test
     public void test() throws IOException {
         FileCache fileCache = new FileCache("/tmp/file_cache_test", 10 * 1024, 1024);
@@ -105,6 +108,9 @@ public class FileCacheTest {
 
     }
 
+    /**
+     * Verifies composite writes, overwrites and contiguous range extension.
+     */
     @Test
     public void testMergePut() throws IOException {
         FileCache fileCache = new FileCache("/tmp/file_cache_test", 10 * 1024, 1024);

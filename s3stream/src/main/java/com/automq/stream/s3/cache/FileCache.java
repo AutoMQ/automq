@@ -17,20 +17,10 @@
  * limitations under the License.
  */
 
-package kafka.log.streamaspect.cache;
+package com.automq.stream.s3.cache;
 
-import kafka.log.streamaspect.ElasticTimeIndex;
-import kafka.log.streamaspect.ElasticTransactionIndex;
-
-import com.automq.stream.s3.cache.LRUCache;
-
-import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
 import java.util.BitSet;
 import java.util.HashMap;
 import java.util.Map;
@@ -45,10 +35,10 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 /**
- * File cache which used for cache {@link ElasticTimeIndex} data and {@link ElasticTransactionIndex} data.
- * It uses a {@link MappedByteBuffer} as the cache, and the cache is divided into blocks.
- * Contiguous data will be stored in a {@link Blocks} object, and the {@link Blocks} object contains the indexes of the cache blocks.
- * A {@link LRUCache} is used to manage the cache, each block in the least recently used {@link Blocks} will be evicted once the cache is full.
+ * Disk-backed byte-range cache with in-memory block allocation and LRU eviction.
+ * Contiguous data is indexed by cache ID and position, independently of its location in the backing file.
+ * Reads and writes copy data synchronously under the cache lock; mapped-file access is delegated to
+ * {@link MappedFileStorage}. The backing file is recreated on construction and is not durable cache state.
  */
 public class FileCache {
     private static final int BLOCK_SIZE = 4 * 1024;
@@ -93,9 +83,17 @@ public class FileCache {
      * Used for acquiring free blocks.
      */
     private int freeCheckPoint = 0;
-    private final MappedByteBuffer cacheByteBuffer;
+    private final MappedFileStorage storage;
     private final AtomicLong cacheIdAlloc = new AtomicLong(0);
 
+    /**
+     * Creates a cache, rounding its capacity up to an allocation block boundary.
+     *
+     * @param path backing file, recreated for a positive capacity
+     * @param size requested capacity in bytes; zero disables storage
+     * @param blockSize allocation block size in bytes
+     * @throws IOException if the backing file cannot be created or mapped
+     */
     public FileCache(String path, int size, int blockSize) throws IOException {
         this.blockSize = blockSize;
         size = align(size);
@@ -104,29 +102,31 @@ public class FileCache {
         this.freeBlocks = new BitSet(blockCount);
         this.freeBlocks.set(0, blockCount, true);
         this.freeBlockCount = blockCount;
-        if (size > 0) {
-            File file = new File(path);
-            do {
-                Files.deleteIfExists(file.toPath());
-            }
-            while (!file.createNewFile());
-            try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-                raf.setLength(size);
-                this.cacheByteBuffer = raf.getChannel().map(FileChannel.MapMode.READ_WRITE, 0, size);
-            }
-        } else {
-            this.cacheByteBuffer = null;
-        }
+        this.storage = new MappedFileStorage(path, size);
     }
 
+    /**
+     * Creates a cache using 4 KiB allocation blocks.
+     *
+     * @param path backing file, recreated for a positive capacity
+     * @param size requested capacity in bytes; zero disables storage
+     * @throws IOException if the backing file cannot be created or mapped
+     */
     public FileCache(String path, int size) throws IOException {
         this(path, size, BLOCK_SIZE);
     }
 
+    /**
+     * Allocates an identifier for an independent byte-range namespace within this cache.
+     */
     public long newCacheId() {
         return cacheIdAlloc.incrementAndGet();
     }
 
+    /**
+     * Copies readable bytes into the namespace at the given logical position without consuming the source.
+     * May evict least recently used entries; admission is skipped if allocation cannot succeed.
+     */
     public void put(long cacheId, long position, ByteBuf data) {
         writeLock.lock();
         try {
@@ -169,7 +169,6 @@ public class FileCache {
             lru.put(new Key(cacheId, cacheStartPosition), blocks);
 
             // write data to cache
-            ByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
             int positionDelta = (int) (position - cacheStartPosition);
             int written = 0;
             ByteBuffer[] nioBuffers = data.nioBuffers();
@@ -179,9 +178,9 @@ public class FileCache {
                 while (buf.readableBytes() > 0) {
                     int writePosition = positionDelta + written;
                     int index = indexes[writePosition / blockSize];
-                    cacheByteBuffer.position(index * blockSize + writePosition % blockSize);
                     int length = Math.min(buf.readableBytes(), blockSize - writePosition % blockSize);
-                    cacheByteBuffer.put(buf.slice(buf.readerIndex(), length).nioBuffer());
+                    storage.write((long) index * blockSize + writePosition % blockSize,
+                        buf.slice(buf.readerIndex(), length).nioBuffer());
                     buf.skipBytes(length);
                     written += length;
                 }
@@ -191,6 +190,10 @@ public class FileCache {
         }
     }
 
+    /**
+     * Copies a fully cached range into a new buffer, or returns empty on a miss.
+     * The caller owns and must release the returned buffer.
+     */
     public Optional<ByteBuf> get(long cacheId, long position, int length) {
         ByteBuf buf = Unpooled.buffer(length);
         readLock.lock();
@@ -209,7 +212,6 @@ public class FileCache {
                 return Optional.empty();
             }
             lru.touchIfExist(new Key(cacheId, cacheStartPosition));
-            MappedByteBuffer cacheByteBuffer = this.cacheByteBuffer.duplicate();
             long nextPosition = position;
             int remaining = length;
             for (int i = 0; i < blocks.indexes.length; i++) {
@@ -219,7 +221,7 @@ public class FileCache {
                 }
                 long cacheBlockStartPosition = cacheBlockEndPosition - blockSize;
                 int readSize = (int) Math.min(remaining, cacheBlockEndPosition - nextPosition);
-                buf.writeBytes(cacheByteBuffer.slice(blocks.indexes[i] * blockSize + (int) (nextPosition - cacheBlockStartPosition), readSize));
+                buf.writeBytes(storage.read((long) blocks.indexes[i] * blockSize + nextPosition - cacheBlockStartPosition, readSize));
                 remaining -= readSize;
                 nextPosition += readSize;
                 if (remaining <= 0) {
@@ -328,7 +330,7 @@ public class FileCache {
 
     /**
      * Cache blocks
-     * It contains indexes of blocks in {@link #cacheByteBuffer} in the order of the data.
+     * It contains backing-file block indexes in the order of the data.
      */
     static class Blocks {
         static final Blocks EMPTY = new Blocks(new int[0], 0);
