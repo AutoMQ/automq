@@ -62,6 +62,13 @@ public class Config {
     private long objectRetentionTimeInSecond = 10 * 60; // 10min
     private boolean failoverEnable = false;
     private boolean snapshotReadEnable = false;
+    private String snapshotReadCacheDiskPath = "";
+    private long snapshotReadCacheDiskSize = 0;
+    private int snapshotReadCacheDiskMaxEntries = 1000000;
+    private int snapshotReadCacheDiskThreads = 2;
+    private int snapshotReadCacheDiskQueueCapacity = 1024;
+    private long snapshotReadCacheDiskMaxPendingBytes = 64L * 1024 * 1024;
+    private long snapshotReadCacheDiskReadTimeoutMs = 100;
     private Supplier<Version> version = () -> {
         throw new UnsupportedOperationException();
     };
@@ -349,6 +356,83 @@ public class Config {
 
     public boolean snapshotReadEnable() {
         return snapshotReadEnable;
+    }
+
+    /** Dedicated disposable backing file for snapshot disk caching. Existing contents are replaced on startup. */
+    public String snapshotReadCacheDiskPath() {
+        return snapshotReadCacheDiskPath;
+    }
+
+    /** Configures path for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskPath(String value) {
+        this.snapshotReadCacheDiskPath = value;
+        return this;
+    }
+
+    /** Snapshot disk-cache capacity in bytes. Zero disables it; requires snapshot reading and a dedicated path. */
+    public long snapshotReadCacheDiskSize() {
+        return snapshotReadCacheDiskSize;
+    }
+
+    /** Configures size for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskSize(long value) {
+        this.snapshotReadCacheDiskSize = value;
+        return this;
+    }
+
+    /** Maximum number of snapshot disk batches indexed in heap memory. */
+    public int snapshotReadCacheDiskMaxEntries() {
+        return snapshotReadCacheDiskMaxEntries;
+    }
+
+    /** Configures max.entries for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskMaxEntries(int value) {
+        this.snapshotReadCacheDiskMaxEntries = value;
+        return this;
+    }
+
+    /** Dedicated snapshot disk-cache I/O workers. */
+    public int snapshotReadCacheDiskThreads() {
+        return snapshotReadCacheDiskThreads;
+    }
+
+    /** Configures threads for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskThreads(int value) {
+        this.snapshotReadCacheDiskThreads = value;
+        return this;
+    }
+
+    /** Maximum queued snapshot disk-cache tasks; running tasks are additional. */
+    public int snapshotReadCacheDiskQueueCapacity() {
+        return snapshotReadCacheDiskQueueCapacity;
+    }
+
+    /** Configures queue.capacity for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskQueueCapacity(int value) {
+        this.snapshotReadCacheDiskQueueCapacity = value;
+        return this;
+    }
+
+    /** Maximum encoded bytes reserved by queued and running disk reads and writes. Source buffers may pin larger allocations. */
+    public long snapshotReadCacheDiskMaxPendingBytes() {
+        return snapshotReadCacheDiskMaxPendingBytes;
+    }
+
+    /** Configures max.pending.bytes for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskMaxPendingBytes(long value) {
+        this.snapshotReadCacheDiskMaxPendingBytes = value;
+        return this;
+    }
+
+    /** Maximum snapshot disk-phase wait in milliseconds before falling back to the RAM lookup and block cache. */
+    public long snapshotReadCacheDiskReadTimeoutMs() {
+        return snapshotReadCacheDiskReadTimeoutMs;
+    }
+
+    /** Configures read.timeout.ms for the optional snapshot disk cache. */
+    public Config snapshotReadCacheDiskReadTimeoutMs(long value) {
+        this.snapshotReadCacheDiskReadTimeoutMs = value;
+        return this;
     }
 
     public Config version(Supplier<Version> version) {

@@ -238,7 +238,7 @@ public class S3Storage implements Storage {
         }
         this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreshold, config.maxStreamNumPerStreamSetObject());
         this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1),
-            snapshotDiskCache);
+            snapshotDiskCache, config.snapshotReadCacheDiskReadTimeoutMs());
         DELTA_WAL_CACHE_SIZE.record(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
         this.confirmWAL = new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit));
