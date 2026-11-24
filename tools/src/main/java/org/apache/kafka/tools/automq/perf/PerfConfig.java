@@ -41,6 +41,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Random;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 import static net.sourceforge.argparse4j.impl.Arguments.storeTrue;
 import static org.apache.kafka.tools.automq.perf.PerfConfig.IntegerArgumentType.between;
@@ -77,6 +78,13 @@ public class PerfConfig {
     public final int reportingIntervalSeconds;
     public final String valueSchema;
     public final String valuesFile;
+    public final String sampleFile;
+    public final String sampleTimingFile;
+    public final long sampleMaxBytes;
+    public final long sampleCycleNanos;
+    public final double sampleSpeed;
+    public final long sampleStartTimeMs;
+    public final boolean omitSendTimeHeader;
     public final boolean reuseTopics; // Added for --reuse-topics
     public final String catchupTopicPrefix; // Added for --catchup-topic-prefix
 
@@ -113,7 +121,7 @@ public class PerfConfig {
         randomPoolSize = ns.getInt("randomPoolSize");
         sendRate = Optional.ofNullable(ns.getDouble("sendThroughput"))
             .map(throughput -> (int) (throughput * 1024 * 1024 / recordSize))
-            .orElse(ns.getInt("sendRate"));
+            .orElse(Optional.ofNullable(ns.getInt("sendRate")).orElse(1000));
         sendRateDuringCatchup = ns.getInt("sendRateDuringCatchup") == null ? sendRate : ns.getInt("sendRateDuringCatchup");
         maxConsumeRecordRate = ns.getInt("maxConsumeRecordRate");
         backlogDurationSeconds = ns.getInt("backlogDurationSeconds");
@@ -123,13 +131,68 @@ public class PerfConfig {
         reportingIntervalSeconds = ns.getInt("reportingIntervalSeconds");
         valueSchema = ns.getString("valueSchema");
         valuesFile = ns.get("valuesFile");
+        sampleFile = ns.getString("sampleFile");
+        sampleTimingFile = ns.getString("sampleTimingFile");
+        sampleMaxBytes = ns.getLong("sampleMaxBytes");
+        sampleCycleNanos = Math.multiplyExact(ns.getLong("sampleCycleMs"), 1_000_000L);
+        sampleSpeed = ns.getDouble("sampleSpeed");
+        sampleStartTimeMs = ns.getLong("sampleStartTimeMs");
+        omitSendTimeHeader = ns.getBoolean("omitSendTimeHeader");
         reuseTopics = ns.getBoolean("reuseTopics"); // Added for --reuse-topics
         catchupTopicPrefix = ns.getString("catchupTopicPrefix"); // Added for --catchup-topic-prefix
         consumersDuringCatchupPercentage = ns.getInt("consumersDuringCatchupPercentage");
 
+        validateSampleOptions(ns);
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
                 backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
+        }
+    }
+
+    private void validateSampleOptions(Namespace ns) {
+        if (sampleMaxBytes <= 0 || !Double.isFinite(sampleSpeed) || sampleSpeed <= 0 || sampleStartTimeMs < 0) {
+            throw new IllegalArgumentException("Sample byte budget and replay speed must be positive and finite; start time must be nonnegative");
+        }
+        if (omitSendTimeHeader && groupsPerTopic != 0) {
+            throw new IllegalArgumentException("--omit-send-time-header requires --groups-per-topic 0; consumer latency needs the header");
+        }
+        if (sampleFile == null) {
+            if (sampleTimingFile != null || hasSampleTimingOptions()) {
+                throw new IllegalArgumentException("Sample timing options require --sample-file");
+            }
+            return;
+        }
+        validateSampleMode(ns);
+    }
+
+    private boolean hasSampleTimingOptions() {
+        return sampleCycleNanos != 0 || sampleSpeed != 1.0 || sampleStartTimeMs != 0;
+    }
+
+    private void validateSampleMode(Namespace ns) {
+        if (valueSchema != null || valuesFile != null || ns.getDouble("sendThroughput") != null) {
+            throw new IllegalArgumentException("Sample replay cannot use Avro options or --send-throughput; use --send-rate for variable-size records");
+        }
+        if (groupsPerTopic != 0 || backlogDurationSeconds != 0 || catchupTopicPrefix != null) {
+            throw new IllegalArgumentException("Sample replay requires --groups-per-topic 0 and no backlog/catch-up mode");
+        }
+        if (sampleTimingFile == null) {
+            if (hasSampleTimingOptions()) {
+                throw new IllegalArgumentException("Cycle, speed and start-time options require --sample-timing-file");
+            }
+        } else {
+            validateSampleTiming(ns);
+        }
+    }
+
+    private void validateSampleTiming(Namespace ns) {
+        long scaledCycle = ReplaySchedule.scale(sampleCycleNanos, sampleSpeed);
+        if (sampleCycleNanos <= 0 || sampleCycleNanos > TimeUnit.DAYS.toNanos(1)
+            || scaledCycle < 1 || scaledCycle > TimeUnit.DAYS.toNanos(1)) {
+            throw new IllegalArgumentException("Timed replay needs a positive cycle of at most one day and a representable scaled cycle");
+        }
+        if (ns.getInt("sendRate") != null || ns.getInt("sendRateDuringCatchup") != null) {
+            throw new IllegalArgumentException("Timed replay uses --sample-speed instead of --send-rate or --send-rate-during-catchup");
         }
     }
 
@@ -143,6 +206,7 @@ public class PerfConfig {
         addTopicArguments(parser);
         addConsumerArguments(parser);
         addProducerArguments(parser);
+        addSampleArguments(parser);
         addTestConfigArguments(parser);
         return parser;
     }
@@ -282,11 +346,10 @@ public class PerfConfig {
             .metavar("RANDOM_POOL_SIZE")
             .help("The count of random payloads. Only used when random ratio is greater than 0.0.");
         parser.addArgument("-r", "--send-rate")
-            .setDefault(1000)
             .type(positiveInteger())
             .dest("sendRate")
             .metavar("SEND_RATE")
-            .help("The send rate in messages per second.");
+            .help("The send rate in messages per second (default: 1000).");
         parser.addArgument("-f", "--send-throughput")
             .type(Double.class)
             .dest("sendThroughput")
@@ -297,6 +360,23 @@ public class PerfConfig {
             .dest("sendRateDuringCatchup")
             .metavar("SEND_RATE_DURING_CATCHUP")
             .help("The send rate in messages per second during catchup. If not set, the send rate will be used.");
+    }
+
+    private static void addSampleArguments(ArgumentParser parser) {
+        parser.addArgument("--sample-file").dest("sampleFile").type(String.class)
+            .help("Binary length-prefixed keys/values, optionally gzip compressed. Requires --groups-per-topic 0.");
+        parser.addArgument("--sample-timing-file").dest("sampleTimingFile").type(String.class)
+            .help("CSV producer,offset_ns rows matching the sample records; enables per-producer timed replay.");
+        parser.addArgument("--sample-max-bytes").dest("sampleMaxBytes").type(Long.class).setDefault(536_870_912L)
+            .help("Sample allocation budget including 64 bytes per record; at most 1000000 records are loaded.");
+        parser.addArgument("--sample-cycle-ms").dest("sampleCycleMs").type(Long.class).setDefault(0L)
+            .help("Complete captured period including the trailing idle gap; required with --sample-timing-file.");
+        parser.addArgument("--sample-speed").dest("sampleSpeed").type(Double.class).setDefault(1.0)
+            .help("Timed replay speed multiplier; 1 preserves supplied gaps, 2 halves them.");
+        parser.addArgument("--sample-start-time-ms").dest("sampleStartTimeMs").type(Long.class).setDefault(0L)
+            .help("Optional shared Unix-epoch millisecond start for timed replay across processes; must still be in the future after setup.");
+        parser.addArgument("--omit-send-time-header").dest("omitSendTimeHeader").action(storeTrue())
+            .help("Do not add the benchmark st header. Requires --groups-per-topic 0; produce ACK latency is still measured.");
     }
 
     private static void addTestConfigArguments(ArgumentParser parser) {
@@ -370,7 +450,9 @@ public class PerfConfig {
         return new ProducersConfig(
             bootstrapServer,
             producersPerTopic,
-            properties
+            properties,
+            sampleFile != null,
+            !omitSendTimeHeader
         );
     }
 
