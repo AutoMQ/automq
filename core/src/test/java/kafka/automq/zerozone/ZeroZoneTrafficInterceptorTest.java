@@ -22,7 +22,6 @@ package kafka.automq.zerozone;
 import kafka.automq.AutoMQConfig;
 import kafka.automq.interceptor.ClientIdMetadata;
 import kafka.automq.interceptor.ProduceRequestArgs;
-import kafka.automq.utils.AsyncSender;
 import kafka.cluster.EndPoint;
 import kafka.server.KafkaConfig;
 import kafka.server.MetadataCache;
