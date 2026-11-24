@@ -114,7 +114,10 @@ public class PerfCommand implements AutoCloseable {
         }
 
         List<Topic> topics;
-        if (config.catchupTopicPrefix != null && !config.catchupTopicPrefix.isEmpty()) {
+        if (config.topic != null) {
+            topics = List.of(topicService.describeTopic(config.topic));
+            LOGGER.info("Using existing topic '{}' with {} partitions.", config.topic, topics.get(0).partitions().size());
+        } else if (config.catchupTopicPrefix != null && !config.catchupTopicPrefix.isEmpty()) {
             LOGGER.info("Looking for catch-up topics with prefix: {}", config.catchupTopicPrefix);
             topics = topicService.findExistingTopicsByPrefix(config.catchupTopicPrefix);
             if (topics.isEmpty()) {
@@ -152,7 +155,7 @@ public class PerfCommand implements AutoCloseable {
         } else {
             if (config.awaitTopicReady) {
                 LOGGER.info("Waiting for topics to be ready...");
-                waitTopicsReady(consumerService.consumerCount() > 0);
+                waitTopicsReady(topics, consumerService.consumerCount() > 0);
                 LOGGER.info("Topics are ready, took {} ms", timer.elapsedAndResetAs(TimeUnit.MILLISECONDS));
             }
             Function<String, List<byte[]>> payloads = payloads(config, topics);
@@ -230,23 +233,23 @@ public class PerfCommand implements AutoCloseable {
         }
     }
 
-    private void waitTopicsReady(boolean hasConsumer) {
+    private void waitTopicsReady(List<Topic> topics, boolean hasConsumer) {
         if (config.catchupTopicPrefix != null && !config.catchupTopicPrefix.isEmpty()) {
             LOGGER.info("Using catch-up topics, skipping topic readiness check.");
             return;
         }
         if (hasConsumer) {
-            waitTopicsReadyWithConsumer();
+            waitTopicsReadyWithConsumer(topics);
         } else {
             waitTopicsReadyWithoutConsumer();
         }
         stats.reset();
     }
 
-    private void waitTopicsReadyWithConsumer() {
+    private void waitTopicsReadyWithConsumer(List<Topic> topics) {
         long start = System.nanoTime();
         boolean ready = false;
-        int expectPartitionCount = config.topics * config.partitionsPerTopic;
+        int expectPartitionCount = topics.stream().mapToInt(topic -> topic.partitions().size()).sum();
         while (System.nanoTime() < start + TOPIC_READY_TIMEOUT_NANOS) {
             producerService.probe();
             int received = readyPartitions.size();
