@@ -66,6 +66,32 @@ public class TopicService implements AutoCloseable {
         this.admin = Admin.create(properties);
     }
 
+    TopicService(Admin admin) {
+        this.admin = admin;
+    }
+
+    /**
+     * Describe one existing topic by its exact name, without creating it or adding a prefix.
+     *
+     * @param name the existing topic name
+     * @return the topic with its current partition count
+     * @throws RuntimeException if the topic cannot be described or the request is interrupted
+     */
+    public Topic describeTopic(String name) {
+        try {
+            TopicDescription description = admin.describeTopics(Collections.singletonList(name)).allTopicNames().get().get(name);
+            if (description == null) {
+                throw new IllegalStateException("No description returned for topic: " + name);
+            }
+            return new Topic(name, description.partitions().size());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Interrupted while describing topic: " + name, e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("Failed to describe existing topic: " + name, e);
+        }
+    }
+
     /**
      * Create topics with the given configuration.
      * Note: If the topic already exists, it will not be created again.
