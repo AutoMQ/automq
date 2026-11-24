@@ -355,6 +355,30 @@ public class ConsumerService implements AutoCloseable {
         }
     }
 
+    // Existing topics may contain ordinary records. Only timestamped benchmark
+    // records participate in readiness and benchmark statistics.
+    static void processRecords(ConsumerRecords<String, byte[]> records, ConsumerCallback callback, Stats stats)
+        throws InterruptedException {
+        int numMessages = 0;
+        long bytes = 0;
+        long sendTimeNanos = 0;
+        for (ConsumerRecord<String, byte[]> record : records) {
+            Header header = record.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS);
+            if (header == null || header.value() == null || header.value().length != Long.BYTES) {
+                continue;
+            }
+            if (numMessages == 0) {
+                sendTimeNanos = Longs.fromByteArray(header.value());
+            }
+            numMessages++;
+            bytes += record.value() == null ? 0 : record.value().length;
+            callback.messageReceived(new TopicPartition(record.topic(), record.partition()));
+        }
+        if (numMessages > 0) {
+            stats.messageReceived(numMessages, bytes, sendTimeNanos);
+        }
+    }
+
     private static class Consumer {
         private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
         private static final long PAUSE_INTERVAL = 1000;
@@ -411,20 +435,10 @@ public class ConsumerService implements AutoCloseable {
                         Thread.sleep(PAUSE_INTERVAL);
                     }
                     ConsumerRecords<String, byte[]> records = consumer.poll(POLL_TIMEOUT);
-                    int numMessages = records.count();
-                    if (numMessages == 0) {
+                    if (records.isEmpty()) {
                         continue;
                     }
-                    ConsumerRecord<String, byte[]> firstRecord = records.iterator().next();
-                    Header header = firstRecord.headers().lastHeader(HEADER_KEY_SEND_TIME_NANOS);
-                    long bytes = 0;
-                    long sendTimeNanos = Longs.fromByteArray(header.value());
-                    for (ConsumerRecord<String, byte[]> record : records) {
-                        TopicPartition topicPartition = new TopicPartition(record.topic(), record.partition());
-                        bytes += record.value().length;
-                        callback.messageReceived(topicPartition);
-                    }
-                    stats.messageReceived(numMessages, bytes, sendTimeNanos);
+                    processRecords(records, callback, stats);
                     bucket.consume(records.count());
                 } catch (InterruptException | InterruptedException e) {
                     // ignore, as we are closing
