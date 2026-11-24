@@ -24,6 +24,7 @@ import com.automq.stream.api.LinkRecordDecoder;
 import com.automq.stream.api.exceptions.ErrorCode;
 import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.cache.AsyncStreamRecordBatchDiskCache;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
@@ -85,6 +86,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
@@ -201,9 +203,21 @@ public class S3Storage implements Storage {
     private final Map<Long, CompletableFuture<Void>> pendingStreamUploads = new ConcurrentHashMap<>();
     private LocalStreamRangeIndexCache localStreamRangeIndexCache;
 
-    @SuppressWarnings("this-escape")
     public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
         S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler) {
+        this(config, deltaWAL, streamManager, objectManager, blockCache, objectStorage, storageFailureHandler, null);
+    }
+
+    /**
+     * Optionally spills capacity-evicted snapshot batches to disk without waiting for their writes.
+     * The caller owns the disk cache and must close it after shutting down storage. A null disk cache
+     * preserves RAM-only behavior. Normal snapshot fetches try disk after a RAM miss;
+     * fast reads remain RAM-only.
+     */
+    @SuppressWarnings("this-escape")
+    public S3Storage(Config config, WriteAheadLog deltaWAL, StreamManager streamManager, ObjectManager objectManager,
+        S3BlockCache blockCache, ObjectStorage objectStorage, StorageFailureHandler storageFailureHandler,
+        AsyncStreamRecordBatchDiskCache snapshotDiskCache) {
         this.config = config;
         this.deltaWAL = deltaWAL;
         this.blockCache = blockCache;
@@ -223,7 +237,8 @@ public class S3Storage implements Storage {
             LOGGER.info("The configured walUploadThreshold {} is too large, adjust to {}", config.walUploadThreshold(), walUploadThreshold);
         }
         this.deltaWALCache = new LogCache(deltaWALCacheSize, walUploadThreshold, config.maxStreamNumPerStreamSetObject());
-        this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1));
+        this.snapshotReadCache = new LogCache(snapshotReadCacheSize, Math.max(snapshotReadCacheSize / 6, 1),
+            snapshotDiskCache);
         DELTA_WAL_CACHE_SIZE.record(() -> deltaWALCache.size() + snapshotReadCache.size());
         Context.instance().snapshotReadCache(new SnapshotReadCache(streamManager, snapshotReadCache, objectStorage, linkRecordDecoder));
         this.confirmWAL = new ConfirmWAL(deltaWAL, lazyCommit -> lazyUpload(lazyCommit));
@@ -550,8 +565,7 @@ public class S3Storage implements Storage {
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
         final long startTime = System.nanoTime();
-        CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        FutureUtil.propagate(read0(context, streamId, startOffset, endOffset, maxBytes), cf);
+        CompletableFuture<ReadDataBlock> cf = read0(context, streamId, startOffset, endOffset, maxBytes);
         cf.whenComplete((nil, ex) -> READ_STORAGE_LATENCY.record(TimerUtil.timeElapsedSince(startTime, TimeUnit.NANOSECONDS)));
         return cf;
     }
@@ -560,7 +574,6 @@ public class S3Storage implements Storage {
         return snapshotReadCache;
     }
 
-    @SuppressWarnings({"checkstyle:npathcomplexity"})
     @WithSpan
     private CompletableFuture<ReadDataBlock> read0(FetchContext context,
         @SpanAttribute long streamId,
@@ -568,7 +581,18 @@ public class S3Storage implements Storage {
         @SpanAttribute long endOffset,
         @SpanAttribute int maxBytes) {
         LogCache firstCache = context.readOptions().snapshotRead() ? snapshotReadCache : deltaWALCache;
-        List<StreamRecordBatch> logCacheRecords = firstCache.get(context, streamId, startOffset, endOffset, maxBytes);
+        if (context.readOptions().fastRead()) {
+            return readWithLogCacheRecords(context, streamId, startOffset, endOffset, maxBytes,
+                firstCache.get(context, streamId, startOffset, endOffset, maxBytes));
+        }
+        return FutureUtil.composeWithRelease(firstCache.getAsync(context, streamId, startOffset, endOffset, maxBytes),
+            records -> readWithLogCacheRecords(context, streamId, startOffset, endOffset, maxBytes, records),
+            S3Storage::releaseRecords, block -> releaseRecords(block.getRecords()));
+    }
+
+    @SuppressWarnings({"checkstyle:npathcomplexity"})
+    private CompletableFuture<ReadDataBlock> readWithLogCacheRecords(FetchContext context,
+        long streamId, long startOffset, long endOffset, int maxBytes, List<StreamRecordBatch> logCacheRecords) {
         if (!logCacheRecords.isEmpty() && logCacheRecords.get(0).getBaseOffset() <= startOffset) {
             return CompletableFuture.completedFuture(new ReadDataBlock(logCacheRecords, CacheAccessType.DELTA_WAL_CACHE_HIT));
         }
@@ -582,40 +606,59 @@ public class S3Storage implements Storage {
             endOffset = logCacheRecords.get(0).getBaseOffset();
         }
         long finalEndOffset = endOffset;
-        CompletableFuture<ReadDataBlock> cf = blockCache.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(blockCacheRst -> {
-            List<StreamRecordBatch> rst = new ArrayList<>(blockCacheRst.getRecords());
-            int remainingBytesSize = maxBytes - rst.stream().mapToInt(StreamRecordBatch::size).sum();
-            int readIndex = -1;
-            for (int i = 0; i < logCacheRecords.size() && remainingBytesSize > 0; i++) {
-                readIndex = i;
-                StreamRecordBatch record = logCacheRecords.get(i);
-                rst.add(record);
-                remainingBytesSize -= record.size();
+        CompletableFuture<ReadDataBlock> blockRead;
+        try {
+            blockRead = blockCache.read(context, streamId, startOffset, endOffset, maxBytes);
+        } catch (RuntimeException e) {
+            releaseRecords(logCacheRecords);
+            return CompletableFuture.failedFuture(e);
+        }
+        CompletableFuture<ReadDataBlock> result = new CompletableFuture<>();
+        result.orTimeout(2, TimeUnit.MINUTES);
+        result.whenComplete((records, error) -> {
+            if (result.isCancelled() || FutureUtil.cause(error) instanceof TimeoutException) {
+                blockRead.cancel(false);
+            }
+        });
+        blockRead.whenComplete((block, error) -> {
+            if (error != null) {
+                releaseRecords(logCacheRecords);
+                result.completeExceptionally(error);
+                return;
+            }
+            if (result.isDone()) {
+                releaseRecords(block.getRecords());
+                releaseRecords(logCacheRecords);
+                return;
+            }
+            List<StreamRecordBatch> records = new ArrayList<>(block.getRecords());
+            int remainingBytes = (int) Math.max(0L, (long) maxBytes - block.sizeInBytes());
+            int index = 0;
+            while (index < logCacheRecords.size() && remainingBytes > 0) {
+                StreamRecordBatch record = logCacheRecords.get(index++);
+                records.add(record);
+                remainingBytes -= Math.min(remainingBytes, record.size());
             }
             try {
-                continuousCheck(rst);
-            } catch (IllegalArgumentException e) {
-                releaseRecords(blockCacheRst.getRecords());
-                throw e;
-            }
-            if (readIndex < logCacheRecords.size()) {
-                // release unnecessary record
-                releaseRecords(logCacheRecords.subList(readIndex + 1, logCacheRecords.size()));
-            }
-            return new ReadDataBlock(rst, blockCacheRst.getCacheAccessType());
-        }).whenComplete((rst, ex) -> {
-            if (ex != null) {
-                LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
-                    streamId, startOffset, finalEndOffset, maxBytes, ex);
+                continuousCheck(records);
+            } catch (RuntimeException e) {
+                releaseRecords(block.getRecords());
                 releaseRecords(logCacheRecords);
+                result.completeExceptionally(e);
+                return;
+            }
+            releaseRecords(logCacheRecords.subList(index, logCacheRecords.size()));
+            if (!result.complete(new ReadDataBlock(records, block.getCacheAccessType()))) {
+                releaseRecords(records);
             }
         });
-        return FutureUtil.timeoutWithNewReturn(cf, 2, TimeUnit.MINUTES, () -> {
-            LOGGER.error("[POTENTIAL_BUG] read from block cache timeout, stream={}, [{},{}), maxBytes: {}", streamId, startOffset, finalEndOffset, maxBytes);
-            cf.thenAccept(readDataBlock -> {
-                releaseRecords(readDataBlock.getRecords());
-            });
+        result.whenComplete((records, error) -> {
+            if (error != null && !result.isCancelled()) {
+                LOGGER.error("read from block cache failed, stream={}, {}-{}, maxBytes: {}",
+                    streamId, startOffset, finalEndOffset, maxBytes, error);
+            }
         });
+        return result;
     }
 
     private void continuousCheck(List<StreamRecordBatch> records) {

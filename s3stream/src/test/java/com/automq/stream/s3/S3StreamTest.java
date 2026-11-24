@@ -68,6 +68,22 @@ public class S3StreamTest {
         stream = S3Stream.create(233L, 1L, 100L, 233L, storage, streamManager);
     }
 
+    /** Fetch cancellation reaches storage and releases a result from an uncancellable read. */
+    @Test
+    public void testFetchCancellation() {
+        stream.confirmOffset.set(120L);
+        CompletableFuture<ReadDataBlock> read = Mockito.spy(new CompletableFuture<>());
+        Mockito.doReturn(false).when(read).cancel(false);
+        Mockito.when(storage.read(any(), eq(233L), eq(110L), eq(120L), eq(100))).thenReturn(read);
+        CompletableFuture<FetchResult> fetch = stream.fetch(110, 120, 100);
+        assertTrue(fetch.cancel(false));
+        verify(read).cancel(false);
+        ReadDataBlock block = newReadDataBlock(110, 115, 110);
+        io.netty.buffer.ByteBuf buffer = block.getRecords().get(0).encoded();
+        read.complete(block);
+        assertEquals(0, buffer.refCnt());
+    }
+
     @Test
     public void testFetch() throws Throwable {
         stream.confirmOffset.set(120L);

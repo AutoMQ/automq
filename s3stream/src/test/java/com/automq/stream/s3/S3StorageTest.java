@@ -22,11 +22,15 @@ package com.automq.stream.s3;
 import com.automq.stream.Context;
 import com.automq.stream.api.ReadOptions;
 import com.automq.stream.api.exceptions.ErrorCode;
+import com.automq.stream.api.exceptions.FastReadFailFastException;
 import com.automq.stream.api.exceptions.StreamClientException;
+import com.automq.stream.s3.cache.AsyncStreamRecordBatchDiskCache;
 import com.automq.stream.s3.cache.CacheAccessType;
 import com.automq.stream.s3.cache.LogCache;
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
+import com.automq.stream.s3.cache.blockcache.StreamReaders;
 import com.automq.stream.s3.context.FetchContext;
 import com.automq.stream.s3.failover.StorageFailureHandler;
 import com.automq.stream.s3.metadata.StreamMetadata;
@@ -50,6 +54,10 @@ import com.automq.stream.s3.wal.impl.MemoryWriteAheadLog;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
@@ -57,6 +65,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -70,6 +79,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import static com.automq.stream.s3.TestUtils.random;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -82,16 +92,22 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 @Tag("S3Unit")
 public class S3StorageTest {
     private static final Logger LOGGER = LoggerFactory.getLogger(S3StorageTest.class);
+
+    @TempDir
+    Path directory;
 
     StreamManager streamManager;
     ObjectManager objectManager;
@@ -122,6 +138,219 @@ public class S3StorageTest {
         blockCache = mock(S3BlockCache.class);
         storage = new S3Storage(config, wal,
             streamManager, objectManager, blockCache, objectStorage, storageFailureHandler);
+    }
+
+    /** Eviction frees RAM and notifies listeners even when spill is rejected or an enqueue fails. */
+    @ParameterizedTest
+    @ValueSource(strings = {"stored", "rejected", "enqueue-failed"})
+    public void testSnapshotEvictionSpill(String admission) throws Exception {
+        boolean accepted = "stored".equals(admission);
+        try (AsyncStreamRecordBatchDiskCache diskCache = spy(new AsyncStreamRecordBatchDiskCache(
+            directory.resolve("snapshot").toString(), 16384, 10, 1, 4, accepted ? 1024 : 0))) {
+            List<CompletableFuture<Boolean>> writes = new CopyOnWriteArrayList<>();
+            doAnswer(invocation -> {
+                @SuppressWarnings("unchecked")
+                CompletableFuture<Boolean> write = (CompletableFuture<Boolean>) invocation.callRealMethod();
+                writes.add(write);
+                return write;
+            }).when(diskCache).put(any());
+            if ("enqueue-failed".equals(admission)) {
+                doThrow(new IllegalStateException("enqueue failed")).doCallRealMethod().when(diskCache).put(any());
+            }
+            storage.shutdown();
+            config.snapshotReadEnable(true).walCacheSize(15L << 20);
+            storage = new S3Storage(config, wal, streamManager, objectManager,
+                new StreamReaders(config.blockCacheSize(), objectManager, objectStorage,
+                    new DefaultObjectReaderFactory(objectStorage)), objectStorage, storageFailureHandler, diskCache);
+            LogCache cache = storage.snapshotReadCache();
+            StreamRecordBatch first = newRecord(42, 0);
+            StreamRecordBatch second = newRecord(42, 1);
+            ByteBuf firstBuffer = first.encoded();
+            ByteBuf secondBuffer = second.encoded();
+            byte firstPayload = first.getPayload().getByte(0);
+            assertTrue(cache.put(first));
+            assertTrue(cache.put(second));
+            LogCache.LogCacheBlock block = cache.archiveCurrentBlock();
+            StreamRecordBatch pressure = StreamRecordBatch.of(43, 0, 0, 1,
+                Unpooled.buffer(10 << 20).writeZero(10 << 20), DefaultByteBufSupplier.INSTANCE);
+            assertTrue(cache.put(pressure));
+            LogCache.LogCacheBlock pressureBlock = cache.archiveCurrentBlock();
+            CompletableFuture<List<LogCache.StreamRangeBound>> freed = new CompletableFuture<>();
+            block.addFreeListener(freed::complete);
+            try {
+                cache.markFree(block).get(5, TimeUnit.SECONDS);
+                List<LogCache.StreamRangeBound> bounds = freed.get(5, TimeUnit.SECONDS);
+                assertEquals(1, bounds.size());
+                assertEquals(42, bounds.get(0).streamId());
+                assertEquals(0, bounds.get(0).startOffset());
+                assertEquals(2, bounds.get(0).endOffset());
+                assertEquals(pressureBlock.size(), cache.size());
+                assertTrue(cache.get(42, 0, 2, Integer.MAX_VALUE).isEmpty());
+                verify(diskCache, times(2)).put(any());
+                for (CompletableFuture<Boolean> write : writes) {
+                    assertEquals(accepted, write.get(5, TimeUnit.SECONDS).booleanValue());
+                }
+                assertEquals(0, firstBuffer.refCnt());
+                assertEquals(0, secondBuffer.refCnt());
+                FetchContext context = new FetchContext();
+                context.setReadOptions(ReadOptions.builder().snapshotRead(true).build());
+                List<StreamRecordBatch> read = accepted
+                    ? storage.read(context, 42, 0, 2, Integer.MAX_VALUE).get(5, TimeUnit.SECONDS).getRecords()
+                    : diskCache.get(42, 0, 2, Integer.MAX_VALUE).get(5, TimeUnit.SECONDS);
+                try {
+                    if (accepted) {
+                        assertEquals(List.of(0L, 1L), read.stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList()));
+                        assertEquals(firstPayload, read.get(0).getPayload().getByte(0));
+                    } else {
+                        assertTrue(read.isEmpty());
+                    }
+                } finally {
+                    read.forEach(StreamRecordBatch::release);
+                }
+            } finally {
+                storage.shutdown();
+                block.free();
+                pressureBlock.free();
+            }
+        }
+    }
+
+    /** Cancelling storage reads cancels disk work and releases RAM and late disk results. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testSnapshotReadCancellation(boolean cancellable) {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        S3BlockCache blockCache = mock(S3BlockCache.class);
+        storage.shutdown();
+        config.snapshotReadEnable(true);
+        storage = new S3Storage(config, wal, streamManager, objectManager, blockCache,
+            objectStorage, storageFailureHandler, diskCache);
+        StreamRecordBatch ram = newRecord(42, 1);
+        ByteBuf ramBuffer = ram.encoded();
+        storage.snapshotReadCache().put(ram);
+        LogCache.LogCacheBlock ramBlock = storage.snapshotReadCache().archiveCurrentBlock();
+        CompletableFuture<List<StreamRecordBatch>> diskRead = spy(new CompletableFuture<>());
+        if (!cancellable) {
+            Mockito.doReturn(false).when(diskRead).cancel(false);
+        }
+        Mockito.when(diskCache.get(42, 0, 1, 10)).thenReturn(diskRead);
+        FetchContext context = new FetchContext();
+        context.setReadOptions(ReadOptions.builder().snapshotRead(true).build());
+        assertTrue(storage.read(context, 42, 0, 2, 10).cancel(false));
+        verify(diskRead).cancel(false);
+        if (!cancellable) {
+            StreamRecordBatch disk = newRecord(42, 0);
+            ByteBuf diskBuffer = disk.encoded();
+            diskRead.complete(List.of(disk));
+            assertEquals(0, diskBuffer.refCnt());
+        }
+        verifyNoInteractions(blockCache);
+        storage.shutdown();
+        ramBlock.free();
+        assertEquals(0, ramBuffer.refCnt());
+    }
+
+    /** Block submission failure or cancellation releases the retained suffix and any late prefix. */
+    @ParameterizedTest
+    @ValueSource(strings = {"submission", "cancel", "late"})
+    public void testBlockReadCleanup(String outcome) {
+        S3BlockCache blockCache = mock(S3BlockCache.class);
+        storage.shutdown();
+        storage = new S3Storage(config, wal, streamManager, objectManager, blockCache,
+            objectStorage, storageFailureHandler);
+        StreamRecordBatch ram = newRecord(42, 1);
+        ByteBuf ramBuffer = ram.encoded();
+        storage.snapshotReadCache().put(ram);
+        LogCache.LogCacheBlock ramBlock = storage.snapshotReadCache().archiveCurrentBlock();
+        CompletableFuture<ReadDataBlock> blockRead = spy(new CompletableFuture<>());
+        if ("submission".equals(outcome)) {
+            doThrow(new java.util.concurrent.RejectedExecutionException()).when(blockCache)
+                .read(any(), eq(42L), eq(0L), eq(1L), eq(10));
+        } else {
+            if ("late".equals(outcome)) {
+                Mockito.doReturn(false).when(blockRead).cancel(false);
+            }
+            Mockito.when(blockCache.read(any(), eq(42L), eq(0L), eq(1L), eq(10))).thenReturn(blockRead);
+        }
+        FetchContext context = new FetchContext();
+        context.setReadOptions(ReadOptions.builder().snapshotRead(true).build());
+        CompletableFuture<ReadDataBlock> read = storage.read(context, 42, 0, 2, 10);
+        if ("submission".equals(outcome)) {
+            assertThrows(java.util.concurrent.CompletionException.class, read::join);
+        } else {
+            assertTrue(read.cancel(false));
+            verify(blockRead).cancel(false);
+            if ("late".equals(outcome)) {
+                StreamRecordBatch prefix = newRecord(42, 0);
+                ByteBuf prefixBuffer = prefix.encoded();
+                blockRead.complete(new ReadDataBlock(List.of(prefix), CacheAccessType.BLOCK_CACHE_MISS));
+                assertEquals(0, prefixBuffer.refCnt());
+            }
+        }
+        storage.shutdown();
+        ramBlock.free();
+        assertEquals(0, ramBuffer.refCnt());
+    }
+
+    /** Snapshot fetches use disk or block-cache prefixes, while fast reads stay RAM-only. */
+    @ParameterizedTest
+    @CsvSource({"0,false", "1,false", "2,false", "0,true"})
+    public void testSnapshotFetchUsesOnePrefixSource(long startOffset, boolean fastRead) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        S3BlockCache blockCache = mock(S3BlockCache.class);
+        storage.shutdown();
+        config.snapshotReadEnable(true).walCacheSize(15L << 20);
+        storage = new S3Storage(config, wal, streamManager, objectManager, blockCache,
+            objectStorage, storageFailureHandler, diskCache);
+        StreamRecordBatch prefix = newRecord(42, 0);
+        StreamRecordBatch secondPrefix = newRecord(42, 1);
+        StreamRecordBatch disk = newRecord(42, 1);
+        ByteBuf prefixBuffer = prefix.encoded();
+        ByteBuf secondPrefixBuffer = secondPrefix.encoded();
+        ByteBuf diskBuffer = disk.encoded();
+        assertTrue(storage.snapshotReadCache().put(newRecord(42, 2)));
+        assertTrue(storage.snapshotReadCache().put(newRecord(42, 3)));
+        LogCache.LogCacheBlock ramBlock = storage.snapshotReadCache().archiveCurrentBlock();
+        Mockito.when(diskCache.get(42, startOffset, 2, 3)).thenReturn(CompletableFuture.completedFuture(List.of(disk)));
+        Mockito.when(blockCache.read(any(), eq(42L), eq(0L), eq(2L), eq(3)))
+            .thenReturn(CompletableFuture.completedFuture(
+                new ReadDataBlock(List.of(prefix, secondPrefix), CacheAccessType.BLOCK_CACHE_MISS)));
+        FetchContext context = new FetchContext();
+        context.setReadOptions(ReadOptions.builder().snapshotRead(true).fastRead(fastRead).build());
+        try {
+            if (fastRead) {
+                ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> storage.read(context, 42, startOffset, 4, 3).get(5, TimeUnit.SECONDS));
+                assertInstanceOf(FastReadFailFastException.class, failure.getCause());
+                verifyNoInteractions(diskCache, blockCache);
+            } else {
+                ReadDataBlock read = storage.read(context, 42, startOffset, 4, 3).get(5, TimeUnit.SECONDS);
+                try {
+                    int start = (int) startOffset;
+                    assertEquals(List.of(0L, 1L, 2L, 3L).subList(start, Math.min(start + 3, 4)),
+                        read.getRecords().stream().map(StreamRecordBatch::getBaseOffset).collect(Collectors.toList()));
+                    if (startOffset == 0) {
+                        verify(blockCache).read(context, 42, 0, 2, 3);
+                        assertEquals(0, diskBuffer.refCnt());
+                    } else {
+                        verifyNoInteractions(blockCache);
+                    }
+                    if (startOffset == 2) {
+                        verifyNoInteractions(diskCache);
+                    }
+                } finally {
+                    read.getRecords().forEach(StreamRecordBatch::release);
+                }
+            }
+        } finally {
+            storage.shutdown();
+            ramBlock.free();
+            for (ByteBuf buffer : List.of(prefixBuffer, secondPrefixBuffer, diskBuffer)) {
+                if (buffer.refCnt() > 0) {
+                    buffer.release();
+                }
+            }
+        }
     }
 
     /**

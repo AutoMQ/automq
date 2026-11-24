@@ -294,7 +294,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
         readLock.lock();
         try {
             CompletableFuture<FetchResult> cf = exec(() -> fetch0(context, startOffset, endOffset, maxBytes), logger, "fetch");
-            CompletableFuture<FetchResult> retCf = cf.thenApply(rs -> {
+            CompletableFuture<FetchResult> retCf = FutureUtil.mapWithRelease(cf, rs -> {
                 // TODO: move the fast / slow read metrics to kafka module.
                 long totalSize = 0L;
                 for (RecordBatch recordBatch : rs.recordBatchList()) {
@@ -307,7 +307,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
                     NetworkStats.getInstance().slowReadBytesStats(streamId).ifPresent(counter -> counter.inc(finalSize));
                 }
                 return rs;
-            });
+            }, FetchResult::free, FetchResult::free);
             pendingFetches.add(retCf);
             PendingRequestTracker.Handle pendingFetch = PENDING_FETCH_TRACKER.begin();
             retCf.whenComplete((rs, ex) -> {
@@ -318,7 +318,7 @@ public class S3Stream implements Stream, StreamMetadataListener {
                     }
                 }
                 FETCH_STREAM_LATENCY.record(timerUtil.elapsedAs(TimeUnit.NANOSECONDS));
-                if (logger.isDebugEnabled()) {
+                if (rs != null && logger.isDebugEnabled()) {
                     long totalSize = 0L;
                     for (RecordBatch recordBatch : rs.recordBatchList()) {
                         totalSize += recordBatch.rawPayload().remaining();
@@ -358,13 +358,13 @@ public class S3Stream implements Stream, StreamMetadataListener {
         if (startOffset == endOffset) {
             return CompletableFuture.completedFuture(new DefaultFetchResult(Collections.emptyList(), CacheAccessType.DELTA_WAL_CACHE_HIT, false));
         }
-        return storage.read(context, streamId, startOffset, endOffset, maxBytes).thenApply(dataBlock -> {
+        return FutureUtil.mapWithRelease(storage.read(context, streamId, startOffset, endOffset, maxBytes), dataBlock -> {
             List<StreamRecordBatch> records = dataBlock.getRecords();
             if (logger.isTraceEnabled()) {
                 logger.trace("stream fetch, startOffset: {}, endOffset: {}, maxBytes: {}, records: {}", startOffset, endOffset, maxBytes, records.size());
             }
             return new DefaultFetchResult(records, dataBlock.getCacheAccessType(), context.readOptions().pooledBuf());
-        });
+        }, block -> block.getRecords().forEach(StreamRecordBatch::release), FetchResult::free);
     }
 
     @Override

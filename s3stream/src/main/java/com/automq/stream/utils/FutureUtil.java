@@ -31,6 +31,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -69,6 +71,59 @@ public class FutureUtil {
                 dest.complete(rst);
             }
         });
+    }
+
+    /**
+     * Composes caller-owned resources without abandoning them on cancellation. The mapper takes
+     * ownership on normal return; on a throw, releaseSource releases its input. Cancellation is
+     * forwarded to both stages, and any result that cannot be delivered is released.
+     */
+    public static <T, R> CompletableFuture<R> composeWithRelease(CompletableFuture<T> source,
+        Function<T, CompletableFuture<R>> mapper, Consumer<T> releaseSource, Consumer<R> releaseResult) {
+        CompletableFuture<R> result = new CompletableFuture<>();
+        result.whenComplete((value, error) -> {
+            if (result.isCancelled()) {
+                source.cancel(false);
+            }
+        });
+        source.whenComplete((value, error) -> {
+            if (error != null) {
+                result.completeExceptionally(error);
+                return;
+            }
+            if (result.isDone()) {
+                releaseSource.accept(value);
+                return;
+            }
+            CompletableFuture<R> next;
+            try {
+                next = mapper.apply(value);
+            } catch (Throwable e) {
+                releaseSource.accept(value);
+                result.completeExceptionally(e);
+                return;
+            }
+            next.whenComplete((mapped, failure) -> {
+                if (failure != null) {
+                    result.completeExceptionally(failure);
+                } else if (!result.complete(mapped)) {
+                    releaseResult.accept(mapped);
+                }
+            });
+            result.whenComplete((mapped, failure) -> {
+                if (result.isCancelled()) {
+                    next.cancel(false);
+                }
+            });
+        });
+        return result;
+    }
+
+    /** Maps an owned resource with the same cancellation and release contract as composeWithRelease. */
+    public static <T, R> CompletableFuture<R> mapWithRelease(CompletableFuture<T> source,
+        Function<T, R> mapper, Consumer<T> releaseSource, Consumer<R> releaseResult) {
+        return composeWithRelease(source, value -> CompletableFuture.completedFuture(mapper.apply(value)),
+            releaseSource, releaseResult);
     }
 
     public static <T> void propagateAsync(CompletableFuture<T> source, CompletableFuture<T> dest,
