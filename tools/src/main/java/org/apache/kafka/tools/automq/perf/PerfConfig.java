@@ -55,6 +55,7 @@ public class PerfConfig {
     public final Map<String, String> producerConfigs;
     public final Map<String, String> consumerConfigs;
     public final boolean reset;
+    public final String topic;
     public final String topicPrefix;
     public final int topics;
     public final int partitionsPerTopic;
@@ -100,6 +101,7 @@ public class PerfConfig {
         producerConfigs = parseConfigs(ns.getList("producerConfigs"));
         consumerConfigs = parseConfigs(ns.getList("consumerConfigs"));
         reset = ns.getBoolean("reset");
+        topic = ns.getString("topic");
         topicPrefix = ns.getString("topicPrefix") == null ? randomTopicPrefix() : ns.getString("topicPrefix");
         topics = ns.getInt("topics");
         partitionsPerTopic = ns.getInt("partitionsPerTopic");
@@ -127,9 +129,22 @@ public class PerfConfig {
         catchupTopicPrefix = ns.getString("catchupTopicPrefix"); // Added for --catchup-topic-prefix
         consumersDuringCatchupPercentage = ns.getInt("consumersDuringCatchupPercentage");
 
+        validateTopicMode(ns);
+
         if (backlogDurationSeconds < groupsPerTopic * groupStartDelaySeconds) {
             throw new IllegalArgumentException(String.format("BACKLOG_DURATION_SECONDS(%d) should not be less than GROUPS_PER_TOPIC(%d) * GROUP_START_DELAY_SECONDS(%d)",
                 backlogDurationSeconds, groupsPerTopic, groupStartDelaySeconds));
+        }
+    }
+
+    private void validateTopicMode(Namespace ns) {
+        if (topic != null) {
+            if (topic.isBlank()) {
+                throw new IllegalArgumentException("--topic must not be blank");
+            }
+            if (reset || reuseTopics || catchupTopicPrefix != null || ns.getString("topicPrefix") != null) {
+                throw new IllegalArgumentException("--topic cannot be combined with --reset, --reuse-topics, --catchup-topic-prefix or --topic-prefix");
+            }
         }
     }
 
@@ -197,6 +212,12 @@ public class PerfConfig {
     }
     
     private static void addTopicArguments(ArgumentParser parser) {
+        parser.addArgument("--topic")
+            .type(String.class)
+            .dest("topic")
+            .metavar("TOPIC")
+            .help("Use one existing topic by its exact name and discover its partition count. Fail if it cannot be described. "
+                + "Topic creation settings (--topics, --partitions-per-topic, --replication-factor and --topic-configs) do not apply.");
         parser.addArgument("-X", "--topic-prefix")
             .type(String.class)
             .dest("topicPrefix")

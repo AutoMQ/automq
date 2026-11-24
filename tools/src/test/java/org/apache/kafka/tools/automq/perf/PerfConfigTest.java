@@ -30,10 +30,49 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 @Tag("S3Unit")
 class PerfConfigTest {
+
+    /**
+     * Given an exact topic name, preserve it without requiring topic creation settings.
+     */
+    @Test
+    void shouldAcceptExactExistingTopic() {
+        PerfConfig config = new PerfConfig(new String[] {"--topic", "existing-topic"});
+
+        assertEquals("existing-topic", config.topic);
+        assertEquals(1, config.partitionsPerTopic);
+        assertNull(new PerfConfig(new String[0]).topic);
+    }
+
+    /**
+     * Given an empty topic name, reject it before connecting to Kafka.
+     */
+    @Test
+    void shouldRejectBlankExistingTopic() {
+        for (String name : List.of("", " ")) {
+            assertThrows(IllegalArgumentException.class,
+                () -> new PerfConfig(new String[] {"--topic", name}));
+        }
+    }
+
+    /**
+     * Given an exact topic, reject reset and competing topic selection modes before any admin operation.
+     */
+    @Test
+    void shouldRejectConflictingExistingTopicOptions() {
+        for (String option : List.of("--reset", "--reuse-topics")) {
+            assertThrows(IllegalArgumentException.class,
+                () -> new PerfConfig(new String[] {"--topic", "existing-topic", option}));
+        }
+        for (String option : List.of("--topic-prefix", "--catchup-topic-prefix")) {
+            assertThrows(IllegalArgumentException.class,
+                () -> new PerfConfig(new String[] {"--topic", "existing-topic", option, "prefix"}));
+        }
+    }
 
     /**
      * Given topic creation arguments, the generated Kafka request should preserve all topic settings.
