@@ -53,6 +53,15 @@ import scala.jdk.CollectionConverters.{CollectionHasAsScala, MapHasAsJava, MapHa
 import scala.jdk.javaapi.OptionConverters
 
 object ElasticKafkaApis {
+  private val maxFetchPartitionBytes: Int = 4 * 1024 * 1024
+
+  /** Caps read budgets before memory admission without mutating cached incremental fetch session data. */
+  private def boundFetchPartitionData(data: FetchRequest.PartitionData): FetchRequest.PartitionData = {
+    if (data.maxBytes <= maxFetchPartitionBytes) data
+    else new FetchRequest.PartitionData(data.topicId, data.fetchOffset, data.logStartOffset,
+      maxFetchPartitionBytes, data.currentLeaderEpoch, data.lastFetchedEpoch)
+  }
+
   val metricsGroup = new KafkaMetricsGroup(this.getClass)
   val LAST_RECORD_TIMESTAMP = new AtomicLong()
   val PRODUCE_TIME_HIST: Histogram = metricsGroup.newHistogram("ProduceTimeNanos")
@@ -880,7 +889,8 @@ class ElasticKafkaApis(
       // call the replica manager to fetch messages from the local replica
       replicaManager.fetchMessages(
         params = params,
-        fetchInfos = interesting,
+        // Bound context partitions too, since incremental requests can omit unchanged partition limits.
+        fetchInfos = interesting.map { case (tp, data) => tp -> ElasticKafkaApis.boundFetchPartitionData(data) },
         quota = replicationQuota(fetchRequest),
         responseCallback = processResponseCallback,
       )
