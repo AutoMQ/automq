@@ -153,6 +153,8 @@ public class ZeroZoneTrafficInterceptor implements TrafficInterceptor, MetadataP
     @Override
     public void close() {
         if (closed.compareAndSet(false, true)) {
+            // New produce requests are rejected from now on, so stop advertising this node as a proxy.
+            mapping.withdraw();
             committedEpochManager.close();
             snapshotReadPartitionsManager.close();
             routerOutV2.close();

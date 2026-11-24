@@ -68,6 +68,7 @@ class ProxyNodeMapping {
     volatile boolean inited = false;
     volatile boolean dualMapping = false;
     private volatile Map<String, List<BrokerRegistration>> latestRack2Brokers = Collections.emptyMap();
+    private boolean withdrawn = false;
 
     public ProxyNodeMapping(Node currentNode, String currentRack, String interBrokerListenerName,
         MetadataCache metadataCache, ZeroZoneConfig zeroZoneConfig) {
@@ -227,10 +228,27 @@ class ProxyNodeMapping {
     }
 
     private synchronized void updateMapping(Map<String, List<BrokerRegistration>> rack2brokers) {
+        if (withdrawn) {
+            return;
+        }
         inited = true;
         this.main2proxyByRack = dualMapping ? calMain2proxyByRackV1(rack2brokers) : calMain2proxyByRack(rack2brokers);
         logMapping(main2proxyByRack);
         notifyListeners(this.main2proxyByRack);
+    }
+
+    /**
+     * Stop proxying on this node for good: clear the mapping and ignore any later update,
+     * so metadata responses and leader hints return the main nodes instead of a proxy.
+     * <p>
+     * It shares the monitor with the mapping updates, so an update in progress finishes first and a later one is dropped.
+     * Readers that already hold the previous mapping may still answer from it.
+     * The topology listeners are not notified, the caller is expected to close them.
+     */
+    public synchronized void withdraw() {
+        withdrawn = true;
+        this.main2proxyByRack = Collections.emptyMap();
+        LOGGER.info("ProxyNodeMapping withdrawn");
     }
 
     private Map<String, List<BrokerRegistration>> buildRack2Brokers(MetadataImage image) {
