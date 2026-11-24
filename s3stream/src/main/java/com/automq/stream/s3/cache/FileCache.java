@@ -164,6 +164,11 @@ public class FileCache {
      * @param data source buffer; its contents and reader/writer indexes are unchanged
      */
     public void put(long cacheId, long position, ByteBuf data) {
+        tryPut(cacheId, position, data);
+    }
+
+    // Report skipped admission to the asynchronous batch-cache owner.
+    boolean tryPut(long cacheId, long position, ByteBuf data) {
         writeLock.lock();
         try {
             int dataLength = data.readableBytes();
@@ -192,7 +197,7 @@ public class FileCache {
                 // need to extend the capacity, acquire free blocks
                 int[] indexes = ensureCapacity(cacheStartPosition, moreCapacity);
                 if (indexes == null) {
-                    return;
+                    return false;
                 }
                 int[] newIndexes = new int[blocks.indexes.length + indexes.length];
                 System.arraycopy(blocks.indexes, 0, newIndexes, 0, blocks.indexes.length);
@@ -222,6 +227,7 @@ public class FileCache {
                     written += length;
                 }
             }
+            return true;
         } finally {
             writeLock.unlock();
         }

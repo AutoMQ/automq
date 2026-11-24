@@ -44,7 +44,7 @@ public final class StreamRecordBatchDiskCache {
      * @throws IOException if the backing file cannot be created or mapped
      */
     public StreamRecordBatchDiskCache(String path, long capacityBytes) throws IOException {
-        this(new FileCache(path, capacityBytes));
+        this(new FileCache(path, capacityBytes, FileCache.EvictionPolicy.FIFO));
     }
 
     StreamRecordBatchDiskCache(FileCache fileCache) {
@@ -62,11 +62,21 @@ public final class StreamRecordBatchDiskCache {
      */
     public synchronized FileCache.ReadRange put(StreamRecordBatch batch) {
         ByteBuf encoded = batch.encoded();
-        int encodedLength = encoded.readableBytes();
+        FileCache.ReadRange range = allocateRange(encoded.readableBytes());
+        fileCache.put(cacheId, range.position(), encoded);
+        return range;
+    }
+
+    synchronized Optional<FileCache.ReadRange> tryPut(StreamRecordBatch batch) {
+        ByteBuf encoded = batch.encoded();
+        FileCache.ReadRange range = allocateRange(encoded.readableBytes());
+        return fileCache.tryPut(cacheId, range.position(), encoded) ? Optional.of(range) : Optional.empty();
+    }
+
+    private FileCache.ReadRange allocateRange(int encodedLength) {
         long position = nextBatchPosition;
         // Leave a logical gap so FileCache does not merge separately evictable batches.
         nextBatchPosition = Math.addExact(position, (long) encodedLength + 1);
-        fileCache.put(cacheId, position, encoded);
         return new FileCache.ByteRange(cacheId, position, encodedLength);
     }
 
