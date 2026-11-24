@@ -266,6 +266,7 @@ public class LogCache {
 
         private void onDeadline(Throwable error) {
             if (error != null && finished.compareAndSet(false, true)) {
+                SnapshotReadCacheMetrics.recordDiskRead(false, diskStartNanos);
                 if (!result.complete(ramRecords)) {
                     ramRecords.forEach(StreamRecordBatch::release);
                 }
@@ -283,6 +284,9 @@ public class LogCache {
             deadline.complete(null);
             List<StreamRecordBatch> records = error == null
                 ? combineRecords(diskRecords, ramRecords, startOffset, endOffset, maxBytes) : ramRecords;
+            if (!result.isCancelled()) {
+                SnapshotReadCacheMetrics.recordDiskRead(records != ramRecords && !records.isEmpty(), diskStartNanos);
+            }
             if (!result.complete(records)) {
                 records.forEach(StreamRecordBatch::release);
             }

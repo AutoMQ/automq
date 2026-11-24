@@ -162,6 +162,54 @@ public class LogCacheTest {
         verify(ram).release();
     }
 
+    /** Only disk coverage from the requested start counts as a hit; suffixes and failures are misses. */
+    @ParameterizedTest
+    @ValueSource(strings = {"hit", "miss", "error", "submission", "overlap", "suffix", "cancel"})
+    public void testDiskReadMetrics(String outcome) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch ram = sizedRecord(42, 2, 1);
+        assertTrue(cache.put(ram));
+        CompletableFuture<List<StreamRecordBatch>> diskRead = new CompletableFuture<>();
+        if ("submission".equals(outcome)) {
+            doThrow(new IllegalStateException()).when(diskCache).get(42, 0, 2, 100);
+        } else {
+            when(diskCache.get(42, 0, 2, 100)).thenReturn(diskRead);
+        }
+        long hits = SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeCount();
+        long misses = SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeCount();
+        long totalNanos = SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeSum()
+            + SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeSum();
+        CompletableFuture<List<StreamRecordBatch>> read = cache.getAsync(TraceContext.DEFAULT, 42, 0, 3, 100);
+        if ("cancel".equals(outcome)) {
+            read.cancel(false);
+        } else {
+            if ("error".equals(outcome)) {
+                diskRead.completeExceptionally(new IllegalStateException());
+            } else if ("hit".equals(outcome)) {
+                diskRead.complete(List.of(sizedRecord(42, 0, 1), sizedRecord(42, 1, 1)));
+            } else if ("overlap".equals(outcome)) {
+                diskRead.complete(List.of(sizedRecord(42, 0, 1)));
+            } else if ("suffix".equals(outcome)) {
+                StreamRecordBatch suffix = sizedRecord(42, 1, 1);
+                diskRead.complete(List.of(suffix));
+                verify(suffix).release();
+            } else {
+                diskRead.complete(List.of());
+            }
+            read.get(5, TimeUnit.SECONDS).forEach(StreamRecordBatch::release);
+        }
+        assertEquals(hits + ("hit".equals(outcome) ? 1 : 0),
+            SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeCount());
+        assertEquals(misses + (List.of("miss", "error", "submission", "overlap", "suffix").contains(outcome) ? 1 : 0),
+            SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeCount());
+        if (!"cancel".equals(outcome)) {
+            assertTrue(SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeSum()
+                + SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeSum() > totalNanos);
+        }
+        ram.release();
+    }
+
     /** A disk deadline returns the original RAM suffix and frees late disk data without double release. */
     @Test
     public void testDiskReadDeadline() throws Exception {

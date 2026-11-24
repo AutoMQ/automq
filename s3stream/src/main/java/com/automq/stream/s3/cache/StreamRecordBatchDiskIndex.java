@@ -58,6 +58,7 @@ final class StreamRecordBatchDiskIndex {
         }
         Key key = new Key(batch.getStreamId(), batch.getBaseOffset(), batch.getLastOffset());
         Entry entry = new Entry(key, batch.size(), range.cacheId(), range.position(), range.length());
+        int overlapsRemoved = 0;
         if (key.baseOffset < key.endOffset) {
             // At most one non-empty predecessor can overlap: admitted ranges never overlap.
             Map.Entry<Key, Entry> previous = entries.lowerEntry(new Key(key.streamId, key.baseOffset, Long.MIN_VALUE));
@@ -69,6 +70,7 @@ final class StreamRecordBatchDiskIndex {
                 && previous.getKey().endOffset > key.baseOffset) {
                 entries.remove(previous.getKey());
                 lru.remove(previous.getKey());
+                overlapsRemoved++;
             }
             Iterator<Key> keys = entries.subMap(new Key(key.streamId, key.baseOffset, Long.MIN_VALUE), true,
                 new Key(key.streamId, key.endOffset, Long.MIN_VALUE), false).keySet().iterator();
@@ -77,13 +79,17 @@ final class StreamRecordBatchDiskIndex {
                 if (overlapping.baseOffset < overlapping.endOffset) {
                     keys.remove();
                     lru.remove(overlapping);
-                    }
+                    overlapsRemoved++;
+                }
             }
         }
         entries.put(key, entry);
         lru.put(key, entry);
         while (lru.size() > maxEntries) {
             entries.remove(lru.pop().getKey());
+        }
+        if (overlapsRemoved > 0) {
+            SnapshotReadCacheMetrics.recordDiskOverlapRemoved(overlapsRemoved);
         }
     }
 

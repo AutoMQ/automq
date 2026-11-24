@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.MockedStatic;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -37,6 +38,7 @@ import io.netty.buffer.Unpooled;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mockStatic;
 
 @Tag("S3Unit")
 public class StreamRecordBatchDiskIndexTest {
@@ -116,6 +118,39 @@ public class StreamRecordBatchDiskIndexTest {
         assertEquals(1, index.size());
         assertTrue(index.get(17, 105, 115, 100).isEmpty());
         assertRanges(List.of(otherStream), index.get(18, 100, 110, 100));
+    }
+
+    /**
+     * Overlap metrics count replaced metadata entries, excluding adjacency, empty batches,
+     * other streams, stale cleanup, capacity eviction and stream clearing.
+     */
+    @Test
+    public void testOverlapRemovalMetric() throws IOException {
+        StreamRecordBatchDiskCache cache = diskCache(1024);
+        StreamRecordBatchDiskIndex index = new StreamRecordBatchDiskIndex(8);
+        try (MockedStatic<SnapshotReadCacheMetrics> metrics = mockStatic(SnapshotReadCacheMetrics.class)) {
+            put(index, cache, 17, 100, 10);
+            put(index, cache, 17, 120, 10);
+            put(index, cache, 17, 110, 0);
+            put(index, cache, 17, 130, 5);
+            put(index, cache, 18, 100, 10);
+            metrics.verifyNoInteractions();
+
+            put(index, cache, 17, 105, 20);
+            metrics.verify(() -> SnapshotReadCacheMetrics.recordDiskOverlapRemoved(2));
+            assertEquals(4, index.size());
+            put(index, cache, 17, 105, 20);
+            metrics.verify(() -> SnapshotReadCacheMetrics.recordDiskOverlapRemoved(1));
+            assertEquals(4, index.size());
+
+            index.remove(index.get(17, 105, 125, 100));
+            index.clearStream(17);
+            StreamRecordBatchDiskIndex limited = new StreamRecordBatchDiskIndex(1);
+            put(limited, cache, 17, 100, 10);
+            put(limited, cache, 17, 110, 10);
+            assertEquals(1, limited.size());
+            metrics.verifyNoMoreInteractions();
+        }
     }
 
     /**
