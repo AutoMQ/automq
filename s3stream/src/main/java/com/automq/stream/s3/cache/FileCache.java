@@ -21,8 +21,11 @@ package com.automq.stream.s3.cache;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.Objects;
@@ -234,25 +237,79 @@ public class FileCache {
      * @return a caller-owned copy of the requested range, or empty if the range is not fully cached
      */
     public Optional<ByteBuf> get(long cacheId, long position, int length) {
-        ByteBuf buf = Unpooled.buffer(length);
+        return get(new ByteRange(cacheId, position, length));
+    }
+
+    /**
+     * Copies a fully cached range into a new buffer, or returns empty on a miss.
+     * The caller owns and must release the returned buffer.
+     *
+     * @param range logical byte range to read
+     * @return a caller-owned copy of the range, or empty if the range is not fully cached
+     */
+    public Optional<ByteBuf> get(ReadRange range) {
         readLock.lock();
         try {
-            NavigableMap<Long, Blocks> cache = cacheMap.get(cacheId);
-            if (cache == null) {
-                return Optional.empty();
-            }
-            Map.Entry<Long, Blocks> entry = cache.floorEntry(position);
+            Map.Entry<Long, Blocks> entry = findRange(range);
             if (entry == null) {
                 return Optional.empty();
             }
-            long cacheStartPosition = entry.getKey();
-            Blocks blocks = entry.getValue();
-            if (entry.getKey() + entry.getValue().dataLength < position + length) {
-                return Optional.empty();
+            return Optional.of(read(range, entry));
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    /**
+     * Checks every range and copies them in list order only when all are cached.
+     * If any are missing, reports the original missing range instances without reading mapped bytes or refreshing LRU order.
+     * Holds one read lock through lookup and copying, preventing eviction between them.
+     * The caller owns and must release every returned buffer.
+     *
+     * @param ranges logical byte ranges to read in list order
+     * @return copies of all ranges on a full hit, or all missing ranges with no buffers on a miss;
+     *     empty input returns empty buffers and missing ranges
+     */
+    public BulkReadResult get(List<ReadRange> ranges) {
+        readLock.lock();
+        try {
+            List<Map.Entry<Long, Blocks>> entries = new ArrayList<>(ranges.size());
+            List<ReadRange> missingRanges = new ArrayList<>();
+            for (ReadRange range : ranges) {
+                Map.Entry<Long, Blocks> entry = findRange(range);
+                if (entry == null) {
+                    missingRanges.add(range);
+                } else {
+                    entries.add(entry);
+                }
             }
-            evictionCache.touchIfExist(new Key(cacheId, cacheStartPosition));
-            long nextPosition = position;
-            int remaining = length;
+            if (!missingRanges.isEmpty()) {
+                return new BulkReadResult(List.of(), missingRanges);
+            }
+            List<ByteBuf> buffers = new ArrayList<>(ranges.size());
+            try {
+                Iterator<Map.Entry<Long, Blocks>> entryIterator = entries.iterator();
+                for (ReadRange range : ranges) {
+                    buffers.add(read(range, entryIterator.next()));
+                }
+                return new BulkReadResult(buffers, List.of());
+            } catch (RuntimeException | Error e) {
+                buffers.forEach(ByteBuf::release);
+                throw e;
+            }
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    private ByteBuf read(ReadRange range, Map.Entry<Long, Blocks> entry) {
+        long cacheStartPosition = entry.getKey();
+        Blocks blocks = entry.getValue();
+        ByteBuf buf = Unpooled.buffer(range.length());
+        try {
+            evictionCache.touchIfExist(new Key(range.cacheId(), cacheStartPosition));
+            long nextPosition = range.position();
+            int remaining = range.length();
             for (int i = 0; i < blocks.indexes.length; i++) {
                 long cacheBlockEndPosition = cacheStartPosition + (long) (i + 1) * blockSize;
                 if (cacheBlockEndPosition < nextPosition) {
@@ -270,10 +327,63 @@ public class FileCache {
                     break;
                 }
             }
-            return Optional.of(buf);
-        } finally {
-            readLock.unlock();
+            return buf;
+        } catch (RuntimeException | Error e) {
+            buf.release();
+            throw e;
         }
+    }
+
+    private Map.Entry<Long, Blocks> findRange(ReadRange range) {
+        NavigableMap<Long, Blocks> cache = cacheMap.get(range.cacheId());
+        if (cache == null) {
+            return null;
+        }
+        Map.Entry<Long, Blocks> entry = cache.floorEntry(range.position());
+        if (entry == null || entry.getKey() + entry.getValue().dataLength < range.position() + range.length()) {
+            return null;
+        }
+        return entry;
+    }
+
+    /**
+     * An immutable logical byte range to read. Does not retain or reserve cached bytes.
+     * Implementations may carry caller metadata; bulk misses return the original instances.
+     */
+    public interface ReadRange {
+        /**
+         * @return byte-range namespace
+         */
+        long cacheId();
+
+        /**
+         * @return logical starting byte position
+         */
+        long position();
+
+        /**
+         * @return requested byte count, nonnegative
+         */
+        int length();
+    }
+
+    /**
+     * A logical byte range without caller metadata.
+     *
+     * @param cacheId byte-range namespace
+     * @param position logical starting byte position
+     * @param length requested byte count, nonnegative
+     */
+    public record ByteRange(long cacheId, long position, int length) implements ReadRange {
+    }
+
+    /**
+     * An all-or-nothing bulk read result. Empty missing ranges indicate a full hit, including empty input.
+     *
+     * @param buffers caller-owned copies in input order on a hit; empty on a miss
+     * @param missingRanges original instances of every missing input range in input order; empty on a hit
+     */
+    public record BulkReadResult(List<ByteBuf> buffers, List<ReadRange> missingRanges) {
     }
 
     /**

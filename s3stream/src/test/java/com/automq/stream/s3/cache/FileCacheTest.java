@@ -26,13 +26,17 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Timeout(60)
@@ -210,12 +214,89 @@ public class FileCacheTest {
         }
     }
 
+    /**
+     * Reports every missing range without payload copies or LRU touches, including after block reuse.
+     * Full hits return all buffers in input order.
+     */
+    @Test
+    public void testReadRanges(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("cache").toString(), 48, 8, 10);
+        long position = (long) Integer.MAX_VALUE + 100;
+        FileCache.ReadRange firstRange = new FileCache.ByteRange(1, position, 24);
+        FileCache.ReadRange secondRange = new FileCache.ByteRange(2, position + 100, 16);
+        FileCache.ReadRange thirdRange = new FileCache.ByteRange(3, position + 200, 16);
+        ByteBuf first = genBuf((byte) 1, firstRange.length());
+        ByteBuf second = genBuf((byte) 2, secondRange.length());
+        ByteBuf third = genBuf((byte) 3, thirdRange.length());
+        try {
+            cache.put(firstRange.cacheId(), firstRange.position(), first);
+            cache.put(secondRange.cacheId(), secondRange.position(), second);
+            FileCache.BulkReadResult empty = cache.get(List.of());
+            assertTrue(empty.buffers().isEmpty());
+            assertTrue(empty.missingRanges().isEmpty());
+            FileCache.ReadRange partial = new FileCache.ByteRange(1, position + 8, 16);
+            FileCache.BulkReadResult initialResult = cache.get(new LinkedList<>(List.of(partial, secondRange)));
+            List<ByteBuf> initial = initialResult.buffers();
+            try {
+                assertTrue(initialResult.missingRanges().isEmpty());
+                assertEquals(2, initial.size());
+                assertArrayEquals(ByteBufUtil.getBytes(first, 8, 16), ByteBufUtil.getBytes(initial.get(0)));
+                assertArrayEquals(ByteBufUtil.getBytes(second), ByteBufUtil.getBytes(initial.get(1)));
+            } finally {
+                initial.forEach(ByteBuf::release);
+            }
+            FileCache.ReadRange beyondEnd = new FileCache.ByteRange(1, position + 8, 17);
+            // A miss must not refresh cached ranges before the next insertion evicts the oldest one.
+            FileCache.BulkReadResult missing = cache.get(List.of(secondRange, beyondEnd, firstRange, thirdRange));
+            assertEquals(List.of(beyondEnd, thirdRange), missing.missingRanges());
+            assertSame(beyondEnd, missing.missingRanges().get(0));
+            assertSame(thirdRange, missing.missingRanges().get(1));
+            assertTrue(missing.buffers().isEmpty());
+
+            cache.put(thirdRange.cacheId(), thirdRange.position(), third);
+            FileCache.BulkReadResult evicted = cache.get(List.of(secondRange, firstRange, thirdRange));
+            assertEquals(List.of(firstRange), evicted.missingRanges());
+            assertTrue(evicted.buffers().isEmpty());
+            FileCache.BulkReadResult allMissing = cache.get(List.of(beyondEnd, firstRange));
+            assertEquals(List.of(beyondEnd, firstRange), allMissing.missingRanges());
+            assertTrue(allMissing.buffers().isEmpty());
+            assertTrue(cache.get(firstRange).isEmpty());
+            FileCache.BulkReadResult result = cache.get(List.of(thirdRange, secondRange));
+            List<ByteBuf> results = result.buffers();
+            try {
+                assertTrue(result.missingRanges().isEmpty());
+                assertEquals(2, results.size());
+                assertArrayEquals(ByteBufUtil.getBytes(third), ByteBufUtil.getBytes(results.get(0)));
+                assertArrayEquals(ByteBufUtil.getBytes(second), ByteBufUtil.getBytes(results.get(1)));
+                assertEquals(1, results.get(0).refCnt());
+                assertEquals(1, results.get(1).refCnt());
+            } finally {
+                results.forEach(ByteBuf::release);
+            }
+            assertCached(cache, secondRange, ByteBufUtil.getBytes(second));
+            assertCached(cache, thirdRange, ByteBufUtil.getBytes(third));
+        } finally {
+            first.release();
+            second.release();
+            third.release();
+        }
+    }
+
     private void assertCached(FileCache cache, long cacheId, long position, byte[] expected) {
         ByteBuf result = cache.get(cacheId, position, expected.length).orElseThrow();
         try {
             byte[] actual = new byte[result.readableBytes()];
             result.readBytes(actual);
             assertArrayEquals(expected, actual);
+        } finally {
+            result.release();
+        }
+    }
+
+    private void assertCached(FileCache cache, FileCache.ReadRange range, byte[] expected) {
+        ByteBuf result = cache.get(range).orElseThrow();
+        try {
+            assertArrayEquals(expected, ByteBufUtil.getBytes(result));
         } finally {
             result.release();
         }
