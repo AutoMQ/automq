@@ -21,6 +21,7 @@ package com.automq.opentelemetry.exporter;
 
 import com.automq.opentelemetry.common.OTLPCompressionType;
 import com.automq.opentelemetry.common.OTLPProtocol;
+import com.sun.net.httpserver.Authenticator;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -62,6 +63,11 @@ public class MetricsExporterURI {
     }
 
     public static MetricsExporterURI parse(String uriStr, MetricsExportConfig config) {
+        return parse(uriStr, config, null);
+    }
+
+    public static MetricsExporterURI parse(String uriStr, MetricsExportConfig config,
+        Authenticator prometheusAuthenticator) {
         LOGGER.info("Parsing metrics exporter URI: {}", uriStr);
         if (StringUtils.isBlank(uriStr)) {
             LOGGER.info("Metrics exporter URI is not configured, no metrics will be exported.");
@@ -79,7 +85,7 @@ public class MetricsExporterURI {
             if (StringUtils.isBlank(uri)) {
                 continue;
             }
-            MetricsExporter exporter = parseExporter(config, uri.trim());
+            MetricsExporter exporter = parseExporter(config, uri.trim(), prometheusAuthenticator);
             if (exporter != null) {
                 exporters.add(exporter);
             }
@@ -88,6 +94,11 @@ public class MetricsExporterURI {
     }
 
     public static MetricsExporter parseExporter(MetricsExportConfig config, String uriStr) {
+        return parseExporter(config, uriStr, null);
+    }
+
+    public static MetricsExporter parseExporter(MetricsExportConfig config, String uriStr,
+        Authenticator prometheusAuthenticator) {
         try {
             URI uri = new URI(uriStr);
             String type = uri.getScheme();
@@ -97,18 +108,24 @@ public class MetricsExporterURI {
             }
 
             Map<String, List<String>> queries = parseQueryParameters(uri);
-            return parseExporter(config, type, queries, uri);
+            return parseExporter(config, type, queries, uri, prometheusAuthenticator);
         } catch (Exception e) {
             LOGGER.warn("Parse metrics exporter URI {} failed", uriStr, e);
             throw new IllegalArgumentException("Invalid metrics exporter URI: " + uriStr, e);
         }
     }
 
-    public static MetricsExporter parseExporter(MetricsExportConfig config, String type, Map<String, List<String>> queries, URI uri) {
+    public static MetricsExporter parseExporter(MetricsExportConfig config, String type,
+        Map<String, List<String>> queries, URI uri) {
+        return parseExporter(config, type, queries, uri, null);
+    }
+
+    public static MetricsExporter parseExporter(MetricsExportConfig config, String type,
+        Map<String, List<String>> queries, URI uri, Authenticator prometheusAuthenticator) {
         MetricsExporterType exporterType = MetricsExporterType.fromString(type);
         switch (exporterType) {
             case PROMETHEUS:
-                return buildPrometheusExporter(config, queries, uri);
+                return buildPrometheusExporter(config, queries, uri, prometheusAuthenticator);
             case OTLP:
                 return buildOtlpExporter(config, queries, uri);
             case OPS:
@@ -129,7 +146,8 @@ public class MetricsExporterURI {
         return null;
     }
 
-    private static MetricsExporter buildPrometheusExporter(MetricsExportConfig config, Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildPrometheusExporter(MetricsExportConfig config,
+        Map<String, List<String>> queries, URI uri, Authenticator prometheusAuthenticator) {
         // Use query parameters if available, otherwise fall back to URI authority or config defaults
         String host = getStringFromQuery(queries, "host", uri.getHost());
         if (StringUtils.isBlank(host)) {
@@ -151,10 +169,11 @@ public class MetricsExporterURI {
             }
         }
 
-        return new PrometheusMetricsExporter(host, port, config.baseLabels());
+        return new PrometheusMetricsExporter(host, port, config.baseLabels(), prometheusAuthenticator);
     }
 
-    private static MetricsExporter buildOtlpExporter(MetricsExportConfig config, Map<String, List<String>> queries, URI uri) {
+    private static MetricsExporter buildOtlpExporter(MetricsExportConfig config,
+        Map<String, List<String>> queries, URI uri) {
         // Get endpoint from query parameters or construct from URI
         String endpoint = getStringFromQuery(queries, "endpoint", null);
         if (StringUtils.isBlank(endpoint)) {
