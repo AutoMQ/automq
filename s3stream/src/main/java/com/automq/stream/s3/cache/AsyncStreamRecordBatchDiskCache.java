@@ -19,6 +19,7 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.utils.ThreadUtils;
 
@@ -41,8 +42,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * reject writes or return read misses; index lookup and disk I/O run on the workers.
  * The byte budget covers queued and running writes and running reads, measured by encoded lengths.
  * Queued reads reserve their bytes after index lookup, before disk copying.
- * Retained source buffers may pin larger allocations; returned read buffers belong to the caller
- * and are outside this budget. Snapshot eviction, fetch fallback and broker configuration belong
+ * Admitted writes hold private copies, so the budget bounds their memory; returned read buffers
+ * belong to the caller and are outside this budget. Snapshot eviction, fetch fallback and broker configuration belong
  * to the integrating owner.
  */
 public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
@@ -83,9 +84,9 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
     }
 
     /**
-     * Retains the batch before enqueueing and releases that reference after completion or rejection.
-     * The caller may release its own reference after this method returns, but must not mutate the
-     * shared bytes while the write is pending. An index entry is published only after a stored write.
+     * Copies an admitted batch before enqueueing and releases the copy after completion or rejection.
+     * The caller keeps ownership of the batch and may release it as soon as this method returns.
+     * An index entry is published only after a stored write.
      * Cancellation discards queued writes; an already running write may still populate the cache.
      *
      * @param batch complete encoded batch; caller ownership is unchanged
@@ -228,23 +229,24 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
     }
 
     private final class WriteTask extends CacheTask<Boolean> {
-        private final StreamRecordBatch batch;
-        private boolean retained;
+        private final StreamRecordBatch source;
+        private StreamRecordBatch batch;
 
-        WriteTask(StreamRecordBatch batch) {
-            super(batch.encoded().readableBytes(), false);
-            this.batch = batch;
+        WriteTask(StreamRecordBatch source) {
+            super(source.encoded().readableBytes(), false);
+            this.source = source;
         }
 
         @Override
         void retainSource() {
-            batch.retain();
-            retained = true;
+            // A retained slice would keep the caller's whole allocator slab alive while the write is queued.
+            batch = StreamRecordBatch.parse(source.encoded(), true,
+                capacity -> ByteBufAlloc.byteBuffer(capacity, ByteBufAlloc.SNAPSHOT_READ_CACHE));
         }
 
         @Override
         void releaseSource() {
-            if (retained) {
+            if (batch != null) {
                 batch.release();
             }
         }

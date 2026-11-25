@@ -19,6 +19,8 @@
 
 package com.automq.stream.s3.cache;
 
+import com.automq.stream.RecyclingByteBufSeqAlloc;
+import com.automq.stream.s3.ByteBufAlloc;
 import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.trace.context.TraceContext;
@@ -31,7 +33,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -70,8 +75,9 @@ public class AsyncStreamRecordBatchDiskCacheTest {
     }
 
     /**
-     * Holds a write on a worker: the source survives caller release and the index remains empty
-     * until the disk copy completes. A later bulk read returns independent batches in order.
+     * Holds a write on a worker: the queued write keeps its own copy, so the caller's buffer is freed
+     * as soon as the caller releases it. The index remains empty until the disk copy completes.
+     * A later bulk read returns independent batches in order.
      */
     @Test
     public void testWritePublicationAndOwnership() throws Exception {
@@ -100,13 +106,13 @@ public class AsyncStreamRecordBatchDiskCacheTest {
             assertEquals(0, index.size());
             CompletableFuture<List<StreamRecordBatch>> pendingRead = cache.get(17, 0, 1, 100);
             assertFalse(pendingRead.isDone());
-            assertEquals(2, first.encoded().refCnt());
+            assertEquals(1, first.encoded().refCnt());
             first.release();
             callerReleased = true;
+            assertEquals(0, firstBuffer.refCnt());
             proceed.countDown();
             assertTrue(result(write));
             result(pendingRead).forEach(StreamRecordBatch::release);
-            assertEquals(0, firstBuffer.refCnt());
             assertEquals(1, index.size());
             assertTrue(result(cache.put(second)));
             List<StreamRecordBatch> read = result(cache.get(17, 0, 2, 100));
@@ -150,8 +156,8 @@ public class AsyncStreamRecordBatchDiskCacheTest {
     }
 
     /**
-     * A full task queue rejects without caller-thread I/O. Cancelling a queued write promptly
-     * releases its reference and queue slot, allowing a replacement task.
+     * A full task queue rejects without caller-thread I/O, and queued writes hold no reference to the
+     * callers' buffers. Cancelling a queued write promptly frees its queue slot for a replacement task.
      */
     @Test
     public void testQueueRejectionAndQueuedCancellation() throws Exception {
@@ -171,7 +177,7 @@ public class AsyncStreamRecordBatchDiskCacheTest {
             CompletableFuture<Boolean> running = cache.put(first);
             await(entered);
             CompletableFuture<Boolean> queued = cache.put(second);
-            assertEquals(2, second.encoded().refCnt());
+            assertEquals(1, second.encoded().refCnt());
             assertFalse(result(cache.put(third)));
             assertEquals(1, third.encoded().refCnt());
             verify(fileCache, times(1)).tryPut(anyLong(), anyLong(), any(ByteBuf.class));
@@ -440,6 +446,77 @@ public class AsyncStreamRecordBatchDiskCacheTest {
             first.release();
             second.release();
         }
+    }
+
+    /**
+     * Given RAM batches from many streams interleaved in shared allocator slabs and a stalled writer,
+     * when capacity eviction spills them under a small write budget, then queued writes pin no RAM
+     * slabs after the cache releases its records, and admitted batches are still stored intact.
+     */
+    @Test
+    public void testQueuedWritesDoNotPinRamSlabs() throws Exception {
+        FileCache fileCache = spy(fileCache(1 << 20));
+        CountDownLatch proceed = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            await(proceed);
+            return invocation.callRealMethod();
+        }).when(fileCache).tryPut(anyLong(), anyLong(), any(ByteBuf.class));
+        StreamRecordBatchDiskIndex index = new StreamRecordBatchDiskIndex(100_000);
+        long budget = 64 << 10;
+        AsyncStreamRecordBatchDiskCache cache = spy(cache(fileCache, index, 1024, budget));
+        List<CompletableFuture<Boolean>> writes = Collections.synchronizedList(new ArrayList<>());
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            CompletableFuture<Boolean> write = (CompletableFuture<Boolean>) invocation.callRealMethod();
+            writes.add(write);
+            return write;
+        }).when(cache).put(any());
+        CompletableFuture<LogCache.LogCacheBlock> spilled = new CompletableFuture<>();
+        LogCache logCache = new LogCache(0, Long.MAX_VALUE, 10_000, spilled::complete, cache);
+        Set<ByteBuf> slabs = Collections.newSetFromMap(new IdentityHashMap<>());
+        try (RecyclingByteBufSeqAlloc alloc = new RecyclingByteBufSeqAlloc(ByteBufAlloc.SNAPSHOT_READ_CACHE, 1)) {
+            // Replay order interleaves streams, so every stream has batches in every slab.
+            for (long offset = 0; offset < 512; offset++) {
+                for (long streamId = 0; streamId < 64; streamId++) {
+                    StreamRecordBatch source = StreamRecordBatch.of(streamId, 0, offset, 1,
+                        Unpooled.wrappedBuffer(payload(streamId, offset)), DefaultByteBufSupplier.INSTANCE);
+                    StreamRecordBatch copy = StreamRecordBatch.parse(source.encoded(), true, alloc);
+                    source.release();
+                    slabs.add(copy.encoded().unwrap());
+                    assertTrue(logCache.put(copy));
+                }
+            }
+            assertTrue(slabs.size() > 1);
+            logCache.markFree(logCache.archiveCurrentBlock()).get(5, TimeUnit.SECONDS);
+            spilled.get(5, TimeUnit.SECONDS);
+
+            long pinnedBytes = slabs.stream().filter(slab -> slab.refCnt() > 1).mapToLong(ByteBuf::capacity).sum();
+            assertEquals(0, pinnedBytes, "queued writes pin RAM slabs beyond the " + budget + "-byte budget");
+
+            proceed.countDown();
+            long stored = 0;
+            for (CompletableFuture<Boolean> write : writes) {
+                stored += result(write) ? 1 : 0;
+            }
+            assertTrue(stored > 1 && stored < writes.size(), "the budget should admit some, not all, spilled writes");
+            assertEquals(stored, index.size());
+            // Spill visits streams in ascending ID order here, so stream 0 is admitted first.
+            List<StreamRecordBatch> read = result(cache.get(0, 0, 1, 100));
+            try {
+                assertEquals(1, read.size());
+                assertArrayEquals(payload(0, 0), ByteBufUtil.getBytes(read.get(0).getPayload()));
+            } finally {
+                read.forEach(StreamRecordBatch::release);
+            }
+        } finally {
+            proceed.countDown();
+        }
+    }
+
+    private static byte[] payload(long streamId, long offset) {
+        byte[] payload = new byte[1024];
+        java.util.Arrays.fill(payload, (byte) (streamId * 31 + offset));
+        return payload;
     }
 
     private FileCache fileCache(long capacity) throws IOException {

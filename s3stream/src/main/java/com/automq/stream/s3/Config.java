@@ -413,7 +413,7 @@ public class Config {
         return this;
     }
 
-    /** Maximum encoded bytes reserved by queued and running disk reads and writes. Source buffers may pin larger allocations. */
+    /** Maximum encoded bytes reserved by queued and running disk reads and writes. Queued writes hold private copies of their batches. */
     public long snapshotReadCacheDiskMaxPendingBytes() {
         return snapshotReadCacheDiskMaxPendingBytes;
     }

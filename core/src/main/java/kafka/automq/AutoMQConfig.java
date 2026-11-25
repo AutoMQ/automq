@@ -103,7 +103,7 @@ public class AutoMQConfig {
     public static final String S3_SNAPSHOT_READ_CACHE_DISK_QUEUE_CAPACITY_DOC = "Maximum queued snapshot disk-cache tasks; running tasks are additional.";
 
     public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_CONFIG = "s3.snapshot.read.cache.disk.max.pending.bytes";
-    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_DOC = "Maximum encoded bytes reserved by queued and running disk reads and writes. Source buffers may pin larger allocations.";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_DOC = "Maximum encoded bytes reserved by queued and running disk reads and writes. Queued writes hold private copies of their batches.";
 
     public static final String S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_CONFIG = "s3.snapshot.read.cache.disk.read.timeout.ms";
     public static final String S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_DOC = "Maximum snapshot disk-phase wait in milliseconds before falling back to the RAM lookup and block cache.";
