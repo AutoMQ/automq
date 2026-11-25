@@ -7,7 +7,6 @@ import com.automq.stream.s3.DataBlockIndex;
 import com.automq.stream.s3.ObjectReader;
 import com.automq.stream.s3.metadata.S3ObjectMetadata;
 import com.automq.stream.s3.metadata.StreamMetadata;
-import com.automq.stream.s3.metrics.Metrics;
 import com.automq.stream.s3.metrics.MetricsLevel;
 import com.automq.stream.s3.metrics.operations.S3ReadPurpose;
 import com.automq.stream.s3.metrics.operations.S3ReadPurposeContext;
@@ -64,11 +63,10 @@ public class SnapshotReadCache {
     private static final Logger LOGGER = LoggerFactory.getLogger(SnapshotReadCache.class);
     private static final long MAX_INFLIGHT_LOAD_BYTES = 100L * 1024 * 1024;
 
-    private static final Metrics.HistogramBundle OPERATION_LATENCY = Metrics.instance().histogram("kafka_stream_snapshot_read_cache", "Snapshot read cache operation latency", "nanoseconds");
-    private static final DeltaHistogram REPLAY_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "replay"));
-    private static final DeltaHistogram READ_WAL_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "read_wal"));
-    private static final DeltaHistogram DECODE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "decode"));
-    private static final DeltaHistogram PUT_INTO_CACHE_LATENCY = OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "put_into_cache"));
+    private static final DeltaHistogram REPLAY_LATENCY = SnapshotReadCacheMetrics.OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "replay"));
+    private static final DeltaHistogram READ_WAL_LATENCY = SnapshotReadCacheMetrics.OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "read_wal"));
+    private static final DeltaHistogram DECODE_LATENCY = SnapshotReadCacheMetrics.OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "decode"));
+    private static final DeltaHistogram PUT_INTO_CACHE_LATENCY = SnapshotReadCacheMetrics.OPERATION_LATENCY.histogram(MetricsLevel.INFO, Attributes.of(AttributeKey.stringKey("operation"), "put_into_cache"));
 
     private final Map<Long, AtomicLong> streamNextOffsets = new HashMap<>();
     private final Cache<Long /* streamId */, Boolean> activeStreams;

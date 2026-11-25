@@ -47,6 +47,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -85,6 +86,8 @@ public class LogCache {
     private final AtomicLong size = new AtomicLong();
     private final AtomicLong evictableSize = new AtomicLong();
     private final Consumer<LogCacheBlock> blockFreeListener;
+    private final AsyncStreamRecordBatchDiskCache diskCache;
+    private final long diskReadTimeoutMs;
     // read write lock which guards the <code>LogCache.blocks</code>
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     private final ReentrantReadWriteLock.ReadLock readLock = lock.readLock();
@@ -94,16 +97,64 @@ public class LogCache {
 
     public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
         Consumer<LogCacheBlock> blockFreeListener) {
+        this(capacity, cacheBlockMaxSize, maxCacheBlockStreamCount, blockFreeListener, null);
+    }
+
+    /**
+     * A non-null backend enqueues capacity-evicted batches before the supplied listener and RAM release,
+     * without waiting for disk writes. A null backend disables spilling. Stream clearing does not spill.
+     * The caller owns and closes the backend; getAsync also reads it after a RAM miss.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
+        Consumer<LogCacheBlock> blockFreeListener, AsyncStreamRecordBatchDiskCache diskCache) {
+        this(capacity, cacheBlockMaxSize, maxCacheBlockStreamCount, blockFreeListener, diskCache, 100);
+    }
+
+    /** Sets the maximum disk-phase wait before preserving the original RAM lookup for fallback. */
+    public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount,
+        Consumer<LogCacheBlock> blockFreeListener, AsyncStreamRecordBatchDiskCache diskCache, long diskReadTimeoutMs) {
+        if (diskReadTimeoutMs <= 0) {
+            throw new IllegalArgumentException("diskReadTimeoutMs must be positive");
+        }
+        this.diskReadTimeoutMs = diskReadTimeoutMs;
         this.capacity = capacity;
         this.cacheBlockMaxSize = cacheBlockMaxSize;
         this.maxCacheBlockStreamCount = maxCacheBlockStreamCount;
         this.activeBlock = new LogCacheBlock(cacheBlockMaxSize, maxCacheBlockStreamCount);
         this.blocks.add(activeBlock);
-        this.blockFreeListener = blockFreeListener;
+        this.diskCache = diskCache;
+        if (diskCache == null) {
+            this.blockFreeListener = blockFreeListener;
+        } else {
+            Consumer<LogCacheBlock> diskSpillListener = this::spillToDisk;
+            this.blockFreeListener = diskSpillListener.andThen(blockFreeListener);
+        }
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize) {
         this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER);
+    }
+
+    /**
+     * Enables capacity-eviction spilling when a backend is supplied. The caller owns its lifecycle.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, AsyncStreamRecordBatchDiskCache diskCache) {
+        this(capacity, cacheBlockMaxSize, diskCache, 100);
+    }
+
+    /** Enables optional spilling and reads with a bounded disk-phase wait. The caller owns the backend. */
+    public LogCache(long capacity, long cacheBlockMaxSize, AsyncStreamRecordBatchDiskCache diskCache,
+        long diskReadTimeoutMs) {
+        this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, DEFAULT_BLOCK_FREE_LISTENER,
+            diskCache, diskReadTimeoutMs);
+    }
+
+    /**
+     * Invokes the listener for capacity-evicted blocks before releasing their records.
+     * The listener must not wait for disk I/O; stream clearing does not invoke it.
+     */
+    public LogCache(long capacity, long cacheBlockMaxSize, Consumer<LogCacheBlock> blockFreeListener) {
+        this(capacity, cacheBlockMaxSize, DEFAULT_MAX_BLOCK_STREAM_COUNT, blockFreeListener);
     }
 
     public LogCache(long capacity, long cacheBlockMaxSize, int maxCacheBlockStreamCount) {
@@ -135,6 +186,144 @@ public class LogCache {
 
     public List<StreamRecordBatch> get(long streamId, long startOffset, long endOffset, int maxBytes) {
         return get(TraceContext.DEFAULT, streamId, startOffset, endOffset, maxBytes);
+    }
+
+    /**
+     * Uses the existing RAM lookup, then tries disk for the missing prefix when a backend is supplied.
+     * Uses disk only for continuous coverage from the requested start; otherwise returns the RAM result.
+     * The soft byte budget is consumed in offset order; unused RAM batches are released.
+     * Disk misses, failures or incompatible batch boundaries preserve the original RAM result.
+     * The disk deadline covers worker queueing, index lookup and disk reads.
+     * No cache lock is held during disk I/O. The caller releases returned batches; cancellation
+     * cancels pending disk work and releases retained or undeliverable results.
+     */
+    public CompletableFuture<List<StreamRecordBatch>> getAsync(TraceContext context, long streamId,
+        long startOffset, long endOffset, int maxBytes) {
+        List<StreamRecordBatch> ramRecords = get(context, streamId, startOffset, endOffset, maxBytes);
+        if (diskCache == null || (!ramRecords.isEmpty() && ramRecords.get(0).getBaseOffset() <= startOffset)) {
+            return CompletableFuture.completedFuture(ramRecords);
+        }
+        long diskStartNanos = System.nanoTime();
+        long diskEndOffset = ramRecords.isEmpty() ? endOffset : ramRecords.get(0).getBaseOffset();
+        return new DiskReadPhase(ramRecords, startOffset, endOffset, maxBytes, diskStartNanos)
+            .start(diskCache, streamId, diskEndOffset, diskReadTimeoutMs);
+    }
+
+    private static final class DiskReadPhase {
+        private volatile CompletableFuture<List<StreamRecordBatch>> diskRead;
+        private final List<StreamRecordBatch> ramRecords;
+        private final long startOffset;
+        private final long endOffset;
+        private final int maxBytes;
+        private final long diskStartNanos;
+        private final CompletableFuture<List<StreamRecordBatch>> result = new CompletableFuture<>();
+        private final AtomicBoolean finished = new AtomicBoolean();
+        private final CompletableFuture<Void> deadline = new CompletableFuture<>();
+
+        private DiskReadPhase(List<StreamRecordBatch> ramRecords, long startOffset,
+            long endOffset, int maxBytes, long diskStartNanos) {
+            this.ramRecords = ramRecords;
+            this.startOffset = startOffset;
+            this.endOffset = endOffset;
+            this.maxBytes = maxBytes;
+            this.diskStartNanos = diskStartNanos;
+        }
+
+        private CompletableFuture<List<StreamRecordBatch>> start(AsyncStreamRecordBatchDiskCache diskCache,
+            long streamId, long diskEndOffset, long timeoutMs) {
+            result.whenComplete((records, error) -> onCancellation());
+            deadline.orTimeout(timeoutMs, TimeUnit.MILLISECONDS).whenComplete((ignored, error) -> onDeadline(error));
+            try {
+                diskRead = diskCache.get(streamId, startOffset, diskEndOffset, maxBytes);
+            } catch (RuntimeException e) {
+                LOGGER.warn("Disk cache read submission failed for stream {}", streamId, e);
+                onDiskRead(null, e);
+                return result;
+            }
+            diskRead.whenComplete(this::onDiskRead);
+            if (finished.get()) {
+                cancelDiskRead();
+            }
+            return result;
+        }
+
+        private void cancelDiskRead() {
+            CompletableFuture<List<StreamRecordBatch>> read = diskRead;
+            if (read != null) {
+                read.cancel(false);
+            }
+        }
+
+        private void onCancellation() {
+            if (result.isCancelled()) {
+                if (finished.compareAndSet(false, true)) {
+                    ramRecords.forEach(StreamRecordBatch::release);
+                }
+                deadline.complete(null);
+                cancelDiskRead();
+            }
+        }
+
+        private void onDeadline(Throwable error) {
+            if (error != null && finished.compareAndSet(false, true)) {
+                SnapshotReadCacheMetrics.recordDiskRead(false, diskStartNanos);
+                if (!result.complete(ramRecords)) {
+                    ramRecords.forEach(StreamRecordBatch::release);
+                }
+                cancelDiskRead();
+            }
+        }
+
+        private void onDiskRead(List<StreamRecordBatch> diskRecords, Throwable error) {
+            if (!finished.compareAndSet(false, true)) {
+                if (diskRecords != null) {
+                    diskRecords.forEach(StreamRecordBatch::release);
+                }
+                return;
+            }
+            deadline.complete(null);
+            List<StreamRecordBatch> records = error == null
+                ? combineRecords(diskRecords, ramRecords, startOffset, endOffset, maxBytes) : ramRecords;
+            if (!result.isCancelled()) {
+                SnapshotReadCacheMetrics.recordDiskRead(records != ramRecords && !records.isEmpty(), diskStartNanos);
+            }
+            if (!result.complete(records)) {
+                records.forEach(StreamRecordBatch::release);
+            }
+        }
+    }
+
+    private static List<StreamRecordBatch> combineRecords(List<StreamRecordBatch> diskRecords,
+        List<StreamRecordBatch> ramRecords, long startOffset, long endOffset, int maxBytes) {
+        if (diskRecords.isEmpty()) {
+            return ramRecords;
+        }
+        if (diskRecords.get(0).getBaseOffset() > startOffset) {
+            diskRecords.forEach(StreamRecordBatch::release);
+            return ramRecords;
+        }
+        if (ramRecords.isEmpty()) {
+            return diskRecords;
+        }
+        int remainingBytes = maxBytes;
+        for (StreamRecordBatch record : diskRecords) {
+            remainingBytes -= Math.min(remainingBytes, record.size());
+        }
+        long nextOffset = diskRecords.get(diskRecords.size() - 1).getLastOffset();
+        if (remainingBytes > 0 && nextOffset < endOffset && nextOffset != ramRecords.get(0).getBaseOffset()) {
+            diskRecords.forEach(StreamRecordBatch::release);
+            return ramRecords;
+        }
+        List<StreamRecordBatch> records = new ArrayList<>(diskRecords);
+        int ramIndex = 0;
+        while (remainingBytes > 0 && nextOffset < endOffset && ramIndex < ramRecords.size()) {
+            StreamRecordBatch record = ramRecords.get(ramIndex++);
+            records.add(record);
+            remainingBytes -= Math.min(remainingBytes, record.size());
+            nextOffset = record.getLastOffset();
+        }
+        ramRecords.subList(ramIndex, ramRecords.size()).forEach(StreamRecordBatch::release);
+        return records;
     }
 
     /**
@@ -343,9 +532,24 @@ public class LogCache {
             writeLock.unlock();
         }
         LOG_CACHE_ASYNC_EXECUTOR.execute(() -> removed.forEach(b -> {
-            blockFreeListener.accept(b);
-            b.free();
+            try {
+                blockFreeListener.accept(b);
+            } finally {
+                b.free();
+            }
         }));
+    }
+
+    private void spillToDisk(LogCacheBlock block) {
+        for (List<StreamRecordBatch> records : block.records().values()) {
+            for (StreamRecordBatch record : records) {
+                try {
+                    diskCache.put(record);
+                } catch (RuntimeException e) {
+                    LOGGER.warn("Failed to enqueue an evicted batch for disk caching", e);
+                }
+            }
+        }
     }
 
     private void tryMerge() {

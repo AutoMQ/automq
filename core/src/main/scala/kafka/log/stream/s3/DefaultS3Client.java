@@ -40,6 +40,7 @@ import com.automq.stream.api.StreamClient;
 import com.automq.stream.s3.Config;
 import com.automq.stream.s3.S3Storage;
 import com.automq.stream.s3.S3StreamClient;
+import com.automq.stream.s3.cache.AsyncStreamRecordBatchDiskCache;
 import com.automq.stream.s3.cache.S3BlockCache;
 import com.automq.stream.s3.cache.blockcache.DefaultObjectReaderFactory;
 import com.automq.stream.s3.cache.blockcache.ObjectReaderFactory;
@@ -67,6 +68,9 @@ import com.automq.stream.s3.wal.WriteAheadLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
@@ -88,6 +92,7 @@ public class DefaultS3Client implements Client {
     protected WriteAheadLog writeAheadLog;
     protected StorageFailureHandlerChain storageFailureHandlerChain;
     protected S3Storage storage;
+    private AsyncStreamRecordBatchDiskCache snapshotDiskCache;
 
     protected ObjectReaderFactory objectReaderFactory;
     protected S3BlockCache blockCache;
@@ -141,25 +146,33 @@ public class DefaultS3Client implements Client {
         this.writeAheadLog = buildWAL();
         this.storageFailureHandlerChain = new StorageFailureHandlerChain();
         this.storage = newS3Storage();
-        this.storage.setLocalStreamRangeIndexCache(localIndexCache);
-        // stream object compactions share the same object storage with stream set object compactions
-        this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, backgroundObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
-        storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
-        storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
-        this.kvClient = new ControllerKVClient(this.requestSender);
-        Context.instance().kvClient(this.kvClient);
-        this.failover = failover();
-
-        this.storage.startup();
-        this.compactionManager.start();
+        try {
+            this.storage.setLocalStreamRangeIndexCache(localIndexCache);
+            // stream object compactions share the same object storage with stream set object compactions
+            this.streamClient = new S3StreamClient(this.streamManager, this.storage, this.objectManager, backgroundObjectStorage, this.config, networkInboundLimiter, networkOutboundLimiter);
+            storageFailureHandlerChain.addHandler(new ForceCloseStorageFailureHandler(streamClient));
+            storageFailureHandlerChain.addHandler(new HaltStorageFailureHandler());
+            this.kvClient = new ControllerKVClient(this.requestSender);
+            Context.instance().kvClient(this.kvClient);
+            this.failover = failover();
+            this.storage.startup();
+            this.compactionManager.start();
+        } catch (RuntimeException | Error e) {
+            closeSnapshotDiskCache();
+            throw e;
+        }
         LOGGER.info("S3Client started");
     }
 
     @Override
     public void shutdown() {
-        this.compactionManager.shutdown();
-        this.streamClient.shutdown();
-        this.storage.shutdown();
+        try {
+            this.compactionManager.shutdown();
+            this.streamClient.shutdown();
+            this.storage.shutdown();
+        } finally {
+            closeSnapshotDiskCache();
+        }
         // Network limiters are process-level singletons managed by GlobalNetworkBandwidthLimiters.
         this.requestSender.shutdown();
         LOGGER.info("S3Client shutdown successfully");
@@ -229,7 +242,46 @@ public class DefaultS3Client implements Client {
     }
 
     protected S3Storage newS3Storage() {
-        return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache, mainObjectStorage, storageFailureHandlerChain);
+        snapshotDiskCache = newSnapshotDiskCache();
+        try {
+            return new S3Storage(config, writeAheadLog, streamManager, objectManager, blockCache,
+                mainObjectStorage, storageFailureHandlerChain, snapshotDiskCache);
+        } catch (RuntimeException | Error e) {
+            closeSnapshotDiskCache();
+            throw e;
+        }
+    }
+
+    /** Creates the best-effort disk backend only for enabled snapshot caches with positive capacity. */
+    protected AsyncStreamRecordBatchDiskCache newSnapshotDiskCache() {
+        if (!config.snapshotReadEnable() || config.snapshotReadCacheDiskSize() == 0) {
+            return null;
+        }
+        String path = config.snapshotReadCacheDiskPath();
+        if (path == null || path.isBlank()) {
+            LOGGER.warn("Snapshot disk cache disabled: a dedicated backing-file path is required");
+            return null;
+        }
+        try {
+            Path parent = Path.of(path).toAbsolutePath().getParent();
+            if (parent == null || !Files.isDirectory(parent)
+                || Files.getFileStore(parent).getUsableSpace() < config.snapshotReadCacheDiskSize()) {
+                throw new IOException("Snapshot disk cache needs an existing directory with sufficient free space");
+            }
+            return new AsyncStreamRecordBatchDiskCache(path, config.snapshotReadCacheDiskSize(),
+                config.snapshotReadCacheDiskMaxEntries(), config.snapshotReadCacheDiskThreads(),
+                config.snapshotReadCacheDiskQueueCapacity(), config.snapshotReadCacheDiskMaxPendingBytes());
+        } catch (IOException | RuntimeException e) {
+            LOGGER.warn("Snapshot disk cache initialization failed; using RAM and block cache", e);
+            return null;
+        }
+    }
+
+    private void closeSnapshotDiskCache() {
+        if (snapshotDiskCache != null) {
+            snapshotDiskCache.close();
+            snapshotDiskCache = null;
+        }
     }
 
     protected Failover failover() {

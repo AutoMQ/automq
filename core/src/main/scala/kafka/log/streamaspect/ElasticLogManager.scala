@@ -21,11 +21,11 @@ package kafka.log.streamaspect
 
 import com.automq.stream.api.Client
 import com.automq.stream.s3.Constants
+import com.automq.stream.s3.cache.FileCache
 import com.automq.stream.s3.metadata.ObjectUtils
 import kafka.automq.AutoMQConfig
 import kafka.log.UnifiedLog
 import kafka.log.streamaspect.ElasticLogManager.NAMESPACE
-import kafka.log.streamaspect.cache.FileCache
 import kafka.log.streamaspect.client.{ClientFactoryProxy, Context}
 import kafka.server.{BrokerServer, BrokerTopicStats, KafkaConfig}
 import kafka.utils.Logging

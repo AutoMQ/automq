@@ -24,27 +24,240 @@ import com.automq.stream.s3.DefaultByteBufSupplier;
 import com.automq.stream.s3.TestUtils;
 import com.automq.stream.s3.cache.LogCache.LogCacheBlock;
 import com.automq.stream.s3.model.StreamRecordBatch;
+import com.automq.stream.s3.trace.context.TraceContext;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @Tag("S3Unit")
 public class LogCacheTest {
+
+    /** Complete RAM coverage and disabled backends return immediately without disk work. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testAsyncRamHit(boolean enabled) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, enabled ? diskCache : null);
+        StreamRecordBatch record = sizedRecord(42, 0, 6);
+        assertTrue(cache.put(record));
+        assertEquals(List.of(record), cache.getAsync(TraceContext.DEFAULT, 42, 0, 1, 100).get(5, TimeUnit.SECONDS));
+        verify(record).retain();
+        verifyNoInteractions(diskCache);
+        record.release();
+    }
+
+    /** Disk and RAM form coverage from the requested start; the byte budget starts with disk. */
+    @ParameterizedTest
+    @CsvSource({"1,100,3", "1,7,2", "1,6,1"})
+    public void testAsyncMixedRead(long startOffset, int maxBytes, int count) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch disk = sizedRecord(42, 1, 6);
+        StreamRecordBatch first = sizedRecord(42, 2, 6);
+        StreamRecordBatch second = sizedRecord(42, 3, 6);
+        assertTrue(cache.put(first));
+        assertTrue(cache.put(second));
+        when(diskCache.get(42, startOffset, 2, maxBytes)).thenReturn(CompletableFuture.completedFuture(List.of(disk)));
+
+        List<StreamRecordBatch> records = cache.getAsync(TraceContext.DEFAULT, 42, startOffset, 4, maxBytes)
+            .get(5, TimeUnit.SECONDS);
+        assertEquals(List.of(disk, first, second).subList(0, count), records);
+        verify(first, count == 1 ? times(1) : never()).release();
+        verify(second, count == 2 ? times(1) : never()).release();
+        records.forEach(StreamRecordBatch::release);
+    }
+
+    /** Disk-only coverage is returned directly; a suffix missing the requested start is released. */
+    @Test
+    public void testAsyncDiskOnlyRead() throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch disk = sizedRecord(42, 0, 6);
+        when(diskCache.get(42, 0, 1, 100)).thenReturn(CompletableFuture.completedFuture(List.of(disk)));
+        assertEquals(List.of(disk), cache.getAsync(TraceContext.DEFAULT, 42, 0, 1, 100).get(5, TimeUnit.SECONDS));
+        verify(disk, never()).release();
+        disk.release();
+
+        StreamRecordBatch suffix = sizedRecord(42, 1, 6);
+        when(diskCache.get(42, 0, 2, 100)).thenReturn(CompletableFuture.completedFuture(List.of(suffix)));
+        assertTrue(cache.getAsync(TraceContext.DEFAULT, 42, 0, 2, 100).get(5, TimeUnit.SECONDS).isEmpty());
+        verify(suffix).release();
+    }
+
+    /** Misses, submission failures and overlapping boundaries retain the original RAM suffix. */
+    @ParameterizedTest
+    @ValueSource(strings = {"miss", "failed", "submission-failed", "overlap"})
+    public void testAsyncDiskFallback(String outcome) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch ram = sizedRecord(42, 1, 6);
+        when(ram.getLastOffset()).thenReturn(3L);
+        StreamRecordBatch disk = sizedRecord(42, 0, 6);
+        when(disk.getLastOffset()).thenReturn(2L);
+        assertTrue(cache.put(ram));
+        if ("submission-failed".equals(outcome)) {
+            doThrow(new IllegalStateException("submission failed")).when(diskCache).get(42, 0, 1, 100);
+        } else {
+            CompletableFuture<List<StreamRecordBatch>> read = "failed".equals(outcome)
+                ? CompletableFuture.failedFuture(new IllegalStateException("read failed"))
+                : CompletableFuture.completedFuture("overlap".equals(outcome) ? List.of(disk) : List.of());
+            when(diskCache.get(42, 0, 1, 100)).thenReturn(read);
+        }
+        assertEquals(List.of(ram), cache.getAsync(TraceContext.DEFAULT, 42, 0, 3, 100).get(5, TimeUnit.SECONDS));
+        verify(ram, never()).release();
+        if ("overlap".equals(outcome)) {
+            verify(disk).release();
+        }
+        ram.release();
+    }
+
+    /** Cancelling a pending read releases retained RAM and any disk result that arrives later. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testAsyncReadCancellation(boolean cancellable) {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch ram = sizedRecord(42, 1, 6);
+        StreamRecordBatch disk = sizedRecord(42, 0, 6);
+        CompletableFuture<List<StreamRecordBatch>> diskRead = spy(new CompletableFuture<>());
+        if (!cancellable) {
+            doReturn(false).when(diskRead).cancel(false);
+        }
+        when(diskCache.get(42, 0, 1, 100)).thenReturn(diskRead);
+        assertTrue(cache.put(ram));
+        CompletableFuture<List<StreamRecordBatch>> read = cache.getAsync(TraceContext.DEFAULT, 42, 0, 2, 100);
+        assertFalse(read.isDone());
+        verify(ram).retain();
+        assertTrue(read.cancel(false));
+        assertEquals(cancellable, diskRead.isCancelled());
+        if (!cancellable) {
+            assertTrue(diskRead.complete(List.of(disk)));
+            verify(disk).release();
+        }
+        verify(ram).release();
+    }
+
+    /** Only disk coverage from the requested start counts as a hit; suffixes and failures are misses. */
+    @ParameterizedTest
+    @ValueSource(strings = {"hit", "miss", "error", "submission", "overlap", "suffix", "cancel"})
+    public void testDiskReadMetrics(String outcome) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache);
+        StreamRecordBatch ram = sizedRecord(42, 2, 1);
+        assertTrue(cache.put(ram));
+        CompletableFuture<List<StreamRecordBatch>> diskRead = new CompletableFuture<>();
+        if ("submission".equals(outcome)) {
+            doThrow(new IllegalStateException()).when(diskCache).get(42, 0, 2, 100);
+        } else {
+            when(diskCache.get(42, 0, 2, 100)).thenReturn(diskRead);
+        }
+        long hits = SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeCount();
+        long misses = SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeCount();
+        long totalNanos = SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeSum()
+            + SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeSum();
+        CompletableFuture<List<StreamRecordBatch>> read = cache.getAsync(TraceContext.DEFAULT, 42, 0, 3, 100);
+        if ("cancel".equals(outcome)) {
+            read.cancel(false);
+        } else {
+            if ("error".equals(outcome)) {
+                diskRead.completeExceptionally(new IllegalStateException());
+            } else if ("hit".equals(outcome)) {
+                diskRead.complete(List.of(sizedRecord(42, 0, 1), sizedRecord(42, 1, 1)));
+            } else if ("overlap".equals(outcome)) {
+                diskRead.complete(List.of(sizedRecord(42, 0, 1)));
+            } else if ("suffix".equals(outcome)) {
+                StreamRecordBatch suffix = sizedRecord(42, 1, 1);
+                diskRead.complete(List.of(suffix));
+                verify(suffix).release();
+            } else {
+                diskRead.complete(List.of());
+            }
+            read.get(5, TimeUnit.SECONDS).forEach(StreamRecordBatch::release);
+        }
+        assertEquals(hits + ("hit".equals(outcome) ? 1 : 0),
+            SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeCount());
+        assertEquals(misses + (List.of("miss", "error", "submission", "overlap", "suffix").contains(outcome) ? 1 : 0),
+            SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeCount());
+        if (!"cancel".equals(outcome)) {
+            assertTrue(SnapshotReadCacheMetrics.DISK_HIT_LATENCY.cumulativeSum()
+                + SnapshotReadCacheMetrics.DISK_MISS_LATENCY.cumulativeSum() > totalNanos);
+        }
+        ram.release();
+    }
+
+    /** A disk deadline returns the original RAM suffix and frees late disk data without double release. */
+    @Test
+    public void testDiskReadDeadline() throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        LogCache cache = new LogCache(1 << 20, 1 << 20, diskCache, 10);
+        StreamRecordBatch ram = sizedRecord(42, 1, 6);
+        StreamRecordBatch disk = sizedRecord(42, 0, 6);
+        CompletableFuture<List<StreamRecordBatch>> diskRead = spy(new CompletableFuture<>());
+        doReturn(false).when(diskRead).cancel(false);
+        when(diskCache.get(42, 0, 1, 100)).thenReturn(diskRead);
+        assertTrue(cache.put(ram));
+        List<StreamRecordBatch> records = cache.getAsync(TraceContext.DEFAULT, 42, 0, 2, 100)
+            .get(5, TimeUnit.SECONDS);
+        assertEquals(List.of(ram), records);
+        verify(diskRead, org.mockito.Mockito.timeout(5000).atLeastOnce()).cancel(false);
+        diskRead.complete(List.of(disk));
+        verify(disk).release();
+        verify(ram, never()).release();
+        records.forEach(StreamRecordBatch::release);
+        verify(ram).release();
+    }
+
+    /** Supplying a backend enables spilling without delaying record release or replacing the free listener. */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    public void testOptionalDiskSpill(boolean enabled) throws Exception {
+        AsyncStreamRecordBatchDiskCache diskCache = mock(AsyncStreamRecordBatchDiskCache.class);
+        StreamRecordBatch record = sizedRecord(42, 0, 1);
+        CompletableFuture<Boolean> pendingWrite = new CompletableFuture<>();
+        when(diskCache.put(record)).thenReturn(pendingWrite);
+        CompletableFuture<LogCacheBlock> notification = new CompletableFuture<>();
+        LogCache cache = enabled
+            ? new LogCache(0, 1024, 10000, notification::complete, diskCache)
+            : new LogCache(0, 1024, 10000, notification::complete);
+        assertTrue(cache.put(record));
+        LogCacheBlock block = cache.archiveCurrentBlock();
+        cache.markFree(block).get(5, TimeUnit.SECONDS);
+
+        assertSame(block, notification.get(5, TimeUnit.SECONDS));
+        verify(record).release();
+        assertTrue(block.records().isEmpty());
+        assertFalse(pendingWrite.isDone());
+        if (enabled) {
+            verify(diskCache).put(record);
+        } else {
+            verifyNoInteractions(diskCache);
+        }
+    }
 
     /**
      * Each stream may reach the upload limit independently; the next record stays owned by the caller for retry.

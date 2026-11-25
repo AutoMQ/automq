@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -198,6 +199,20 @@ public class StreamReadersTest {
         assertEquals(0, streamReaders.getActiveStreamReaderCount());
         verify(objectManager, times(2)).getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt());
         verify(retryScheduler).schedule(any(Runnable.class), eq(10L), eq(TimeUnit.SECONDS));
+    }
+
+    /** A cancelled fetch must not start a previously scheduled retry. */
+    @Test
+    public void testCancelledReadSkipsScheduledRetry() throws Exception {
+        when(objectManager.getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt()))
+            .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("first read failed")));
+
+        CompletableFuture<ReadDataBlock> readFuture = streamReaders.read(STREAM_ID_1, 0, 1, 100);
+        Runnable retry = retryTask.get(5, TimeUnit.SECONDS);
+        assertTrue(readFuture.cancel(false));
+        retry.run();
+
+        verify(objectManager).getObjects(eq(STREAM_ID_1), anyLong(), anyLong(), anyInt());
     }
 
     /**

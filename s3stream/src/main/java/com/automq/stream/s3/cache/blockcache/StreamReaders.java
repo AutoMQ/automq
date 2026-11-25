@@ -21,10 +21,10 @@ package com.automq.stream.s3.cache.blockcache;
 
 import com.automq.stream.s3.cache.ReadDataBlock;
 import com.automq.stream.s3.cache.S3BlockCache;
+import com.automq.stream.s3.model.StreamRecordBatch;
 import com.automq.stream.s3.objects.ObjectManager;
 import com.automq.stream.s3.operator.ObjectStorage;
 import com.automq.stream.s3.trace.context.TraceContext;
-import com.automq.stream.utils.FutureUtil;
 import com.automq.stream.utils.Systems;
 import com.automq.stream.utils.Threads;
 import com.automq.stream.utils.Time;
@@ -102,9 +102,20 @@ public class StreamReaders implements S3BlockCache {
         int maxBytes) {
         Cache cache = caches[Math.abs((int) (streamId % caches.length))];
         CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
-        cache.read(streamId, startOffset, endOffset, maxBytes, false).whenComplete((rst, ex) -> {
+        CompletableFuture<ReadDataBlock> firstRead = cache.read(streamId, startOffset, endOffset, maxBytes, false);
+        cf.whenComplete((rst, ex) -> {
+            if (cf.isCancelled()) {
+                firstRead.cancel(false);
+            }
+        });
+        firstRead.whenComplete((rst, ex) -> {
             if (ex == null) {
-                cf.complete(rst);
+                if (!cf.complete(rst)) {
+                    rst.getRecords().forEach(StreamRecordBatch::release);
+                }
+                return;
+            }
+            if (cf.isDone()) {
                 return;
             }
             // Reads should recover from transient errors internally. An unexpected failure may leave reader state
@@ -113,8 +124,23 @@ public class StreamReaders implements S3BlockCache {
                 streamId, startOffset, endOffset, maxBytes, READ_RETRY_DELAY_SECONDS, ex);
             try {
                 retryScheduler.schedule(() -> {
+                    if (cf.isDone()) {
+                        return;
+                    }
                     try {
-                        FutureUtil.propagate(cache.read(streamId, startOffset, endOffset, maxBytes, true), cf);
+                        CompletableFuture<ReadDataBlock> retryRead = cache.read(streamId, startOffset, endOffset, maxBytes, true);
+                        cf.whenComplete((block, error) -> {
+                            if (cf.isCancelled()) {
+                                retryRead.cancel(false);
+                            }
+                        });
+                        retryRead.whenComplete((block, error) -> {
+                            if (error != null) {
+                                cf.completeExceptionally(error);
+                            } else if (!cf.complete(block)) {
+                                block.getRecords().forEach(StreamRecordBatch::release);
+                            }
+                        });
                     } catch (Throwable retryEx) {
                         cf.completeExceptionally(retryEx);
                     }
@@ -194,6 +220,9 @@ public class StreamReaders implements S3BlockCache {
             int maxBytes, boolean forceNewReader) {
             CompletableFuture<ReadDataBlock> cf = new CompletableFuture<>();
             eventLoop.execute(() -> {
+                if (cf.isDone()) {
+                    return;
+                }
                 cleanupExpiredStreamReader();
                 StreamReaderKey key = new StreamReaderKey(streamId, startOffset);
                 StreamReader streamReader = streamReaders.remove(key);
@@ -218,7 +247,14 @@ public class StreamReaders implements S3BlockCache {
                             }
                         }
                     });
-                FutureUtil.propagate(streamReadCf, cf);
+                // Running block reads finish on their event loop; release results abandoned by callers.
+                streamReadCf.whenComplete((block, error) -> {
+                    if (error != null) {
+                        cf.completeExceptionally(error);
+                    } else if (!cf.complete(block)) {
+                        block.getRecords().forEach(StreamRecordBatch::release);
+                    }
+                });
             });
             return cf;
         }

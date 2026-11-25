@@ -1,0 +1,370 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements. See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package com.automq.stream.s3.cache;
+
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.LinkedList;
+import java.util.List;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.CompositeByteBuf;
+import io.netty.buffer.Unpooled;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+@Timeout(60)
+@Tag("S3Unit")
+public class FileCacheTest {
+
+    /**
+     * Verifies partial reads, LRU eviction and reuse of freed allocation blocks.
+     */
+    @Test
+    public void test() throws IOException {
+        FileCache fileCache = new FileCache("/tmp/file_cache_test", 10 * 1024, 1024);
+
+        // occupy block 0,1
+        long cacheId = 1;
+        fileCache.put(cacheId, 10, genBuf((byte) 1, 2 * 1024));
+
+        ByteBuf rst = fileCache.get(cacheId, 10 + 1000, 1024).get();
+        assertEquals(1024, rst.readableBytes());
+        assertTrue(verify(rst, (byte) 1));
+
+        Assertions.assertFalse(fileCache.get(cacheId, 10 + 1000, 2048).isPresent());
+
+        // occupy block 2,3
+        long cacheId2 = 2;
+        fileCache.put(cacheId2, 233, genBuf((byte) 2, 1025));
+
+        // occupy block 4~8
+        fileCache.put(cacheId2, 2048, genBuf((byte) 4, 1024 * 5));
+
+        // occupy block 9
+        fileCache.put(cacheId2, 10000, genBuf((byte) 5, 1024));
+
+        // touch lru
+        assertEquals(1025, fileCache.get(cacheId2, 233, 1025).get().readableBytes());
+        assertEquals(1024, fileCache.get(cacheId2, 10000, 1024).get().readableBytes());
+        assertEquals(2048, fileCache.get(cacheId, 10, 2048).get().readableBytes());
+        assertEquals(1024 * 5, fileCache.get(cacheId2, 2048, 1024 * 5).get().readableBytes());
+
+        // expect evict test2-233 and test2-10000
+        long cacheId3 = 3;
+        fileCache.put(cacheId3, 123, genBuf((byte) 6, 2049));
+
+        FileCache.Blocks blocks = fileCache.cacheMap.get(cacheId3).get(123L);
+        assertEquals(2049, blocks.dataLength);
+        assertArrayEquals(new int[] {2, 3, 9}, blocks.indexes);
+
+        rst = fileCache.get(cacheId3, 123, 2049).get();
+        assertEquals(2049, rst.readableBytes());
+        assertTrue(verify(rst, (byte) 6));
+
+        // expect evict test1-10 and test2-2048
+        long cacheId4 = 4;
+        fileCache.put(cacheId4, 123, genBuf((byte) 7, 2049));
+        blocks = fileCache.cacheMap.get(cacheId4).get(123L);
+        assertArrayEquals(new int[] {0, 1, 4}, blocks.indexes);
+        rst = fileCache.get(cacheId4, 123, 2049).get();
+        assertTrue(verify(rst, (byte) 7));
+
+        assertEquals(4, fileCache.freeBlockCount);
+
+        // expect occupy free blocks 5,6,7
+        long cacheId5 = 5;
+        fileCache.put(cacheId5, 123, genBuf((byte) 8, 2049));
+        blocks = fileCache.cacheMap.get(cacheId5).get(123L);
+        assertArrayEquals(new int[] {5, 6, 7}, blocks.indexes);
+        rst = fileCache.get(cacheId5, 123, 2049).get();
+        assertTrue(verify(rst, (byte) 8));
+        assertEquals(1, fileCache.freeBlockCount);
+
+        long cacheId6 = 6;
+        fileCache.put(cacheId6, 6666, genBuf((byte) 9, 3333));
+        rst = fileCache.get(cacheId6, 6666L, 3333).get();
+        assertTrue(verify(rst, (byte) 9));
+
+    }
+
+    /**
+     * Verifies composite writes, overwrites and contiguous range extension.
+     */
+    @Test
+    public void testMergePut() throws IOException {
+        FileCache fileCache = new FileCache("/tmp/file_cache_test", 10 * 1024, 1024);
+        long cacheId = 1;
+        CompositeByteBuf buf;
+        {
+            buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 1, 500));
+            buf.addComponent(true, genBuf((byte) 2, 500));
+            buf.addComponent(true, genBuf((byte) 3, 500));
+            fileCache.put(cacheId, 3333L, buf);
+        }
+        assertEquals(1, fileCache.cacheMap.get(cacheId).size());
+        assertEquals(1500, fileCache.cacheMap.get(cacheId).get(3333L).dataLength);
+        assertTrue(verify(fileCache.get(cacheId, 3333L, 500).get(), (byte) 1));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 500, 500).get(), (byte) 2));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1000, 500).get(), (byte) 3));
+
+        {
+            buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 2, 500));
+            fileCache.put(cacheId, 3333L + 500, buf);
+        }
+        assertEquals(1, fileCache.cacheMap.get(cacheId).size());
+        assertEquals(1500, fileCache.cacheMap.get(cacheId).get(3333L).dataLength);
+        assertTrue(verify(fileCache.get(cacheId, 3333L, 500).get(), (byte) 1));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 500, 500).get(), (byte) 2));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1000, 500).get(), (byte) 3));
+
+        {
+            buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 4, 500));
+            buf.addComponent(true, genBuf((byte) 5, 500));
+            buf.addComponent(true, genBuf((byte) 6, 500));
+            fileCache.put(cacheId, 3333L + 1000, buf);
+        }
+        assertEquals(1, fileCache.cacheMap.get(cacheId).size());
+        assertEquals(2500, fileCache.cacheMap.get(cacheId).get(3333L).dataLength);
+        assertTrue(verify(fileCache.get(cacheId, 3333L, 500).get(), (byte) 1));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 500, 500).get(), (byte) 2));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1000, 500).get(), (byte) 4));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1500, 500).get(), (byte) 5));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 2000, 500).get(), (byte) 6));
+
+        {
+            buf = Unpooled.compositeBuffer();
+            buf.addComponent(true, genBuf((byte) 7, 500));
+            fileCache.put(cacheId, 3333L + 1000 + 1500, buf);
+        }
+        assertEquals(1, fileCache.cacheMap.get(cacheId).size());
+        assertEquals(3000, fileCache.cacheMap.get(cacheId).get(3333L).dataLength);
+
+        assertTrue(verify(fileCache.get(cacheId, 3333L, 500).get(), (byte) 1));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 500, 500).get(), (byte) 2));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1000, 500).get(), (byte) 4));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 1500, 500).get(), (byte) 5));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 2000, 500).get(), (byte) 6));
+        assertTrue(verify(fileCache.get(cacheId, 3333L + 2500, 500).get(), (byte) 7));
+    }
+
+    /**
+     * Uses one allocator and LRU across mappings, retaining a touched entry and reusing evicted blocks.
+     */
+    @Test
+    public void testGlobalEvictionAcrossMappings(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("cache").toString(), 48, 8, 10);
+        long position = (long) Integer.MAX_VALUE + 100;
+        byte[] firstData = new byte[24];
+        byte[] secondData = new byte[16];
+        byte[] thirdData = new byte[16];
+        Arrays.fill(firstData, (byte) 1);
+        Arrays.fill(secondData, (byte) 2);
+        Arrays.fill(thirdData, (byte) 3);
+        ByteBuf first = Unpooled.wrappedBuffer(firstData);
+        ByteBuf second = Unpooled.wrappedBuffer(secondData);
+        ByteBuf third = Unpooled.wrappedBuffer(thirdData);
+        try {
+            cache.put(1, position, first);
+            cache.put(2, position + 100, second);
+            assertCached(cache, 1, position, firstData);
+            cache.put(3, position + 200, third);
+
+            assertTrue(cache.get(2, position + 100, secondData.length).isEmpty());
+            assertCached(cache, 1, position, firstData);
+            assertCached(cache, 3, position + 200, thirdData);
+            assertArrayEquals(new int[] {3, 4}, cache.cacheMap.get(3L).get(position + 200).indexes);
+            assertEquals(1, cache.freeBlockCount);
+            assertEquals(0, first.readerIndex());
+            assertEquals(0, second.readerIndex());
+            assertEquals(0, third.readerIndex());
+        } finally {
+            first.release();
+            second.release();
+            third.release();
+        }
+    }
+
+    /**
+     * Reports every missing range without payload copies or LRU touches, including after block reuse.
+     * Full hits return all buffers in input order.
+     */
+    @Test
+    public void testReadRanges(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("cache").toString(), 48, 8, 10);
+        long position = (long) Integer.MAX_VALUE + 100;
+        FileCache.ReadRange firstRange = new FileCache.ByteRange(1, position, 24);
+        FileCache.ReadRange secondRange = new FileCache.ByteRange(2, position + 100, 16);
+        FileCache.ReadRange thirdRange = new FileCache.ByteRange(3, position + 200, 16);
+        ByteBuf first = genBuf((byte) 1, firstRange.length());
+        ByteBuf second = genBuf((byte) 2, secondRange.length());
+        ByteBuf third = genBuf((byte) 3, thirdRange.length());
+        try {
+            cache.put(firstRange.cacheId(), firstRange.position(), first);
+            cache.put(secondRange.cacheId(), secondRange.position(), second);
+            FileCache.BulkReadResult empty = cache.get(List.of());
+            assertTrue(empty.buffers().isEmpty());
+            assertTrue(empty.missingRanges().isEmpty());
+            FileCache.ReadRange partial = new FileCache.ByteRange(1, position + 8, 16);
+            FileCache.BulkReadResult initialResult = cache.get(new LinkedList<>(List.of(partial, secondRange)));
+            List<ByteBuf> initial = initialResult.buffers();
+            try {
+                assertTrue(initialResult.missingRanges().isEmpty());
+                assertEquals(2, initial.size());
+                assertArrayEquals(ByteBufUtil.getBytes(first, 8, 16), ByteBufUtil.getBytes(initial.get(0)));
+                assertArrayEquals(ByteBufUtil.getBytes(second), ByteBufUtil.getBytes(initial.get(1)));
+            } finally {
+                initial.forEach(ByteBuf::release);
+            }
+            FileCache.ReadRange beyondEnd = new FileCache.ByteRange(1, position + 8, 17);
+            // A miss must not refresh cached ranges before the next insertion evicts the oldest one.
+            FileCache.BulkReadResult missing = cache.get(List.of(secondRange, beyondEnd, firstRange, thirdRange));
+            assertEquals(List.of(beyondEnd, thirdRange), missing.missingRanges());
+            assertSame(beyondEnd, missing.missingRanges().get(0));
+            assertSame(thirdRange, missing.missingRanges().get(1));
+            assertTrue(missing.buffers().isEmpty());
+
+            cache.put(thirdRange.cacheId(), thirdRange.position(), third);
+            FileCache.BulkReadResult evicted = cache.get(List.of(secondRange, firstRange, thirdRange));
+            assertEquals(List.of(firstRange), evicted.missingRanges());
+            assertTrue(evicted.buffers().isEmpty());
+            FileCache.BulkReadResult allMissing = cache.get(List.of(beyondEnd, firstRange));
+            assertEquals(List.of(beyondEnd, firstRange), allMissing.missingRanges());
+            assertTrue(allMissing.buffers().isEmpty());
+            assertTrue(cache.get(firstRange).isEmpty());
+            FileCache.BulkReadResult result = cache.get(List.of(thirdRange, secondRange));
+            List<ByteBuf> results = result.buffers();
+            try {
+                assertTrue(result.missingRanges().isEmpty());
+                assertEquals(2, results.size());
+                assertArrayEquals(ByteBufUtil.getBytes(third), ByteBufUtil.getBytes(results.get(0)));
+                assertArrayEquals(ByteBufUtil.getBytes(second), ByteBufUtil.getBytes(results.get(1)));
+                assertEquals(1, results.get(0).refCnt());
+                assertEquals(1, results.get(1).refCnt());
+            } finally {
+                results.forEach(ByteBuf::release);
+            }
+            assertCached(cache, secondRange, ByteBufUtil.getBytes(second));
+            assertCached(cache, thirdRange, ByteBufUtil.getBytes(third));
+        } finally {
+            first.release();
+            second.release();
+            third.release();
+        }
+    }
+
+    private void assertCached(FileCache cache, long cacheId, long position, byte[] expected) {
+        ByteBuf result = cache.get(cacheId, position, expected.length).orElseThrow();
+        try {
+            byte[] actual = new byte[result.readableBytes()];
+            result.readBytes(actual);
+            assertArrayEquals(expected, actual);
+        } finally {
+            result.release();
+        }
+    }
+
+    private void assertCached(FileCache cache, FileCache.ReadRange range, byte[] expected) {
+        ByteBuf result = cache.get(range).orElseThrow();
+        try {
+            assertArrayEquals(expected, ByteBufUtil.getBytes(result));
+        } finally {
+            result.release();
+        }
+    }
+
+    /** Successful reads refresh the default and explicitly selected LRU order. */
+    @Test
+    public void testLruReadRefresh(@TempDir Path directory) throws IOException {
+        verifyReadEviction(new FileCache(directory.resolve("default").toString(), 2 * 1024, 1024), false);
+        verifyReadEviction(new FileCache(directory.resolve("lru").toString(), 2 * 1024, 1024,
+            FileCache.EvictionPolicy.LRU), false);
+    }
+
+    /** FIFO evicts the oldest admission even when it has recently been read. */
+    @Test
+    public void testFifoReadDoesNotRefresh(@TempDir Path directory) throws IOException {
+        verifyReadEviction(new FileCache(directory.resolve("fifo").toString(), 2 * 1024, 1024,
+            FileCache.EvictionPolicy.FIFO), true);
+    }
+
+    private void verifyReadEviction(FileCache cache, boolean fifo) {
+        putAndRelease(cache, 1, 10, 1024);
+        putAndRelease(cache, 2, 20, 1024);
+        cache.get(1, 10, 1024).orElseThrow().release();
+        putAndRelease(cache, 3, 30, 1024);
+        assertTrue(cache.get(fifo ? 1 : 2, fifo ? 10 : 20, 1024).isEmpty());
+        cache.get(fifo ? 2 : 1, fifo ? 20 : 10, 1024).orElseThrow().release();
+        cache.get(3, 30, 1024).orElseThrow().release();
+    }
+
+    /** Rewriting or extending an existing FIFO entry preserves its original admission order. */
+    @Test
+    public void testFifoUpdateDoesNotRefresh(@TempDir Path directory) throws IOException {
+        FileCache cache = new FileCache(directory.resolve("fifo-update").toString(), 3 * 1024, 1024,
+            FileCache.EvictionPolicy.FIFO);
+        putAndRelease(cache, 1, 10, 512);
+        putAndRelease(cache, 2, 20, 1024);
+        putAndRelease(cache, 1, 10, 512);
+        putAndRelease(cache, 1, 522, 1024);
+        putAndRelease(cache, 3, 30, 1024);
+        assertTrue(cache.get(1, 10, 1536).isEmpty());
+        cache.get(2, 20, 1024).orElseThrow().release();
+        cache.get(3, 30, 1024).orElseThrow().release();
+    }
+
+    private void putAndRelease(FileCache cache, long cacheId, long position, int length) {
+        ByteBuf data = genBuf((byte) cacheId, length);
+        try {
+            cache.put(cacheId, position, data);
+        } finally {
+            data.release();
+        }
+    }
+
+    ByteBuf genBuf(byte data, int length) {
+        byte[] bytes = new byte[length];
+        Arrays.fill(bytes, data);
+        return Unpooled.wrappedBuffer(bytes);
+    }
+
+    boolean verify(ByteBuf buf, byte data) {
+        buf = buf.duplicate();
+        while (buf.readableBytes() > 0) {
+            if (buf.readByte() != data) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+}

@@ -87,6 +87,27 @@ public class AutoMQConfig {
         "When the data in the cache that has not been uploaded fills the entire capacity, the storage will backpressure subsequent requests until the data upload is completed." +
         "It will be set to a reasonable value according to memory by default.";
 
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_PATH_CONFIG = "s3.snapshot.read.cache.disk.path";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_PATH_DOC = "Dedicated disposable backing file for snapshot disk caching. Existing contents are replaced on startup.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_SIZE_CONFIG = "s3.snapshot.read.cache.disk.size";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_SIZE_DOC = "Snapshot disk-cache capacity in bytes. Zero disables it; requires snapshot reading and a dedicated path.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_ENTRIES_CONFIG = "s3.snapshot.read.cache.disk.max.entries";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_ENTRIES_DOC = "Maximum number of snapshot disk batches indexed in heap memory.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_THREADS_CONFIG = "s3.snapshot.read.cache.disk.threads";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_THREADS_DOC = "Dedicated snapshot disk-cache I/O workers.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_QUEUE_CAPACITY_CONFIG = "s3.snapshot.read.cache.disk.queue.capacity";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_QUEUE_CAPACITY_DOC = "Maximum queued snapshot disk-cache tasks; running tasks are additional.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_CONFIG = "s3.snapshot.read.cache.disk.max.pending.bytes";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_DOC = "Maximum encoded bytes reserved by queued and running disk reads and writes. Queued writes hold private copies of their batches.";
+
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_CONFIG = "s3.snapshot.read.cache.disk.read.timeout.ms";
+    public static final String S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_DOC = "Maximum snapshot disk-phase wait in milliseconds before falling back to the RAM lookup and block cache.";
+
     public static final String S3_WAL_UPLOAD_THRESHOLD_CONFIG = "s3.wal.upload.threshold";
     public static final String S3_WAL_UPLOAD_THRESHOLD_DOC = "The threshold at which WAL triggers upload to object storage. The configuration value needs to be less than s3.wal.cache.size. The larger the configuration value, the higher the data aggregation and the lower the cost of metadata storage.";
 
@@ -318,6 +339,13 @@ public class AutoMQConfig {
             .define(AutoMQConfig.S3_OPS_BUCKETS_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_OPS_BUCKETS_DOC)
             .define(AutoMQConfig.S3_WAL_PATH_CONFIG, STRING, null, HIGH, AutoMQConfig.S3_WAL_PATH_DOC)
             .define(AutoMQConfig.S3_WAL_CACHE_SIZE_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_CACHE_SIZE_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_PATH_CONFIG, STRING, "", MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_PATH_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_SIZE_CONFIG, LONG, 0L, atLeast(0), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_SIZE_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_MAX_ENTRIES_CONFIG, INT, 1000000, atLeast(1), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_MAX_ENTRIES_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_THREADS_CONFIG, INT, 2, atLeast(1), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_THREADS_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_QUEUE_CAPACITY_CONFIG, INT, 1024, atLeast(1), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_QUEUE_CAPACITY_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_CONFIG, LONG, 64L * 1024 * 1024, atLeast(1), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_MAX_PENDING_BYTES_DOC)
+            .define(AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_CONFIG, LONG, 100L, atLeast(1), MEDIUM, AutoMQConfig.S3_SNAPSHOT_READ_CACHE_DISK_READ_TIMEOUT_MS_DOC)
             .define(AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_CONFIG, LONG, -1L, MEDIUM, AutoMQConfig.S3_WAL_UPLOAD_THRESHOLD_DOC)
             .define(AutoMQConfig.S3_WAL_UPLOAD_INTERVAL_MS_CONFIG, LONG, S3_WAL_UPLOAD_INTERVAL_MS_DEFAULT, LOW, AutoMQConfig.S3_WAL_UPLOAD_INTERVAL_MS_DOC)
             .define(AutoMQConfig.S3_STREAM_SPLIT_SIZE_CONFIG, INT, 8388608, MEDIUM, AutoMQConfig.S3_STREAM_SPLIT_SIZE_DOC)
