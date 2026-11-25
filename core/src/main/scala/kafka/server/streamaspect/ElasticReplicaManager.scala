@@ -5,7 +5,7 @@ import com.automq.stream.s3.metrics.{Metrics => S3Metrics, MetricsLevel, TimerUt
 import com.automq.stream.s3.network.{GlobalNetworkBandwidthLimiters, ThrottleStrategy}
 import com.automq.stream.utils.{FutureUtil, Systems, Threads}
 import io.opentelemetry.api.common.{AttributeKey, Attributes}
-import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, TrafficInterceptor}
+import kafka.automq.interceptor.{ClientIdKey, ClientIdMetadata, PartitionAppendGuard, TrafficInterceptor}
 import kafka.automq.kafkalinking.KafkaLinkingManager
 import kafka.automq.partition.snapshot.PartitionSnapshotsManager
 import kafka.automq.zerozone.ZeroZoneThreadLocalContext
@@ -416,6 +416,7 @@ class ElasticReplicaManager(
       } else {
         try {
           val partition = getPartitionOrException(topicPartition)
+          PartitionAppendGuard.validate(topicPartition, partition)
           val info = partition.appendRecordsToLeader(records, origin, requiredAcks, requestLocal,
             verificationGuards.getOrElse(topicPartition, VerificationGuard.SENTINEL))
           val numAppendedMessages = info.numMessages
