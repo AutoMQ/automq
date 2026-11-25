@@ -29,6 +29,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.MockedStatic;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -58,6 +59,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -156,8 +158,9 @@ public class AsyncStreamRecordBatchDiskCacheTest {
     }
 
     /**
-     * A full task queue rejects without caller-thread I/O, and queued writes hold no reference to the
-     * callers' buffers. Cancelling a queued write promptly frees its queue slot for a replacement task.
+     * A full task queue rejects without caller-thread I/O or an exception, counting the rejection, and
+     * queued writes hold no reference to the callers' buffers. Cancelling a queued write promptly frees
+     * its queue slot for a replacement task.
      */
     @Test
     public void testQueueRejectionAndQueuedCancellation() throws Exception {
@@ -173,12 +176,14 @@ public class AsyncStreamRecordBatchDiskCacheTest {
         StreamRecordBatch first = batch(0, 1);
         StreamRecordBatch second = batch(1, 2);
         StreamRecordBatch third = batch(2, 3);
-        try {
+        try (MockedStatic<SnapshotReadCacheMetrics> metrics = mockStatic(SnapshotReadCacheMetrics.class)) {
             CompletableFuture<Boolean> running = cache.put(first);
             await(entered);
             CompletableFuture<Boolean> queued = cache.put(second);
             assertEquals(1, second.encoded().refCnt());
+            metrics.verifyNoInteractions();
             assertFalse(result(cache.put(third)));
+            metrics.verify(() -> SnapshotReadCacheMetrics.recordDiskWriteRejected(true));
             assertEquals(1, third.encoded().refCnt());
             verify(fileCache, times(1)).tryPut(anyLong(), anyLong(), any(ByteBuf.class));
             assertTrue(queued.cancel(false));
@@ -191,6 +196,7 @@ public class AsyncStreamRecordBatchDiskCacheTest {
             assertEquals(1, first.encoded().refCnt());
             assertEquals(1, third.encoded().refCnt());
             verify(fileCache, times(2)).tryPut(anyLong(), anyLong(), any(ByteBuf.class));
+            metrics.verifyNoMoreInteractions();
         } finally {
             proceed.countDown();
             first.release();
@@ -201,7 +207,7 @@ public class AsyncStreamRecordBatchDiskCacheTest {
 
     /**
      * Queued and running writes both count against the encoded-byte budget. A rejected task
-     * retains nothing, and completed writes make the budget available again.
+     * retains nothing and is counted, and completed writes make the budget available again.
      */
     @Test
     public void testByteBudget() throws Exception {
@@ -218,11 +224,12 @@ public class AsyncStreamRecordBatchDiskCacheTest {
         StreamRecordBatch third = batch(2, 3);
         long limit = 2L * first.encoded().readableBytes();
         AsyncStreamRecordBatchDiskCache cache = cache(fileCache, new StreamRecordBatchDiskIndex(10), 4, limit);
-        try {
+        try (MockedStatic<SnapshotReadCacheMetrics> metrics = mockStatic(SnapshotReadCacheMetrics.class)) {
             CompletableFuture<Boolean> running = cache.put(first);
             await(entered);
             CompletableFuture<Boolean> queued = cache.put(second);
             assertFalse(result(cache.put(third)));
+            metrics.verify(() -> SnapshotReadCacheMetrics.recordDiskWriteRejected(false));
             assertEquals(1, third.encoded().refCnt());
             proceed.countDown();
             assertTrue(result(running));

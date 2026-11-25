@@ -32,7 +32,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -80,7 +79,8 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
         this.maxPendingBytes = maxPendingBytes;
         this.executor = new ThreadPoolExecutor(workerCount, workerCount, 0L, TimeUnit.MILLISECONDS,
             new ArrayBlockingQueue<>(queueCapacity), ThreadUtils.createThreadFactory("batch-disk-cache-%d", true),
-            new ThreadPoolExecutor.AbortPolicy());
+            // AbortPolicy builds an exception and locks the pool to describe it on every rejection.
+            (task, pool) -> ((CacheTask<?>) task).reject(true));
     }
 
     /**
@@ -117,6 +117,7 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
 
     private <T> CompletableFuture<T> submit(CacheTask<T> task) {
         if (!reserveBytes(task.bytes)) {
+            task.recordRejected(false);
             return CompletableFuture.completedFuture(task.miss);
         }
         task.future.whenComplete((result, error) -> {
@@ -125,11 +126,14 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
                 executor.remove(task);
             }
         });
+        if (executor.getQueue().remainingCapacity() == 0) {
+            // Skip copying a task that cannot be queued; the handler covers a queue that fills after this.
+            task.reject(true);
+            return task.future;
+        }
         try {
             task.retainSource();
             executor.execute(task);
-        } catch (RejectedExecutionException e) {
-            task.discard();
         } catch (RuntimeException | Error e) {
             task.discard();
             throw e;
@@ -187,6 +191,8 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
         void releaseResult(T result) {
         }
 
+        abstract void recordRejected(boolean queueFull);
+
         abstract T execute();
 
         @Override
@@ -217,6 +223,11 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
                 cleanup();
                 future.complete(miss);
             }
+        }
+
+        void reject(boolean queueFull) {
+            recordRejected(queueFull);
+            discard();
         }
 
         private void cleanup() {
@@ -252,6 +263,11 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
         }
 
         @Override
+        void recordRejected(boolean queueFull) {
+            SnapshotReadCacheMetrics.recordDiskWriteRejected(queueFull);
+        }
+
+        @Override
         Boolean execute() {
             // Keep write and publication in the same order even with multiple workers.
             synchronized (diskCache) {
@@ -283,6 +299,11 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
         }
 
         @Override
+        void recordRejected(boolean queueFull) {
+            SnapshotReadCacheMetrics.recordDiskReadRejected(queueFull);
+        }
+
+        @Override
         List<StreamRecordBatch> execute() {
             List<FileCache.ReadRange> ranges = index.get(streamId, startOffset, endOffset, maxBytes);
             if (ranges.isEmpty() || future.isDone()) {
@@ -293,6 +314,7 @@ public final class AsyncStreamRecordBatchDiskCache implements AutoCloseable {
                 encodedBytes = Math.addExact(encodedBytes, range.length());
             }
             if (!reserveBytes(encodedBytes)) {
+                recordRejected(false);
                 return List.of();
             }
             bytes = encodedBytes;

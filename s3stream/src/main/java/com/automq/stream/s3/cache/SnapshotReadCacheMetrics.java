@@ -37,6 +37,17 @@ final class SnapshotReadCacheMetrics {
         "Disk index entries removed by overlapping snapshot batch admissions", "count");
     private static final Metrics.LongCounterBundle.LongCounter DISK_OVERLAP_REMOVED_COUNT =
         DISK_OVERLAP_REMOVED.register(MetricsLevel.INFO, Attributes.empty());
+    private static final Metrics.LongCounterBundle DISK_REJECTED = Metrics.instance().longCounter(
+        "kafka_stream_snapshot_read_cache_disk_rejected_total",
+        "Disk cache tasks dropped by the pending-byte budget or a full task queue", "count");
+    private static final Metrics.LongCounterBundle.LongCounter DISK_WRITE_BUDGET_REJECTED =
+        diskRejected("write", "budget");
+    private static final Metrics.LongCounterBundle.LongCounter DISK_WRITE_QUEUE_REJECTED =
+        diskRejected("write", "queue");
+    private static final Metrics.LongCounterBundle.LongCounter DISK_READ_BUDGET_REJECTED =
+        diskRejected("read", "budget");
+    private static final Metrics.LongCounterBundle.LongCounter DISK_READ_QUEUE_REJECTED =
+        diskRejected("read", "queue");
 
     private SnapshotReadCacheMetrics() {
     }
@@ -46,11 +57,24 @@ final class SnapshotReadCacheMetrics {
             AttributeKey.stringKey("operation"), "disk_read", AttributeKey.stringKey("status"), status));
     }
 
+    private static Metrics.LongCounterBundle.LongCounter diskRejected(String operation, String reason) {
+        return DISK_REJECTED.register(MetricsLevel.INFO, Attributes.of(
+            AttributeKey.stringKey("operation"), operation, AttributeKey.stringKey("reason"), reason));
+    }
+
     static void recordDiskRead(boolean hit, long startNanos) {
         (hit ? DISK_HIT_LATENCY : DISK_MISS_LATENCY).record(System.nanoTime() - startNanos);
     }
 
     static void recordDiskOverlapRemoved(int count) {
         DISK_OVERLAP_REMOVED_COUNT.add(count);
+    }
+
+    static void recordDiskWriteRejected(boolean queueFull) {
+        (queueFull ? DISK_WRITE_QUEUE_REJECTED : DISK_WRITE_BUDGET_REJECTED).add(1);
+    }
+
+    static void recordDiskReadRejected(boolean queueFull) {
+        (queueFull ? DISK_READ_QUEUE_REJECTED : DISK_READ_BUDGET_REJECTED).add(1);
     }
 }
