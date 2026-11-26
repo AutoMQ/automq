@@ -2512,6 +2512,11 @@ class KafkaApis(val requestChannel: RequestChannel,
       )
   }
 
+  protected[server] def transactionMarkerAppendResult(partition: TopicPartition): Option[Errors] = None
+
+  protected[server] def transactionMarkerAppendResult(partition: TopicPartition, producerId: Long, producerEpoch: Short): Option[Errors] =
+    transactionMarkerAppendResult(partition)
+
   def handleWriteTxnMarkersRequest(request: RequestChannel.Request, requestLocal: RequestLocal): Unit = {
     ensureInterBrokerVersion(IBP_0_11_0_IV0)
     // We are checking for AlterCluster permissions first. If it is not present, we are authorizing cluster operation
@@ -2617,15 +2622,23 @@ class KafkaApis(val requestChannel: RequestChannel,
         }
 
         val markerResults = new ConcurrentHashMap[TopicPartition, Errors]()
+        val markerCompleted = new java.util.concurrent.atomic.AtomicBoolean(false)
         def maybeComplete(): Unit = {
-          if (partitionsWithCompatibleMessageFormat.size == markerResults.size) {
+          if (partitionsWithCompatibleMessageFormat.size == markerResults.size && markerCompleted.compareAndSet(false, true)) {
             maybeSendResponseCallback(producerId, marker.transactionResult, markerResults)
           }
         }
 
         val controlRecords = mutable.Map.empty[TopicPartition, MemoryRecords]
         partitionsWithCompatibleMessageFormat.foreach { partition =>
-          if (config.isNewGroupCoordinatorEnabled && partition.topic == GROUP_METADATA_TOPIC_NAME) {
+          val overrideResult = try {
+            transactionMarkerAppendResult(partition, marker.producerId, marker.producerEpoch)
+          } catch {
+            case exception: ApiException => Some(Errors.forException(exception))
+          }
+          if (overrideResult.isDefined) {
+            markerResults.put(partition, overrideResult.get)
+          } else if (config.isNewGroupCoordinatorEnabled && partition.topic == GROUP_METADATA_TOPIC_NAME) {
             // When the new group coordinator is used, writing the end marker is fully delegated
             // to the group coordinator.
             groupCoordinator.completeTransaction(
@@ -2662,7 +2675,9 @@ class KafkaApis(val requestChannel: RequestChannel,
           }
         }
 
-        replicaManager.appendRecords(
+        if (controlRecords.isEmpty) {
+          maybeComplete()
+        } else replicaManager.appendRecords(
           timeout = config.requestTimeoutMs.toLong,
           requiredAcks = -1,
           internalTopicsAllowed = true,
