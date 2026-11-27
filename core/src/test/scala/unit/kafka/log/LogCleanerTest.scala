@@ -1401,7 +1401,7 @@ class LogCleanerTest extends Logging {
       assertTrue(groups.forall(_.size == 1), "All groups should be singletons.")
       checkSegmentOrder(groups)
     }
-    // AutoMQ inject start
+    // AutoMQ inject end
 
 
     val groupSize = 3

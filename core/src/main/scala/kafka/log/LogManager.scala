@@ -722,7 +722,7 @@ class LogManager(logDirs: Seq[File],
 
       jobs(dir) = jobsForDir.map(pool.submit).toSeq
     }
-    // AutoMQ for Kafka inject start
+    // AutoMQ inject end
 
     try {
       jobs.forKeyValue { (dir, dirJobs) =>
