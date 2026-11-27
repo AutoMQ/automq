@@ -107,7 +107,12 @@ public class S3StreamsMetadataImageTest {
     private static final long GB = 1024 * MB;
     private final RangeGetter defaultRangeGetter = new RangeGetter() {
         @Override
-        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
+        public void attachGetObjectsContext(S3StreamsMetadataImage.GetObjectsContext ctx) {
+
+        }
+
+        @Override
+        public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId, long nodeId, long orderId) {
             return FutureUtil.failedFuture(new UnsupportedOperationException());
         }
 
@@ -463,7 +468,12 @@ public class S3StreamsMetadataImageTest {
     private RangeGetter buildMemoryRangeGetter() {
         return new RangeGetter() {
             @Override
-            public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId) {
+            public void attachGetObjectsContext(S3StreamsMetadataImage.GetObjectsContext ctx) {
+
+            }
+
+            @Override
+            public CompletableFuture<Optional<StreamOffsetRange>> find(long objectId, long streamId, long nodeId, long orderId) {
                 if (objectId == 0) {
                     return CompletableFuture.completedFuture(Optional.of(new StreamOffsetRange(STREAM0, 100L, 120L)));
                 } else if (objectId == 1) {
